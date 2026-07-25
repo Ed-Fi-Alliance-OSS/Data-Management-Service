@@ -35,12 +35,15 @@ workflow for the correction cases owned by the design.
 - Add scope selection, preview, confirmation, operation manifests, resumable execution,
   progress reporting, and final reports.
 - Integrate canonical stamp and mirror updates with existing Change Query behavior.
+- Require every restamp transaction to enqueue the new `ContentVersion` automatically in
+  the same transaction. A failed enqueue rolls back the complete restamp batch.
 - Add operator documentation and cross-links to E18 and E19 recovery procedures.
 
 ## Acceptance Evidence
 
 - PostgreSQL and SQL Server integration tests cover selection, stamping, mirrors,
-  resumability, safety checks, reporting, and projection follow-up from the referenced
+  resumability, safety checks, reporting, transactional enqueue, and queue-drain
+  projection follow-up from the referenced
   design sections.
 - API, Change Query, strong-validator, and CDC integration fixtures cover the observable
   effects assigned to this utility.

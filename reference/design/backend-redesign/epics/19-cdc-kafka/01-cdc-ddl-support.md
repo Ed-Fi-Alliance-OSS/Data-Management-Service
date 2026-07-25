@@ -27,6 +27,8 @@ Deliver the PostgreSQL and SQL Server database setup consumed by relational CDC.
 ## Implementation Scope
 
 - Add provider DDL/provisioning for the CDC source, key, capture, and heartbeat objects.
+- Explicitly exclude `dms.DocumentProjectionWork` from PostgreSQL publications, SQL
+  Server CDC capture instances, and CDC-reader grants.
 - Integrate those objects with generated manifests, binding-aware validation, and
   diagnostics.
 - Add least-privilege connector access setup.
@@ -39,6 +41,8 @@ Deliver the PostgreSQL and SQL Server database setup consumed by relational CDC.
 - Provisioning tests cover opt-in, eligibility, rerun, and binding-aware validation.
 - Principal-access and provider-metadata tests cover the design-owned security and
   continuity observations.
+- Capture inventories and raw-record fixtures prove work-table DML produces no captured
+  source record.
 
 ## Not Assigned to This Story
 

@@ -31,8 +31,15 @@ needed to provision, validate, start, stop, and retire a target.
 ## Implementation Scope
 
 - Add the local/bootstrap command surface and controller orchestration.
-- Integrate new-database evidence, provider setup, projection startup, binding lifecycle,
-  and connector rendering.
+- While canonical write admission is closed, integrate new-database evidence and invoke
+  the guarded `Disabled -> Tracking` transition before the first seed/API write. Reject a
+  nonempty canonical/cache/work database rather than attempting CDC retrofit.
+- Configure and validate the matching DMS target, start queue processing, wait for
+  projection caught-up status, cross the provider heartbeat barrier, and require a second
+  caught-up observation before opening admission.
+- Integrate provider setup, binding lifecycle, and connector rendering. DMS startup itself
+  never enables tracking, and mutable projection/CDC state stays outside the bootstrap
+  manifest.
 - Add cluster-scoped Kafka Connect offset-store provisioning/validation and binding-scoped
   Kafka topic, durability, record-size, and ACL provisioning/validation.
 - Add Kafka Connect registration, live validation, status polling, restart, guarded
@@ -43,6 +50,8 @@ needed to provision, validate, start, stop, and retire a target.
 
 - Script and integration tests cover the setup, retry, rejection, timeout, restart,
   guarded lifecycle, and teardown cases defined by the integration design.
+- Partial/retry tests prove fail-closed behavior around guarded activation, binding
+  creation, queue drain, provider barrier, and second caught-up observation.
 - Broker-backed tests cover the shared Connect offset store's compaction, durability, and
   worker-only ACLs plus binding-topic policy, record-size, connector, offset, heartbeat, and
   image validation.

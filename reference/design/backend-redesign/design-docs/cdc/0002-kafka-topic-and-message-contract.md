@@ -1,6 +1,6 @@
 ---
 status: proposed
-date: 2026-07-20
+date: 2026-07-24
 jira: DMS-1245
 related:
   - DMS-1246
@@ -350,23 +350,28 @@ Database cache transitions and consumer-applied non-null upserts are monotonic, 
 stream is eventually convergent rather than linearizable to the canonical source at each
 cache commit. Raw Kafka delivery is at-least-once: duplicates and replays are allowed,
 including a lower-version replay after a higher version, and consumers apply the ordering
-rule above rather than treating delivery order alone as canonical-state order. Independently,
-a projector may coherently materialize version 10, complete its final optimistic source
-check, a canonical writer may commit version 11, and the version-10 cache upsert may then
-commit and publish before reconciliation publishes version 11. The database upsert never
-lets version 10 replace an already cached version 11. A consumer that has not yet observed
-version 11 may temporarily retain version 10; this is ordinary projection lag, not a
-contract violation. V1 consciously accepts that lag so optional projection does not take a
-write-conflicting source-row lock that can delay canonical writers.
+rule above rather than treating delivery order alone as canonical-state order.
+Independently, a projector transaction may validate and write version 10 while a concurrent
+canonical writer is preparing version 11. Provider serialization can commit the version-10
+cache transaction before or after the canonical version-11 transaction while preserving
+version-11 durable work. Durable work processing subsequently publishes version 11, and
+the monotonic cache upsert never lets version 10 replace an already cached version 11. A
+consumer that has not yet observed version 11 may temporarily retain version 10; this is
+ordinary projection lag, not a contract violation. V1 consciously accepts that lag so
+optional projection does not take a write-conflicting source-row lock that can delay
+canonical writers.
 
 Consequently, a lower `contentVersion` is never an in-place correction for a higher value
-already observed on the topic. If projection health detects
-`DocumentCache.ContentVersion > Document.ContentVersion` and that higher cache value may
-have been published, v1 fences publication and keeps the cache-ahead latch set. Safe
-recovery would require a new binding generation, topic, consumer state namespace, and
-snapshot, but that baseline-replacing workflow is deferred from v1. Internal-only
-projections whose rows cannot have been observed downstream may instead clear the full cache
-and latch in one transaction and rebuild from canonical state.
+already observed on the topic. If current worker classification or an explicit integrity
+scrub detects `DocumentCache.ContentVersion > Document.ContentVersion`, it sets the
+cache-ahead latch. Projection health observes that latch; it does not discover the
+relationship through a routine scan. If the higher cache value may have been published,
+v1 fences publication and keeps the latch set. Safe recovery would require a new binding
+generation, topic, consumer state namespace, and snapshot, but that baseline-replacing
+workflow is deferred from v1. Internal-only projections whose rows cannot have been
+observed downstream may instead use the restart-safe `Resetting -> Rebuilding` recovery
+workflow to clear cache and work, clear the latch only at the rebuilt-state boundary, and
+seed fresh durable work from canonical state.
 
 ## V1 Compatibility and Corrective Republishes
 
@@ -453,10 +458,14 @@ configurable mapping language.
 1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
    internal heartbeat singleton for source-position progress.
 2. Inspect the original Debezium source table and operation before discarding the
-   envelope. Retain `dms.CdcHeartbeat` table operations and Debezium heartbeat records as
-   internal progress records; accept cache create, update, and snapshot/read records as
-   public upserts; accept canonical document deletes as authoritative public deletes; and
-   intentionally drop every other captured operation.
+   envelope. Retain Debezium heartbeat records as internal progress. For relational
+   records, reject every unexpected source table, including
+   `dms.DocumentProjectionWork`, which provider capture and connector include lists must
+   already exclude. Among the three recognized relational sources, retain
+   `dms.CdcHeartbeat` operations as internal progress records; accept cache create,
+   update, and snapshot/read records as public upserts; accept canonical document deletes
+   as authoritative public deletes; and intentionally drop every other recognized source
+   operation.
 3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
    `D`-format text, and use it for both upserts and authoritative tombstones.
 4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
@@ -484,14 +493,15 @@ configurable mapping language.
 
 The transform consumes schema-backed raw Debezium records and emits only one of three
 classes of result: a final public upsert or tombstone, an internal progress record, or no
-record. Expected excluded operations are dropped; a malformed retained record, unexpected
-source shape, invalid `DocumentJson`, inconsistent embedded metadata, or unsupported
-temporal logical type fails transformation rather than publishing a partial or ambiguous
-record. Because the connector pins `errors.tolerance=none`, that failure stops the connector
-task instead of skipping the record. A failed task makes combined readiness false; offset
-or lag observations cannot reclassify it as caught up. Recovery requires correcting the
-cause and restarting or replacing the connector so the retained record is processed under
-the contract. Returning `null` for an explicitly excluded operation remains normal
+record. Expected excluded operations from a recognized source are dropped. An unexpected
+source table, malformed retained record, invalid `DocumentJson`, inconsistent embedded
+metadata, or unsupported temporal logical type fails transformation rather than
+publishing a partial or ambiguous record. Because the connector pins
+`errors.tolerance=none`, that failure stops the connector task instead of skipping the
+record. A failed task makes combined readiness false; offset or lag observations cannot
+reclassify it as caught up. Recovery requires correcting the cause and restarting or
+replacing the connector so the retained record is processed under the contract. Returning
+`null` for an explicitly excluded operation on a recognized source remains normal
 transform behavior and does not use the error-tolerance path; readiness never depends on
 such a record advancing the committed source offset.
 
@@ -558,6 +568,7 @@ The public topic never exposes:
 - JSON-quoted keys or escaped `DocumentJson`,
 - internal `DocumentId`, the source-only `StreamEtag` column name, or operational
   `ComputedAt`,
+- projection-work rows or fields, lifecycle state, or the cache-ahead recovery latch,
 - Avro, Protobuf, or Schema Registry subjects,
 - legacy `EdFiDoc` or `deleted=true` shapes.
 

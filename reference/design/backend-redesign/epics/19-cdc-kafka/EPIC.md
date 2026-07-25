@@ -22,8 +22,10 @@ stories own the executable acceptance evidence for those contracts.
 
 ## Outcome
 
-Deliver the relational CDC/Kafka integration, its provider and connector tooling,
-verification, local/E2E setup, and operator documentation through the story set below.
+Deliver relational CDC/Kafka over a transactionally complete, queue-driven document
+projection. Initial CDC admission composes projection caught-up status with the provider
+heartbeat barrier while write admission is closed; later queue growth is observational
+and never couples normal API readiness to projection drain.
 
 ## Stories
 
@@ -49,6 +51,8 @@ implementation inputs.
   copying design requirements into epic or story text.
 - The evidence owned by the stories passes in the supported connector-image, provider,
   broker-backed, contract, E2E, and operational test layers.
+- Work-table changes are excluded from provider capture, connector include lists, public
+  messages, and progress records.
 - Operator documentation is checked against the shipped tooling and links back to the
   owning design sections for behavior.
 

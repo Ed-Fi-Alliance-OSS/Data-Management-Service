@@ -34,6 +34,9 @@ Connect plugin without changing the completed generic transform.
 - Add the transform class and its small typed configuration surface.
 - Add provider-record adapters, routing, validation, serialization, and fixed non-null
   progress-key normalization for every retained heartbeat shape.
+- Preserve the public transform shape: projection work has no transform record type.
+  Provider fixtures fail closed if an unexpected `DocumentProjectionWork` record reaches
+  the transform.
 - Package the transform in the qualified Ed-Fi Kafka Connect image.
 - Retain regression coverage for the existing generic transform.
 

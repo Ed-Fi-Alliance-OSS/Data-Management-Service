@@ -28,7 +28,27 @@ guidance.
 ## Implementation Scope
 
 - Add cross-story PostgreSQL and SQL Server fixtures for the completed projection feature.
-- Add restart, failure, recovery, rebuild, and mixed-target scenarios.
+- Cover transactional set-based enqueue, forced enqueue failure with complete canonical
+  rollback, complete-transaction deadlock retry, least-privilege trigger execution,
+  direct-work-DML denial, disabled writes, projector-stopped writes, cascades, descriptors,
+  restamp, SQL Server nested-trigger fail-closed stamping, and guarded new-empty activation
+  including racing inserts.
+- Cover current source/cache/work classification, stale-candidate suppression,
+  candidate-independent `S = C = W` acknowledgement, cache-ahead-only latching, blocked
+  work mismatches, conditional scrub/rebuild-page repair, enqueue/ack races, delete,
+  direct fill, multiple workers, and crash windows.
+- Cover fair poison traversal, restart without source scan, long outage, offline
+  activation/deactivation, online rebuild, administrative exclusion/session loss,
+  `Resetting` crashes, operation-specific bounded clearing, internal-only cache-ahead
+  recovery, rejection and evidence preservation when publication is possible or
+  uncertain, rejection of simple toggles for active/historical downstream state, explicit
+  scrub, concurrent baseline deletes, and poison failures exhausting seeding capacity.
+- Qualify interrupted baseline/rebuild restart from the beginning at representative scale
+  against predefined completion-time, database-load, and repeated queue-DML/write-
+  amplification limits. If a limit fails, create the durable-baseline-cursor ticket and
+  make it a production prerequisite.
+- Prove operational-health/caught-up/oldest-work observations use no source scan at scale
+  and that projection failure/backlog never gates canonical API routing.
 - Publish operation and troubleshooting guidance for the shipped commands, configuration,
   status, and telemetry.
 - Cross-link E19 procedures where connector or downstream state becomes relevant.
@@ -38,6 +58,11 @@ guidance.
 - The provider integration matrix covers every E18 `CDC-INV-*` contract assignment not
   already proven in a narrower story suite.
 - Runbook steps are exercised against the implemented commands and status output.
+- Runbooks explain persistent failure remediation, enqueue-vs-processing availability,
+  lifecycle mismatch, activation/deactivation, rebuild, scrub, reset recovery, and
+  provider-specific performance/maintenance evidence.
+- Runbooks require an explicit scrub after suspected restore or unsupported direct
+  mutation before operators rely on queue-empty caught-up status.
 - Runbooks link to the owning design sections for contracts, recovery constraints, and
   deferrals instead of copying them.
 

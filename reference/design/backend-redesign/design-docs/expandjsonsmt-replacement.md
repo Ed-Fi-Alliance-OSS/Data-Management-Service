@@ -54,7 +54,9 @@ The retired legacy backend stored several JSON fields, including `EdfiDoc`, auth
 arrays, and hierarchy data. The relational backend does not preserve that shape:
 
 - `dms.Document` is metadata-only;
-- `dms.DocumentCache.DocumentJson` is the projected caller-agnostic document JSON; and
+- `dms.DocumentCache.DocumentJson` is the projected caller-agnostic document JSON;
+- `dms.DocumentProjectionWork` is internal durable projector inventory excluded from
+  provider capture and connector include lists; and
 - authorization and EdOrg hierarchy state are relational rather than JSON fields in the
   streamed document.
 

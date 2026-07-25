@@ -112,6 +112,11 @@ consumer group management, and auditing, since each instance's data is fully
 separated at the topic level. This provides clear instance-based isolation at the
 Change Data Capture (CDC) level for 3rd party consumers.
 
+The current relational CDC design publishes cache upserts and canonical deletes to this
+instance topic. Its internal per-database `dms.DocumentProjectionWork` inventory is never
+captured or published, so queue activity introduces no cross-instance Kafka routing or
+consumer contract.
+
 ### Shared topic with tenant/instance filtering (least desirable)
 
 An alternative model would consolidate messages for all instances into a single
