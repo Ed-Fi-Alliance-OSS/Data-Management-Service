@@ -208,10 +208,13 @@ pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1
 pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile '.env.e2e'
 ```
 
-The wrapper delegates to the project-scoped `start-local-dms.ps1 -d -v` primitive: the
-`dms-local` Docker Compose project is the sole authority for which containers, networks, and
-volumes are removed, and only the two known locally-built images are additionally removed by
-exact name. It never touches unrelated containers, volumes, or databases.
+The wrapper delegates to the project-scoped `start-local-dms.ps1 -d -v` and
+`start-published-dms.ps1 -d -v` primitives, so it cleans up both the `dms-local` project and the
+`dms-published` project that `E2ETest -UsePublishedImage` creates, without needing to be told
+which image mode ran (a down for a project the run never created is a no-op). Those Docker
+Compose projects are the sole authority for which containers, networks, and volumes are removed,
+and only the two known locally-built images are additionally removed by exact name. It never
+touches unrelated containers, volumes, or databases.
 
 > [!TIP]
 > Switching branches or changing DMS debugging code invalidates the running stack. Tear down

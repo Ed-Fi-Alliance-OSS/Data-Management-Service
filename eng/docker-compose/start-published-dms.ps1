@@ -275,8 +275,12 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "kafka.yml")
     }
 
-    if ($IdentityProvider -eq "keycloak") {
-        # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
+    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full
+    # environment. Teardown (-d) always includes it: the identity provider is resolved from the
+    # environment file, which need not name the provider the running stack was started with, and a
+    # compose file left out of the down set takes its named volume (dms-keycloak) with it, leaking
+    # <project>_dms-keycloak past `down -v`.
+    if ($d -or $IdentityProvider -eq "keycloak") {
         $files += @("-f", "keycloak.yml")
     }
 

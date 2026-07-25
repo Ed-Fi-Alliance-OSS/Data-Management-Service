@@ -9,15 +9,21 @@
 .DESCRIPTION
     Provides a single, safe teardown path shared by the standard DMS E2E and Instance
     Management E2E suites. Teardown delegates to the project-scoped
-    `start-local-dms.ps1 -d -v -DatabaseEngine <postgresql|mssql>` primitive, which composes
-    the engine-correct compose set and runs `docker compose ... -p dms-local down --remove-orphans -v`.
-    The compose project (`dms-local`) is the sole authority for which containers, networks, and
-    volumes are removed; this module never enumerates or removes resources by dangling state, by
+    `-d -v -DatabaseEngine <postgresql|mssql>` primitives, which compose the engine-correct
+    compose set and run `docker compose ... -p <project> down --remove-orphans -v`. Both
+    primitives run on every teardown, one per compose project an E2E run can create:
+    start-local-dms.ps1 owns `dms-local` and start-published-dms.ps1 owns `dms-published`
+    (created by `build-dms.ps1 E2ETest -UsePublishedImage`). A `down` for a project that the run
+    never created is a successful no-op, so covering both is what makes teardown complete in
+    either image mode rather than leaving the other mode's stack and volumes running.
+
+    The compose projects are the sole authority for which containers, networks, and volumes are
+    removed; this module never enumerates or removes resources by dangling state, by
     container-name pattern, by unprefixed volume name, or by removing the shared external `dms`
-    network. The only removals outside the compose project are the two known locally-built images,
+    network. The only removals outside the compose projects are the two known locally-built images,
     matched by their exact repository names so published and unrelated images are never touched.
 
-    Parameters are forwarded to the primitive by name (hashtable splatting), so switches such as
+    Parameters are forwarded to the primitives by name (hashtable splatting), so switches such as
     -d and -v bind as switches rather than positional argument strings.
 #>
 
@@ -28,12 +34,19 @@ Set-StrictMode -Version Latest
 # ghcr.io/*-ci images, or any unrelated image.
 $script:KnownLocalImageNames = @('ed-fi-api-local', 'ed-fi-api-config-local')
 
+# One project-scoped teardown primitive per compose project an E2E run can create: start-local-dms.ps1
+# owns `dms-local` and start-published-dms.ps1 owns `dms-published`. Teardown runs both because the
+# suite wrappers are not told which image mode the run used, and a `down` for an absent project
+# succeeds as a no-op.
+$script:TeardownPrimitiveScripts = @('start-local-dms.ps1', 'start-published-dms.ps1')
+
 function Get-E2ETeardownPlan {
     <#
     .SYNOPSIS
-        Builds the teardown plan (primitive path, named parameters, and known local images) for
-        the selected engine and environment file. Pure except that it fails fast when the selected
-        environment file does not exist. No Docker or filesystem mutation.
+        Builds the teardown plan (one step per compose project, with its primitive path and named
+        parameters, plus the known local images) for the selected engine and environment file. Pure
+        except that it fails fast when the selected environment file does not exist. No Docker or
+        filesystem mutation.
     #>
     [CmdletBinding()]
     param(
@@ -65,31 +78,43 @@ function Get-E2ETeardownPlan {
         throw "E2E teardown environment file not found: '$environmentFilePath'. Pass -EnvironmentFile with the file the suite setup used (resolved against '$resolvedComposeRoot')."
     }
 
+    # Named parameters for the project-scoped teardown primitives. Splatted as a hashtable so
+    # -d / -v / -RemoveBootstrap bind as switches. -RemoveBootstrap clears the .bootstrap
+    # workspace only after a successful down (the primitive gates it), so a subsequent setup
+    # does not trip fingerprint-mismatch fail-fast.
+    $startParameters = @{
+        d               = $true
+        v               = $true
+        DatabaseEngine  = $DatabaseEngine
+        EnvironmentFile = $environmentFilePath
+        RemoveBootstrap = $true
+    }
+
     [pscustomobject]@{
         DatabaseEngine       = $DatabaseEngine
         ComposeRoot          = $resolvedComposeRoot
         EnvironmentFilePath  = $environmentFilePath
-        StartScript          = Join-Path $resolvedComposeRoot 'start-local-dms.ps1'
-        # Named parameters for the project-scoped teardown primitive. Splatted as a hashtable so
-        # -d / -v / -RemoveBootstrap bind as switches. -RemoveBootstrap clears the .bootstrap
-        # workspace only after a successful down (the primitive gates it), so a subsequent setup
-        # does not trip fingerprint-mismatch fail-fast.
-        StartParameters      = @{
-            d               = $true
-            v               = $true
-            DatabaseEngine  = $DatabaseEngine
-            EnvironmentFile = $environmentFilePath
-            RemoveBootstrap = $true
-        }
+        # Every compose project is torn down with the same engine, environment file, and switches.
+        # Each step gets its own parameter copy so a caller inspecting or adjusting one step cannot
+        # silently change another.
+        TeardownSteps        = @(
+            foreach ($primitiveScript in $script:TeardownPrimitiveScripts) {
+                [pscustomobject]@{
+                    StartScript     = Join-Path $resolvedComposeRoot $primitiveScript
+                    StartParameters = $startParameters.Clone()
+                }
+            }
+        )
         KnownLocalImageNames = $script:KnownLocalImageNames
     }
 }
 
-function Invoke-StartLocalDmsTeardown {
+function Invoke-ComposeProjectTeardown {
     <#
     .SYNOPSIS
-        Invokes the project-scoped start-local-dms.ps1 teardown primitive with named parameters.
-        Isolated so tests can exercise the parameter binding against a fake primitive.
+        Invokes one project-scoped teardown primitive (start-local-dms.ps1 or
+        start-published-dms.ps1) with named parameters. Isolated so tests can exercise the
+        parameter binding against a fake primitive.
     #>
     [CmdletBinding()]
     param(
@@ -103,7 +128,8 @@ function Invoke-StartLocalDmsTeardown {
     & $StartScript @StartParameters
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Engine-aware teardown failed: start-local-dms.ps1 exited with code $LASTEXITCODE."
+        $primitiveName = [System.IO.Path]::GetFileName($StartScript)
+        throw "Engine-aware teardown failed: $primitiveName exited with code $LASTEXITCODE."
     }
 }
 
@@ -132,7 +158,8 @@ function Invoke-E2EEngineAwareTeardown {
     <#
     .SYNOPSIS
         Tears down an E2E suite's Docker environment safely: delegates to the project-scoped
-        start-local-dms.ps1 primitive, then removes only the two known locally-built images.
+        primitive for every compose project an E2E run can create, then removes only the two known
+        locally-built images.
     #>
     [CmdletBinding()]
     param(
@@ -150,7 +177,23 @@ function Invoke-E2EEngineAwareTeardown {
 
     $plan = Get-E2ETeardownPlan -DatabaseEngine $DatabaseEngine -EnvironmentFile $EnvironmentFile -ComposeRoot $ComposeRoot
 
-    Invoke-StartLocalDmsTeardown -StartScript $plan.StartScript -StartParameters $plan.StartParameters
+    # Attempt every compose project even when an earlier down fails, so one project's failure never
+    # leaves another project's containers and volumes running, then report the failures together.
+    # Image removal still waits until every down succeeded: an image in use by a surviving container
+    # cannot be removed anyway.
+    $teardownFailures = @()
+    foreach ($step in $plan.TeardownSteps) {
+        try {
+            Invoke-ComposeProjectTeardown -StartScript $step.StartScript -StartParameters $step.StartParameters
+        }
+        catch {
+            $teardownFailures += $_.Exception.Message
+        }
+    }
+
+    if ($teardownFailures.Count -gt 0) {
+        throw ($teardownFailures -join [System.Environment]::NewLine)
+    }
 
     if (-not $SkipLocalImageRemoval) {
         foreach ($imageName in $plan.KnownLocalImageNames) {
@@ -163,6 +206,6 @@ function Invoke-E2EEngineAwareTeardown {
 
 Export-ModuleMember -Function `
     Get-E2ETeardownPlan, `
-    Invoke-StartLocalDmsTeardown, `
+    Invoke-ComposeProjectTeardown, `
     Remove-KnownLocalImage, `
     Invoke-E2EEngineAwareTeardown

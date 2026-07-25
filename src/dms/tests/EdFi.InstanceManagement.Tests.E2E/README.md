@@ -167,9 +167,11 @@ pwsh ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1 -D
 pwsh ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile '.env.routeContext.e2e'
 ```
 
-The wrapper delegates to the project-scoped `start-local-dms.ps1 -d -v` primitive: the
-`dms-local` Compose project is the sole authority for removal (plus the two known locally-built
-images by exact name). It never removes unrelated containers, volumes, or databases.
+The wrapper delegates to the shared project-scoped teardown primitives (`start-local-dms.ps1 -d
+-v` and `start-published-dms.ps1 -d -v`): those Compose projects are the sole authority for
+removal (plus the two known locally-built images by exact name). This suite always runs
+locally-built images, so the `dms-published` down is an expected no-op here. It never removes
+unrelated containers, volumes, or databases.
 
 In addition, scenarios tagged `@InstanceCleanup` clean up their own scenario-owned applications,
 instances (including route contexts), and vendors after each scenario, while the suite-owned

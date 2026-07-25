@@ -7,12 +7,16 @@
 .SYNOPSIS
     Tears down the standard DMS E2E local Docker environment created by setup-local-dms.ps1.
 .DESCRIPTION
-    Thin, engine-aware wrapper over the shared, project-scoped teardown primitive
-    (start-local-dms.ps1 -d -v -DatabaseEngine <postgresql|mssql>). The compose project
-    (dms-local) is the sole authority for which containers, networks, and volumes are removed;
-    this script performs no machine-wide cleanup (no dangling-volume prune, no container-name
-    regex removal, no unprefixed volume removal, and no deletion of the shared external `dms`
-    network). Only the two known locally-built images are additionally removed, by exact name.
+    Thin, engine-aware wrapper over the shared, project-scoped teardown primitives
+    (start-local-dms.ps1 and start-published-dms.ps1, each -d -v -DatabaseEngine
+    <postgresql|mssql>). Both compose projects are torn down - dms-local for a locally-built run
+    and dms-published for `build-dms.ps1 E2ETest -UsePublishedImage` - so this wrapper cleans up
+    either image mode without being told which one ran; a down for an absent project is a
+    successful no-op. The compose projects are the sole authority for which containers, networks,
+    and volumes are removed; this script performs no machine-wide cleanup (no dangling-volume
+    prune, no container-name regex removal, no unprefixed volume removal, and no deletion of the
+    shared external `dms` network). Only the two known locally-built images are additionally
+    removed, by exact name.
 .PARAMETER DatabaseEngine
     Database engine the environment was started with. "postgresql" (default) or "mssql".
 .PARAMETER EnvironmentFile

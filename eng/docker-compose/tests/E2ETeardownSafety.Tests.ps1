@@ -4,12 +4,14 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # DMS-1284: the DMS E2E and Instance Management E2E suites tear down through one shared,
-# engine-aware primitive. Teardown must delegate to the project-scoped
-# `start-local-dms.ps1 -d -v -DatabaseEngine <postgresql|mssql>` down (with parameters bound BY
-# NAME, not positional array splatting) and must never reach for machine-wide cleanup
-# (dangling-volume prune, container-name regex removal, unprefixed volume removal, or deletion of
-# the shared external `dms` network). These tests invoke the module against a fake primitive and a
-# mocked Docker and assert on the actually bound parameters and behavior, not on script text.
+# engine-aware primitive set. Teardown must delegate to the project-scoped
+# `-d -v -DatabaseEngine <postgresql|mssql>` down of BOTH start-local-dms.ps1 (dms-local) and
+# start-published-dms.ps1 (dms-published, created by `E2ETest -UsePublishedImage`), with parameters
+# bound BY NAME rather than positional array splatting, and must never reach for machine-wide
+# cleanup (dangling-volume prune, container-name regex removal, unprefixed volume removal, or
+# deletion of the shared external `dms` network). These tests invoke the module against fake
+# primitives and a mocked Docker, and invoke the real primitives against a recording `docker`
+# function, so the assertions are on actually bound parameters and emitted commands, not script text.
 
 param()
 
@@ -30,27 +32,45 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
             Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.e2e") -Value "E2E_DATABASE_NAME=edfi_e2e"
         }
 
-        It "forwards the postgresql engine with -d -v -RemoveBootstrap as named switches" {
+        It "covers both compose projects: the local primitive then the published primitive" {
             $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
 
-            $plan.StartParameters.d | Should -BeTrue
-            $plan.StartParameters.v | Should -BeTrue
-            $plan.StartParameters.RemoveBootstrap | Should -BeTrue
-            $plan.StartParameters.DatabaseEngine | Should -Be "postgresql"
+            @($plan.TeardownSteps | ForEach-Object { [System.IO.Path]::GetFileName($_.StartScript) }) |
+                Should -Be @("start-local-dms.ps1", "start-published-dms.ps1")
         }
 
-        It "forwards the mssql engine" {
+        It "forwards the postgresql engine with -d -v -RemoveBootstrap as named switches to every project" {
+            $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
+
+            foreach ($step in $plan.TeardownSteps) {
+                $step.StartParameters.d | Should -BeTrue
+                $step.StartParameters.v | Should -BeTrue
+                $step.StartParameters.RemoveBootstrap | Should -BeTrue
+                $step.StartParameters.DatabaseEngine | Should -Be "postgresql"
+            }
+        }
+
+        It "forwards the mssql engine to every project" {
             $plan = Get-E2ETeardownPlan -DatabaseEngine mssql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
 
             $plan.DatabaseEngine | Should -Be "mssql"
-            $plan.StartParameters.DatabaseEngine | Should -Be "mssql"
+            @($plan.TeardownSteps | ForEach-Object { $_.StartParameters.DatabaseEngine }) | Should -Be @("mssql", "mssql")
         }
 
-        It "points at the start-local-dms.ps1 primitive in the compose root" {
+        It "points at primitives in the compose root" {
             $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
 
-            $plan.StartScript | Should -Match "start-local-dms\.ps1$"
-            [System.IO.Path]::GetDirectoryName($plan.StartScript) | Should -Be ([System.IO.Path]::GetFullPath($script:composeRoot))
+            foreach ($step in $plan.TeardownSteps) {
+                [System.IO.Path]::GetDirectoryName($step.StartScript) | Should -Be ([System.IO.Path]::GetFullPath($script:composeRoot))
+            }
+        }
+
+        It "gives every project its own parameter copy so adjusting one step cannot change another" {
+            $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
+
+            $plan.TeardownSteps[0].StartParameters.DatabaseEngine = "mssql"
+
+            $plan.TeardownSteps[1].StartParameters.DatabaseEngine | Should -Be "postgresql"
         }
 
         It "resolves the environment file to an absolute path under the compose root" {
@@ -58,7 +78,8 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
 
             [System.IO.Path]::IsPathRooted($plan.EnvironmentFilePath) | Should -BeTrue
             $plan.EnvironmentFilePath | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot ".env.e2e")))
-            $plan.StartParameters.EnvironmentFile | Should -Be $plan.EnvironmentFilePath
+            @($plan.TeardownSteps | ForEach-Object { $_.StartParameters.EnvironmentFile }) |
+                Should -Be @($plan.EnvironmentFilePath, $plan.EnvironmentFilePath)
         }
 
         It "fails fast when the selected environment file is absent (no silent fallback)" {
@@ -73,12 +94,12 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
         }
     }
 
-    Context "Invoke-E2EEngineAwareTeardown binds named parameters to the primitive" {
+    Context "Invoke-E2EEngineAwareTeardown binds named parameters to every primitive" {
         BeforeAll {
-            # A fake start-local-dms.ps1 with the same parameter names as the real primitive.
-            # It records the values it actually binds so the test proves named binding, not
-            # positional array splatting. ValidateSet on -DatabaseEngine would fail if a switch
-            # such as -d were bound positionally into it.
+            # Fake local and published primitives with the same parameter names as the real ones.
+            # Each records the values it actually binds, under its own name, so the tests prove named
+            # binding for both compose projects rather than positional array splatting. ValidateSet on
+            # -DatabaseEngine would fail if a switch such as -d were bound positionally into it.
             $script:composeRoot = Join-Path $TestDrive "docker-compose-bind"
             New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.e2e") -Value "E2E_DATABASE_NAME=edfi_e2e"
@@ -92,27 +113,32 @@ param(
     [string] $EnvironmentFile,
     [switch] $RemoveBootstrap
 )
+$boundFileName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath) + ".bound.json"
 [pscustomobject]@{
     d               = [bool]$d
     v               = [bool]$v
     DatabaseEngine  = $DatabaseEngine
     EnvironmentFile = $EnvironmentFile
     RemoveBootstrap = [bool]$RemoveBootstrap
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PSScriptRoot "bound-parameters.json")
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PSScriptRoot $boundFileName)
 exit 0
 '@
-            Set-Content -LiteralPath (Join-Path $script:composeRoot "start-local-dms.ps1") -Value $fakePrimitive
-            $script:boundParametersPath = Join-Path $script:composeRoot "bound-parameters.json"
+            $script:fakePrimitiveNames = @("start-local-dms", "start-published-dms")
+            foreach ($primitiveName in $script:fakePrimitiveNames) {
+                Set-Content -LiteralPath (Join-Path $script:composeRoot "$primitiveName.ps1") -Value $fakePrimitive
+            }
         }
 
         AfterEach {
-            Remove-Item -LiteralPath $script:boundParametersPath -Force -ErrorAction SilentlyContinue
+            foreach ($primitiveName in $script:fakePrimitiveNames) {
+                Remove-Item -LiteralPath (Join-Path $script:composeRoot "$primitiveName.bound.json") -Force -ErrorAction SilentlyContinue
+            }
         }
 
-        It "binds -d and -v as switches and forwards the mssql engine, environment file, and -RemoveBootstrap" {
+        It "binds -d and -v as switches and forwards the mssql engine, environment file, and -RemoveBootstrap to <_>" -ForEach @("start-local-dms", "start-published-dms") {
             Invoke-E2EEngineAwareTeardown -DatabaseEngine mssql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot -SkipLocalImageRemoval | Out-Null
 
-            $bound = Get-Content -LiteralPath $script:boundParametersPath -Raw | ConvertFrom-Json
+            $bound = Get-Content -LiteralPath (Join-Path $script:composeRoot "$_.bound.json") -Raw | ConvertFrom-Json
             $bound.d | Should -BeTrue
             $bound.v | Should -BeTrue
             $bound.RemoveBootstrap | Should -BeTrue
@@ -120,10 +146,10 @@ exit 0
             $bound.EnvironmentFile | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot ".env.e2e")))
         }
 
-        It "binds the postgresql engine by name" {
+        It "binds the postgresql engine by name to <_>" -ForEach @("start-local-dms", "start-published-dms") {
             Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot -SkipLocalImageRemoval | Out-Null
 
-            $bound = Get-Content -LiteralPath $script:boundParametersPath -Raw | ConvertFrom-Json
+            $bound = Get-Content -LiteralPath (Join-Path $script:composeRoot "$_.bound.json") -Raw | ConvertFrom-Json
             $bound.DatabaseEngine | Should -Be "postgresql"
             $bound.d | Should -BeTrue
             $bound.v | Should -BeTrue
@@ -138,8 +164,8 @@ exit 0
         }
 
         BeforeEach {
-            # Mock the primitive so no real stack is torn down; capture the forwarded parameters.
-            Mock -ModuleName e2e-teardown Invoke-StartLocalDmsTeardown { }
+            # Mock the primitives so no real stack is torn down; capture the forwarded parameters.
+            Mock -ModuleName e2e-teardown Invoke-ComposeProjectTeardown { }
 
             # Seed Docker discovery with UNRELATED resources so the assertions prove the wrapper
             # never enumerates or removes anything beyond the compose project + the two known images.
@@ -159,16 +185,39 @@ exit 0
             }
         }
 
-        It "delegates teardown to the project-scoped primitive with the selected engine and environment" {
+        It "delegates teardown of <_> to the project-scoped primitive with the selected engine and environment" -ForEach @("start-local-dms", "start-published-dms") {
+            $primitivePattern = "$([regex]::Escape($_))\.ps1$"
+
             Invoke-E2EEngineAwareTeardown -DatabaseEngine mssql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot | Out-Null
 
-            Should -Invoke -ModuleName e2e-teardown Invoke-StartLocalDmsTeardown -Times 1 -Exactly -ParameterFilter {
-                ($StartScript -match "start-local-dms\.ps1$") -and
+            Should -Invoke -ModuleName e2e-teardown Invoke-ComposeProjectTeardown -Times 1 -Exactly -ParameterFilter {
+                ($StartScript -match $primitivePattern) -and
                 ($StartParameters.d -eq $true) -and
                 ($StartParameters.v -eq $true) -and
                 ($StartParameters.RemoveBootstrap -eq $true) -and
                 ($StartParameters.DatabaseEngine -eq "mssql") -and
                 ($StartParameters.EnvironmentFile -match "\.env\.e2e$")
+            }
+        }
+
+        It "tears down exactly the two known compose projects and nothing else" {
+            Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot | Out-Null
+
+            Should -Invoke -ModuleName e2e-teardown Invoke-ComposeProjectTeardown -Times 2 -Exactly
+        }
+
+        It "still tears down the published project when the local project's down fails, then reports the failure" {
+            Mock -ModuleName e2e-teardown Invoke-ComposeProjectTeardown {
+                if ($StartScript -match "start-local-dms\.ps1$") {
+                    throw "Engine-aware teardown failed: start-local-dms.ps1 exited with code 1."
+                }
+            }
+
+            { Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot } |
+                Should -Throw -ExpectedMessage "*start-local-dms.ps1 exited with code 1*"
+
+            Should -Invoke -ModuleName e2e-teardown Invoke-ComposeProjectTeardown -Times 1 -Exactly -ParameterFilter {
+                $StartScript -match "start-published-dms\.ps1$"
             }
         }
 
@@ -227,5 +276,66 @@ exit 0
             { Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot } |
                 Should -Throw -ExpectedMessage "*ed-fi-api-local*"
         }
+    }
+}
+
+Describe "Teardown down set keeps every volume-bearing compose file" {
+    BeforeAll {
+        $script:realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $script:standardE2EEnvironmentFile = Join-Path $script:realComposeRoot ".env.e2e"
+
+        # `docker compose down -v` removes the named volumes of the services in the composed set only,
+        # so a compose file omitted from the down set takes its volumes with it. Teardown resolves the
+        # identity provider from the environment file, which need not name the provider the running
+        # stack was started with, so the down set must not gate keycloak.yml on that value.
+        #
+        # The real primitive is invoked in a child pwsh with `docker` replaced by a recording
+        # function, so the assertion is on the command the script actually emits rather than on its
+        # source text, and no Docker resource is touched. The function has no param block, so flags
+        # such as -p reach $args instead of binding to PowerShell common parameters. A child process
+        # keeps the primitive's process-environment writes out of this Pester session.
+        $script:captureScript = Join-Path $TestDrive "capture-teardown-compose-set.ps1"
+        Set-Content -LiteralPath $script:captureScript -Value @'
+param(
+    [Parameter(Mandatory)] [string] $StartScript,
+    [Parameter(Mandatory)] [string] $EnvironmentFile,
+    [Parameter(Mandatory)] [string] $LogPath
+)
+
+$ErrorActionPreference = "Stop"
+
+function docker {
+    Add-Content -LiteralPath $env:DMS_TEARDOWN_CAPTURE_LOG -Value (($args | ForEach-Object { $_ }) -join " ")
+    $global:LASTEXITCODE = 0
+}
+
+$env:DMS_TEARDOWN_CAPTURE_LOG = $LogPath
+& $StartScript -d -v -EnvironmentFile $EnvironmentFile
+'@
+    }
+
+    It "keeps the standard E2E environment file on self-contained identity (precondition)" {
+        Get-Content -LiteralPath $script:standardE2EEnvironmentFile |
+            Should -Contain "DMS_CONFIG_IDENTITY_PROVIDER=self-contained"
+    }
+
+    It "includes keycloak.yml in the <Project> down set even when the environment file selects self-contained identity" -ForEach @(
+        @{ Primitive = "start-local-dms.ps1"; Project = "dms-local" }
+        @{ Primitive = "start-published-dms.ps1"; Project = "dms-published" }
+    ) {
+        $logPath = Join-Path $TestDrive "$Project-down.log"
+        Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+
+        & pwsh -NoProfile -File $script:captureScript `
+            -StartScript (Join-Path $script:realComposeRoot $Primitive) `
+            -EnvironmentFile $script:standardE2EEnvironmentFile `
+            -LogPath $logPath | Out-Null
+
+        $LASTEXITCODE | Should -Be 0 -Because "the teardown path must complete against the recorded Docker"
+        $downCommands = @(Get-Content -LiteralPath $logPath | Where-Object { $_ -match " -p $Project down" })
+        $downCommands.Count | Should -Be 1 -Because "teardown issues exactly one project-scoped down"
+        $downCommands[0] | Should -Match "down --remove-orphans -v$" -Because "teardown removes the project's volumes"
+        $downCommands[0] | Should -Match "-f keycloak\.yml" `
+            -Because "keycloak.yml carries the dms-keycloak named volume, so omitting it leaks ${Project}_dms-keycloak past down -v"
     }
 }
