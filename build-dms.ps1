@@ -437,8 +437,7 @@ function Invoke-WithE2ETestProcessContext {
         $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
         # Engine and the two opaque connection strings for the C# harness (host-side admin/reset
         # access and the Docker-network registration string). The values contain secrets and are set
-        # into the environment only; they are never written to host output. Unit 3 makes the C#
-        # consumers read them.
+        # into the environment only; they are never written to host output.
         $env:AppSettings__DatabaseEngine = $E2ETestSettings.DatabaseEngine
         $env:AppSettings__DataStoreAdminConnectionString = $E2ETestSettings.DataStoreAdminConnectionString
         $env:AppSettings__DataStoreConnectionString = $E2ETestSettings.DataStoreConnectionString

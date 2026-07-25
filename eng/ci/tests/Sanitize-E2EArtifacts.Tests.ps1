@@ -172,6 +172,75 @@ DMS_DATASTORE=mssql
         $result | Should -Match "DMS_DATASTORE=mssql"
     }
 
+    It "redacts an underscore-prefixed credential name that appears mid-line in a timestamped diagnostic" {
+        # A log line prefixes the pair with a timestamp/level and can carry trailing text, so the rule
+        # cannot be line-anchored. The form-credential rule cannot cover this shape either: its \b never
+        # matches the boundary between '_' and 'secret', both word characters.
+        $result = Get-SanitizedText -Text "14:02:03 INFO resolved DMS_CONFIG_IDENTITY_CLIENT_SECRET=Aa1!MidLineSecretValue for the config client"
+
+        $result | Should -Not -Match "Aa1!MidLineSecretValue"
+        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "14:02:03 INFO resolved"
+        $result | Should -Match "for the config client"
+    }
+
+    # PASSWORD-suffixed names are already covered mid-line by the (unanchored) connection-string rule,
+    # whose bare value intentionally runs past spaces to the ';' terminator; these are the suffixes only
+    # the env-secret rule covers, and its value stops at whitespace so following prose is preserved.
+    It "redacts a mid-line <Name> secret and preserves the text after the value" -ForEach @(
+        @{ Name = "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
+        @{ Name = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+        @{ Name = "SOME_SERVICE_ACCESS_TOKEN" }
+    ) {
+        $result = Get-SanitizedText -Text "starting stack with $Name=PLACEHOLDER_MIDLINE_VALUE and continuing"
+
+        $result | Should -Not -Match "PLACEHOLDER_MIDLINE_VALUE"
+        $result | Should -Match "$Name=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "and continuing"
+    }
+
+    It "keeps a longer benign name from being partially matched as a credential name" {
+        $text = "PGPASSWORDFILE_PATH=/tmp/pgpass MY_KEYSTORE_PATH=/tmp/keystore"
+
+        Get-SanitizedText -Text $text | Should -Be $text
+    }
+
+    It "redacts a bare connection-string password inside single-line TRX markup without consuming the closing tag" {
+        # The bare (unquoted) value runs to the ';' terminator or end of line. In a single-line TRX the
+        # element body is followed immediately by the closing tag, so the value must stop at '<' or the
+        # sanitized artifact is malformed XML and the test reporter cannot parse it.
+        $result = Get-SanitizedText -Text '<Output><StdErr>login failed for Server=dms-mssql,1433;Password=Aa1!TrxBareSecret</StdErr></Output>'
+
+        $result | Should -Not -Match "Aa1!TrxBareSecret"
+        $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match ([regex]::Escape("</StdErr></Output>"))
+    }
+
+    It "redacts a form-encoded credential inside single-line TRX markup without consuming the closing tag" {
+        $result = Get-SanitizedText -Text '<Output><StdOut>token request: grant_type=client_credentials&client_secret=Aa1!TrxFormSecret</StdOut></Output>'
+
+        $result | Should -Not -Match "Aa1!TrxFormSecret"
+        $result | Should -Match "client_secret=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "grant_type=client_credentials"
+        $result | Should -Match ([regex]::Escape("</StdOut></Output>"))
+    }
+
+    It "redacts an Authorization header inside single-line TRX markup without consuming the closing tag" {
+        $result = Get-SanitizedText -Text '<Output><StdOut>Authorization: Bearer eyJhbGciTrxHeaderToken.payload.signature</StdOut></Output>'
+
+        $result | Should -Not -Match "eyJhbGciTrxHeaderToken"
+        $result | Should -Match "Authorization: Bearer \*\*\*REDACTED\*\*\*"
+        $result | Should -Match ([regex]::Escape("</StdOut></Output>"))
+    }
+
+    It "redacts a secret inside a single-line TRX attribute without consuming the closing attribute quote" {
+        $result = Get-SanitizedText -Text '<UnitTestResult testName="It reports MSSQL_SA_PASSWORD=Aa1!TrxAttrSecret" outcome="Failed" />'
+
+        $result | Should -Not -Match "Aa1!TrxAttrSecret"
+        $result | Should -Match "MSSQL_SA_PASSWORD=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match ([regex]::Escape('" outcome="Failed" />'))
+    }
+
     It "redacts the ConnectionStrings__MssqlAdmin secret written to GITHUB_ENV" {
         $result = Get-SanitizedText -Text "ConnectionStrings__MssqlAdmin=Server=localhost,1433;User Id=sa;Password=Aa1!ghenvsecret;TrustServerCertificate=true;"
 

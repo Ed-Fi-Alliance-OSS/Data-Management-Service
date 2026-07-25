@@ -47,12 +47,17 @@ $script:RedactionRules = @(
     # quote does not terminate the match early and leak the remainder, stopping only at a single
     # (undoubled) closing delimiter. The bare (unquoted) alternative runs to the real ';' terminator
     # (or end of line): commas and spaces are legal inside an unquoted ADO.NET value, so stopping at a
-    # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. The
-    # whole matched span is redacted so the enclosed secret is not left behind; a following key/value
-    # after the real delimiter is preserved.
+    # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. It
+    # stops short of '<' and '"' so a bare value inside single-line XML (a TRX element body or
+    # attribute) cannot consume the closing tag or attribute quote and leave the document malformed for
+    # the test reporter. Inside XML that costs nothing - a literal '<' arrives escaped and a value
+    # carrying '"' is quoted, so both are matched by the other alternatives - and in plain text it
+    # trades a truncated redaction of a '<'-bearing bare password against publishing an unparseable
+    # TRX. The whole matched span is redacted so the enclosed secret is not left behind; a following
+    # key/value after the real delimiter is preserved.
     [pscustomobject]@{
         Name        = "connection-string-password"
-        Pattern     = "(?i)((?:password|pwd)\s*=\s*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;\r\n]+)"
+        Pattern     = "(?i)((?:password|pwd)\s*=\s*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;""<\r\n]+)"
         Replacement = "`${1}$($script:RedactionMarker)"
     },
     # JSON string values for credential-bearing property names.
@@ -61,16 +66,20 @@ $script:RedactionRules = @(
         Pattern     = "(?i)(""(?:password|secret|client_?secret|client_?key|clientkey|clientsecret|access_?token|refresh_?token|token|api_?key|encryption_?key)""\s*:\s*"")([^""]*)("")"
         Replacement = "`${1}$($script:RedactionMarker)`${3}"
     },
-    # Form-encoded / query-string credential parameters.
+    # Form-encoded / query-string credential parameters. Like the connection-string and env-secret
+    # rules, the value stops short of '<' and '>' so a pair logged inside single-line XML cannot
+    # consume the closing tag and leave the sanitized TRX unparseable for the test reporter.
     [pscustomobject]@{
         Name        = "form-credential"
-        Pattern     = "(?i)(\b(?:password|client_secret|secret|access_token|refresh_token|token|api_?key)=)([^&\s;""'\r\n]+)"
+        Pattern     = "(?i)(\b(?:password|client_secret|secret|access_token|refresh_token|token|api_?key)=)([^&\s;""'<>\r\n]+)"
         Replacement = "`${1}$($script:RedactionMarker)"
     },
-    # Authorization headers (Bearer / Basic).
+    # Authorization headers (Bearer / Basic). The token carries no whitespace and no markup, so the
+    # value class excludes '<' and '>' rather than taking every non-space character, which would
+    # swallow a closing tag when a header is echoed inside single-line XML.
     [pscustomobject]@{
         Name        = "authorization-header"
-        Pattern     = "(?i)(Authorization\s*:\s*(?:Bearer|Basic)\s+)(\S+)"
+        Pattern     = "(?i)(Authorization\s*:\s*(?:Bearer|Basic)\s+)([^\s""<>\r\n]+)"
         Replacement = "`${1}$($script:RedactionMarker)"
     },
     # Bare bearer tokens that appear outside a header (e.g. logged token values).
@@ -80,10 +89,18 @@ $script:RedactionRules = @(
         Replacement = "`${1}$($script:RedactionMarker)"
     },
     # Environment-variable-style secrets: any NAME ending in PASSWORD/SECRET/TOKEN/KEY = value.
+    # Deliberately not line-anchored: the same NAME=value pair appears mid-line in timestamped and
+    # prefixed diagnostics (`14:02:03 INFO DMS_CONFIG_IDENTITY_CLIENT_SECRET=...`) and with trailing
+    # text after the value, neither of which an anchored rule matches. This rule is also what covers
+    # underscore-prefixed credential names (`..._CLIENT_SECRET=`): the form-credential rule's \b cannot
+    # match a key boundary made of '_', which is a word character. The preceding character is captured
+    # rather than consumed so the match cannot start inside a longer name, and the value class keeps ';'
+    # and ',' (legal in a secret) while excluding whitespace, '"', '<' and '>' so a value inside
+    # single-line XML stops before markup instead of swallowing a closing tag or attribute quote.
     [pscustomobject]@{
         Name        = "env-secret"
-        Pattern     = "(?im)^(\s*[A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)\s*=\s*)(\S+)$"
-        Replacement = "`${1}$($script:RedactionMarker)"
+        Pattern     = "(?im)(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)\s*=\s*)([^\s""<>\r\n]+)"
+        Replacement = "`${1}`${2}$($script:RedactionMarker)"
     },
     # Bracketed PowerShell key/value credential output, e.g. build-dms.ps1 CMS-bootstrap logging that
     # renders a dictionary entry as `[ClientSecret, <value>]`. Key-anchored to the credential key set so

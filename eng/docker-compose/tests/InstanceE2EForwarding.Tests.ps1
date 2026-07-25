@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# DMS-1284 unit 4: the Instance Management E2E orchestration threads the engine and resolved
+# The Instance Management E2E orchestration threads the engine and resolved
 # environment, provisions the three route-context databases in a fixed order, registers a suite-owned
 # CMS fixture, restarts DMS exactly once after registration, and runs the routed tests inside a
 # test-process context. These tests AST-extract the build-dms.ps1 orchestration functions and invoke

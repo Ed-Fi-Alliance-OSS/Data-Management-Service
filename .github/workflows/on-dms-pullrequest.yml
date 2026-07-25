@@ -2238,8 +2238,8 @@ jobs:
 
   # SQL Server Instance Management E2E lane. Mirrors run-instance-management-e2e-tests but drives the
   # suite-owned fixture against the MSSQL engine (-DatabaseEngine mssql). -EnvironmentFile is omitted
-  # so the InstanceE2ETest default resolves the tracked eng/docker-compose/.env.routeContext.e2e
-  # (DMS1284-U6-P1), exercising that default in CI. The stack is relational-only (no Kafka / OpenSearch).
+  # so the InstanceE2ETest default resolves the tracked eng/docker-compose/.env.routeContext.e2e,
+  # exercising that default in CI. The stack is relational-only (no Kafka / OpenSearch).
   # An always()-guarded engine-correct teardown runs regardless of outcome, and diagnostic artifacts are
   # sanitized before any upload or report.
   run-instance-management-e2e-tests-mssql:
@@ -2342,7 +2342,7 @@ jobs:
         run: |
           # Build script handles Docker environment setup, database configuration, and test execution.
           # -EnvironmentFile is intentionally omitted so the InstanceE2ETest default resolves the tracked
-          # eng/docker-compose/.env.routeContext.e2e (DMS1284-U6-P1). The full build-dms.ps1
+          # eng/docker-compose/.env.routeContext.e2e. The full build-dms.ps1
           # setup/provisioning/test output is captured to a per-job diagnostic FILE ONLY (never streamed to
           # the console; build-dms.ps1 emits credentials during CMS bootstrap). Running build-dms.ps1 in a
           # CHILD pwsh confines its Invoke-Main `exit` to the child and returns control to the live
