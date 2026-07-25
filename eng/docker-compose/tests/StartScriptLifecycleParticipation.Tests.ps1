@@ -403,7 +403,16 @@ Describe "Published preflight rejects an invalid separate-topology replacement b
 # into $input without advanced-parameter binding, which an advanced param would reject cross-platform with
 # "The input object cannot be bound to any parameters". Consume $input, then emit the canned result.
 $null = @($input)
-Write-Output '{"valid":true,"database":"edfi_configurationservice"}'
+# The verb determines the shape: 'connection inspect' additionally carries the non-secret host/port/username
+# and the endpoint classification the endpoint-locality check reads (a local single host at the container
+# port); 'connection validate' returns only { valid, database }. Both stand in for the real api-schema-tools
+# verb (exercised end to end by the provider-oracle and distribution suites).
+if ($args -contains 'inspect') {
+    Write-Output '{"valid":true,"database":"edfi_configurationservice","host":"dms-postgresql","port":5432,"username":"postgres","error":null,"endpoint":{"kind":"singleHost","protocol":"tcp","host":"dms-postgresql","port":5432,"instance":null,"hasAlternateRouting":false}}'
+}
+else {
+    Write-Output '{"valid":true,"database":"edfi_configurationservice"}'
+}
 exit 0
 '@ | Set-Content -LiteralPath $script:preflightValidator -Encoding utf8
 
@@ -613,7 +622,16 @@ Describe "A successful preflight performs only support operations before any sta
 # into $input without advanced-parameter binding, which an advanced param would reject cross-platform with
 # "The input object cannot be bound to any parameters". Consume $input, then emit the canned result.
 $null = @($input)
-Write-Output '{"valid":true,"database":"edfi_configurationservice"}'
+# The verb determines the shape: 'connection inspect' additionally carries the non-secret host/port/username
+# and the endpoint classification the endpoint-locality check reads (a local single host at the container
+# port); 'connection validate' returns only { valid, database }. Both stand in for the real api-schema-tools
+# verb (exercised end to end by the provider-oracle and distribution suites).
+if ($args -contains 'inspect') {
+    Write-Output '{"valid":true,"database":"edfi_configurationservice","host":"dms-postgresql","port":5432,"username":"postgres","error":null,"endpoint":{"kind":"singleHost","protocol":"tcp","host":"dms-postgresql","port":5432,"instance":null,"hasAlternateRouting":false}}'
+}
+else {
+    Write-Output '{"valid":true,"database":"edfi_configurationservice"}'
+}
 exit 0
 '@ | Set-Content -LiteralPath $script:f9Validator -Encoding utf8
 
@@ -738,7 +756,14 @@ exit 0
             function global:docker {
                 Add-Content -LiteralPath $env:DMS_F9_DOCKER_CAPTURE -Value ($args -join " ")
                 if ($args -contains "run") {
-                    Write-Output '{"valid":true,"database":"edfi_datamanagementservice"}'
+                    # 'connection inspect' (checked first: it is also a 'docker run') carries the endpoint the
+                    # locality check reads; 'connection validate' returns only { valid, database }.
+                    if ($args -contains "inspect") {
+                        Write-Output '{"valid":true,"database":"edfi_datamanagementservice","host":"dms-postgresql","port":5432,"username":"postgres","error":null,"endpoint":{"kind":"singleHost","protocol":"tcp","host":"dms-postgresql","port":5432,"instance":null,"hasAlternateRouting":false}}'
+                    }
+                    else {
+                        Write-Output '{"valid":true,"database":"edfi_datamanagementservice"}'
+                    }
                 }
                 $global:LASTEXITCODE = 0
             }
@@ -746,17 +771,22 @@ exit 0
             $validator = Resolve-DmsConnectionValidator -RequestedPath "" -DmsImage "edfialliance/ed-fi-api:test"
             $validator.Kind | Should -Be 'DockerImage' -Because "no host tool resolves, so the published image bundles the validator"
 
+            # The Compose-resolved local db endpoint the containerized Configuration Service reaches; the
+            # connection dials that in-network host at the container port, so endpoint locality is satisfied.
+            $imageEndpoint = [pscustomobject]@{ ServiceName = 'db'; ContainerName = 'dms-postgresql'; Hostname = 'dms-postgresql'; InNetworkNames = @('db', 'dms-postgresql'); ContainerPort = 5432; PublishedHost = '127.0.0.1'; PublishedPort = 5435; PostgresAdminUser = 'postgres' }
             $contract = Resolve-EffectiveConfigRuntimeContract `
                 -InfrastructureEngine "postgresql" `
                 -ConfigServiceIncluded $true `
                 -DmsServiceIncluded $true `
+                -OpenIddictIncluded $false `
                 -SeparateConfigDatabase:$false `
                 -ResolvedConfigProvider "postgresql" `
                 -ResolvedDmsProvider "postgresql" `
                 -ResolvedCmsConnectionString "host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_datamanagementservice;" `
                 -SchemaToolPath $validator `
                 -ResolvedMssqlSaPassword $null `
-                -ResolvedTopologyDatastoreDatabaseName "edfi_datamanagementservice"
+                -ResolvedTopologyDatastoreDatabaseName "edfi_datamanagementservice" `
+                -ResolvedDbLocalEndpoint $imageEndpoint
 
             $contract.CmsDatabaseName | Should -Be "edfi_datamanagementservice" -Because "the shared-topology CMS database is the datastore anchor, resolved through the image validator"
         }

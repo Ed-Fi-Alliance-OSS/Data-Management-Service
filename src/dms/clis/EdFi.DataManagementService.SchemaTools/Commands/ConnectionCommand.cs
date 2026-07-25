@@ -19,8 +19,9 @@ namespace EdFi.DataManagementService.SchemaTools.Commands;
 /// <see cref="Microsoft.Data.SqlClient.SqlConnectionStringBuilder"/> for SQL Server):
 ///
 /// <list type="bullet">
-/// <item><c>validate</c> prints a JSON <c>{ valid, database, error }</c> result - the stable contract the
-/// docker-compose start scripts consume for host-side pre-flight validation.</item>
+/// <item><c>validate</c> prints a JSON <c>{ valid, database, error }</c> result - a stable, database-only
+/// contract for host-side tooling that needs only validity and the target database (e.g. the E2E admin-target
+/// readiness check); the docker-compose start-script runtime contract consumes <c>inspect</c> instead.</item>
 /// <item><c>inspect</c> prints a JSON
 /// <c>{ valid, database, host, port, username, error, endpoint }</c> result of the non-secret canonical
 /// coordinates provisioning needs. The six leading fields keep their existing semantics (in particular SQL

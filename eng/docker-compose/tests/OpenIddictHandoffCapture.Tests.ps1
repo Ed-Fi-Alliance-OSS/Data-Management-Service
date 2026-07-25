@@ -123,6 +123,50 @@ Add-Content -LiteralPath $env:DMS_OPENIDDICT_CAPTURE -Value ($record | ConvertTo
             }
         }
     }
+
+    # Behavioral (not source-regex) capture of the participation arguments a script passes to the runtime
+    # contract: the actual Resolve-EffectiveConfigRuntimeContract call is AST-extracted and run against a
+    # capture-stub contract, returning the ConfigServiceIncluded / DmsServiceIncluded / OpenIddictIncluded
+    # booleans RECEIVED and whether a resolved local endpoint was supplied.
+    function script:Get-ContractParticipationRecord {
+        param([Parameter(Mandatory)][string]$ScriptName, [string]$IdentityProvider = 'self-contained')
+
+        $scriptPath = Join-Path $script:composeRoot $ScriptName
+        $tokens = $null; $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors)
+        if ($parseErrors) { throw "Parse errors in ${ScriptName}: $($parseErrors[0].Message)" }
+        $call = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Resolve-EffectiveConfigRuntimeContract' }, $true) | Select-Object -First 1
+        if ($null -eq $call) { throw "No Resolve-EffectiveConfigRuntimeContract call found in $ScriptName" }
+
+        $work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-contract-arg-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $work -Force | Out-Null
+        $captureFile = Join-Path $work "capture.json"
+
+        $runnerText = @"
+param(`$datastore, `$DatabaseEngine, `$IdentityProvider, `$SeparateConfigDatabase, `$configServiceIncluded, `$resolvedCompose, `$schemaToolPath, `$connectionValidator)
+function Resolve-EffectiveConfigRuntimeContract {
+    param(`$InfrastructureEngine, `$ConfigServiceIncluded, `$DmsServiceIncluded, `$OpenIddictIncluded, [switch]`$SeparateConfigDatabase, `$ResolvedConfigProvider, `$ResolvedDmsProvider, `$ResolvedCmsConnectionString, `$SchemaToolPath, `$ResolvedMssqlSaPassword, `$ResolvedTopologyDatastoreDatabaseName, `$ResolvedDbLocalEndpoint)
+    ([pscustomobject]@{ ConfigServiceIncluded = [bool]`$ConfigServiceIncluded; DmsServiceIncluded = [bool]`$DmsServiceIncluded; OpenIddictIncluded = [bool]`$OpenIddictIncluded; HasEndpoint = (`$null -ne `$ResolvedDbLocalEndpoint) } | ConvertTo-Json -Compress) | Set-Content -LiteralPath `$env:DMS_CONTRACT_ARG_CAPTURE
+    return [pscustomobject]@{ OpenIddict = `$null }
+}
+$($call.Extent.Text)
+"@
+        $runner = [scriptblock]::Create($runnerText)
+        # A sentinel (non-null) local endpoint so HasEndpoint is meaningful for callers that pass one.
+        $resolvedCompose = [pscustomobject]@{ ConfigProvider = 'postgresql'; DmsProvider = 'postgresql'; CmsConnectionString = 'host=dms-postgresql;port=5432;database=edfi_datamanagementservice'; MssqlSaPassword = $null; TopologyDatastoreDatabaseName = 'edfi_datamanagementservice'; DbLocalEndpoint = [pscustomobject]@{ ContainerName = 'dms-postgresql' } }
+
+        $priorCapture = $env:DMS_CONTRACT_ARG_CAPTURE
+        $env:DMS_CONTRACT_ARG_CAPTURE = $captureFile
+        try {
+            & $runner -datastore 'postgresql' -DatabaseEngine 'postgresql' -IdentityProvider $IdentityProvider -SeparateConfigDatabase $false -configServiceIncluded $true -resolvedCompose $resolvedCompose -schemaToolPath 'ignored' -connectionValidator 'ignored' | Out-Null
+        }
+        finally {
+            if ($null -eq $priorCapture) { Remove-Item -LiteralPath Env:DMS_CONTRACT_ARG_CAPTURE -ErrorAction SilentlyContinue } else { $env:DMS_CONTRACT_ARG_CAPTURE = $priorCapture }
+        }
+        $record = if (Test-Path -LiteralPath $captureFile) { Get-Content -LiteralPath $captureFile -Raw | ConvertFrom-Json } else { $null }
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        return $record
+    }
 }
 
 Describe "OpenIddict argument handoff - <Script>" -ForEach @(
@@ -164,5 +208,34 @@ Describe "OpenIddict argument handoff - <Script>" -ForEach @(
             $r.DbPassword | Should -Be 'abcdefgh1!'
             $r.PSObject.Properties.Name | Should -Not -Contain 'PostgresContainerName' -Because "the SQL Server lane selects the mssql container-name parameter"
         }
+    }
+}
+
+Describe "OpenIddictIncluded call-site value - <Script>" -ForEach @(
+    @{ Script = 'start-local-config.ps1' }
+    @{ Script = 'start-local-dms.ps1' }
+    @{ Script = 'start-published-dms.ps1' }
+) {
+    # Behavioral (not source-regex) proof that each start script passes the CORRECT -OpenIddictIncluded value to
+    # the runtime contract, captured from the actual call against a stub contract (see Get-ContractParticipationRecord).
+    It "passes OpenIddictIncluded=True for a self-contained identity provider" {
+        (Get-ContractParticipationRecord -ScriptName $Script -IdentityProvider 'self-contained').OpenIddictIncluded | Should -BeTrue
+    }
+
+    It "passes OpenIddictIncluded=False for a Keycloak identity provider" {
+        (Get-ContractParticipationRecord -ScriptName $Script -IdentityProvider 'keycloak').OpenIddictIncluded | Should -BeFalse
+    }
+}
+
+Describe "provision-e2e-database.ps1 participation call-site (fourth contract caller)" {
+    # The fourth production caller is not identity-gated: it validates the full-stack contract before a
+    # destructive E2E reset, so it must declare the config and DMS services included, OpenIddict NOT included
+    # (it runs no OpenIddict), and pass the resolved local endpoint the locality check needs.
+    It "supplies ConfigServiceIncluded/DmsServiceIncluded/true, OpenIddictIncluded/false, and the resolved local endpoint" {
+        $record = Get-ContractParticipationRecord -ScriptName 'provision-e2e-database.ps1'
+        $record.ConfigServiceIncluded | Should -BeTrue
+        $record.DmsServiceIncluded | Should -BeTrue
+        $record.OpenIddictIncluded | Should -BeFalse -Because "provision-e2e runs no self-contained OpenIddict"
+        $record.HasEndpoint | Should -BeTrue -Because "the full-stack locality check requires the resolved local endpoint"
     }
 }

@@ -306,8 +306,17 @@ independently interpolated runtime provider, so each is checked against the sele
   (`DMS_CONFIG_DATASTORE`, the `config` service's `AppSettings__Datastore`) must be exactly `postgresql`
   or `mssql` and match the selected engine; and the connection string must be a valid connection for
   that engine (parsed with the exact runtime providers - Npgsql / Microsoft.Data.SqlClient - via the
-  `api-schema-tools connection validate` verb, so any keyword the driver rejects is caught here) and
-  target the effective `DMS_CONFIG_DATABASE_NAME`.
+  `api-schema-tools connection inspect` verb, so any keyword the driver rejects is caught here) that
+  targets the effective `DMS_CONFIG_DATABASE_NAME`. When the Configuration Service must reach the LOCAL
+  database container - a full-stack run, or a self-contained OpenIddict run that initializes that
+  container's key store - the connection's ENDPOINT must also resolve to that container: a single
+  in-network host (the `db` service name, container name, or a shared-network alias) at the
+  container-internal port, with no SQL Server Failover-Partner routing. Otherwise the Configuration
+  Service could connect to a foreign database while OpenIddict and the datastore initialize the local one
+  (the database-name check alone would still pass). The database identity and the endpoint identity come
+  from the SAME inspect result, so a divergent tool cannot pair the expected database with a foreign
+  endpoint. A standalone Keycloak Configuration Service (no DMS service, no self-contained OpenIddict) is
+  exempt and may use an external database.
 * **Database infrastructure** (always): on SQL Server the SA password must be non-blank.
 
 Because `DMS_DATASTORE` and `DMS_CONFIG_DATASTORE` are separate variables, a shell override of either
@@ -345,8 +354,10 @@ alone). Anything else fails fast with a clear diagnostic before any stack lifecy
 > host-first resolution (`Resolve-DmsSchemaTool -BuildIfMissing`, so a prebuilt host tool or an SDK build is
 > still preferred when present) and, **only** when no explicit `DMS_SCHEMA_TOOL_PATH` was supplied and no
 > host tool can be resolved or built - the clean Docker/PowerShell-only **published-image** host with no .NET
-> SDK and no source build - falls back to running the exact same `connection validate` verb **inside the DMS
-> image**, which bundles the `api-schema-tools` CLI at `/app/ApiSchemaTools/` (invoked as
+> SDK and no source build - falls back to running the exact same connection verbs (`connection inspect` for
+> the CMS runtime contract and CMS-stored provisioning, `connection validate` for the admin/readiness target
+> check) **inside the DMS image**, which bundles
+> the `api-schema-tools` CLI at `/app/ApiSchemaTools/` (invoked as
 > `dotnet /app/ApiSchemaTools/api-schema-tools.dll ...` with `docker run --network none`, so it only parses
 > the string and never connects). Connection strings are therefore still validated with the exact runtime
 > providers - the parser is never weakened - without a host SDK. An explicit `DMS_SCHEMA_TOOL_PATH` stays

@@ -199,7 +199,7 @@ Describe "Get-DbLocalEndpointIdentity - fail-closed" {
 
     It "throws when a composed Configuration Service shares no network with the db" {
         # CMS present but on disjoint networks: it cannot reach the db, so advertising any in-network name would
-        # be a lie a later iteration could act on. Fail closed.
+        # be a lie the runtime contract's endpoint-locality check could act on. Fail closed.
         $db = New-DbService -Networks ([pscustomobject]@{ internal = $null })
         { Get-DbLocalEndpointIdentity -DbService $db -ConfigService $script:ConfigServiceShared -AllServices (New-ServiceModel -Db $db) -InfrastructureEngine postgresql } |
             Should -Throw "*share no docker network*"

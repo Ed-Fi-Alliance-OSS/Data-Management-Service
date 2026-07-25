@@ -388,6 +388,7 @@ else {
             -InfrastructureEngine $DatabaseEngine `
             -ConfigServiceIncluded $configServiceIncluded `
             -DmsServiceIncluded $true `
+            -OpenIddictIncluded ($IdentityProvider -eq "self-contained") `
             -SeparateConfigDatabase:$SeparateConfigDatabase `
             -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
             -ResolvedDmsProvider $resolvedCompose.DmsProvider `

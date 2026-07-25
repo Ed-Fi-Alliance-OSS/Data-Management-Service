@@ -1188,8 +1188,9 @@ function Get-DbLocalEndpointIdentity {
         Derives the structured, non-secret identity of the local docker-compose `db` service from the
         Compose-resolved service objects: the in-network names by which the Configuration Service reaches it,
         the container-internal port, the host-side published dial address/port, and the PostgreSQL admin user.
-        It is what the OpenIddict host-side initialization targets, and (in a later iteration) what a caller CMS
-        connection's endpoint is compared against. FAIL-CLOSED: every ambiguity throws rather than guessing.
+        It is what the OpenIddict host-side initialization targets, and what a caller CMS connection's endpoint
+        is compared against by Resolve-EffectiveConfigRuntimeContract when the Configuration Service must reach
+        the local container. FAIL-CLOSED: every ambiguity throws rather than guessing.
 
     .DESCRIPTION
         Published-port extraction is fail-closed: EXACTLY ONE TCP publication must target the engine's
@@ -1253,7 +1254,8 @@ function Get-DbLocalEndpointIdentity {
     # Docker does not make it a peer-resolvable network alias, so a divergent hostname would not identify the db.
     # These names are claimed ONLY when CMS can actually reach the db, so when a Configuration Service IS composed
     # at least one shared network is required - a disjoint topology fails closed rather than advertising names the
-    # CMS container cannot resolve (a later iteration would otherwise accept an unreachable connection). A
+    # CMS container cannot resolve (the runtime contract's endpoint-locality check would otherwise accept an
+    # unreachable connection). A
     # database-only compose set (no Configuration Service) keeps the host-side coordinates below but claims no
     # CMS-reachable names.
     $dbNetworks = if ($DbService.PSObject.Properties.Name -contains 'networks') { $DbService.networks } else { $null }
@@ -1404,7 +1406,7 @@ function Get-ComposeResolvedConfiguration {
 
     .DESCRIPTION
         `docker compose config` needs no started containers, no pulled images, and no pre-existing
-        external network, so it is safe to run before any Docker or Keycloak mutation. Compose renders a
+        external network, so it is safe to run before any stack-lifecycle mutation. Compose renders a
         literal '$' as '$$' in its output; this unescapes it, so a value carrying an opaque, unexpanded
         ${...} - a shell-substituted terminal Compose does not re-expand - is returned as the literal
         text the container receives and is compared literally by the runtime contract.
@@ -1478,7 +1480,7 @@ function Get-ComposeResolvedConfiguration {
     $output = & docker compose @composeArguments 2>$null
     $json = ($output | Out-String)
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
-        throw "Unable to resolve the effective docker-compose configuration for project '$ProjectName' (docker compose config exited $LASTEXITCODE). The runtime contract is validated against Compose's own resolution, so a compose-file or environment-file error must be corrected before any container starts."
+        throw "Unable to resolve the effective docker-compose configuration for project '$ProjectName' (docker compose config exited $LASTEXITCODE). The runtime contract is validated against Compose's own resolution, so a compose-file or environment-file error must be corrected before any stack-lifecycle mutation."
     }
 
     try {
@@ -1508,7 +1510,8 @@ function Get-ComposeResolvedConfiguration {
             $dmsEnvironment = $services.$DmsServiceName.environment
             # The concrete DMS image Compose resolved - the same image the ensuing `up` runs. On a clean
             # Docker/PowerShell-only host it bundles the api-schema-tools CLI, so the runtime contract can
-            # run the exact-provider 'connection validate' verb inside it without a host tool or SDK.
+            # run the exact-provider connection verbs (inspect for the CMS contract) inside it without a host
+            # tool or SDK.
             if ($services.$DmsServiceName.PSObject.Properties.Name -contains "image") {
                 $dmsImage = [string]$services.$DmsServiceName.image
             }
@@ -1550,6 +1553,32 @@ function Get-ComposeResolvedConfiguration {
     }
 }
 
+function Format-RuntimeContractDiagnosticText {
+    <#
+    .SYNOPSIS
+        Sanitizes any caller-controlled value used in a runtime-contract diagnostic (a connection-string
+        endpoint host, kind, or database name parsed from the CMS connection, or a provider error message):
+        a whitelist of letters, digits, and the punctuation these legitimately use (space, '_', '-', '.', ':',
+        ',', '/'). Control characters - including CR/LF - are stripped, so a crafted Host or Database cannot
+        forge log lines. (It removes unsafe characters, not alphanumeric secrets; the contract's secret-safety
+        comes from never interpolating the raw connection string and from inspect's secret-free projection - it
+        exposes no password.) Mirrors bootstrap-manifest.psm1 Format-LogSafeText; kept local so the runtime
+        contract has no cross-module load dependency (its unit tests import only env-utility.psm1).
+    #>
+    param([AllowNull()]$Value)
+
+    if ($null -eq $Value) {
+        return ''
+    }
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in ([string]$Value).ToCharArray()) {
+        if ([char]::IsLetterOrDigit($character) -or $character -in @(' ', '_', '-', '.', ':', ',', '/')) {
+            $null = $builder.Append($character)
+        }
+    }
+    return $builder.ToString()
+}
+
 function Resolve-EffectiveConfigRuntimeContract {
     <#
     .SYNOPSIS
@@ -1572,7 +1601,8 @@ function Resolve-EffectiveConfigRuntimeContract {
         (AppSettings__Datastore from DMS_DATASTORE and DMS_CONFIG_DATASTORE respectively), so each is checked
         against -InfrastructureEngine separately - a shell override of either cannot point its container at a
         different engine than the one that starts, unnoticed. The contract enforces, all fail-fast and before
-        any Docker or Keycloak mutation:
+        any stack-lifecycle mutation (an isolated, read-only validator container - `docker run --network none`
+        for the published-image lane - is a support operation, not a stack-lifecycle change):
           * on SQL Server, the SA password resolves to a non-blank value (stack invariant, always);
           * (when the DMS service participates) the DMS provider (Compose-resolved dms AppSettings__Datastore)
             is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and the DMS topology datastore
@@ -1587,13 +1617,22 @@ function Resolve-EffectiveConfigRuntimeContract {
             caller-authored connection can never redefine the topology; it must agree. In the standalone lane
             (no DMS service) the connection's own single target IS the effective name. Separate topology
             additionally requires the datastore and configuration databases to be different physical databases.
+          * (when the CMS must reach the LOCAL container - a full-stack run, or a self-contained OpenIddict run
+            per -OpenIddictIncluded) the CMS connection's ENDPOINT resolves to the local db container: a single
+            host in its Compose in-network name set at the CONTAINER port, no alternate routing. Targeting the
+            right database name on a foreign/host-published endpoint is rejected, so the Configuration Service
+            cannot connect elsewhere while OpenIddict/the datastore initialize the local container. A standalone
+            Keycloak Configuration Service (no DMS service, no self-contained OpenIddict) is exempt.
 
         The Compose-resolved values are passed in (-ResolvedConfigProvider / -ResolvedDmsProvider /
         -ResolvedCmsConnectionString / -ResolvedMssqlSaPassword / -ResolvedTopologyDatastoreDatabaseName); the
-        start scripts obtain them from Get-ComposeResolvedConfiguration. Connection strings are parsed by the
-        exact runtime providers via the SchemaTools `connection validate` verb (Get-CmsConnectionStringDatabaseName),
-        located by -SchemaToolPath. Unit tests mock Get-CmsConnectionStringDatabaseName to exercise the
-        contract logic without the tool; the provider-oracle tests exercise the verb directly.
+        start scripts obtain them from Get-ComposeResolvedConfiguration. The CMS connection is parsed ONCE by the
+        exact runtime providers via the SchemaTools `connection inspect` verb (Invoke-ConnectionStringInspection),
+        located by -SchemaToolPath - the single result carries the database identity and, in local-required
+        lanes, the endpoint identity, so the two cannot diverge. The endpoint projection is required when locality
+        is enforced (an older inspector without it fails as a version error, never as a datastore error). The
+        provider-oracle tests exercise the verb directly; a controlled inspector double pins behavior a coherent
+        tool cannot produce (a divergent database, a crafted host, an old inspector without the endpoint).
 
     .PARAMETER InfrastructureEngine
         The engine the start script actually selected ('postgresql' | 'mssql'); drives the Compose
@@ -1614,6 +1653,15 @@ function Resolve-EffectiveConfigRuntimeContract {
         skipped - the standalone Configuration Service lane composes no dms service. The stack SA-password
         invariant is validated regardless of both participation flags.
 
+    .PARAMETER OpenIddictIncluded
+        Whether self-contained OpenIddict participates, decided by the caller from its identity provider (never
+        inferred). MANDATORY (every caller states it) and fail-closed. A locality authority for the standalone
+        lanes: with it (a self-contained standalone Configuration Service) the CMS connection's endpoint must
+        reach the local db container OpenIddict initializes; without it (a standalone Keycloak Configuration
+        Service) an external database is allowed. Full-stack runs (DmsServiceIncluded) enforce endpoint locality
+        regardless. It also gates the returned OpenIddict coordinates - they are populated only when it is $true.
+        Requires ConfigServiceIncluded (rejected otherwise: OpenIddict has no database without the CMS).
+
     .PARAMETER SeparateConfigDatabase
         The topology the start script selected (never inferred from a name). When set, the expected
         configuration database is the dedicated 'edfi_configurationservice' and must be a different physical
@@ -1631,11 +1679,11 @@ function Resolve-EffectiveConfigRuntimeContract {
         The Compose-resolved DatabaseSettings__DatabaseConnection value (final text the container receives).
 
     .PARAMETER SchemaToolPath
-        The connection-string validator: either a host executable path (string) or a descriptor from
-        Resolve-DmsConnectionValidator ({ Kind = 'HostExe' | 'DockerImage' ... }). Connection strings are
-        parsed with the exact runtime providers via the api-schema-tools 'connection validate' verb, run on
-        the host or - on a clean Docker/PowerShell-only published host - inside the DMS image that bundles
-        the tool. Passed through to Get-CmsConnectionStringDatabaseName / Invoke-ConnectionStringValidation.
+        The connection-string tool: either a host executable path (string) or a descriptor from
+        Resolve-DmsConnectionValidator ({ Kind = 'HostExe' | 'DockerImage' ... }). The CMS connection is parsed
+        with the exact runtime providers via the api-schema-tools 'connection inspect' verb, run on the host or -
+        on a clean Docker/PowerShell-only published host - inside the DMS image that bundles the tool. Passed
+        through to Invoke-ConnectionStringInspection.
 
     .PARAMETER ResolvedMssqlSaPassword
         The Compose-resolved db-service MSSQL_SA_PASSWORD value (SQL Server stacks).
@@ -1651,6 +1699,15 @@ function Resolve-EffectiveConfigRuntimeContract {
         [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
         [Parameter(Mandatory)][bool]$ConfigServiceIncluded,
         [Parameter(Mandatory)][bool]$DmsServiceIncluded,
+        # Whether self-contained OpenIddict participates (the caller sets it from its identity provider, never
+        # inferred). Mandatory and fail-closed: it is a locality authority - a self-contained standalone
+        # Configuration Service must reach the LOCAL db container (OpenIddict initializes that container's key
+        # store), whereas a standalone Keycloak Configuration Service may legitimately use an external database -
+        # so every caller states it explicitly rather than relying on a permissive default. Full-stack runs
+        # enforce locality via DmsServiceIncluded regardless; this decides the standalone lanes and gates whether
+        # the OpenIddict coordinates are populated. Requires ConfigServiceIncluded (OpenIddict has no database
+        # without the Configuration Service).
+        [Parameter(Mandatory)][bool]$OpenIddictIncluded,
         [switch]$SeparateConfigDatabase,
         [AllowEmptyString()][AllowNull()][string]$ResolvedConfigProvider,
         [AllowEmptyString()][AllowNull()][string]$ResolvedDmsProvider,
@@ -1659,8 +1716,10 @@ function Resolve-EffectiveConfigRuntimeContract {
         [AllowEmptyString()][AllowNull()][string]$ResolvedMssqlSaPassword,
         [AllowEmptyString()][AllowNull()][string]$ResolvedTopologyDatastoreDatabaseName,
         # The Compose-resolved local database endpoint identity (Get-ComposeResolvedConfiguration.DbLocalEndpoint):
-        # the host dial address/port, container name, and PostgreSQL admin user the OpenIddict host-side
-        # initialization targets. Iteration 2's endpoint classification is NOT enforced here yet.
+        # the in-network names and container port the containerized Configuration Service reaches it by, the host
+        # dial address/port, container name, and PostgreSQL admin user the OpenIddict host-side initialization
+        # targets. Required (fail-closed) whenever the CMS must reach the local container (DmsServiceIncluded or
+        # OpenIddictIncluded), where the effective CMS connection's endpoint is validated against it.
         [AllowNull()][object]$ResolvedDbLocalEndpoint
     )
 
@@ -1668,6 +1727,12 @@ function Resolve-EffectiveConfigRuntimeContract {
     # comparison below, the CLI forwarding, and the returned contract use the canonical 'postgresql' /
     # 'mssql' even when a caller supplied a case variant ('MSSQL') through ValidateSet.
     $InfrastructureEngine = ConvertTo-CanonicalDatabaseEngine -Engine $InfrastructureEngine
+
+    # Self-contained OpenIddict has no database without the Configuration Service (its key store lives IN the
+    # configuration database), so OpenIddict-without-CMS is an incoherent participation combination.
+    if ($OpenIddictIncluded -and -not $ConfigServiceIncluded) {
+        throw "Configuration runtime-contract error: OpenIddict participation was declared without the Configuration Service (ConfigServiceIncluded=`$false). Self-contained OpenIddict initializes its key store in the configuration database, so it cannot participate without the Configuration Service."
+    }
 
     # (STACK INVARIANT, always) SQL Server SA password, keyed on the AUTHORITATIVE engine the start script
     # selected - not on the CMS provider - so it is enforced even when no local Configuration Service
@@ -1700,7 +1765,7 @@ function Resolve-EffectiveConfigRuntimeContract {
             elseif ([string]::Equals($ResolvedDmsProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
             else { $null }
         if ($null -eq $dmsProviderCanonical) {
-            throw "Configuration runtime-contract error: the effective DMS runtime provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedDmsProvider', which is not a supported engine. Set DMS_DATASTORE to exactly 'postgresql' or 'mssql'."
+            throw "Configuration runtime-contract error: the effective DMS runtime provider (AppSettings__Datastore, resolved by Docker Compose) is '$(Format-RuntimeContractDiagnosticText $ResolvedDmsProvider)', which is not a supported engine. Set DMS_DATASTORE to exactly 'postgresql' or 'mssql'."
         }
 
         # (2) DMS provider MUST equal the infrastructure engine the start script selected (which starts that
@@ -1722,7 +1787,7 @@ function Resolve-EffectiveConfigRuntimeContract {
             throw "Configuration runtime-contract error: the DMS topology datastore database is blank, so a participating DMS service has no database target. Set POSTGRES_DB_NAME (PostgreSQL) or MSSQL_DB_NAME (SQL Server), or the variable it references."
         }
         if ($topologyDatastoreName -match '\$\{') {
-            throw "Configuration runtime-contract error: the DMS topology datastore database resolves to '$topologyDatastoreName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
+            throw "Configuration runtime-contract error: the DMS topology datastore database resolves to '$(Format-RuntimeContractDiagnosticText $topologyDatastoreName)', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
         }
     }
 
@@ -1744,7 +1809,7 @@ function Resolve-EffectiveConfigRuntimeContract {
             elseif ([string]::Equals($ResolvedConfigProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
             else { $null }
         if ($null -eq $configProviderCanonical) {
-            throw "Configuration runtime-contract error: the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedConfigProvider', which is not a supported engine. Set DMS_CONFIG_DATASTORE to exactly 'postgresql' or 'mssql'."
+            throw "Configuration runtime-contract error: the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose) is '$(Format-RuntimeContractDiagnosticText $ResolvedConfigProvider)', which is not a supported engine. Set DMS_CONFIG_DATASTORE to exactly 'postgresql' or 'mssql'."
         }
 
         # (2) CMS provider MUST equal the infrastructure engine the start script selected (which starts that
@@ -1755,11 +1820,25 @@ function Resolve-EffectiveConfigRuntimeContract {
         }
 
         # (3) The effective CMS connection must be present, parse under the selected provider (wrong-engine
-        # strings are rejected by the provider's own builder), and target a concrete database.
+        # strings are rejected by the provider's own builder), and target a concrete database. A SINGLE inspect
+        # is the ONE parse authority here, so the database identity checked below and the endpoint identity
+        # enforced in (5) come from the SAME parsed result - a divergent or stale tool cannot report the expected
+        # database from one call and a different database with a local endpoint from another. The endpoint
+        # projection is required only when locality is enforced (an older inspector without it fails as a version
+        # error for local-required lanes, but is tolerated for a standalone Keycloak connection).
         if ([string]::IsNullOrWhiteSpace($ResolvedCmsConnectionString)) {
             throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING (resolved by Docker Compose) is empty on a '$InfrastructureEngine' stack. On a SQL Server stack this occurs when no connection string is set and Compose would substitute the PostgreSQL-only compose-file fallback. Set a '$InfrastructureEngine' connection string targeting the effective configuration database."
         }
-        $targetDatabases = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedCmsConnectionString -SchemaToolPath $SchemaToolPath)
+        $localityRequired = $DmsServiceIncluded -or $OpenIddictIncluded
+        $cmsInspection = Invoke-ConnectionStringInspection -Engine $InfrastructureEngine -ConnectionString $ResolvedCmsConnectionString -SchemaToolPath $SchemaToolPath -RequireEndpointIdentity:$localityRequired
+        if (-not $cmsInspection.valid) {
+            throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING is not a valid '$InfrastructureEngine' connection: $(Format-RuntimeContractDiagnosticText $cmsInspection.error). A wrong-engine string is rejected by the provider's own builder."
+        }
+        # Direct @() assignment (not an if-expression result, which PowerShell would unwrap to the bare string).
+        $targetDatabases = @()
+        if (-not [string]::IsNullOrEmpty([string]$cmsInspection.database)) {
+            $targetDatabases = @([string]$cmsInspection.database)
+        }
         if ($targetDatabases.Count -eq 0) {
             throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets no database (set Database or Initial Catalog), so the Configuration Service would connect to the engine default instead of the effective configuration database."
         }
@@ -1774,7 +1853,7 @@ function Resolve-EffectiveConfigRuntimeContract {
             $expectedConfigDatabaseName = if ($SeparateConfigDatabase) { $separateConfigDatabaseName } else { $topologyDatastoreName }
             foreach ($target in $targetDatabases) {
                 if (-not (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $target -Right $expectedConfigDatabaseName)) {
-                    throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$target', but the effective configuration database is '$expectedConfigDatabaseName' (shared topology uses the DMS datastore database; -SeparateConfigDatabase uses the dedicated configuration database). Align the connection string, or the shell variable it routes through."
+                    throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$(Format-RuntimeContractDiagnosticText $target)', but the effective configuration database is '$(Format-RuntimeContractDiagnosticText $expectedConfigDatabaseName)' (shared topology uses the DMS datastore database; -SeparateConfigDatabase uses the dedicated configuration database). Align the connection string, or the shell variable it routes through."
                 }
             }
             $effectiveDatabaseName = $expectedConfigDatabaseName
@@ -1784,7 +1863,7 @@ function Resolve-EffectiveConfigRuntimeContract {
             # name only. (Shared topology deliberately makes them the same - already enforced by the equality
             # above, since the expected name IS the datastore anchor.)
             if ($SeparateConfigDatabase -and (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $topologyDatastoreName -Right $expectedConfigDatabaseName)) {
-                throw "Configuration runtime-contract error: -SeparateConfigDatabase selects the dedicated configuration database '$expectedConfigDatabaseName', but the DMS datastore database ('$topologyDatastoreName') is the same physical database under $InfrastructureEngine identity semantics, so the topology would not be separate. Choose a different DMS datastore name, or omit -SeparateConfigDatabase for the shared topology."
+                throw "Configuration runtime-contract error: -SeparateConfigDatabase selects the dedicated configuration database '$(Format-RuntimeContractDiagnosticText $expectedConfigDatabaseName)', but the DMS datastore database ('$(Format-RuntimeContractDiagnosticText $topologyDatastoreName)') is the same physical database under $InfrastructureEngine identity semantics, so the topology would not be separate. Choose a different DMS datastore name, or omit -SeparateConfigDatabase for the shared topology."
             }
         }
         else {
@@ -1794,7 +1873,7 @@ function Resolve-EffectiveConfigRuntimeContract {
             $distinctTargets = [System.Collections.Generic.HashSet[string]]::new((Get-DatabaseNameComparer -Engine $InfrastructureEngine))
             foreach ($target in $targetDatabases) { [void]$distinctTargets.Add($target) }
             if ($distinctTargets.Count -gt 1) {
-                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING specifies conflicting database targets ($($targetDatabases -join ', ')). Set a single database so OpenIddict initialization and the Configuration Service agree."
+                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING specifies conflicting database targets ($(($targetDatabases | ForEach-Object { Format-RuntimeContractDiagnosticText $_ }) -join ', ')). Set a single database so OpenIddict initialization and the Configuration Service agree."
             }
             $effectiveDatabaseName = $targetDatabases[0]
         }
@@ -1803,26 +1882,72 @@ function Resolve-EffectiveConfigRuntimeContract {
         # database. In the full-stack lanes the equality check above already rejects it; guard the standalone
         # lane too.
         if ($effectiveDatabaseName -match '\$\{') {
-            throw "Configuration runtime-contract error: the effective configuration database resolves to '$effectiveDatabaseName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
+            throw "Configuration runtime-contract error: the effective configuration database resolves to '$(Format-RuntimeContractDiagnosticText $effectiveDatabaseName)', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
         }
 
-        # (5) OpenIddict host-side target. The engine and the effective database name are authoritative; the
-        # host dial address, published port, container name, and PostgreSQL admin user are the Compose-resolved
-        # local-db endpoint - NOT an ENV: sentinel - so a shell MSSQL_PORT / POSTGRES_PORT / POSTGRES_USER /
-        # container_name override is reflected in what OpenIddict targets. Read only by the self-contained
-        # identity path (which always includes the config service). When no endpoint was resolved (a caller
-        # that did not name the engine), the local coordinates are null and only name/type/user/password carry.
-        $openIddict = [pscustomobject]@{
-            DbType          = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
-            DbUser          =
-                if ($InfrastructureEngine -eq 'mssql') { 'sa' }
-                elseif ($null -ne $ResolvedDbLocalEndpoint -and -not [string]::IsNullOrWhiteSpace([string]$ResolvedDbLocalEndpoint.PostgresAdminUser)) { [string]$ResolvedDbLocalEndpoint.PostgresAdminUser }
-                else { 'postgres' }
-            DbHost          = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.PublishedHost } else { $null }
-            DbPort          = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.PublishedPort } else { $null }
-            DbContainerName = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.ContainerName } else { $null }
-            DbName          = $effectiveDatabaseName
-            DbPassword      = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword } else { $null }
+        # (5) ENDPOINT LOCALITY. Targeting the right database NAME is necessary but not sufficient. When the
+        # Configuration Service must reach the LOCAL database container - a full-stack run (the DMS service
+        # participates) or a self-contained run (OpenIddict initializes THAT container's key store) - the
+        # effective CMS connection's ENDPOINT must resolve to the local db container, or the Configuration
+        # Service could connect to a FOREIGN database while OpenIddict / the datastore initialize the local one
+        # (the name check above still passes). A standalone Keycloak Configuration Service (no DMS service, no
+        # self-contained OpenIddict) may legitimately use an external database, so locality is NOT enforced
+        # there. The caller endpoint is classified by the EXACT provider via the inspect verb (Iteration 2's
+        # additive projection, required here - a tool predating it fails as a version error, never as a
+        # datastore error). Acceptance is fail-closed: a single host in the db's Compose in-network name set
+        # (service name / container_name / shared-network aliases, case-insensitive DNS) at the db CONTAINER
+        # port (5432 / 1433 - never the host-published port, which a containerized service cannot dial), with no
+        # alternate routing (a SQL Server Failover Partner could redirect the service off the local container).
+        if ($localityRequired) {
+            if ($null -eq $ResolvedDbLocalEndpoint) {
+                throw "Configuration runtime-contract error: the Configuration Service must reach the local '$InfrastructureEngine' database container, but no local database endpoint was resolved to validate the connection endpoint against. Pass -ResolvedDbLocalEndpoint (Get-ComposeResolvedConfiguration.DbLocalEndpoint) whenever a DMS service or self-contained OpenIddict participates."
+            }
+            $reachableNames = @($ResolvedDbLocalEndpoint.InNetworkNames)
+            $localContainerPort = $ResolvedDbLocalEndpoint.ContainerPort
+            $reachableDescription = if ($reachableNames.Count -gt 0) { $reachableNames -join ', ' } else { '(none)' }
+            # The endpoint comes from the SAME parsed result as the database above (one inspect authority), so its
+            # database and the target validated in (3)/(4) are proven to be the same connection. Classify only its
+            # LOCAL ACCEPTABILITY here (distinct from provider validity and from the raw classification). Every
+            # caller-controlled value in a diagnostic is routed through Format-RuntimeContractDiagnosticText, so a host
+            # carrying CR/LF or other control characters cannot forge log lines (and no secret can leak).
+            $cmsEndpoint = $cmsInspection.endpoint
+            $safeEndpointHost = Format-RuntimeContractDiagnosticText $cmsEndpoint.host
+            $safeEndpointKind = Format-RuntimeContractDiagnosticText $cmsEndpoint.kind
+            if ($cmsEndpoint.hasAlternateRouting) {
+                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING carries alternate routing (a SQL Server Failover Partner), so the Configuration Service could fail over to a database other than the local '$($ResolvedDbLocalEndpoint.ContainerName)' container that OpenIddict and the datastore initialize. Remove the Failover Partner for a local topology."
+            }
+            # Case-sensitive kind token first ('-cne'), then the case-insensitive DNS-name membership.
+            if ($cmsEndpoint.kind -cne 'singleHost') {
+                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING endpoint is classified '$safeEndpointKind', but a Configuration Service that must reach the local database container requires a single host resolving to it (one of: $reachableDescription) at container port $localContainerPort. Point the connection at the local db service."
+            }
+            if ($reachableNames -notcontains [string]$cmsEndpoint.host) {
+                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets host '$safeEndpointHost', which is not the local '$InfrastructureEngine' database container. The containerized Configuration Service reaches it over the Docker network as one of: $reachableDescription (never a host-loopback address such as 127.0.0.1). Point the connection at the local db service, or run a standalone Keycloak Configuration Service if an external database is intended."
+            }
+            if ($cmsEndpoint.port -ne $localContainerPort) {
+                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets host '$safeEndpointHost' on port $($cmsEndpoint.port), but the containerized Configuration Service reaches the local database over the Docker network at the CONTAINER port $localContainerPort, not the host-published port. Set the connection port to $localContainerPort."
+            }
+        }
+
+        # (6) OpenIddict host-side target. Populated ONLY when self-contained OpenIddict participates (the sole
+        # consumer of these coordinates); a Keycloak Configuration Service leaves it $null. The engine and the
+        # effective database name are authoritative; the host dial address, published port, container name, and
+        # PostgreSQL admin user are the Compose-resolved local-db endpoint - NOT an ENV: sentinel - so a shell
+        # MSSQL_PORT / POSTGRES_PORT / POSTGRES_USER / container_name override is reflected in what OpenIddict
+        # targets. When no endpoint was resolved the local coordinates are null and only name/type/user/password
+        # carry.
+        if ($OpenIddictIncluded) {
+            $openIddict = [pscustomobject]@{
+                DbType          = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
+                DbUser          =
+                    if ($InfrastructureEngine -eq 'mssql') { 'sa' }
+                    elseif ($null -ne $ResolvedDbLocalEndpoint -and -not [string]::IsNullOrWhiteSpace([string]$ResolvedDbLocalEndpoint.PostgresAdminUser)) { [string]$ResolvedDbLocalEndpoint.PostgresAdminUser }
+                    else { 'postgres' }
+                DbHost          = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.PublishedHost } else { $null }
+                DbPort          = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.PublishedPort } else { $null }
+                DbContainerName = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.ContainerName } else { $null }
+                DbName          = $effectiveDatabaseName
+                DbPassword      = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword } else { $null }
+            }
         }
     }
 

@@ -886,6 +886,7 @@ $failureStatement
             $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
             $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
             $startScript | Should -Match '-DmsServiceIncluded \$true'
+            $startScript | Should -Match '-OpenIddictIncluded \(\$IdentityProvider -eq "self-contained"\)' -Because "self-contained OpenIddict participation is a locality authority; the contract enforces the CMS endpoint reaches the local db container"
             $startScript | Should -Match '-ResolvedDbLocalEndpoint \$resolvedCompose\.DbLocalEndpoint' -Because "the OpenIddict coordinates converge on the Compose-resolved local db endpoint"
             $startScript | Should -Match 'DbType = \$contract\.OpenIddict\.DbType'
             $startScript | Should -Match 'DbHost = \$contract\.OpenIddict\.DbHost' -Because "OpenIddict targets the Compose-resolved host dial address, not an ENV: sentinel"
@@ -914,6 +915,7 @@ $failureStatement
             $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
             $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
             $startScript | Should -Match '-DmsServiceIncluded \$true'
+            $startScript | Should -Match '-OpenIddictIncluded \(\$IdentityProvider -eq "self-contained"\)' -Because "self-contained OpenIddict participation is a locality authority; the contract enforces the CMS endpoint reaches the local db container"
             $startScript | Should -Match '-ResolvedDbLocalEndpoint \$resolvedCompose\.DbLocalEndpoint' -Because "the OpenIddict coordinates converge on the Compose-resolved local db endpoint"
             $startScript | Should -Match 'DbHost = \$contract\.OpenIddict\.DbHost' -Because "OpenIddict targets the Compose-resolved host dial address, not an ENV: sentinel"
             $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
@@ -927,6 +929,21 @@ $failureStatement
             foreach ($call in $openiddictCalls) {
                 $call.Value | Should -Match '@identityDbParams'
             }
+        }
+
+        It "start-local-config.ps1 gates endpoint locality on its identity provider and reaches the local db endpoint" {
+            # The standalone Configuration Service lane composes no DMS service, so OpenIddict participation is
+            # the sole locality authority: a self-contained run must reach the local db container (endpoint
+            # enforced), a Keycloak run may use an external database (exempt). It also passes the local endpoint
+            # the contract validates the connection against.
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-config.ps1"
+            ) -Raw
+
+            $startScript | Should -Match '-ConfigServiceIncluded \$true'
+            $startScript | Should -Match '-DmsServiceIncluded \$false'
+            $startScript | Should -Match '-OpenIddictIncluded \(\$IdentityProvider -eq "self-contained"\)' -Because "OpenIddict participation is the standalone lane's only locality authority"
+            $startScript | Should -Match '-ResolvedDbLocalEndpoint \$resolvedCompose\.DbLocalEndpoint'
         }
 
         It "start-local-dms.ps1 gates Kafka on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {

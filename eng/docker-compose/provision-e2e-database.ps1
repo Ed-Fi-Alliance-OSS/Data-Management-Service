@@ -193,8 +193,9 @@ function Assert-E2EDatabaseIsDedicated {
     param(
         # Concrete, already-resolved protected database targets: records of @{ Source; DatabaseName }.
         # Every name is resolved UPSTREAM by the single authorities - Docker Compose for interpolation
-        # (Get-ComposeResolvedConfiguration) and the api-schema-tools 'connection validate' verb for
-        # connection-string parsing (Resolve-EffectiveConfigRuntimeContract / Get-CmsConnectionStringDatabaseName).
+        # (Get-ComposeResolvedConfiguration) and the api-schema-tools connection verbs for connection-string
+        # parsing (the runtime contract's 'connection inspect' via Resolve-EffectiveConfigRuntimeContract, and
+        # 'connection validate' via Get-CmsConnectionStringDatabaseName for the admin/readiness target).
         # This guard never reads or expands a ${...} expression itself; there is no second interpolation model.
         [object[]]$ProtectedDatabaseTarget,
         [string]$EnvironmentFilePath,
@@ -474,12 +475,14 @@ $safetyContract = Resolve-EffectiveConfigRuntimeContract `
     -InfrastructureEngine $DatabaseEngine `
     -ConfigServiceIncluded $true `
     -DmsServiceIncluded $true `
+    -OpenIddictIncluded $false `
     -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
     -ResolvedDmsProvider $resolvedCompose.DmsProvider `
     -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
     -SchemaToolPath $connectionValidator `
     -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
-    -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName
+    -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName `
+    -ResolvedDbLocalEndpoint $resolvedCompose.DbLocalEndpoint
 
 # The DMS admin/readiness connection is parsed by the provider verb; require EXACTLY one concrete target so a
 # zero- or multi-target parse fails before any reset rather than under-protecting the destructive DROP.

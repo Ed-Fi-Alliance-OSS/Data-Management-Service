@@ -78,6 +78,7 @@ else {
         -InfrastructureEngine $datastore `
         -ConfigServiceIncluded $true `
         -DmsServiceIncluded $false `
+        -OpenIddictIncluded ($IdentityProvider -eq "self-contained") `
         -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
         -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
         -SchemaToolPath $schemaToolPath `

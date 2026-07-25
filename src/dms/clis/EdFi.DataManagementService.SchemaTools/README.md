@@ -93,8 +93,10 @@ echo "Server=dms-mssql,1433;Database=edfi_dms;User Id=sa;Password=secret;TrustSe
 |---|---|---|
 | `--engine` | Yes | Target database engine: `postgresql` or `mssql` (case-insensitive; an unsupported value is a usage error, exit `2`). |
 
-**`validate`** prints a JSON `{ valid, database, error }` result — the stable contract the docker-compose
-start scripts consume for host-side pre-flight validation. It never emits any other field.
+**`validate`** prints a JSON `{ valid, database, error }` result — a stable, database-only contract for
+host-side tooling that needs only validity and the target database (e.g. the E2E admin-target readiness
+check). It never emits any other field. The docker-compose start-script runtime contract consumes `inspect`
+(below) instead, whose endpoint projection it enforces for local-topology CMS connections.
 
 **`inspect`** prints a JSON `{ valid, database, host, port, username, error, endpoint }` of the **non-secret**
 canonical coordinates. It never emits the password. The six leading fields keep their original semantics: in
@@ -117,8 +119,11 @@ particular `port` is `null` for SQL Server, which encodes the port inside the da
 This keeps three concerns distinct: **provider validity** (does the exact provider accept the string), the
 **endpoint classification** above, and **local-topology acceptability** (whether the endpoint is the single
 local database the docker-compose stack serves) — the last is a separate consumer policy, **not** decided by
-this verb, which only classifies. (A start-script runtime contract will own that locality enforcement in a
-later iteration.)
+this verb, which only classifies. That locality decision is owned by the docker-compose start-script runtime
+contract (`Resolve-EffectiveConfigRuntimeContract` in `eng/docker-compose/env-utility.psm1`): when the
+Configuration Service must reach the local database container it consumes this classification and accepts only
+a single host in the container's Compose in-network name set at the container-internal port, with no alternate
+routing.
 
 Both verbs exit `0` with a `{ valid: false, ... }` result for a connection string the provider rejects, and
 exit `2` (a usage error) for an unsupported `--engine` value.
