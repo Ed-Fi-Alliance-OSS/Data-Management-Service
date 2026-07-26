@@ -158,11 +158,12 @@ separate persistent `.cdc-state` root defined by the CDC design. It must not add
 projection lifecycle, projection work, binding, connector, topic, or readiness state to
 `.bootstrap/bootstrap-manifest.json`. E19-S04 owns that opt-in orchestration, not the
 ordinary infrastructure-start command. While canonical write admission remains closed it
-must invoke the guarded new-empty `Disabled -> Tracking` transition before seed/API
-writes, reject any nonempty canonical/cache/work target, configure the matching DMS
-projection target, start queue processing, wait for work drain, cross the provider
-heartbeat barrier, and recheck caught-up status. Starting DMS is not authority to enable
-tracking.
+must reject any nonempty canonical/cache/work target, atomically create or exact-match the
+immutable binding, then invoke the guarded new-empty `Disabled -> Tracking` transition
+before seed/API writes. It configures the matching DMS projection target, starts queue
+processing, waits for work drain, crosses the provider heartbeat barrier, and rechecks
+caught-up status. Binding/lifecycle crash-state classification and retry remain owned by
+E19-S04 and the CDC design. Starting DMS is not authority to enable tracking.
 
 **Boundary note:** Story 00 makes staged schema/security the prepared bootstrap contract. Story 04 (DMS-1154,
 delivered) makes it the Docker runtime source of truth by activating staged schema and staged claims together

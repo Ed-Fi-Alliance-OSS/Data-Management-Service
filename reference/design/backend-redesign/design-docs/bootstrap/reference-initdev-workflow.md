@@ -528,10 +528,13 @@ These notes describe patterns and trade-offs observed in the ODS pipeline. They 
 The historical ODS workflow is not authority for relational DMS projection activation.
 When explicit CDC bootstrap is selected, the DMS workflow keeps canonical write admission
 closed, provisions the current `DocumentCache`/`DocumentProjectionWork`/lifecycle schema,
-invokes the guarded new-empty `Disabled -> Tracking` transition before seed or API writes,
-and rejects a nonempty database rather than attempting CDC retrofit. It then starts the
-configured projector, waits for durable work drain, completes the provider heartbeat
-barrier, and rechecks projection caught-up status.
+rejects a nonempty database rather than attempting CDC retrofit, atomically creates or
+exact-matches the immutable binding, and then invokes the guarded new-empty
+`Disabled -> Tracking` transition before seed or API writes. It then starts the configured
+projector, waits for durable work drain, completes the provider heartbeat barrier, and
+rechecks projection caught-up status. The binding-first order makes an interrupted
+activation fail-closed and resumable under the retry classification owned by the CDC
+design.
 
 DMS startup never enables tracking. Mutable lifecycle, queue, CDC binding, and readiness
 state is deployment-owned and remains outside the bootstrap manifest. The current contract

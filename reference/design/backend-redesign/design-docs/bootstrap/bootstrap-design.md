@@ -537,13 +537,14 @@ prepare-dms-schema.ps1
 > the root bootstrap manifest; DMS consumes only its explicit `DocumentCache:Targets` configuration and exposes
 > per-database projection operational-health and caught-up status. With CDC opt-in,
 > E19-S04 owns orchestration while canonical write admission is closed: provision the
-> current cache/work/lifecycle schema, invoke the guarded new-empty
-> `Disabled -> Tracking` transition before any seed/API write, reject a nonempty
-> canonical/cache/work database, configure the matching DMS target, start queue
-> processing, wait for durable work drain, cross the provider heartbeat barrier, and
-> recheck caught-up status. DMS startup itself never enables tracking. Mutable lifecycle,
-> queue, binding, connector, topic, and readiness state remains outside the bootstrap
-> manifest. Non-bootstrap local startup
+> current cache/work/lifecycle schema, reject a nonempty canonical/cache/work database,
+> atomically create or exact-match the immutable binding, and then invoke the guarded
+> new-empty `Disabled -> Tracking` transition before any seed/API write. It configures the
+> matching DMS target, starts queue processing, waits for durable work drain, crosses the
+> provider heartbeat barrier, and rechecks caught-up status. The CDC design owns fail-closed
+> binding/lifecycle retry classification. DMS startup itself never enables tracking.
+> Mutable lifecycle, queue, binding, connector, topic, and readiness state remains outside
+> the bootstrap manifest. Non-bootstrap local startup
 > can still use the existing `SCHEMA_PACKAGES` downloader path.
 
 This reuses the existing host-side pattern already present in `eng/preflight-dms-schema-compile.ps1`: the

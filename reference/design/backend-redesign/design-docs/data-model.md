@@ -778,7 +778,10 @@ Ordinary provisioning reruns never change lifecycle, latch, cache, or pending wo
 binary SQL Server collation plus explicit byte lengths makes the four ASCII lifecycle
 tokens exact even when the database default collation is case-insensitive or a comparison
 would otherwise ignore trailing spaces. Provider constraint tests reject casing variants,
-leading/trailing whitespace, empty strings, and every other unknown value. The
+leading/trailing whitespace, empty strings, and every other unknown value. The check
+constraint validates the stored token; it does not encode the transition graph, and no
+database trigger changes lifecycle state autonomously. Serialized administrative commands
+enforce and test the supported transition edges. The
 [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle)
 owns the supported transitions, shared/exclusive state-row locking, administrative mutex,
 and recovery behavior.

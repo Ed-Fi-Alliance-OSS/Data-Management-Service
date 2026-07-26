@@ -88,8 +88,10 @@ Source documents:
     used only through the versioned opaque CDC source-fingerprint contract.
 
 - `dms.DocumentCache`
-  - Always-provisioned projection table; target configuration controls whether it is
-    populated, and read acceleration independently controls whether API reads use it.
+  - Always-provisioned projection table. Durable lifecycle controls whether work may be
+    recorded or applied; process-local target configuration selects which DMS processes
+    execute eligible work, and read acceleration independently controls whether API reads
+    may use eligible rows.
 
 - `dms.DocumentProjectionWork`
   - Always-provisioned, transactionally maintained, coalesced requirement per changed

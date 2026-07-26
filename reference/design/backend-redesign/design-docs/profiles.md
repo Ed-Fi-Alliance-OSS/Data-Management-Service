@@ -61,7 +61,8 @@ Related redesign discussion:
 - high-level architecture and existing profile split: [overview.md:81](overview.md#L81)
 - authorization interaction: [auth.md:1](auth.md#L1)
 - write/reconstitution mechanics: [flattening-reconstitution.md:399](flattening-reconstitution.md#L399)
-- concurrency and guarded execution: [transactions-and-concurrency.md:322](transactions-and-concurrency.md#L322)
+- concurrency and guarded execution:
+  [transactions-and-concurrency.md § Concurrency](transactions-and-concurrency.md#concurrency-etag-preconditions)
 
 ## Goals and Constraints
 
@@ -155,7 +156,8 @@ Backend MAY use Core-supplied profile outputs to:
 Related redesign discussion:
 - Core/backend split and current contract summary: [overview.md:83](overview.md#L83)
 - prohibition on backend-evaluated profile predicates during merge execution: [flattening-reconstitution.md:401](flattening-reconstitution.md#L401)
-- profile-scoped write/concurrency notes: [transactions-and-concurrency.md:338](transactions-and-concurrency.md#L338)
+- profile-scoped write/concurrency notes:
+  [transactions-and-concurrency.md § Concurrency](transactions-and-concurrency.md#concurrency-etag-preconditions)
 
 ## Everything DMS Core Is Expected to Own
 
@@ -254,10 +256,12 @@ Backend is expected to own all of the following:
 Profile-constrained backend support depends on the following redesign elements:
 
 Related redesign discussion:
-- stable child-row identity and collection table shape: [data-model.md:621](data-model.md#L621)
+- stable child-row identity and collection table shape:
+  [data-model.md § Child tables for collections](data-model.md#child-tables-for-collections)
 - compiled collection merge plans and executor behavior: [compiled-mapping-set.md:377](compiled-mapping-set.md#L377)
 - flattened write candidates, semantic identities, and merge binding: [flattening-reconstitution.md:427](flattening-reconstitution.md#L427)
-- branch-level summary of the merged design: [summary.md:159](summary.md#L159)
+- branch-level summary of the merged design:
+  [summary.md § Write path](summary.md#write-path-post-upsert--put-by-id)
 
 1. **Stable collection row identity**
    - every persisted collection row has a stable `CollectionItemId`,
@@ -294,7 +298,8 @@ The existing branch design already introduces:
 Related redesign discussion:
 - high-level Core/backend contract statement: [overview.md:85](overview.md#L85)
 - current request/context assembly design: [flattening-reconstitution.md:399](flattening-reconstitution.md#L399)
-- summarized contract wording: [summary.md:159](summary.md#L159)
+- summarized contract wording:
+  [summary.md § Write path](summary.md#write-path-post-upsert--put-by-id)
 
 For backend profile support to be correct across collection and non-collection scopes, the minimum contract must be concrete and executable. Filtered JSON alone is insufficient.
 
@@ -831,9 +836,11 @@ The write flow under a writable profile is:
 
 Related redesign discussion:
 - end-to-end write-path mechanics: [flattening-reconstitution.md:427](flattening-reconstitution.md#L427)
-- transactional write ordering and guarded execution: [transactions-and-concurrency.md:208](transactions-and-concurrency.md#L208)
+- transactional write ordering and guarded execution:
+  [transactions-and-concurrency.md § Common steps](transactions-and-concurrency.md#common-steps)
 - compiled runtime write-plan usage: [compiled-mapping-set.md:377](compiled-mapping-set.md#L377)
-- authorization ordering and integration: [transactions-and-concurrency.md:233](transactions-and-concurrency.md#L233)
+- authorization ordering and integration:
+  [transactions-and-concurrency.md § Authorization](transactions-and-concurrency.md#authorization-crud-checks)
 
 1. **Core validates profile usage**
    - select the writable profile definition for the request,
@@ -886,9 +893,11 @@ For profile-constrained writes:
 
 Related redesign discussion:
 - normative merge and ordering rules: [flattening-reconstitution.md:483](flattening-reconstitution.md#L483)
-- write-path/concurrency constraints on accepted profile writes: [transactions-and-concurrency.md:338](transactions-and-concurrency.md#L338)
+- write-path/concurrency constraints on accepted profile writes:
+  [transactions-and-concurrency.md § Concurrency](transactions-and-concurrency.md#concurrency-etag-preconditions)
 - compiled executor behavior for current sibling sets, updates, deletes, and inserts: [compiled-mapping-set.md:389](compiled-mapping-set.md#L389)
-- collection table identity and constraints: [data-model.md:621](data-model.md#L621)
+- collection table identity and constraints:
+  [data-model.md § Child tables for collections](data-model.md#child-tables-for-collections)
 
 - visible stored rows are the persisted rows that the writable profile exposes for that scope instance,
 - hidden stored rows are persisted rows excluded from that scope instance by the writable profile,
@@ -983,7 +992,9 @@ Profile support must also define behavior for non-collection scopes:
 Related redesign discussion:
 - current 1:1 execution mechanics (`UpdateSql` / `DeleteByParentSql`): [flattening-reconstitution.md:456](flattening-reconstitution.md#L456)
 - root and scope-aligned extension table mapping: [extensions.md:96](extensions.md#L96)
-- key strategy for root-scope and extension-scope tables: [data-model.md:916](data-model.md#L916)
+- root and extension scope key strategies:
+  [data-model.md § Root table](data-model.md#root-table-schemar) and
+  [data-model.md § Extensions](data-model.md#extensions)
 
 - **Hidden 1:1 or common-type scope**
   - backend preserves the persisted scope if it exists,
@@ -1011,7 +1022,8 @@ Profile semantics apply to extensions under the same rules as base resource data
 
 Related redesign discussion:
 - normative `_ext` mapping rules: [extensions.md:96](extensions.md#L96)
-- extension table keys and naming in the relational model: [data-model.md:841](data-model.md#L841)
+- extension table keys and naming in the relational model:
+  [data-model.md § Extensions](data-model.md#extensions)
 - write/reconstitution integration for extension rows: [flattening-reconstitution.md:470](flattening-reconstitution.md#L470)
 - compiled read/write plan interaction with extension tables: [compiled-mapping-set.md:440](compiled-mapping-set.md#L440)
 
@@ -1047,9 +1059,11 @@ Profile-constrained writes participate in the same no-op and concurrency rules a
 
 Related redesign discussion:
 - whole-document no-op detection details: [flattening-reconstitution.md:524](flattening-reconstitution.md#L524)
-- provisional no-op decisions, `ContentVersion`, and `If-Match`: [transactions-and-concurrency.md:322](transactions-and-concurrency.md#L322)
+- provisional no-op decisions, `ContentVersion`, and `If-Match`:
+  [transactions-and-concurrency.md § No-op update detection](transactions-and-concurrency.md#no-op-update-detection)
 - compiled executor no-op candidate handling: [compiled-mapping-set.md:366](compiled-mapping-set.md#L366)
-- `ContentVersion` storage and stamping fields: [data-model.md:84](data-model.md#L84)
+- `ContentVersion` storage and stamping fields:
+  [data-model.md § `dms.Document`](data-model.md#1-dmsdocument)
 
 - no-op comparison occurs in storage space after applying the same post-merge rules the real write path would use,
 - guarded no-op comparison MUST reuse the same merge-ordering and post-merge rowset-synthesis logic as the real executor, either by invoking the same helper or by sharing a helper built from the same `CollectionMergePlan` / `TableWritePlan` metadata,
@@ -1076,7 +1090,8 @@ The design expects these behaviors:
 Related redesign discussion:
 - high-level profile contract and semantic-identity compatibility requirement: [overview.md:85](overview.md#L85)
 - request/context assembly and runtime merge preconditions: [flattening-reconstitution.md:399](flattening-reconstitution.md#L399)
-- write-path validity and concurrency notes for accepted profile writes: [transactions-and-concurrency.md:338](transactions-and-concurrency.md#L338)
+- write-path validity and concurrency notes for accepted profile writes:
+  [transactions-and-concurrency.md § Concurrency](transactions-and-concurrency.md#concurrency-etag-preconditions)
 
 - invalid profile definitions fail metadata validation/compilation,
 - writable profiles that hide required semantic-identity fields fail validation/compilation rather than falling back at runtime,

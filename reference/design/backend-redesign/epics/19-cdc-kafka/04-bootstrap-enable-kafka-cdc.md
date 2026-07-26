@@ -31,9 +31,11 @@ needed to provision, validate, start, stop, and retire a target.
 ## Implementation Scope
 
 - Add the local/bootstrap command surface and controller orchestration.
-- While canonical write admission is closed, integrate new-database evidence and invoke
-  the guarded `Disabled -> Tracking` transition before the first seed/API write. Reject a
-  nonempty canonical/cache/work database rather than attempting CDC retrofit.
+- While canonical write admission is closed, integrate new-database evidence, reject a
+  nonempty canonical/cache/work database rather than attempting CDC retrofit, atomically
+  create or exact-match the immutable binding, and then invoke or recognize the completed
+  guarded `Disabled -> Tracking` transition before the first seed/API write according to
+  the retry classification.
 - Configure and validate the matching DMS target, start queue processing, wait for
   projection caught-up status, cross the provider heartbeat barrier, and require a second
   caught-up observation before opening admission.
@@ -50,8 +52,13 @@ needed to provision, validate, start, stop, and retire a target.
 
 - Script and integration tests cover the setup, retry, rejection, timeout, restart,
   guarded lifecycle, and teardown cases defined by the integration design.
-- Partial/retry tests prove fail-closed behavior around guarded activation, binding
-  creation, queue drain, provider barrier, and second caught-up observation.
+- Partial/retry tests prove the binding is durable before guarded activation: an exact
+  binding with lifecycle `Disabled` and a clear latch retries activation; an exact binding
+  with lifecycle `Tracking`, a clear latch, and empty tables resumes setup; and a set
+  cache-ahead latch, unbound `Tracking`, any other lifecycle, a binding mismatch, or
+  unexpected pre-capture rows fail closed and require cleanup/reprovisioning as applicable.
+  They also cover queue drain, provider barrier, and second caught-up observation
+  interruptions.
 - Broker-backed tests cover the shared Connect offset store's compaction, durability, and
   worker-only ACLs plus binding-topic policy, record-size, connector, offset, heartbeat, and
   image validation.

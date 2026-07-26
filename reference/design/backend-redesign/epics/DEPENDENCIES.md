@@ -140,7 +140,7 @@ epics and is not repeated here.
 | 18-05 | 18-00 through 18-04 |
 | 18-06 | 18-00, 18-01, 18-04, and 18-05 |
 | 18-07 | 18-00 through 18-06 |
-| 18-08 | E10, queue-capable 18-00, 18-02, 18-04, and queue/status evidence from 18-06 |
+| 18-08 | E10, queue-capable 18-00, lifecycle validation from 18-01, 18-02, administrative serialization from 18-04, and queue/status evidence from 18-06 |
 
 | `19-cdc-kafka` story | Implementation dependency |
 | --- | --- |
@@ -149,14 +149,15 @@ epics and is not repeated here.
 | 19-02 | 19-01 and 19-03 (hard); template/rendering work may begin earlier |
 | 19-03 | —; external transform implementation consumed by 19-02 and 19-05 |
 | 19-04 | 18-01, 18-04, 18-06, plus 19-00 |
-| 19-05 | 19-01 and 19-03 (hard); 18-02 (soft) |
+| 19-05 | 19-01 and 19-03 (hard); 19-00 and 19-04 for broker-backed readiness; 18-02 (soft) |
 | 19-06 | 18-01, 18-04, 18-06, plus 19-00 through 19-05 |
-| 19-07 | 18-04, 18-06, and 18-07 |
+| 19-07 | 18-07 and completed 19-00 through 19-06 |
 
 E18-00 is the schema prerequisite for every integrated lifecycle or durable-work path.
 E18-03 owns the atomic cache-write/conditional-acknowledgement component consumed by
-E18-04 and E18-05 direct fill. E19 initial admission consumes E18-01 guarded activation,
-E18-04 queue processing, and E18-06 caught-up observation before the provider barrier.
+E18-04 and E18-05 direct fill. E19 initial admission consumes E18-01 activation contracts
+and preflight classifications, E18-04 guarded execution and queue processing, and E18-06
+caught-up observation before the provider barrier.
 
 ---
 

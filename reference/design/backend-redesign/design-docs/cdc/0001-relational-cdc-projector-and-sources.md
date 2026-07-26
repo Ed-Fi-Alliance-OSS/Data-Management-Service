@@ -147,28 +147,60 @@ pauses processing without discarding work or disabling tracking.
 The only v1 lifecycle transitions are:
 
 ```text
-new empty database: Disabled -> Tracking
-activation:         Disabled -> Rebuilding -> Tracking
-rebuild:            Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
-deactivation:       Tracking|Rebuilding -> Resetting -> Disabled
+new empty database:             Disabled -> Tracking
+activation:                     Disabled -> Rebuilding -> Tracking
+rebuild (latch clear):          Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
+internal recovery (latch set):  Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
+deactivation:                   Tracking|Rebuilding -> Resetting -> Disabled
 ```
 
-No other transition is supported.
+Internal recovery is the proven-internal-only cache-ahead workflow. Its lifecycle path
+matches rebuild, but the cache-ahead latch remains set through `Resetting` and is cleared
+only in the verified transition to `Rebuilding`. No other transition is supported.
 
 ### Administrative Serialization and State-Row Fencing
 
-Every lifecycle-changing, cache/work-clearing, baseline-seeding, recovery, or integrity
-scrub workflow first acquires one provider-equivalent, database-scoped, session-owned
-administrative mutex. PostgreSQL may use a session advisory lock; SQL Server may use a
-session application lock. Every coordinator uses one deterministic identity per physical
-database and holds the mutex on a dedicated open connection across the entire
-multi-transaction workflow, including the final state transition.
+Every lifecycle-changing, cache/work-clearing, baseline-seeding, recovery, integrity scrub,
+or representation-restamp workflow first acquires one provider-equivalent, database-scoped,
+session-owned administrative mutex through one shared provider adapter.
+
+PostgreSQL uses `pg_advisory_lock(bigint)` with the exact key:
+
+```text
+(811646948::bigint << 32) | currentDatabaseOid::bigint
+```
+
+`811646948` (`0x3060BFE4`) is the fixed v1 projection-administration namespace.
+`currentDatabaseOid` is the current database's unsigned `pg_catalog.pg_database.oid` in
+the low 32 bits. Normal completion calls `pg_advisory_unlock(bigint)` with that exact key.
+
+SQL Server uses `sp_getapplock` with the exact resource
+`EdFi.DMS.DocumentProjection.Administration.v1`, `Exclusive` mode,
+`@LockOwner = 'Session'`, and `@DbPrincipal = 'public'`. A negative return code aborts the
+operation before it changes durable state. Normal completion calls `sp_releaseapplock`
+with the same resource, owner, and principal.
+
+Neither provider derives the identity from tenant key, `DataStoreId`, connection-string
+database name, connection alias, or mutable `DataStoreIdentity`. Aliases of one physical
+database therefore contend, while different databases on the same server or PostgreSQL
+cluster may be administered concurrently. Every coordinator holds the mutex on a dedicated
+open connection across the entire multi-transaction workflow, including the final state
+transition when one exists.
+
+Every coordinator-issued database mutation in that workflow executes on the same physical
+database session that owns the mutex. This includes lifecycle or latch transitions,
+cache/work clearing, baseline or scrub work-table changes, and representation-restamp
+batches. The session may span multiple short transactions. Ordinary projector workers are
+excluded and continue to use their own connections.
 
 The connection does not return to a pool while holding the mutex. Normal completion
-explicitly releases it. Session loss releases it and aborts the coordinator; a former
-owner cannot make a later final transition. An operator reissues the same operation, and
-the replacement owner revalidates durable state before repeating or resuming it. A
-replacement never infers the intended operation from `Resetting` alone.
+explicitly releases it. Connection resiliency does not transparently reconnect and continue
+under presumed mutex ownership. Session loss releases the mutex, rolls back any active
+transaction on that session, and aborts the coordinator; the former owner performs no later
+database mutation through a replacement connection. An operator reissues the same
+operation, and the replacement owner reacquires the mutex and revalidates durable state
+before repeating or resuming it. A replacement never infers the intended operation from
+`Resetting` alone.
 
 Ordinary writers, projector workers, direct fill, reads, and health checks do not acquire
 the administrative mutex. Every cache-write/acknowledgement transaction instead reads the
@@ -311,7 +343,7 @@ statement compares:
 | ---: | ---: | ---: | --- |
 | 11 | 10 | 11 | Healthy pending projection; candidate 11 may be written, then work acknowledged. |
 | 11 | 11 | 11 | Already projected; conditionally acknowledge even if the local candidate is older. |
-| 11 | 11 | absent | Healthy and caught up; no action. |
+| 11 | 11 | absent | Current for this document; no action. |
 | 11 | 12 | any | Genuine cache-ahead state; set the durable latch after reclassification. |
 | 11 | absent or at most 11 | 10 | Work is behind; leave it pending for explicit scrub repair. |
 | 11 | absent or at most 11 | 12 | Work is ahead; leave it pending for explicit scrub repair. |
@@ -459,17 +491,24 @@ verifies `Disabled`, a clear cache-ahead latch, and both tables empty, and enter
 
 With write admission still closed, it starts only the designated projector execution
 needed to drain seeded work, captures a maximum `DocumentId` boundary, and keyset-scans
-canonical documents through that boundary in bounded pages. Each committed page
-idempotently seeds current required versions. A page invalidated by a concurrent delete
-rolls back and rereads from its last committed key; the deleted row disappears and
-survivors are seeded. Existing mismatched work in that page is conditionally repaired.
+canonical documents through that boundary in bounded pages. This baseline routine is also
+used by online rebuild, which keeps write admission open, and by internal recovery after
+write admission reopens. Offline activation itself admits no concurrent canonical writes;
+the delete-race and concurrent-enqueue rules below apply when those other workflows run
+the shared routine with writes admitted.
+
+Each committed page idempotently seeds current required versions. A page invalidated by a
+concurrent delete rolls back and rereads from its last committed key; the deleted row
+disappears and survivors are seeded. Existing mismatched work in that page is
+conditionally repaired.
 
 Seeding is backpressured by a bounded `high-water mark + 1` observation. It pauses when
 pending work reaches the high-water mark and resumes as work drains. Poison rows remain
 pending and can pause completion rather than allowing unbounded seed amplification.
-The limit bounds only baseline-generated amplification; canonical writes may enqueue
-concurrently and grow total work beyond it. Canonical inserts/updates around the boundary
-are covered by transactional enqueue; deletes cascade.
+The limit bounds only baseline-generated amplification. Where a workflow admits canonical
+writes during seeding, those writes may enqueue concurrently and grow total work beyond
+the limit; transactional enqueue covers inserts/updates around the boundary, and deletes
+cascade.
 
 V1 persists no baseline cursor. After interruption, a replacement owner captures a new
 boundary and restarts from the beginning while lifecycle remains `Rebuilding`.
@@ -483,17 +522,25 @@ catch-up, or streaming-baseline effect.
 
 ### Online Cache Rebuild
 
-An internal cache rebuild may keep canonical writes online:
+An internal cache rebuild may keep canonical writes online only while the cache-ahead
+latch is clear:
 
-1. enter `Resetting` under the exclusive state-row lock;
+1. in one short transaction, exclusively lock the state row, verify lifecycle is
+   `Tracking` or `Rebuilding` and the latch is clear, then enter `Resetting`;
 2. clear only `DocumentCache` through bounded transactions or a qualified provider fast
    clear, preserving pending work while transactional enqueue continues;
 3. enter `Rebuilding` after verifying cache empty;
 4. run the bounded/backpressured baseline; and
 5. enter `Tracking` only after seeding completes and work drains.
 
+A set latch rejects the online-rebuild command before any lifecycle, cache, work, or latch
+mutation. The command reports that the operator must use the cache-ahead recovery or
+publication-containment contract below; it never selects recovery automatically because
+downstream-observation eligibility must first be established.
+
 A crash in `Resetting` leaves cache use and acknowledgement durably fenced; the next owner
-repeats or resumes the clear. A crash in `Rebuilding` restarts the baseline.
+repeats or resumes the explicitly requested clear only while the latch remains clear. A
+crash in `Rebuilding` restarts the baseline.
 
 ### Offline Deactivation
 
@@ -513,13 +560,18 @@ work/cache clearing or a transition to `Disabled`.
 
 ### Explicit Integrity Scrub
 
-An explicit or very infrequent operator-requested scrub may perform the O(N)
-canonical/cache/work relationship scan. It conditionally inserts missing work, repairs
-mismatched requirements to current canonical versions, and sets the durable latch only
-for current cache-ahead state. It is serialized with reset/rebuild by the administrative
-mutex. Scrub recency is not operational-health or caught-up evidence. After a restore or
-unsupported direct mutation is suspected, operators run a scrub before relying on
-queue-empty status.
+After acquiring the administrative mutex, scrub preflight requires lifecycle `Tracking`
+and a clear cache-ahead latch. Any other lifecycle or a latch already set rejects the
+command before the relationship scan or any cache, work, lifecycle, or latch mutation.
+
+An admitted explicit or very infrequent operator-requested scrub performs the intentionally
+O(N) canonical/cache/work relationship scan. It conditionally inserts missing work, repairs
+mismatched requirements to current canonical versions, and sets the durable latch only for
+current cache-ahead state. A scrub may set that latch but never clears it. Baseline-seeding
+high-water, backpressure, and durable-cursor requirements do not apply to scrub; an
+implementation may still page the scan for operational reasons. Scrub recency is not
+operational-health or caught-up evidence. After a restore or unsupported direct mutation is
+suspected, operators run a scrub before relying on queue-empty status.
 
 Direct `DocumentProjectionWork` insert/update/delete, cache truncation or clearing, and
 lifecycle-state mutation outside the supported runtime writer and serialized
@@ -535,9 +587,9 @@ table, document deletion, or restart never clears the latch.
 
 For a projection proven internal-only, recovery is an offline administrative workflow:
 
-1. close canonical write admission and drain transactions;
-2. stop projector and direct fill;
-3. acquire the administrative mutex;
+1. acquire the administrative mutex on its dedicated connection;
+2. close canonical write admission and drain transactions;
+3. stop projector and direct fill;
 4. under the exclusive state-row lock, verify lifecycle is not `Disabled` and the latch is
    set, then enter `Resetting` while leaving the latch set;
 5. clear all cache and work rows using supported bounded/qualified paths; and

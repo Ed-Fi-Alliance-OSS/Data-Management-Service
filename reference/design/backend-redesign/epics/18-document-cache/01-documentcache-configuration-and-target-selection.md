@@ -26,7 +26,7 @@ workers, lifecycle administration, cache reads, and health reporting.
 ## Dependencies
 
 - Configuration and target-resolution scaffolding may proceed alongside 18-00. Integrated
-  lifecycle, guarded-activation, enqueue-trigger, and provider-prerequisite validation
+  lifecycle, activation-preflight, enqueue-trigger, and provider-prerequisite validation
   depends on the 18-00 schema.
 - Supplies target contexts to E18 stories 18-04 through 18-06 and target observations to
   E19.
@@ -38,13 +38,14 @@ workers, lifecycle administration, cache reads, and health reporting.
 - Validate durable lifecycle/work state and fail closed for configuration/database-state
   mismatch. Removing a target pauses processing without deleting work or disabling
   tracking.
-- Implement the guarded new-empty `Disabled -> Tracking` transition with the
-  administrative mutex, one-time writer-blocking `dms.Document` lock, exclusive state-row
-  lock, clear-latch and empty canonical/cache/work checks, and racing-insert safety.
-- Expose the repeatable offline activation/deactivation command boundary and its
-  eligibility/preflight checks; 18-04 owns the administrative-mutex workflow execution.
-  Runtime target configuration never changes lifecycle. Require proof that the projection
-  is internal-only and reject the simple toggle for an active or historical downstream
+- Define the guarded new-empty `Disabled -> Tracking` and repeatable offline
+  activation/deactivation command/result contracts, including their eligibility and
+  preflight classifications. The new-empty contract requires a one-time writer-blocking
+  `dms.Document` lock, an exclusive state-row lock, clear-latch and empty
+  canonical/cache/work checks, and racing-insert safety; 18-04 owns the shared
+  administrative-mutex adapter and guarded workflow execution. Runtime target
+  configuration never changes lifecycle. Require proof that the projection is
+  internal-only and reject the simple toggle for an active or historical downstream
   consumer/CDC binding.
 - Replace scan/audit tuning with queue poll, page, concurrency, backoff, seeding
   high-water, and direct-fill settings.
@@ -58,12 +59,12 @@ workers, lifecycle administration, cache reads, and health reporting.
 
 ## Acceptance Evidence
 
-- Configuration and lifecycle tests cover the states and transitions enumerated by the
-  referenced design sections.
+- Configuration, validation, and command-contract tests cover the states, requests, and
+  preflight classifications enumerated by the referenced design sections.
 - Provider integration tests cover target prerequisite validation and isolation.
-- Lifecycle tests cover legal/illegal transitions, `Resetting` interruption, target
-  pause/resume, nonempty activation rejection, active/historical-binding rejection, and
-  both outcomes of a racing insert.
+- Preflight and contract tests cover legal/illegal transition requests, `Resetting`
+  mismatch, target pause/resume, nonempty activation rejection, and
+  active/historical-binding rejection.
 - Appsettings and diagnostics are verified against the implementation and defer behavioral
   explanation to the design owner.
 
@@ -71,4 +72,6 @@ workers, lifecycle administration, cache reads, and health reporting.
 
 - Projector scheduling, cache reads, and health aggregation are assigned to later E18
   stories.
+- The administrative-mutex adapter, guarded transition execution, and provider
+  concurrency/session-loss tests are assigned to 18-04.
 - Durable CDC binding and connector lifecycle are assigned to E19.

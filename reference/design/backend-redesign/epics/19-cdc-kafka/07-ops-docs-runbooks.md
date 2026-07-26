@@ -31,8 +31,9 @@ Publish verified operator guidance for the implemented relational CDC capability
 - Document the shipped topic, connector, consumer, binding-state, security, retention,
   sizing, and telemetry operations.
 - Document queue backlog/oldest work, poison failure remediation, lifecycle/configuration
-  mismatch, activation/deactivation, `Resetting`, bounded rebuild, explicit scrub,
-  enqueue-failure diagnosis, and provider-specific per-write/queue-drain overhead.
+  mismatch, activation/deactivation, `Resetting`, bounded rebuild, clear-latch `Tracking`
+  admission for the explicit O(N) scrub, enqueue-failure diagnosis, and provider-specific
+  per-write/queue-drain overhead.
 - Document that current or historical CDC binding/consumer state disqualifies the simple
   read-acceleration activation/deactivation toggle in v1, and that stopping a connector or
   removing a runtime target is not clearing authority.

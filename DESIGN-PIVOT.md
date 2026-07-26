@@ -93,9 +93,10 @@ The amendment must define these transitions:
   workflow is required.
 - Offline activation of an existing database transitions from `Disabled` to `Rebuilding`,
   then to `Tracking` only after bounded seeding finishes and durable work drains.
-- Cache rebuild and proven-internal-only cache-ahead recovery transition from `Tracking`
-  or `Rebuilding` to `Resetting`, clear the applicable projected state behind that
-  durable fence, and then transition to `Rebuilding`.
+- Cache rebuild requires a clear cache-ahead latch before it transitions from `Tracking`
+  or `Rebuilding` to `Resetting`. Proven-internal-only cache-ahead recovery requires the
+  latch to be set. Each clears the applicable projected state behind that durable fence
+  and then transitions to `Rebuilding`.
 - Successful rebuild transitions from `Rebuilding` to `Tracking`.
 - Offline deactivation transitions from `Tracking` or `Rebuilding` through `Resetting` to
   `Disabled` while clearing cache and work state.
@@ -112,14 +113,30 @@ The amendment must define these transitions:
 - V1 CDC keeps its existing new-physical-database, pre-first-write restriction. Later CDC
   retrofit remains unsupported.
 
-Every lifecycle-changing, cache/work-clearing, baseline-seeding, recovery, or integrity-
-scrub workflow must first acquire one provider-equivalent, database-scoped administrative
-mutex. PostgreSQL may use a session-owned advisory lock and SQL Server may use a
-session-owned application lock. All coordinators use one deterministic lock identity per
-physical database. The coordinator holds the mutex on a dedicated open connection across
-the complete multi-transaction workflow, including its final lifecycle transition. The
-connection must not return to a general pool while holding the mutex, and normal
-completion must release the mutex explicitly before the connection can be reused.
+Every lifecycle-changing, cache/work-clearing, baseline-seeding, recovery, integrity-scrub,
+or representation-restamp workflow must first acquire one provider-equivalent,
+database-scoped administrative mutex through one shared provider adapter. The exact v1
+identities are:
+
+- PostgreSQL uses `pg_advisory_lock(bigint)` with
+  `(811646948::bigint << 32) | currentDatabaseOid::bigint`, where `811646948`
+  (`0x3060BFE4`) is the fixed projection-administration namespace and
+  `currentDatabaseOid` is the current database row's unsigned
+  `pg_catalog.pg_database.oid` value in
+  the low 32 bits. It releases that exact key with `pg_advisory_unlock(bigint)`.
+- SQL Server uses `sp_getapplock` with the exact resource
+  `EdFi.DMS.DocumentProjection.Administration.v1`, `Exclusive` mode, session ownership,
+  and the explicit database principal `public`. A negative return code is failure. It
+  releases the same resource, owner, and principal with `sp_releaseapplock`.
+
+These identities are database-derived and must not use tenant key, `DataStoreId`,
+connection-string database name, connection alias, or mutable `DataStoreIdentity`.
+Therefore aliases of one physical database contend on one mutex while different databases
+on the same server or PostgreSQL cluster can be administered concurrently. The coordinator
+holds the mutex on a dedicated open connection across the complete multi-transaction
+workflow, including its final lifecycle transition when one exists. The connection must
+not return to a general pool while holding the mutex, and normal completion must release
+the mutex explicitly before the connection can be reused.
 Ordinary canonical writers, projector workers, direct fill, reads, and health checks do
 not acquire this mutex. Loss of the owning database session releases the mutex and aborts
 the coordinator; it must not make a later final transition without reacquiring the mutex
@@ -202,9 +219,10 @@ durably fenced: after an interruption, the database is either still enabled, saf
 `Resetting`, or cleanly disabled. The operations may be repeated, giving the lifecycle:
 
 ```text
-activation:   Disabled -> Rebuilding -> Tracking
-rebuild:      Tracking -> Resetting -> Rebuilding -> Tracking
-deactivation: Tracking -> Resetting -> Disabled
+activation:                    Disabled -> Rebuilding -> Tracking
+rebuild (latch clear):         Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
+internal recovery (latch set): Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
+deactivation:                  Tracking|Rebuilding -> Resetting -> Disabled
 ```
 
 V1 introduces no epoch, durable baseline cursor, or general transition framework.
@@ -214,6 +232,14 @@ CDC eligibility, perform Kafka catch-up, establish a provider heartbeat barrier,
 provide a streaming baseline. A database with an active or historical downstream consumer
 or CDC binding is not eligible for this simple toggle; its containment and recovery remain
 governed by the CDC design.
+
+Internal recovery follows the rebuild lifecycle path, but it keeps
+`CacheAheadRecoveryRequired` set throughout `Resetting` and clears the latch only in the
+verified transition to `Rebuilding`.
+
+An ordinary rebuild atomically requires the latch to be clear before entering `Resetting`.
+A set latch rejects that command without changing lifecycle, cache, work, or latch state
+and routes the operator to cache-ahead recovery or publication containment.
 
 ### Transactional enqueue
 
@@ -232,7 +258,8 @@ Add one logical, provider-equivalent, set-based enqueue mechanism on `dms.Docume
   generated DDL contains two trigger definitions.
 - All provider implementations:
   - read `ProjectionLifecycleState` once per triggering statement;
-  - enqueue every inserted document and every real `ContentVersion` change;
+  - in `Tracking`, `Resetting`, or `Rebuilding`, enqueue every inserted document and every
+    real `ContentVersion` change;
   - in the same canonical transaction, insert or update
     `DocumentProjectionWork.RequiredContentVersion` to the greater existing or new
     version;
@@ -241,7 +268,7 @@ Add one logical, provider-equivalent, set-based enqueue mechanism on `dms.Docume
   - cover direct resource writes, child/extension writes, propagated reference-identity
     changes, descriptor writes, bulk restamping, and any other supported path that
     converges on `dms.Document.ContentVersion`;
-  - add work while the lifecycle state is `Tracking`, `Resetting`, or `Rebuilding`.
+  - record no work while the lifecycle state is `Disabled`.
 - `ON DELETE CASCADE` removes obsolete work when `dms.Document` is deleted.
 
 The design must keep enqueueing inside the canonical database transaction. Application
@@ -313,7 +340,7 @@ Representative classifications are:
 | ---: | ---: | ---: | --- |
 | 11 | 10 | 11 | Healthy pending projection; write cache version 11 and conditionally acknowledge work. |
 | 11 | 11 | 11 | Already projected; conditionally acknowledge redundant work. |
-| 11 | 11 | absent | Healthy and caught up; perform no work. |
+| 11 | 11 | absent | Current for this document; perform no work. |
 | 11 | 12 | any | Cache is genuinely ahead of the canonical source; set the cache-ahead recovery latch. |
 | 11 | absent or at most 11 | 10 | Work is behind the canonical source; an ordinary worker leaves it pending for explicit scrub repair. |
 | 11 | absent or at most 11 | 12 | Work is ahead of the canonical source; an ordinary worker leaves it pending for explicit scrub repair. |
@@ -514,7 +541,7 @@ observational and do not claim a new exact canonical/cache/Kafka baseline.
 
 ### Baseline, rebuild, scrub, and cache-ahead recovery
 
-The design must distinguish four operations:
+The design must distinguish the following paths:
 
 1. **New empty database:** use the guarded `Disabled -> Tracking` transaction while write
    admission is closed. It takes the one-time writer-blocking `dms.Document` lock and
@@ -527,21 +554,35 @@ The design must distinguish four operations:
    seeding completes, durable work drains, and the lifecycle transitions to `Tracking`.
    This operation has no CDC or streaming catch-up semantics.
 3. **Cache clear/rebuild:** while canonical writes remain online, acquire the
-   administrative mutex and transition durably from `Tracking` or `Rebuilding` to
-   `Resetting` in one short transaction. Clear only `DocumentCache` using bounded
-   transactions or a qualified provider-specific fast clear; do not clear pending work.
-   Transactional enqueueing continues while cache writes and acknowledgements remain
-   fenced. After the cache is empty, transition to `Rebuilding`, seed bounded,
-   backpressured windows of work through an O(N) pass. Keep the projection non-operational
-   and not caught up until seeding completes, durable work drains, and the lifecycle
-   returns to `Tracking`. A crash in `Resetting` safely restarts or resumes the clear; a
-   crash in `Rebuilding` safely restarts the baseline from the beginning.
+   administrative mutex and, in one short transaction under the exclusive state-row
+   lock, verify lifecycle `Tracking` or `Rebuilding` and a clear cache-ahead latch before
+   transitioning to `Resetting`. A set latch rejects the command before any lifecycle,
+   cache, work, or latch mutation and directs the operator to the applicable cache-ahead
+   recovery or publication-containment procedure. With the guard satisfied, clear only
+   `DocumentCache` using bounded transactions or a qualified provider-specific fast
+   clear; do not clear pending work. Transactional enqueueing continues while cache writes
+   and acknowledgements remain fenced. After the cache is empty, transition to
+   `Rebuilding`, then seed bounded, backpressured windows of work through an O(N) pass.
+   Keep the projection non-operational and not caught up until seeding completes, durable
+   work drains, and the lifecycle returns to `Tracking`. A crash in `Resetting` safely
+   restarts or resumes the explicitly requested clear only while the latch remains clear;
+   a crash in `Rebuilding` safely restarts the baseline from the beginning.
 4. **Integrity scrub:** an explicit or very infrequent operator action may scan the full
-   canonical/cache/work relationship, conditionally enqueue missing work, repair
-   mismatched work requirements to the current canonical version, and set the cache-ahead
-   recovery latch only for a current `C > S` relationship. It holds the administrative
-   mutex so it cannot classify state concurrently with a reset or rebuild. Scrub recency
-   is not projection operational-health or caught-up evidence.
+   canonical/cache/work relationship only after preflight requires lifecycle `Tracking`
+   and a clear cache-ahead latch. Any other lifecycle or a latch already set rejects before
+   the scan or mutation. The intentionally O(N) scrub conditionally enqueues missing work,
+   repairs mismatched work requirements to the current canonical version, and may set the
+   cache-ahead recovery latch only for a current `C > S` relationship; it never clears the
+   latch. It holds the administrative mutex so it cannot classify state concurrently with
+   a reset or rebuild. Baseline high-water, backpressure, and durable-cursor requirements
+   do not apply to scrub. Scrub recency is not projection operational-health or caught-up
+   evidence.
+5. **Proven-internal-only cache-ahead recovery:** close write admission, stop projection
+   execution, enter `Resetting` with the latch still set, and clear cache and work. Enter
+   `Rebuilding` and clear the latch only after both tables are verified empty, then reopen
+   admission and run the bounded baseline. If downstream publication is possible or
+   uncertain, preserve the latch and projected state for the deferred new-namespace
+   recovery contract instead.
 
 `Resetting` is the atomic rebuild boundary. The transition into it takes the exclusive
 singleton-state lock and therefore waits for earlier cache-write/acknowledgement
@@ -579,7 +620,9 @@ the complete source population into `DocumentProjectionWork` ahead of projection
    cannot complete until enough failures are remediated. Backpressure uses a bounded
    provider-equivalent `high-water mark + 1` observation, not an exact `COUNT(*)`.
 6. Canonical writes may grow the queue beyond the seeder's limit; the limit bounds only
-   baseline-generated amplification.
+   baseline-generated amplification. Offline activation admits no such writes. Online
+   rebuild, which keeps admission open, and internal recovery, after admission reopens,
+   rely on transactional enqueueing for writes around the captured boundary.
 7. V1 persists no durable baseline cursor. A crash leaves the lifecycle in `Rebuilding`;
    after acquiring the administrative mutex, a replacement coordinator captures a new
    boundary and restarts the scan from the beginning. Already-current rows use the
@@ -819,9 +862,11 @@ Review and amend:
 
 Document that explicit CDC bootstrap:
 
-- invokes the guarded new-empty-database transition before seed/API writes, with canonical
-  write admission closed, and rejects the database if any canonical, cache, or work row
-  already exists;
+- proves new-database eligibility and rejects the database before binding reservation when
+  any canonical, cache, or work row already exists;
+- creates or exact-matches the immutable binding and then invokes the guarded
+  new-empty-database transition before seed/API writes, with canonical write admission
+  closed, and defines fail-closed retry classification for binding/lifecycle crash states;
 - configures a matching DMS target;
 - starts projection and waits for work drain;
 - captures the provider heartbeat barrier afterward;
@@ -893,14 +938,14 @@ stable paths avoid needless link churn.
 | --- | --- |
 | `reference/design/backend-redesign/epics/18-document-cache/EPIC.md` | Make transactional work recording, queue processing, rebuild, projection operational health, and queue-based caught-up status explicit completion outcomes without gating normal API routing on queue drain. |
 | `00-documentcache-schema-and-provider-ddl.md` (`DMS-1310`) | Add work table, constrained lifecycle state, orthogonal `CacheAheadRecoveryRequired` latch, two PostgreSQL enqueue triggers, one SQL Server enqueue trigger, supporting functions, indexes, provider-equivalent least-privilege trigger execution, grants, manifests, introspection, rerun rules, and removal/reassessment of the source scan index. Require fail-closed transactional enqueue in every enqueue-enabled state and add `Disabled`/`Resetting`/`Rebuilding`/`Tracking`, multi-row trigger, rollback, and direct-work-mutation denial DB-apply evidence. |
-| `01-documentcache-configuration-and-target-selection.md` (`DMS-1311`) | Add durable lifecycle-state validation, the guarded new-empty-database `Disabled -> Tracking` transition, the repeatable offline activation/deactivation contract, `Resetting` mismatch handling, target pause/resume semantics, revised queue settings, and failure for config/database-state mismatch. The guarded transition owns the one-time writer-blocking `dms.Document` lock, exclusive state-row lock, empty canonical/cache/work checks, and fail-closed outcome. Validate SQL Server `nested triggers` alongside RCSI; a disabled or unreadable setting fails projection/cache eligibility with an explicit diagnostic without changing the setting or gating the canonical relational API. |
+| `01-documentcache-configuration-and-target-selection.md` (`DMS-1311`) | Add durable lifecycle-state validation, guarded new-empty-database `Disabled -> Tracking` and repeatable offline activation/deactivation command/preflight contracts, `Resetting` mismatch handling, target pause/resume semantics, revised queue settings, and failure for config/database-state mismatch. The new-empty contract requires the one-time writer-blocking `dms.Document` lock, exclusive state-row lock, empty canonical/cache/work checks, and fail-closed outcome; DMS-1314 owns guarded execution. Validate SQL Server `nested triggers` alongside RCSI; a disabled or unreadable setting fails projection/cache eligibility with an explicit diagnostic without changing the setting or gating the canonical relational API. |
 | `02-document-materializer-service.md` (`DMS-1312`) | Preserve materialization scope. Update fixtures and wording so a selected work item materializes the latest required canonical version. No architectural rewrite. |
 | `03-monotonic-cache-upsert-and-delete-fencing.md` (`DMS-1313`) | Expand the shared writer to atomically acknowledge matching work. Add one-statement source/cache/work classification, stale-candidate write suppression, durable-state-driven equal-version acknowledgement regardless of candidate version, cache-ahead-only recovery latching, blocked mismatched-work behavior, enqueue-versus-ack, equal-version acknowledgement without rematerialization, newer-version preservation, direct-fill acknowledgement, delete, crash, work-row serialization, shared singleton-state locking, exclusive reset fencing, lock order, canonical-write wait, complete-canonical-transaction retry, and multi-writer evidence. |
-| `04-async-projector-reconciliation-loop.md` (`DMS-1314`) | Replace incremental and full-audit adapters with fair bounded work paging. Own the database-scoped administrative mutex and `Resetting` orchestration. Add poison-item traversal without an unbounded seeding-progress guarantee, wraparound, restart, duplicate replica, backlog recovery, offline activation/deactivation, online cache rebuild, cache-ahead recovery, bounded projected-state clearing, windowed and backpressured baseline/rebuild seeding, bounded conditional repair of mismatched existing work encountered by rebuild pages under the already-held mutex, retry of baseline pages invalidated by concurrent deletion, optional serialized scrub that conditionally repairs work anomalies, cancellation, and target backoff. |
+| `04-async-projector-reconciliation-loop.md` (`DMS-1314`) | Replace incremental and full-audit adapters with fair bounded work paging. Own the shared exact-identity provider mutex adapter, guarded new-empty and offline activation/deactivation execution, their provider concurrency tests, and `Resetting` orchestration. Add poison-item traversal without an unbounded seeding-progress guarantee, wraparound, restart, duplicate replica, backlog recovery, clear-latch-guarded online cache rebuild with fail-closed set-latch rejection, cache-ahead recovery, bounded projected-state clearing, windowed and backpressured baseline/rebuild seeding, bounded conditional repair of mismatched existing work encountered by rebuild pages under the already-held mutex, retry of baseline pages invalidated by concurrent deletion, a serialized O(N) scrub admitted only from clear-latch `Tracking` that conditionally repairs work anomalies and never clears the latch, cancellation, and target backoff. |
 | `05-cache-backed-read-path.md` (`DMS-1315`) | Preserve relational fallback and freshness checks. Add durable lifecycle-state and `CacheAheadRecoveryRequired` eligibility, mandatory fallback while `Resetting`, and direct-fill conditional acknowledgement. |
 | `06-documentcache-health-readiness-and-telemetry.md` (`DMS-1316`) | Replace audit observations with lifecycle state, `CacheAheadRecoveryRequired`, queue-empty, oldest-work, worker, failure, enqueue-failure, and bounded backlog observations. Keep enqueue failures distinct from projector-processing failures: the former fail canonical writes, while the latter retain durable work for retry. Provide bounded structured failure diagnostics that identify affected `DocumentId` values without using them as unbounded metric labels. Define projection operational health independently from projection caught-up status: queue presence makes caught-up false but does not make an otherwise functional projector unhealthy. Keep both signals separate from ordinary DMS API health/readiness so projection backlog or failure cannot remove a replica from normal API routing. Expose `Resetting` or a set cache-ahead recovery latch as projection non-operational without treating either as canonical API failure. Prohibit routine exact backlog counts and synchronous scans from health requests. |
-| `07-documentcache-integration-tests-and-runbooks.md` (`DMS-1317`) | Add provider matrices for transactional enqueue, forced enqueue failure and complete canonical rollback, complete-transaction deadlock retry, least-privilege trigger execution and direct-work-mutation denial, projector-stopped write availability, disabled-state writes, guarded new-empty activation and its racing-insert outcomes, cascade/restamp coverage, source/cache/work classification, stale-candidate write suppression, `S = C = W` acknowledgement regardless of candidate version, cache-ahead-only latching, blocked and scrub-repaired work-version mismatches, rebuild-page repair of mismatched existing work without a second scrub or mutex handoff, crash windows, restart without a source audit, poison fairness, poison work exhausting seeding capacity, concurrent delete between baseline page selection and work upsert, long outage, rebuild, serialized administration, reset-fence crashes, bounded large-cache clearing, offline cache-ahead recovery, explicit scrub, disabled targets, and no-scan operational-health/caught-up observations at scale. Qualify interrupted baseline/rebuild restart from the beginning at representative supported scale against predefined completion-time, database-load, and repeated queue-DML/write-amplification limits. If a limit is exceeded, create a new ticket to design and implement a durable baseline cursor and make that ticket a production-qualification prerequisite. Document how to identify and remediate persistent failures that pause seeding. |
-| `08-representation-restamp-utility.md` (`DMS-1318`) | Require each restamped `ContentVersion` transaction to enqueue work automatically. Replace audit follow-up with queue drain while retaining offline safety, manifests, resume, Change Query, ETag, and CDC effects. |
+| `07-documentcache-integration-tests-and-runbooks.md` (`DMS-1317`) | Add provider matrices for transactional enqueue, forced enqueue failure and complete canonical rollback, complete-transaction deadlock retry, least-privilege trigger execution and direct-work-mutation denial, projector-stopped write availability, disabled-state writes, guarded new-empty activation and its racing-insert outcomes, cascade/restamp coverage, source/cache/work classification, stale-candidate write suppression, `S = C = W` acknowledgement regardless of candidate version, cache-ahead-only latching, blocked and scrub-repaired work-version mismatches, rebuild-page repair of mismatched existing work without a second scrub or mutex handoff, crash windows, restart without a source audit, poison fairness, poison work exhausting seeding capacity, concurrent delete between baseline page selection and work upsert, long outage, clear-latch-guarded rebuild and set-latch rejection, serialized administration, reset-fence crashes, bounded large-cache clearing, offline cache-ahead recovery, clear-latch `Tracking` scrub admission and fail-closed rejection, disabled targets, and no-scan operational-health/caught-up observations at scale. Qualify interrupted baseline/rebuild restart from the beginning at representative supported scale against predefined completion-time, database-load, and repeated queue-DML/write-amplification limits. If a limit is exceeded, create a new ticket to design and implement a durable baseline cursor and make that ticket a production-qualification prerequisite. Document how to identify and remediate persistent failures that pause seeding. |
+| `08-representation-restamp-utility.md` (`DMS-1318`) | Make the utility lifecycle-aware under the projection administrative mutex. In clear-latch `Tracking`, require each restamped `ContentVersion` transaction to enqueue work automatically and replace audit follow-up with queue drain. In clear-latch `Disabled`, allow explicit canonical-only restamping with no projection or Kafka claim. Reject `Resetting`, `Rebuilding`, and a set recovery latch while retaining offline safety, manifests, resume, Change Query, ETag, and CDC effects. |
 
 Update `reference/design/backend-redesign/epics/DEPENDENCIES.md`:
 
@@ -908,7 +953,8 @@ Update `reference/design/backend-redesign/epics/DEPENDENCIES.md`:
 - Keep materializer and cache-writer sequencing explicit.
 - Ensure E18-S03 owns the atomic cache-write/ack component consumed by E18-S04 and direct
   fill.
-- Ensure E18-S08 depends on queue-capable DDL and health evidence.
+- Ensure E18-S08 depends on queue-capable DDL, lifecycle validation, administrative
+  serialization, and health evidence.
 - Recheck E19 dependencies after its caught-up/admission/bootstrap amendments.
 
 Review `reference/design/backend-redesign/epics/JIRA-INDEX.md`. Update it only if a story
@@ -923,7 +969,7 @@ title or path changes.
 | `01-cdc-ddl-support.md` (`DMS-1320`) | Explicitly exclude `DocumentProjectionWork` from provider capture and CDC grants. Preserve `Document`, `DocumentCache`, and heartbeat setup. |
 | `02-connector-template-generation.md` (`DMS-1321`) | Assert connector include lists exclude the work table. Otherwise preserve templates and provider topology. |
 | `03-document-state-transform.md` (`DMS-1322`) | Review only. No new work-table record shape belongs in the transform; fixtures should fail if an unexpected work-table record reaches it. |
-| `04-bootstrap-enable-kafka-cdc.md` (`DMS-1323`) | While canonical write admission is closed, invoke the guarded new-empty-database transition before the first write and reject nonempty databases rather than attempting CDC retrofit. Validate the resulting durable state, start queue processing, wait for drain, then complete the heartbeat barrier. Add fail-closed partial/retry behavior. |
+| `04-bootstrap-enable-kafka-cdc.md` (`DMS-1323`) | While canonical write admission is closed, prove new-database eligibility and reject nonempty databases rather than attempting CDC retrofit; then atomically create or exact-match the immutable binding and invoke the guarded new-empty-database transition before the first write. Validate the resulting durable state, start queue processing, wait for drain, then complete the heartbeat barrier. Add fail-closed partial/retry behavior, including exact-binding `Disabled` activation retry only with a clear latch, exact-binding empty `Tracking` continuation only with a clear latch, and rejection of any set cache-ahead latch, unbound `Tracking`, or mismatched state. |
 | `05-message-contract-tests.md` (`DMS-1324`) | Preserve public record tests. Add evidence that work-table activity emits no public/progress record and that initial CDC admission follows projection catch-up plus the provider barrier. |
 | `06-e2e-kafka-scenarios.md` (`DMS-1325`) | Drive API writes into durable work, verify projection and publication, and cover projector restart/backlog recovery without a startup full scan on both providers. |
 | `07-ops-docs-runbooks.md` (`DMS-1326`) | Replace audit tuning/diagnosis with queue backlog, oldest work, poison failure, activation mismatch, rebuild, scrub, enqueue-failure diagnosis, and per-write availability/overhead guidance. Make clear that projector downtime permits queued writes but enqueue failure rejects canonical writes. Preserve connector/topic/security/source-history procedures. |
@@ -980,9 +1026,14 @@ Jira mutations should occur only after explicit approval of the final repository
   caught up and remains ineligible for cache-backed reads.
 - Disabling or removing an enqueue trigger makes the projection non-operational even when
   the work table is empty, without making the canonical relational API unhealthy.
-- Insert and every real `ContentVersion` change enqueue exactly one coalesced current
-  requirement.
-- Multi-row stamp/restamp statements enqueue every affected document.
+- In `Tracking`, `Resetting`, and `Rebuilding`, insert and every real `ContentVersion`
+  change enqueue exactly one coalesced current requirement. In `Disabled`, they record no
+  projection work.
+- Multi-row stamp/restamp statements enqueue every affected document in an enqueue-enabled
+  lifecycle state.
+- The representation-restamp utility holds the administrative mutex, uses clear-latch
+  `Tracking` for projection/publication mode and clear-latch `Disabled` for canonical-only
+  mode, and rejects transitional or latched state before changing a stamp.
 - Delete cascades cache and work without manufacturing a public cache tombstone.
 - Work table is absent from provider capture/include lists.
 
@@ -1025,6 +1076,11 @@ Prove on both providers:
 - Two administrative coordinators for the same database cannot overlap. Loss of the
   session-owned administrative mutex prevents the former owner from performing a final
   lifecycle transition, and a replacement owner recovers from durable state.
+- Administrative commands that resolve one physical database through different connection
+  aliases contend on the exact shared provider mutex. Two different databases on the same
+  SQL Server or PostgreSQL cluster can hold their respective mutexes concurrently. SQL
+  Server tests use different eligible caller principals to prove the explicit `public`
+  application-lock scope remains common.
 - Canonical writers take no deliberate projector lock on the source `Document` row, but
   may briefly wait on work-row acknowledgement. Tests prove that no work-row lock is held
   during materialization, failure backoff, or external I/O, and measure the resulting
@@ -1091,7 +1147,11 @@ Prove on both providers:
   beginning while the lifecycle remains `Rebuilding`.
 - Restarted baseline/rebuild processing conditionally acknowledges already-current
   source/cache/work versions without rematerializing document JSON.
-- Online cache rebuild enters `Resetting` before clearing cache, preserves pending work,
+- Online cache rebuild atomically requires lifecycle `Tracking` or `Rebuilding` and a
+  clear cache-ahead latch before entering `Resetting`; a set latch rejects without
+  changing lifecycle, cache, work, or latch state and routes the operator to cache-ahead
+  recovery or publication containment.
+- With that guard satisfied, online rebuild clears cache while preserving pending work,
   continues transactional enqueueing, and enters `Rebuilding` only after cache is empty.
 - A rebuild crash while `Resetting` cannot expose a partially cleared cache or allow cache
   acknowledgement; restart repeats or resumes the clear.
@@ -1113,8 +1173,10 @@ Prove on both providers:
   latch for diagnosis.
 - Explicit scrub discovers missing, behind, and ahead cache states plus missing or
   mismatched work without becoming a periodic operational-health or caught-up dependency.
-  It repairs work-only anomalies and sets the durable latch only for current cache-ahead
-  state.
+  Preflight admits only lifecycle `Tracking` with a clear cache-ahead latch; every other
+  lifecycle and a pre-existing set latch reject before the intentionally O(N) scan or
+  mutation. An admitted scrub repairs work-only anomalies, may set the durable latch only
+  for current cache-ahead state, and never clears it.
 - After a suspected restore or unsupported direct mutation, runbooks require an explicit
   scrub before operators rely on queue-empty caught-up status; routine no-scan status does
   not claim to discover previously absent work.
@@ -1134,6 +1196,12 @@ Prove on both providers:
   pending for retry.
 - Ordinary API traffic remains available through relational fallback while projection is
   non-operational or not caught up.
+- Initial CDC bootstrap creates or exact-matches the immutable binding before guarded
+  tracking activation. An exact binding with lifecycle `Disabled` and a clear latch retries
+  activation; an exact binding with lifecycle `Tracking`, a clear latch, and empty tables
+  resumes setup; a set cache-ahead latch, unbound `Tracking`, any other lifecycle, a binding
+  mismatch, or unexpected pre-capture rows fails closed and requires
+  cleanup/reprovisioning as applicable.
 - Initial CDC admission waits for projection catch-up, the provider heartbeat barrier, and
   a second projection caught-up observation before opening canonical write admission.
 - Queue growth after canonical write admission opens does not revoke CDC admission or
@@ -1212,16 +1280,20 @@ The pivot is complete when:
 - No startup, restart, steady-state, operational-health, or caught-up path requires
   scanning every current document.
 - Optional projection has an explicit durable activation and disablement lifecycle.
-- Initial baseline, rebuild, scrub, and cache-ahead recovery have distinct fail-closed
-  semantics, while possibly published cache-ahead data retains its stricter deferred
-  new-namespace containment.
+- Initial baseline, clear-latch-guarded rebuild, clear-latch `Tracking` scrub, and
+  cache-ahead recovery have distinct fail-closed semantics. A set latch rejects ordinary
+  rebuild and scrub without mutation, while possibly published cache-ahead data retains
+  its stricter deferred new-namespace containment.
 - Cache/work clearing is protected by the durable `Resetting` fence without requiring one
   unbounded clear transaction or an exclusive singleton-state lock for the duration.
 - One database-scoped administrative mutex serializes each complete lifecycle-changing,
-  baseline, rebuild, recovery, and scrub workflow across coordinators.
+  baseline, rebuild, recovery, scrub, and representation-restamp workflow across
+  coordinators.
 - PostgreSQL and SQL Server physical and concurrency contracts are equivalent.
 - Projection operational health is distinct from projection caught-up status and neither
   signal gates ordinary DMS API routing.
+- Initial CDC bootstrap reserves the immutable binding before guarded activation and has
+  explicit fail-closed classifications for every binding/lifecycle crash boundary.
 - Initial CDC admission composes projection caught-up status with the existing provider
   heartbeat barrier.
 - Every E18 and E19 epic/story file either reflects its changed responsibility or records

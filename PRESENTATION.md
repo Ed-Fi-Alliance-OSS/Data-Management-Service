@@ -157,7 +157,7 @@ external I/O.
 | ---: | ---: | ---: | --- |
 | 11 | 10 | 11 | Write 11 and acknowledge |
 | 11 | 11 | 11 | Already projected; acknowledge |
-| 11 | 11 | absent | Caught up |
+| 11 | 11 | absent | Document current; no action |
 | 11 | 12 | any | Cache ahead; set safety latch after recheck |
 | 11 | absent/≤11 | 10 or 12 | Work mismatch; leave pending for scrub |
 | 11 | 10 | absent | Missing work; explicit scrub inserts 11 |
@@ -222,13 +222,16 @@ Tracking   enqueue and ordinary processing on
 Supported transitions:
 
 ```text
-new empty:   Disabled -> Tracking
-activation:  Disabled -> Rebuilding -> Tracking
-rebuild:     Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
-deactivate:  Tracking|Rebuilding -> Resetting -> Disabled
+new empty:             Disabled -> Tracking
+activation:            Disabled -> Rebuilding -> Tracking
+rebuild (latch clear): Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
+recovery (latch set):  Tracking|Rebuilding -> Resetting -> Rebuilding -> Tracking
+deactivate:            Tracking|Rebuilding -> Resetting -> Disabled
 ```
 
-`CacheAheadRecoveryRequired` remains a separate orthogonal latch.
+Recovery follows the rebuild lifecycle path, but `CacheAheadRecoveryRequired` remains set
+through `Resetting` and clears only at the verified transition to `Rebuilding`.
+Ordinary rebuild requires the latch to be clear before it enters `Resetting`.
 
 The simple offline activation/deactivation toggle is internal-only. Any active or
 historical CDC binding/downstream consumer makes the database ineligible; stopping a
@@ -238,9 +241,16 @@ connector or removing a runtime target does not erase that history.
 
 # Administrative serialization
 
-Lifecycle changes, clearing, baseline, rebuild, recovery, and scrub use one deterministic
+Lifecycle-changing, clearing, baseline, rebuild, recovery, scrub, and
+representation-restamp workflows use one deterministic
 session-owned mutex per physical database.
 
+- PostgreSQL: fixed namespace `811646948` plus current database OID in one 64-bit advisory
+  key.
+- SQL Server: fixed `EdFi.DMS.DocumentProjection.Administration.v1` resource, session owner,
+  and explicit `public` database-principal scope.
+- Every command uses one shared provider adapter; connection aliases for the same database
+  contend, while different databases can be administered concurrently.
 - Dedicated open connection for the complete multi-transaction workflow.
 - Ordinary writers, workers, reads, and health checks do not take it.
 - Session loss releases the mutex and aborts the coordinator.
@@ -263,8 +273,10 @@ Transitions into `Resetting` take the row exclusively:
 4. clear the state applicable to the requested operation in bounded transactions.
 
 Later cache transactions see `Resetting` and do nothing. Canonical enqueue continues.
-Online cache rebuild clears only cache and preserves pending work; offline deactivation
-and internal-only cache-ahead recovery clear both cache and work.
+Online cache rebuild may enter only with a clear cache-ahead latch, then clears only cache
+and preserves pending work. A set latch rejects rebuild without mutation and routes to
+cache-ahead recovery or containment. Offline deactivation and internal-only cache-ahead
+recovery clear both cache and work.
 
 ---
 
@@ -291,8 +303,11 @@ observation, the provider barrier, and the second caught-up observation.
 # Baseline and rebuild
 
 Existing-database activation enters `Rebuilding` after its offline empty-cache/work check.
-Online cache rebuild first enters `Resetting`, clears only cache while preserving pending
-work and continuing transactional enqueue, then enters `Rebuilding`.
+Online cache rebuild first atomically proves lifecycle `Tracking` or `Rebuilding` and a
+clear cache-ahead latch, enters `Resetting`, clears only cache while preserving pending
+work and continuing transactional enqueue, then enters `Rebuilding`. A set latch leaves
+lifecycle, cache, work, and latch unchanged for the applicable recovery or containment
+workflow.
 
 Both workflows then:
 
@@ -312,6 +327,8 @@ becomes required.
 # Explicit integrity scrub
 
 Scrub is an operator-requested O(N) operation under the administrative mutex.
+Admission requires lifecycle `Tracking` and a clear cache-ahead latch. Any other lifecycle
+or a latch already set rejects before the scan or mutation.
 
 It finds:
 
@@ -321,7 +338,8 @@ It finds:
 - genuine cache-ahead state.
 
 It conditionally repairs only work anomalies and sets the safety latch only for current
-cache-ahead state. Scrub recency is not operational-health or caught-up evidence.
+cache-ahead state. It may set that latch but never clears it. Scrub recency is not
+operational-health or caught-up evidence.
 
 ---
 
@@ -431,12 +449,15 @@ No projection-work field enters the public contract.
 sequenceDiagram
     participant D as Deployment controller
     participant DB as New database
+    participant S as Durable binding state
     participant P as Projector
     participant K as Kafka Connect
 
     D->>DB: Provision cache/work/lifecycle schema
+    D->>DB: Prove new, empty, and not admitted
+    D->>S: Create or exact-match immutable binding
     D->>DB: Guarded Disabled -> Tracking
-    D->>K: Create binding/artifacts and register connector
+    D->>K: Create artifacts and register connector
     D->>P: Start configured target
     P->>DB: Drain durable work
     D->>DB: Observe caught up
@@ -446,6 +467,7 @@ sequenceDiagram
 ```
 
 Nonempty databases are rejected for v1 CDC retrofit.
+An unused exact binding safely resumes activation; `Tracking` without a binding is rejected.
 
 ---
 
@@ -512,7 +534,7 @@ E18 owns:
 - cache reads/fallback;
 - health/caught-up telemetry;
 - qualification/runbooks;
-- queue-aware restamp.
+- lifecycle-aware, administratively serialized restamp.
 
 E19 owns:
 

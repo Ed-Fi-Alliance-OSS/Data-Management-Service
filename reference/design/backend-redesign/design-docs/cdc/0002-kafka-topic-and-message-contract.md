@@ -400,16 +400,19 @@ when the corrected `StreamEtag` would differ.
 
 The out-of-band representation-restamp utility may run only while the selected data store
 is explicitly offline and all DMS replicas and external writers have been stopped outside
-the utility.
-It assigns fresh `ContentVersion` values so ordinary projection and streaming can publish
-higher-version state eventually when prior Kafka records do not require purging. It does
-not certify another exact CDC baseline. If corrected bytes remove or mask sensitive data
-that should never have been published and old records must be purged, same-topic
-republication is prohibited: the connector is fenced, consumer access is revoked, and the
-affected binding generation is destructively retired with recorded broker or platform purge
-evidence. Compaction, tombstones, and corrective upserts are not purge evidence, and CDC
-remains unavailable until the deferred new-generation bootstrap is implemented. The full
-requirements are defined in
+the utility. Publication into an existing topic requires the lifecycle-aware utility's
+`Tracking` projection/publication mode with a clear cache-ahead latch. Each restamp then
+transactionally enqueues its fresh `ContentVersion` so ordinary projection and streaming
+can publish higher-version state eventually when prior Kafka records do not require
+purging. `Disabled` canonical-only execution creates no projection work and makes no Kafka
+publication claim; `Resetting`, `Rebuilding`, and a set recovery latch are rejected. Neither
+supported mode certifies another exact CDC baseline. If corrected bytes remove or mask
+sensitive data that should never have been published and old records must be purged,
+same-topic republication is prohibited: the connector is fenced, consumer access is
+revoked, and the affected binding generation is destructively retired with recorded broker
+or platform purge evidence. Compaction, tombstones, and corrective upserts are not purge
+evidence, and CDC remains unavailable until the deferred new-generation bootstrap is
+implemented. The full requirements are defined in
 [Relational CDC and Document Projection](../../../cdc-streaming.md#offline-byte-changing-representation-correction).
 
 Changing the partition count or `partitionerAlgorithm` token is not necessarily a
@@ -614,11 +617,12 @@ The public topic never exposes:
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
 - Equal-`contentVersion` records are duplicates and do not replace retained state. An
-  offline byte-changing repair uses the restamp utility and publishes higher versions
-  eventually only when old Kafka records do not require purging; this does not claim
-  another exact baseline. An incompatible-contract cutover after first-write admission is
-  deferred. A sensitive-data disclosure instead requires verified destructive retirement
-  of the affected topic generation.
+  offline byte-changing repair intended for the existing topic uses the restamp utility's
+  `Tracking` projection/publication mode and publishes higher versions eventually only when
+  old Kafka records do not require purging; this does not claim another exact baseline. An
+  incompatible-contract cutover after first-write admission is deferred. A sensitive-data
+  disclosure instead requires verified destructive retirement of the affected topic
+  generation.
 - DMS-1232 KafkaMessaging coverage must replace the shared-topic,
   `deleted=false`/`deleted=true`, and `EdFiDoc` expectations.
 
@@ -639,8 +643,8 @@ The public topic never exposes:
 | Add a projection/stream generation to v1 | Rejected for v1: every byte-changing correction advances `contentVersion`, so another database column and public ordering field are unnecessary. |
 | Establish a universal maximum from one materializer fixture | Rejected: configurable schemas and extensions make that claim unprovable; representative fixtures instead test the enforced operational boundary. |
 | Rotate the topic when only `maxRecordBytes` increases | Rejected: record capacity does not change keying, partitioning, ordering, topic identity, or the public message contract. |
-| Require strictly newer `contentVersion` for every replacement | Accepted: equal versions are duplicates, while every byte-changing correction is restamped and publishes a higher version. |
+| Require strictly newer `contentVersion` for every replacement | Accepted: equal versions are duplicates, while every byte-changing replacement published to the topic is restamped in projection/publication mode and publishes a higher version. |
 | Republish corrected bytes at the same `contentVersion` in `documents.v1` | Rejected: it makes ordinary consumers retain per-document Kafka offsets for a rare repair and weakens `contentVersion` as the sole non-null ordering value. |
-| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store; every byte-changing correction uses it to advance existing content stamps and publish higher versions eventually without certifying another exact CDC baseline. It is not a Kafka purge mechanism; sensitive-data disclosure correction requires verified destructive retirement. |
+| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store. `Tracking` projection/publication mode advances existing content stamps and enqueues higher versions for eventual publication; `Disabled` canonical-only mode makes no Kafka publication claim. Neither mode certifies another exact CDC baseline. It is not a Kafka purge mechanism; sensitive-data disclosure correction requires verified destructive retirement. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
 | Require SQL Server `time.precision.mode=isostring` in the pinned Debezium 3.6 image | Accepted for v1: it preserves the source precision in an unambiguous UTC `IsoTimestamp` and removes signed-nanosecond parsing; the required Ed-Fi `DocumentState` SMT still validates and truncates it to the existing DMS whole-second representation. |

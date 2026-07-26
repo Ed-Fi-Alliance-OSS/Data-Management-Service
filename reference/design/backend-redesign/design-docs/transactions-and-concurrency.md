@@ -602,10 +602,13 @@ The durable classification, not a worker-local candidate, controls behavior:
 - `W != S`, or missing work for a behind cache, is a work anomaly. Ordinary projection
   performs no cache write or acknowledgement and does not set the cache-ahead latch.
 
-An explicit scrub conditionally updates/inserts only current work requirements so a
-concurrent newer canonical requirement wins. A `Rebuilding` coordinator uses that same
+A standalone scrub is admitted only from lifecycle `Tracking` with a clear cache-ahead
+latch; any other lifecycle or a latch already set rejects before its O(N) relationship
+scan or mutation. Once admitted, it conditionally updates/inserts only current work
+requirements so a concurrent newer canonical requirement wins. It may set the latch for
+current cache-ahead state but never clears it. A `Rebuilding` coordinator uses the same
 conditional work-only repair for mismatched rows in its current bounded source page under
-its already-held administrative mutex.
+its already-held administrative mutex without invoking the standalone scrub.
 
 The enqueue/acknowledgement races are safe:
 
@@ -626,18 +629,25 @@ through commit. A transition into `Resetting` takes it exclusively, waits for pr
 transactions, and fences later writes and acknowledgements. The exclusive lock is released
 before bounded cache/work clearing begins.
 
-Lifecycle-changing, baseline, rebuild, recovery, clearing, and scrub coordinators also
-hold one deterministic session-owned database administrative mutex on a dedicated
-connection across their complete multi-transaction workflow. Ordinary writers,
-projectors, reads, and health checks do not take that mutex. Session loss aborts the
-coordinator; a replacement reacquires it and revalidates durable lifecycle before
-repeating or resuming the explicitly requested operation.
+Lifecycle-changing, baseline, rebuild, recovery, clearing, scrub, and
+representation-restamp workflows also
+use the one shared provider adapter and exact identity defined by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#administrative-serialization-and-state-row-fencing).
+PostgreSQL composes the fixed namespace `811646948` and current database OID into the
+documented 64-bit advisory-lock key. SQL Server uses the fixed
+`EdFi.DMS.DocumentProjection.Administration.v1` resource in the current database with
+`@LockOwner = 'Session'` and `@DbPrincipal = 'public'`. Logical target identity,
+connection aliases, database names, and mutable source identity never participate.
 
-PostgreSQL uses a session advisory lock derived from the deterministic physical-database
-identity and releases it with the matching advisory-unlock call. SQL Server uses
-`sp_getapplock` with the same logical identity, exclusive mode, and
-`@LockOwner = 'Session'`, then releases it with `sp_releaseapplock`. Neither dedicated
-connection may return to a general pool before normal explicit release.
+The dedicated connection holds the mutex across the complete multi-transaction workflow.
+Every coordinator-issued lifecycle/latch, clear, seed, scrub, or restamp mutation uses that
+same physical database session, with separate short transactions as needed. It does not
+transparently reconnect and continue under presumed ownership.
+Ordinary writers, projectors, reads, and health checks do not take it. Session loss aborts
+the coordinator and rolls back any active transaction on that session; a replacement
+reacquires the mutex and revalidates durable lifecycle before repeating or resuming the
+explicitly requested operation. No dedicated connection returns to a general pool before
+normal explicit release.
 
 Provider implementations use equivalent concrete state-row locks:
 

@@ -81,8 +81,10 @@ lifecycle supplies deletes.
 The DDL always provisions `dms.DocumentCache`, `dms.DocumentProjectionWork`, and the
 singleton lifecycle/invariant state, but lifecycle starts `Disabled` and populating or
 reading the cache is optional.
-Capabilities that consume projected documents explicitly select projection targets; an
-ordinary DMS deployment leaves cache/work tables empty and performs no projection work.
+Capabilities that consume projected documents explicitly select projection targets. A
+newly provisioned database that remains `Disabled` leaves cache/work tables empty and
+performs no projection work. A database already in `Tracking` may retain cache rows and
+accumulate pending work while no process-local target is configured.
 The canonical relational tables remain the authority for writes, authorization, identity
 resolution, Change Queries, and correct GET/query behavior.
 
@@ -98,9 +100,11 @@ does not create CDC eligibility, Kafka catch-up, or a streaming baseline. Select
 remains part of initial physical-database provisioning before the first canonical write;
 v1 does not retrofit CDC to an admitted database. An interrupted initial CDC workflow may
 retry only while deployment state proves that the same new database has not left that
-workflow. A successfully enabled CDC database may later exact-match its binding, validate
-artifacts, restart, and use guarded source-replacement recovery. Those operations never
-modify core E18 schema or clear a possibly published cache-ahead latch.
+workflow. Initial enablement creates or exact-matches the immutable binding before guarded
+tracking activation, so that binding is durable proof of CDC intent across the activation
+crash boundary. A successfully enabled CDC database may later exact-match its binding,
+validate artifacts, restart, and use guarded source-replacement recovery. Those operations
+never modify core E18 schema or clear a possibly published cache-ahead latch.
 
 Change Queries remain a separate polling API compatibility surface, including
 `/deletes`, `/keyChanges`, and live-resource version filters based on `ContentVersion`,
@@ -119,12 +123,12 @@ The setup controller owns this ordering and must retain positive evidence that i
 the database and has not opened write admission. This is a provisioning lifecycle
 precondition, not a cross-replica runtime gate.
 
-The initial offline window remains closed for guarded tracking activation, connector
-registration, durable-work drain, connector snapshot/catch-up, the provider barrier, and
-a second caught-up observation. An operator-configured automation timeout is diagnostic
-and fail-closed; elapsed time never substitutes for completing the sequence below. Local
-and E2E bootstrap satisfy the same contract by creating the database and completing CDC
-setup before test/application writes begin.
+The initial offline window remains closed for binding reservation, guarded tracking
+activation, connector registration, durable-work drain, connector snapshot/catch-up, the
+provider barrier, and a second caught-up observation. An operator-configured automation
+timeout is diagnostic and fail-closed; elapsed time never substitutes for completing the
+sequence below. Local and E2E bootstrap satisfy the same contract by creating the database
+and completing CDC setup before test/application writes begin.
 
 After write admission opens, DMS projection health and combined CDC status are
 observational, eventually consistent signals. A later ready observation does not certify a
@@ -192,8 +196,10 @@ other bounded settings rather than independently configurable. `DirectFillTimeou
 small request-path budget below the ordinary database command timeout; exceeding it
 abandons only the optional fill.
 
-A target entry enables projection for that logical `(tenant key, DataStoreId)` whether the
-consumer is CDC, diagnostics, indexing, or another deployment-selected capability.
+A target entry selects process-local projection execution for that logical
+`(tenant key, DataStoreId)` whether the consumer is CDC, diagnostics, indexing, or
+another deployment-selected capability. It can process work only when the database's
+durable lifecycle permits it; the entry does not activate tracking.
 `ReadAcceleration:Enabled` is only a use-path gate: when enabled, DMS may use fresh cache
 rows for explicitly listed targets, but it does not select every loaded or subsequently
 discovered data store. Projector timing and capacity settings tune work already selected by
@@ -286,29 +292,42 @@ treat that lifecycle contract as an input.
 ### Projection Administration
 
 Every activation, deactivation, rebuild, cache/work clear, cache-ahead recovery, baseline,
-or integrity scrub is an explicit administrative command. It acquires the one
-session-owned, database-scoped mutex defined by the projector ADR on a dedicated
-connection for the complete workflow. DMS startup and runtime target configuration do not
-infer or execute lifecycle transitions.
+integrity scrub, or representation restamp is an explicit administrative command. It
+acquires the one session-owned, database-scoped mutex defined by the projector ADR on a
+dedicated connection for the complete workflow. DMS startup and runtime target
+configuration do not infer or execute lifecycle transitions.
+
+Every runtime and command-line entry point consumes the same provider mutex adapter and
+the exact ADR-owned identity. A connection alias cannot create a second lock namespace for
+the same physical database; independent databases on one server or PostgreSQL cluster do
+not block each other's administration.
 
 - Offline activation stops all writers, enters `Rebuilding`, performs bounded,
   backpressured work seeding, drains the queue, and enters `Tracking`.
 - Offline deactivation enters `Resetting`, clears cache and work, verifies both empty,
   then enters `Disabled`.
-- Online cache rebuild enters `Resetting`, clears cache while preserving and continuing
-  transactional work recording, enters `Rebuilding`, then seeds/drains before returning
-  to `Tracking`.
+- Online cache rebuild atomically verifies lifecycle `Tracking` or `Rebuilding` and a
+  clear cache-ahead latch before entering `Resetting`. It then clears cache while
+  preserving and continuing transactional work recording, enters `Rebuilding`, and
+  seeds/drains before returning to `Tracking`.
 - Proven-internal-only cache-ahead recovery is offline, keeps the latch set while
   `Resetting`, clears cache and work, then atomically enters `Rebuilding` and clears the
   latch before fresh seeding.
 - Explicit scrub is the only ordinary operator action that scans the complete
-  source/cache/work relationship to repair work inventory; it is not health or caught-up
-  evidence.
+  source/cache/work relationship to repair work inventory. It is admitted only from
+  `Tracking` with a clear cache-ahead latch; any other lifecycle or a latch already set
+  rejects before the O(N) scan or mutation. It may set the latch when it discovers current
+  cache-ahead state but never clears it, and it is not health or caught-up evidence.
 
 `Resetting` is a restart-safe fence. Cache-backed reads fall back, and cache writes and
 acknowledgements are disabled, while canonical transactions continue recording work. A
 crashed coordinator leaves durable state for an operator to reissue the same command;
 replacement automation never guesses the command from `Resetting` alone.
+
+An online-rebuild request made while the cache-ahead latch is set is rejected before any
+lifecycle, cache, work, or latch mutation. Operators must use the applicable cache-ahead
+recovery or publication-containment procedure; the rebuild command never chooses between
+those procedures automatically.
 
 Offline activation/deactivation is a simple read-acceleration toggle only for a projection
 proven internal-only. A database with an active or historical downstream consumer or CDC
@@ -450,27 +469,34 @@ or part of the immutable binding record.
 For initial combined readiness only, deployment automation performs this sequence:
 
 1. Verify that the setup controller created the selected new physical database and has not
-   published it to any DMS replica or other writer.
-2. Under the projection administrative mutex, perform the guarded new-empty
-   `Disabled -> Tracking` transaction. Reject any nonempty canonical, cache, or work
-   table.
-3. After capture artifacts and the connector are established, start the selected
+   published it to any DMS replica or other writer. For an unbound first attempt, also
+   verify that canonical, cache, and work tables are empty and reject the database before
+   binding creation when any row exists.
+2. Resolve the physical-source fingerprint and atomically create or exact-match its
+   immutable binding before the first activation attempt. Reject a binding mismatch and
+   apply the initial-enable retry classification below when a matching record already
+   exists.
+3. Under the projection administrative mutex, perform the guarded new-empty
+   `Disabled -> Tracking` transaction, or recognize a completed retry only from an exact
+   binding with lifecycle `Tracking`, a clear cache-ahead latch, and empty canonical,
+   cache, and work tables.
+4. After capture artifacts and the connector are established, start the selected
    projector execution context. Wait for a current projection caught-up observation and
    retain its source fingerprint. Keep first-write admission closed.
-4. Capture a provider barrier from that same bound physical database after receiving the
+5. Capture a provider barrier from that same bound physical database after receiving the
    fresh health result, using the provider procedure below.
-5. Read the connector's committed source offsets through
+6. Read the connector's committed source offsets through
    `GET /connectors/{connectorName}/offsets`. Select exactly one source partition matching
    the connector and bound database: PostgreSQL requires exactly
    `{ "server": <configured topic.prefix> }`, while SQL Server requires exactly
    `{ "server": <configured topic.prefix>, "database": <configured database name> }`.
    A missing endpoint, missing or multiple matching partitions, snapshot offset, null
    field, malformed field, or source-partition mismatch is not ready.
-6. Parse and compare the provider position. Poll until the committed connector position
+7. Parse and compare the provider position. Poll until the committed connector position
    is greater than or equal to the captured barrier, while continuing to require the sole
    task to be `RUNNING`. Connector status, topic end offsets, elapsed time, and lag never
    substitute for this comparison.
-7. Read projection status again and require operational health plus caught-up status for
+8. Read projection status again and require operational health plus caught-up status for
    the same source fingerprint. Then apply the independent connector-lag threshold,
    transition the target to combined ready, and only afterward publish the database to
    canonical writers.
@@ -636,12 +662,13 @@ rerun or DMS startup.
 Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
 display names, or unsanitized physical identifiers.
 
-Deployment automation durably records the immutable binding before creating external CDC
-artifacts. Runtime DMS records no expected binding and latches no source-drift condition.
-Its health surface reports only the current database being projected. The deployment
-status operation compares that observation with the durable binding; a missing target,
-retryable resolution failure, or confirmed mismatch makes combined CDC readiness false
-without changing DMS request routing.
+For initial CDC enablement, deployment automation durably records the immutable binding
+before performing guarded tracking activation or creating external CDC artifacts. Runtime
+DMS records no expected binding and latches no source-drift condition. Its health surface
+reports only the current database being projected. The deployment status operation compares
+that observation with the durable binding; a missing target, retryable resolution failure,
+or confirmed mismatch makes combined CDC readiness false without changing DMS request
+routing.
 
 The portable binding-record shape is:
 
@@ -788,9 +815,10 @@ Binding creation and cleanup follow a fail-closed order:
 
 1. Obtain DMS's current fingerprint derived from `dms.DataStoreIdentity` and resolve the
    intended artifact names.
-2. Atomically create the immutable binding record before creating any derived topic, the
-   connector, or a provider capture artifact. A record that already exists must match
-   exactly; automation never rewrites its binding fields.
+2. Atomically create the immutable binding record before initial CDC guarded tracking
+   activation and before creating any derived topic, the connector, or a provider capture
+   artifact. A record that already exists must match exactly; automation never rewrites its
+   binding fields.
 3. If any governed artifact exists without its binding record, or differs from the
    record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
    binding from existing topic names or connector configuration. Explicit adoption
@@ -810,6 +838,24 @@ The binding record lives at least as long as any governed artifact. Local teardo
 remove it only in the same destructive volume-removal workflow that removes all of those
 artifacts. A crash may leave an unused record, which safely supports an idempotent retry;
 it must never leave surviving artifacts reusable after automatic record deletion.
+An explicit failed-attempt cleanup may retire an unused binding only after proving that no
+governed artifact exists; a crash by itself never triggers that cleanup.
+
+Before first-write admission, initial-enable retry classifies durable state as follows:
+
+- an exact binding plus lifecycle `Disabled` and a clear cache-ahead latch retries guarded
+  activation;
+- an exact binding plus lifecycle `Tracking`, a clear cache-ahead latch, and empty
+  canonical, cache, and work tables proves activation committed and resumes provider/topic/
+  connector setup or validation;
+- lifecycle `Tracking` without a binding is inconsistent and rejected; and
+- a set cache-ahead latch, lifecycle `Resetting` or `Rebuilding`, a binding mismatch, or
+  any unexpected canonical, cache, or work row before capture setup is rejected and
+  requires retiring an unused binding when present and reprovisioning the database.
+
+These rules apply only to a controller-proven, not-yet-admitted initial workflow. A normal
+restart after admission exact-matches the binding and validates existing artifacts instead
+of applying the empty-table retry classification.
 
 V1 never reassigns an existing topic or connector generation to a different physical
 database. Guarded source replacement is supported only for a database previously enabled
@@ -1053,6 +1099,15 @@ stamps rather than adding a projection epoch or another Kafka ordering field. V1
 use the result to certify a replacement exact CDC baseline; projection and connector status
 after write admission remain eventual.
 
+The utility is lifecycle-aware, and the caller explicitly requests its intended mode. With
+a clear cache-ahead latch, `Tracking` is eligible for projection/publication mode and
+`Disabled` is eligible for canonical-only mode. The utility rejects a requested mode that
+does not match durable state, `Resetting`, `Rebuilding`, or any set
+`CacheAheadRecoveryRequired` latch before changing a stamp. A correction that promises
+updated cache or Kafka state requires projection/publication mode; canonical-only mode
+changes API validators and Change Query visibility but deliberately creates no projection
+work and promises no Kafka publication.
+
 The offline operation follows this sequence:
 
 1. Stop every affected DMS replica, API reader, canonical writer, projector loop, optional
@@ -1060,32 +1115,47 @@ The offline operation follows this sequence:
    the utility. Mark the CDC target not ready when present. The utility requires an explicit
    offline confirmation but does not implement or certify this fence.
 2. Deploy the corrected API materializer/composer while the data store remains offline.
-   The existing connector may remain registered against the same binding and topic when the
-   stream contract remains compatible and no previously published bytes require purging.
-3. Run the out-of-band utility with an explicit affected-document scope and a persisted
-   operation manifest. For each current affected document, allocate a fresh unique value
-   from the normal change-version sequence, update `dms.Document.ContentVersion` and
-   `ContentLastModifiedAt`, and update the concrete resource-root or `dms.Descriptor`
-   content-stamp mirror in the same provider transaction. Do not change domain fields,
-   identity stamps, keys, or deletion history. The utility uses a captured pre-restamp
-   version boundary so a retry resumes without stamping an already completed document
-   again.
-4. After the utility completes, start only corrected DMS and projector instances. Existing
-   affected cache rows are behind and each restamp transaction has already enqueued its
-   required version. Queue processing replaces or creates the rows. API reads retain
-   relational fallback while projection catches up.
-5. Observe eventual projection and connector recovery and verify that affected public
-   records have higher `contentVersion` and different `document._etag` values. A later ready
-   observation does not certify an exact replacement baseline or control API admission.
+   In projection/publication mode, the existing connector may remain registered against the
+   same binding and topic when the stream contract remains compatible and no previously
+   published bytes require purging.
+3. Acquire the projection administrative mutex on its dedicated connection and hold it for
+   the complete utility run. Validate the requested mode against the durable lifecycle and
+   latch, and persist that mode in the operation manifest before the first restamp. Session
+   loss stops the utility; a retry reacquires the mutex and requires the durable state to
+   remain eligible for the mode recorded by the manifest before resuming.
+4. Run the utility with an explicit affected-document scope. For each current affected
+   document, allocate a fresh unique value from the normal change-version sequence, update
+   `dms.Document.ContentVersion` and `ContentLastModifiedAt`, and update the concrete
+   resource-root or `dms.Descriptor` content-stamp mirror in the same provider transaction.
+   Do not change domain fields, identity stamps, keys, or deletion history. The utility uses
+   a captured pre-restamp version boundary so a retry resumes without stamping an already
+   completed document again. In projection/publication mode, the existing enqueue trigger
+   records the required version in that same transaction, and an enqueue failure rolls back
+   the complete restamp transaction. In canonical-only mode, lifecycle `Disabled`
+   deliberately records no work.
+5. Complete the selected mode:
+   - In projection/publication mode, start only corrected DMS and projector instances.
+     Existing affected cache rows are behind, and queue processing replaces or creates them.
+     API reads retain relational fallback while projection catches up. Observe eventual
+     projection and connector recovery and verify that affected public records have higher
+     `contentVersion` and different `document._etag` values.
+   - In canonical-only mode, start only corrected DMS instances and verify the relational API
+     validators and Change Query results. Do not start or wait for projection or claim Kafka
+     publication. A later explicit projection activation establishes current cache state
+     through its ordinary baseline.
+
+A later ready observation in projection/publication mode does not certify an exact
+replacement baseline or control API admission.
 
 The utility is provider-aware and supports both PostgreSQL and SQL Server. It records the
-physical-source fingerprint, scope, reason, pre-restamp boundary, counts, and completion
-status for audit and safe resume. For corrections that do not require prior-record purging,
-the higher versions deliberately make affected documents visible as representation updates
-to Change Queries and cause conforming Kafka consumers to replace prior state without a new
-topic, binding generation, or offset reset. The dedicated implementation story owns the
-utility, provider behavior, tests, and operator examples; general cache and CDC runbooks
-describe only its offline scope and do not recreate it with manual SQL.
+physical-source fingerprint, scope, reason, selected lifecycle mode, pre-restamp boundary,
+counts, and completion status for audit and safe resume. In both modes, the higher versions
+deliberately make affected documents visible as representation updates to Change Queries.
+In projection/publication mode, when prior Kafka records do not require purging, they also
+cause conforming Kafka consumers to replace prior state without a new topic, binding
+generation, or offset reset. The dedicated implementation story owns the utility, provider
+behavior, tests, and operator examples; general cache and CDC runbooks describe only its
+offline scope and do not recreate it with manual SQL.
 
 ### Sensitive-data disclosure correction
 
@@ -1196,12 +1266,16 @@ offline precondition is satisfied without interrupting traffic:
    `(tenant key, DataStoreId)` is an explicit DMS `DocumentCache:Targets` entry.
 2. Provision and validate the complete current relational schema, including the E18 cache,
    work, identity, constrained state, enqueue trigger, and access-path inventory. Do not
-   alter a legacy cache schema.
-3. While canonical write admission is closed, acquire the projection administrative
-   mutex and invoke the guarded new-empty `Disabled -> Tracking` transaction. Reject the
-   workflow if canonical, cache, or work rows exist.
-4. Resolve the new physical source and atomically create its deployment-owned immutable
-   binding record.
+   alter a legacy cache schema. For an unbound first attempt, also verify that canonical,
+   cache, and work tables are empty and reject the database before binding creation when
+   any row exists.
+3. Resolve the new physical source and atomically create or exact-match its
+   deployment-owned immutable binding record before the first activation attempt. On retry,
+   classify the exact binding with the durable lifecycle and table state as defined above.
+4. While canonical write admission is closed, acquire the projection administrative mutex
+   and invoke the guarded new-empty `Disabled -> Tracking` transaction, or recognize the
+   previously committed activation only from an exact binding with lifecycle `Tracking`, a
+   clear cache-ahead latch, and empty canonical, cache, and work tables.
 5. Apply provider CDC/key setup and create the binding's compact-only public and progress
    topics and their ACLs. For SQL Server, also create its persistent single-partition
    schema-history topic and connector-only ACLs.
@@ -1231,11 +1305,12 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   physical database for this initial provisioning workflow; an unbound path that reuses an
   existing data store is rejected. A later invocation may exact-match and validate a binding
   previously created by the supported new-database path. Bootstrap starts Kafka and Kafka
-  Connect if needed, verifies that the target is an explicit DMS projection target, invokes
-  the guarded new-empty tracking transition before seed/API writes, and generates a
-  connector without hard-coded database, topic, slot/capture, or data-store values. The
-  initial eligibility/empty-table check occurs before binding or external CDC artifacts
-  are created.
+  Connect if needed, verifies that the target is an explicit DMS projection target, performs
+  the initial eligibility/empty-table check, creates or exact-matches the immutable binding,
+  then invokes the guarded new-empty tracking transition or recognizes its completed retry
+  state before seed/API writes. It generates a connector without hard-coded database, topic,
+  slot/capture, or data-store values. Eligibility is established before binding reservation;
+  binding reservation precedes both activation and external CDC artifacts.
 - The local default binding state root is `eng/docker-compose/.cdc-state`; an explicit
   `-CdcBindingStatePath` may select another persistent deployment-owned location. It is
   never placed in `.bootstrap/bootstrap-manifest.json`.
@@ -1427,11 +1502,12 @@ adoption, cleanup ordering, and guarded new-generation source replacement; they 
 or repair a binding by rewriting an immutable record. They state that same-topic baseline
 replacement and incompatible-contract cutover are deferred until an owned cross-replica/
 external-writer fence exists. The representation-restamp utility is documented only for an
-explicitly offline data store and does not certify another exact CDC baseline. They state
-that source-history `unknown` is fail-closed, source-history `lost` durably terminates the v1
-binding, and offset reset, provider-artifact recreation, or resnapshot into the existing
-topic is not a recovery path. A replacement generation/topic/consumer namespace is a
-deferred future workflow, not a v1 runbook.
+explicitly offline data store; its lifecycle preflight distinguishes
+projection/publication from canonical-only execution, and neither mode certifies another
+exact CDC baseline. They state that source-history `unknown` is fail-closed, source-history
+`lost` durably terminates the v1 binding, and offset reset, provider-artifact recreation, or
+resnapshot into the existing topic is not a recovery path. A replacement
+generation/topic/consumer namespace is a deferred future workflow, not a v1 runbook.
 Connector, topic, offset, ACL, slot, and capture deletion is destructive and always
 explicit; removal from configuration is not cleanup authority.
 
@@ -1460,7 +1536,7 @@ where evidence belongs without prescribing duplicate test cases here.
 
 | Contract ID | Design owner | Evidence-owning stories | Test layers |
 | --- | --- | --- | --- |
-| `CDC-INV-01` | [Configuration and target selection](#configuration-and-projection-target-selection), [durable lifecycle](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle), and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S01](backend-redesign/epics/18-document-cache/01-documentcache-configuration-and-target-selection.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md) | Configuration/unit; guarded activation and lifecycle provider integration; mixed-target isolation |
+| `CDC-INV-01` | [Configuration and target selection](#configuration-and-projection-target-selection), [durable lifecycle](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle), and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S01](backend-redesign/epics/18-document-cache/01-documentcache-configuration-and-target-selection.md), [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md) | Configuration/unit and preflight-contract tests; guarded activation and lifecycle provider integration; mixed-target isolation |
 | `CDC-INV-02` | [Cached document contract](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract) and [upsert value](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value) | [E18-S00](backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md), [E18-S02](backend-redesign/epics/18-document-cache/02-document-materializer-service.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | DDL snapshot/DB-apply; materializer unit/provider integration; serialized-record contract |
 | `CDC-INV-03` | [Transactional enqueue](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue) and [freshness/acknowledgement](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation) | [E18-S00](backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md), [E18-S03](backend-redesign/epics/18-document-cache/03-monotonic-cache-upsert-and-delete-fencing.md), [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Set-based trigger/rollback; provider concurrency and crash integration; performance qualification; API-driven Kafka E2E |
 | `CDC-INV-04` | [Bounded in-process execution policy](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#bounded-in-process-execution-policy), [baseline/rebuild](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub), and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | Fair paging/backpressure; restart without source scan; administrative serialization; no-scan status at scale |
@@ -1473,7 +1549,7 @@ where evidence belongs without prescribing duplicate test cases here.
 | `CDC-INV-11` | [Source-history continuity](#source-history-continuity) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Adapter/unit; real-provider integration; pinned-image lifecycle; API-driven failure E2E |
 | `CDC-INV-12` | [Deployment-owned binding](#deployment-owned-cdc-target-and-physical-source-binding), [local bootstrap](#local-bootstrap-and-ci), and [security](#security-telemetry-and-operations) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md) | State-store/CAS unit; controller/script integration; broker-backed topic and ACL integration; destructive-lifecycle integration |
 | `CDC-INV-13` | [Public consumer bootstrap](#public-consumer-bootstrap) and [topic retention](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) | [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Consumer conformance; controllable-clock/partition-barrier; broker-backed bootstrap |
-| `CDC-INV-14` | [Contract change and repair](#contract-change-and-repair-operations), [baseline/rebuild/scrub](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub), [v1 compatibility](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes), and [cache-ahead recovery](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery) | [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E18-S08](backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md), [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S07](backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md) | Serialized administrative lifecycle; bounded clear/rebuild/scrub; provider qualification and exercised runbooks; contract/consumer conformance |
+| `CDC-INV-14` | [Contract change and repair](#contract-change-and-repair-operations), [baseline/rebuild/scrub](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub), [v1 compatibility](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes), and [cache-ahead recovery](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery) | [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E18-S08](backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md), [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S07](backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md) | Serialized administrative lifecycle; bounded clear/rebuild; admitted explicit O(N) scrub; provider qualification and exercised runbooks; contract/consumer conformance |
 | `CDC-INV-15` | [Security, telemetry, and operations](#security-telemetry-and-operations) and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S07](backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md) | No-scan status; enqueue-vs-processing failure telemetry; bounded diagnostics; exercised runbooks |
 
 ## Historical and Deferred Material
