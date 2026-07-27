@@ -106,6 +106,48 @@ public class ClaimsUploadServiceTests
         }
 
         [Test]
+        public async Task It_should_return_structure_failure_when_claims_json_is_an_array()
+        {
+            // Arrange
+            var claimsJson = JsonNode.Parse("[]");
+
+            // Act
+            var result = await _claimsUploadService.UploadClaimsAsync(claimsJson!);
+
+            // Assert
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Failures.Count, Is.EqualTo(1));
+            Assert.That(result.Failures[0].FailureType, Is.EqualTo("Validation"));
+            Assert.That(result.Failures[0].Path, Is.EqualTo("$"));
+            Assert.That(result.Failures[0].Message, Is.EqualTo("Claims JSON must be an object"));
+            A.CallTo(() => _claimsValidator.Validate(A<JsonNode>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_should_return_structure_failure_when_claims_json_is_a_scalar_value()
+        {
+            // Arrange
+            var claimsJson = JsonNode.Parse("\"not-an-object\"");
+
+            // Act
+            var result = await _claimsUploadService.UploadClaimsAsync(claimsJson!);
+
+            // Assert
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Failures.Count, Is.EqualTo(1));
+            Assert.That(result.Failures[0].FailureType, Is.EqualTo("Validation"));
+            Assert.That(result.Failures[0].Path, Is.EqualTo("$"));
+            Assert.That(result.Failures[0].Message, Is.EqualTo("Claims JSON must be an object"));
+            A.CallTo(() => _claimsValidator.Validate(A<JsonNode>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
         public async Task It_should_return_failure_when_database_update_fails()
         {
             // Arrange

@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -21,6 +22,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -222,10 +224,16 @@ public abstract class ClaimsManagementModuleTests
     protected void ArrangeAuthenticatedClient(
         string scope,
         bool dangerousFlagEnabled,
-        string? requiredServiceRole = null
+        string? requiredServiceRole = null,
+        IClaimsUploadService? uploadServiceOverride = null
     )
     {
-        _factory = CreateFactory(addTestAuthentication: true, dangerousFlagEnabled, requiredServiceRole);
+        _factory = CreateFactory(
+            addTestAuthentication: true,
+            dangerousFlagEnabled,
+            requiredServiceRole,
+            uploadServiceOverride
+        );
         Client = _factory.CreateClient();
         Client.DefaultRequestHeaders.Add("X-Test-Scope", scope);
     }
@@ -233,7 +241,8 @@ public abstract class ClaimsManagementModuleTests
     private WebApplicationFactory<Program> CreateFactory(
         bool addTestAuthentication,
         bool dangerousFlagEnabled,
-        string? requiredServiceRole
+        string? requiredServiceRole,
+        IClaimsUploadService? uploadServiceOverride = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -266,7 +275,7 @@ public abstract class ClaimsManagementModuleTests
                             AuthorizationScopePolicies.Add(options);
                         });
 
-                        collection.AddTransient(_ => _claimsUploadService);
+                        collection.AddTransient(_ => uploadServiceOverride ?? _claimsUploadService);
                         collection.AddTransient(_ => _claimsProvider);
                     }
 
@@ -964,6 +973,87 @@ public abstract class ClaimsManagementModuleTests
             content.Should().NotContain("JsonException");
             content.Should().NotContain("System.Text.Json");
             content.Should().NotContain("LineNumber");
+        }
+    }
+
+    [TestFixture]
+    public class Given_upload_claims_receives_a_non_object_claims_payload : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            var realUploadService = new ClaimsUploadService(
+                A.Fake<ILogger<ClaimsUploadService>>(),
+                A.Fake<IClaimsProvider>(),
+                A.Fake<IClaimsDataLoader>(),
+                A.Fake<IClaimsValidator>()
+            );
+            ArrangeAuthenticatedClient(
+                AuthorizationScopes.AdminScope.Name,
+                dangerousFlagEnabled: true,
+                uploadServiceOverride: realUploadService
+            );
+        }
+
+        [TestCase("""{"claims":[]}""")]
+        [TestCase("""{"claims":"x"}""")]
+        public async Task It_returns_the_data_validation_contract_at_the_document_root(string requestBody)
+        {
+            using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+            var response = await Client.PostAsync(UploadClaimsRoute, content);
+
+            await AssertDataValidationContract(
+                response,
+                validationErrors =>
+                {
+                    validationErrors.Count.Should().Be(1);
+                    validationErrors["$"]!
+                        .AsArray()
+                        .Select(node => node!.GetValue<string>())
+                        .Should()
+                        .Equal("Claims JSON must be an object");
+                }
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_upload_returns_no_failures : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+            ArrangeUploadReturns(new ClaimsLoadStatus(false, []));
+        }
+
+        [Test]
+        public async Task It_should_return_the_generic_bad_request_contract()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, NonEmptyUploadBody());
+            await AssertGenericBadRequestContract(response);
+        }
+    }
+
+    [TestFixture]
+    public class Given_upload_returns_an_unrecognized_structure_message : ClaimsManagementModuleTests
+    {
+        private const string Sentinel = "SENTINEL_UPLOAD_STRUCTURE_7d2e_must_not_leak";
+
+        [SetUp]
+        public void Setup()
+        {
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+            ArrangeUploadReturns(
+                new ClaimsLoadStatus(false, [new ClaimsFailure("Structure", Sentinel, "$.some.path")])
+            );
+        }
+
+        [Test]
+        public async Task It_should_return_the_generic_bad_request_contract()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, NonEmptyUploadBody());
+            await AssertGenericBadRequestContract(response, Sentinel);
         }
     }
 }

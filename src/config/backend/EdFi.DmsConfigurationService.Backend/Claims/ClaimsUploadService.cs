@@ -43,6 +43,13 @@ public class ClaimsUploadService(
                 return new(false, [failure]);
             }
 
+            if (claimsJson is not JsonObject)
+            {
+                ClaimsFailure structureFailure = new("Validation", "Claims JSON must be an object", "$");
+                logger.LogWarning(structureFailure.Message);
+                return new(false, [structureFailure]);
+            }
+
             // Parse and validate the JSON structure
             logger.LogDebug("Parsing claims JSON structure");
 
