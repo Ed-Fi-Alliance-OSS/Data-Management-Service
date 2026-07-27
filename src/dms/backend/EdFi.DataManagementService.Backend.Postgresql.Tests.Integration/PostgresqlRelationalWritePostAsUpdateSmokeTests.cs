@@ -436,6 +436,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     private UpsertResult _rejectedPostAsUpdateResult = null!;
     private ReferentialId _persistedSchoolReferentialId;
     private Guid _schoolReferentialIdAfterRejectedPostAsUpdate;
+    private long _schoolTrackedChangeCountBeforeRejectedPostAsUpdate;
+    private long _schoolTrackedChangeCountAfterRejectedPostAsUpdate;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -476,6 +478,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
                 )
             ).ReferentialId
         );
+        _schoolTrackedChangeCountBeforeRejectedPostAsUpdate = await ReadSchoolTrackedChangeCountAsync();
 
         _rejectedPostAsUpdateResult = await ExecuteUpsertAsync(
             ImmutableIdentityPostAsUpdateRequestBodyJson,
@@ -501,6 +504,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
                 _mappingSet.ResourceKeyIdByResource[SchoolResource]
             )
         ).ReferentialId;
+        _schoolTrackedChangeCountAfterRejectedPostAsUpdate = await ReadSchoolTrackedChangeCountAsync();
         _documentCount = await ReadDocumentCountAsync();
         _incomingDocumentUuidCount = await ReadDocumentCountAsync(RejectedPostAsUpdateDocumentUuid.Value);
     }
@@ -555,6 +559,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             ],
             _persistedSchoolReferentialId.Value,
             _schoolReferentialIdAfterRejectedPostAsUpdate,
+            _schoolTrackedChangeCountBeforeRejectedPostAsUpdate,
+            _schoolTrackedChangeCountAfterRejectedPostAsUpdate,
             _documentCount,
             _incomingDocumentUuidCount
         );
@@ -732,6 +738,22 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    // The rejected-write proof surveys the tracked-change rowset alongside the stamped rows: a direct
+    // tracked-change insert is the one authoritative write the document/root stamp equality cannot detect.
+    private async Task<long> ReadSchoolTrackedChangeCountAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "tracked_changes_edfi"."School";
+            """
         );
 
         return rows.Count == 1

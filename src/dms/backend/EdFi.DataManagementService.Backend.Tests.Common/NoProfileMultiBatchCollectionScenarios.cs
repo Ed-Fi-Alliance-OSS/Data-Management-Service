@@ -22,6 +22,13 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// counts) and neutral persisted-state projections defined here, then delegates the behavioral
 /// assertions. No provider dialect SQL (for example generate_series or quoted table names) or driver
 /// types belong in this contract.
+///
+/// This family asserts the success path: the complete requested set is persisted or deleted and every
+/// command stays within the compiled parameter budget. It deliberately does not inject a failure on a
+/// later batch. All batches of a write run on one write-session transaction with no intermediate
+/// commit, so a batch boundary is not a commit boundary and cross-batch rollback is the atomic-rollback
+/// family's contract (<see cref="NoProfileAtomicRollbackAssertions"/>), whose injected failure already
+/// lands after earlier successful inserts in the same transaction.
 /// </summary>
 public static class NoProfileMultiBatchCollectionScenarios
 {

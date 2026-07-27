@@ -29,8 +29,13 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </remarks>
 public static class AuthorizationParameterBudget
 {
-    /// <summary>SQL Server's documented maximum number of parameters per command.</summary>
-    public const int MssqlMaxCommandParameters = 2100;
+    /// <summary>
+    /// The number of user parameters a single SQL Server command can bind, which is the budget this type
+    /// spends across the authorization lists and the query's own parameters. The value is the engine limit
+    /// owned by <see cref="MssqlCommandLimits.MaxUserParametersPerCommand" /> — see that member for why the
+    /// usable ceiling is 2098 rather than the documented 2100 RPC limit.
+    /// </summary>
+    public const int MssqlMaxCommandParameters = MssqlCommandLimits.MaxUserParametersPerCommand;
 
     /// <summary>The number of paging parameters (offset and limit) every page query binds.</summary>
     public const int PaginationParameterCount = 2;

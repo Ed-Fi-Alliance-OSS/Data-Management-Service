@@ -21,15 +21,17 @@ coverage, new coverage, or a justified non-applicable dialect difference.
 
 ## Required Scenario Families
 
-| Scenario family | Required assertions |
-| --- | --- |
-| Baseline create | Root, nested collection, extension, and extension-child rows are complete and reconstitute correctly. |
-| Changed PUT | Omitted inlined values clear correctly; omitted collection and extension state is deleted. |
-| Collection reorder | Stable `CollectionItemId` values are reused and sibling ordinals remain unique and contiguous. |
-| Guarded no-op and races | Unchanged writes do not rewrite rowsets or bump content version; stale and commit-window races preserve committed state and retry semantics. |
-| Multi-batch collections | Large create/update/delete operations stay within SQL Server command/parameter limits and never leave partial state. |
-| POST-as-update | Ordinary update, immutable-identity rejection, and concurrent-create conversion to update behave consistently. |
-| Rollback after early writes | Injected failures roll back document, root, child, extension, identity, and tracking changes atomically. |
+| Scenario family | Required assertions | SQL Server suite (`Backend.Mssql.Tests.Integration`) |
+| --- | --- | --- |
+| Baseline create | Root, nested collection, extension, and extension-child rows are complete with stable identities and ordinals. | `MssqlRelationalWriteCreateBaselineTests.cs` |
+| Changed PUT | Omitted inlined values clear correctly; omitted collection and extension state is deleted. | `MssqlRelationalWriteUpdateSemanticsTests.cs` |
+| Collection reorder | Stable `CollectionItemId` values are reused and sibling ordinals remain unique and contiguous. | `MssqlRelationalWriteCollectionReorderTests.cs` |
+| Guarded no-op and races | Unchanged writes do not rewrite rowsets or bump content version; stale and commit-window races preserve committed state and retry semantics. | `MssqlRelationalWriteGuardedNoOpTests.cs` |
+| Multi-batch collections | Large create/update/delete operations stay within SQL Server command/parameter limits and persist or delete the complete requested set, with no batch silently dropped or truncated. | `MssqlRelationalWriteMultiBatchCollectionTests.cs` |
+| POST-as-update | Ordinary update, immutable-identity rejection, and concurrent-create conversion to update behave consistently. | `MssqlRelationalWritePostAsUpdateSmokeTests.cs` |
+| Rollback after early writes | Injected failures roll back document, root, child, extension, identity, and tracking changes atomically. | `MssqlRelationalWriteRollbackSafetyTests.cs` |
+
+Every family runs on both engines through the shared `NoProfile*Scenarios` contracts; a family's variant rows may execute in a sibling suite when their PostgreSQL locations do (for example, the changed-PUT batch-deletion and authoritative retained-id variants run in the multi-batch and POST-as-update suites). All batches of a write execute inside the single write-session transaction with no intermediate commit, so failure atomicity across batch boundaries is proved once by the rollback family rather than re-proved at each batch count. The parity catalog (`ParityScenarioCatalog.NoProfile.cs`) is the canonical row-level record of coverage locations and of intentional dialect differences (`DialectDifference`): the multi-batch id-reservation/parameter-cap shapes and the commit-window race scheduling, whose observable outcomes are asserted unchanged on both engines.
 
 ## Design
 
@@ -52,8 +54,8 @@ coverage, new coverage, or a justified non-applicable dialect difference.
 - Real-SQL-Server integration tests cover every required scenario family above.
 - Equivalent scenarios assert response behavior, document/root/child/extension state, stable collection
   identity, ordinals, update tracking, concurrency outcomes, and rollback.
-- Batching persists or deletes the full requested set without exceeding compiled-command/provider limits or
-  leaving partial state.
+- Batching persists or deletes the full requested set without exceeding compiled-command/provider limits and
+  without dropping or truncating any batch.
 - Rejected immutable identity changes and injected failures leave all authoritative tables unchanged.
 - Intentional provider differences are explicit and tested; assertions are not weakened merely for MSSQL.
 - PostgreSQL relational write tests continue to pass unchanged.

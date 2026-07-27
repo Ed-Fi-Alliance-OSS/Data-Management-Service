@@ -99,7 +99,7 @@ Story alignment:
 - `DMS-984` owns runtime execution for `NoProfileWriteBehavior` and `FullSurfaceCollectionReorder`.
 - `DMS-1124` owns runtime execution for the profiled scenario set.
 - `DMS-1104` owns the failure semantics for `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, plus invalid usage/forbidden-data cases that are not separate matrix scenarios.
-- `DMS-1022` executes the API matrix on both engines. `DMS-1023` establishes the authoritative catalog and the provider-neutral shared no-profile contracts, and records the existing PostgreSQL executions of the closed no-profile matrix; the SQL Server no-profile executions are owned by `DMS-1285`.
+- `DMS-1022` executes the API matrix on both engines. `DMS-1023` establishes the authoritative catalog and the provider-neutral shared no-profile contracts, and records the existing PostgreSQL executions of the closed no-profile matrix; the SQL Server no-profile executions were delivered by `DMS-1285`.
 
 ## Acceptance Criteria
 
@@ -140,7 +140,7 @@ Do not rename a canonical id, and do not hand-maintain a row-by-row copy of the 
 
 Parity is behavioral and **per-mechanic at the same production boundary**: equivalent PostgreSQL and SQL Server cases must exercise the same boundary and assert the same externally visible and authoritative storage semantics. Identical filenames, fixture counts, SQL text, or error wording are not required, and a mechanic covered on both engines through different resources still counts as parity.
 
-Intentional dialect differences are recorded on the catalog row with a rationale. The primary example is no-profile multi-batch collection writes: PostgreSQL reserves collection ids via `generate_series` and caps at 65535 parameters / 1000 rows, whereas SQL Server has no `generate_series` equivalent and caps at 2100 parameters / 1000 rows. The asserted parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts — not the emitted SQL text.
+Intentional dialect differences are recorded on the catalog row with a rationale. The primary example is no-profile multi-batch collection writes: PostgreSQL reserves collection ids via `generate_series` and caps at 65535 parameters / 1000 rows, whereas SQL Server has no `generate_series` equivalent and caps at 2100 RPC parameters (2098 usable per command through `sp_executesql`) / 1000 rows. The asserted parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts — not the emitted SQL text. A second example is the guarded no-op commit-window race: PostgreSQL's snapshot reads let the first freshness check run while the competing bump is still uncommitted, whereas SQL Server's READ COMMITTED locking reads block on the competing X-lock, so the twins schedule the competing transaction differently (before the repository call on PostgreSQL; inside the first freshness-check invocation on SQL Server). The asserted parity is the unchanged observable outcome — freshness observations `[false, true]`, exactly one retry, and the competing committed content version and stamp preserved.
 
 ## CI categories, shards, and configured-dependency semantics
 
@@ -149,4 +149,4 @@ Intentional dialect differences are recorded on the catalog row with a rationale
 
 ## Gap ownership
 
-- **`DMS-1285`** owns adding the missing SQL Server no-profile executions — the thin MSSQL wrappers and any bounded MSSQL production defects they expose. No-profile family rows are recorded `KnownGap` with `MssqlGapOwner = DMS-1285` until those twins land.
+- **`DMS-1285`** delivered the SQL Server no-profile executions. All eight no-profile families (full-surface create, changed-PUT omission semantics, write behavior, collection reorder, guarded no-op including the stale-compare and commit-window races, multi-batch collection, POST-as-update, rollback safety) run on both engines and are recorded `Both`; no no-profile row is owed a SQL Server twin. Intentional dialect differences (the multi-batch batch shapes and the commit-window race scheduling) are recorded on their catalog rows' `DialectDifference` field, which is the canonical record. A unit test pins the remaining no-profile SQL Server gap set as an exact (scenario id, owner) pair set — currently empty — so any regression to `Gap`, or a future blocker-owned row, fails the build unless explicitly enumerated.

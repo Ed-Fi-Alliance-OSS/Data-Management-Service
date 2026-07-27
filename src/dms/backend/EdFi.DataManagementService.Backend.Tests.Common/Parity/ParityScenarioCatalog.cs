@@ -31,7 +31,7 @@ public static partial class ParityScenarioCatalog
 
     /// <summary>
     /// The eight canonical no-profile-layer scenario identifiers: the two original matrix rows
-    /// plus the six families DMS-1285 will twin on SQL Server.
+    /// plus the six families DMS-1285 twinned on SQL Server.
     /// </summary>
     public static readonly ImmutableArray<string> CanonicalNoProfileIds =
     [

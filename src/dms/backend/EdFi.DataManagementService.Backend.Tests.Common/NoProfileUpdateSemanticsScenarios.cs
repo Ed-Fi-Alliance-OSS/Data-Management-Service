@@ -18,7 +18,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// its own provisioning, resolver registration, no-profile production-boundary invocation, dialect
 /// SQL, and readback, but consumes the shared request bodies, document-info builder, neutral
 /// persisted-state snapshot records, and FluentAssertions helpers defined here. The internal Core
-/// upsert/update request types are constructed in each provider adapter.
+/// upsert/update request types are constructed in each provider adapter. The update-tracking proof
+/// here is the ContentVersion bump by design: the response ETag is composed from ContentVersion
+/// (see reference/adr-etag-from-content-version.md), and the full stored stamp surface —
+/// ContentLastModifiedAt, the identity stamps, and the root table's replicated stamp columns — is
+/// owned by the guarded no-op and ETag/If-Match families on either engine, so this changed-PUT
+/// family does not re-assert it.
 /// </summary>
 public static class NoProfileUpdateSemanticsScenarios
 {
