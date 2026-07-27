@@ -222,7 +222,8 @@ public enum DbIndexKind
     ForeignKeySupport,
 
     /// <summary>
-    /// Explicit non-query indexes defined by the design.
+    /// Design-required indexes that are not implied by primary-key, unique-constraint, or
+    /// foreign-key policy and do not use the schema-derived authorization classification.
     /// </summary>
     Explicit,
 
@@ -457,8 +458,10 @@ public sealed record TrackedChangeSystemColumnInfo(
 /// when <paramref name="Role"/> is a descriptor part; null otherwise.
 /// </param>
 /// <param name="PersonJoinName">
-/// The <see cref="TrackedChangePersonJoinInfo.PersonJoinName"/> this column resolves through, when
-/// <paramref name="Role"/> is <see cref="TrackedChangeColumnRole.PersonDocumentId"/>; null otherwise.
+/// The <see cref="TrackedChangePersonJoinInfo.PersonJoinName"/> this column resolves through for a
+/// joined-person <see cref="TrackedChangeColumnRole.PersonDocumentId"/> projection. Null for other
+/// roles and for a zero-hop self-person projection, which instead has
+/// <paramref name="CanonicalStorageColumn"/> equal to <c>DocumentId</c>.
 /// </param>
 public sealed record TrackedChangeColumnInfo(
     DbColumnName OldColumnName,

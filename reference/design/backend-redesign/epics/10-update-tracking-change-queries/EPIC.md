@@ -65,6 +65,12 @@ These spikes investigate features explicitly deferred in `change-queries.md`. Ea
 
 ## Follow-on Stories (spawned by DMS-1185)
 
-- `TBD` - `33-tracked-change-index-emission.md` - Emit Tier-1 auth-check indexes on `tracked_changes_*` tables
-- `TBD` - `34-readchanges-subject-preresolution.md` - Pre-resolve `ReadChanges` authorization subjects; emit per-resource tracked-change indexes
-- `TBD` - `35-namespace-auth-index-prefix-like.md` - Make namespace authorization indexes serve prefix `LIKE` on PostgreSQL
+- `TBD` - `33-tracked-change-index-emission.md` - Produce the DMS-1185 provider evidence, then emit Tier-1 auth-check indexes only if both providers pass
+- `TBD` - `34-readchanges-subject-cardinality.md` - After Story 33's evidence phase, select and implement provider-appropriate `ReadChanges` relationship subject-cardinality shapes
+- `TBD` - `35-mssql-descriptor-identity-index.md` - Finalize the SQL Server live descriptor identity-index disposition from Story 33 evidence
+- `TBD` - `36-per-resource-edorg-person-index-emission.md` - After Stories 33 and 34, emit per-resource EdOrg/person tracked-change indexes
+- `TBD` - `37-tracked-namespace-index-emission.md` - After Story 33 and Authorization Story 22, adapt tracked Namespace predicates and emit tracked namespace indexes
+
+## Cross-Epic Prerequisite
+
+- Authorization epic `TBD` - `../14-authorization/22-namespace-auth-index-prefix-like.md` - Select and implement the live PostgreSQL Namespace predicate/index mechanism before Story 37 adapts tracked Namespace authorization

@@ -309,7 +309,8 @@ public enum DbIndexKind
     // Index required for authorization query performance (see `auth.md`).
     Authorization,
 
-    // Explicit non-query indexes called out in the design (rare outside core `dms.*` tables).
+    // Design-required indexes that are not implied by PK/UK/FK policy and do not use the
+    // schema-derived Authorization classification.
     Explicit
 }
 
@@ -323,9 +324,10 @@ public sealed record DbIndexInfo(
     DbIndexKind Kind,
     // Optional non-key columns to include in the index leaf pages (SQL `INCLUDE` clause).
     // Null and empty are treated identically by emitters: no `INCLUDE` clause.
-    // Non-null for the five `PrimaryAssociation` authorization indexes (see `auth.md`) AND for
-    // person-join authorization indexes (DMS-1094), which always INCLUDE the source table's
-    // `DocumentId` so the runtime auth-filter join can be served by an index-only scan.
+    // Non-null for the five live `PrimaryAssociation` authorization indexes (see `auth.md`), the
+    // five planned tracked-change `PrimaryAssociation` covering indexes (see `change-queries.md`),
+    // AND for person-join authorization indexes (DMS-1094), which always INCLUDE the source
+    // table's `DocumentId` so the runtime auth-filter join can be served by an index-only scan.
     // An emitted authorization index's `IncludeColumns` may be *widened* when a later step in
     // `DeriveAuthorizationIndexInventoryPass` collides on the same `(table, leading key column)` —
     // e.g. a person-join hop landing on `StudentContactAssociation.Student_DocumentId` (PA-covered,
@@ -415,7 +417,9 @@ Notes:
   - `IsNewColumnNullable` is normally `true` because delete tombstones leave `NewX` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
   - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoins` and `PersonJoins`; join definitions are owned once at the table level and are not duplicated per value column.
   - `TrackedChangeColumnRole.DescriptorNamespace` and `TrackedChangeColumnRole.DescriptorCodeValue` require `DescriptorJoinName` and require `PersonJoinName = null`.
-  - `TrackedChangeColumnRole.PersonDocumentId` requires `PersonJoinName` and requires `DescriptorJoinName = null`.
+  - `TrackedChangeColumnRole.PersonDocumentId` requires `DescriptorJoinName = null` and has exactly one of two source representations:
+    - a joined-person projection has a non-null `PersonJoinName` referencing `PersonJoins`;
+    - a zero-hop self-person projection has `PersonJoinName = null`, `CanonicalStorageColumn = DocumentId`, and a `SourceJsonPath` recognized as that resource's own Student, Contact, or Staff identity path.
   - `TrackedChangeColumnRole.Scalar` requires both join-name fields to be `null`.
   - `Origin` classifies why the column is tracked (`Identity`, `SecurableElement`, or both); EdOrg and namespace securable columns share `Origin = SecurableElement` with `Role = Scalar` and are distinguished by a dual check: `SourceJsonPath` match against the resource's `SecurableElements.Namespace` paths, or `CanonicalStorageColumn` match against the live column those paths resolve to. Path matching alone is unsafe: value-column deduplication merges `Origin` flags but keeps the first contributing `SourceJsonPath`, so a unified namespace column can survive with an identity path (see [change-queries.md](change-queries.md) § "Per-resource securable-element indexes are deferred").
   - `SystemColumns` entries are fixed by `TrackedChangeSystemColumnRole`; SQL types are inferred from the role, following the same convention used by non-scalar `DbColumnModel` roles (`DocumentFk`, `CollectionKey`, `Ordinal`, etc.).
@@ -637,10 +641,11 @@ Authorization is applied using token-derived authorization context and ODS-style
 Mapping-set integration points:
 - **Physical column resolution**: authorization checks need to reference the correct physical columns for `Namespace`, EdOrg ids, and person/document relationships. These column names come from the same derived relational model used for reads/writes.
 - **Join-path precomputation**: some securable elements (e.g., `Student` for `CourseTranscript`) may only be reachable transitively via references. A schema-derived “securable element column path” resolver can be built once per `(EffectiveSchemaHash, resource, securableElement)` and cached, using the `RelationalResourceModel` tables/columns plus ApiSchema `securableElements`.
-- **Authorization-required index inventory**: the derived index inventory includes `DbIndexKind.Authorization` entries for:
+- **Authorization-required index inventory**: the derived index inventory includes `DbIndexKind.Authorization` entries, or records equivalent provider-compatible coverage, for:
   - per-resource `Namespace` indexes (for namespace-based checks),
   - per-resource EdOrg-id indexes (for relationship-based checks), and
   - join-column indexes used to reach person `DocumentId`s (for people-related relationship checks).
+  PostgreSQL Namespace prefix coverage is operator-class-aware: an ordinary PK/UK on the same leading column is not equivalent to an index using the pattern operator class required under a non-C collation.
 
 Example (sketch): resolving the `Student` securable element for `CourseTranscript`
 - ApiSchema marks `$.studentAcademicRecordReference.studentUniqueId` as a `Student` securable element.

@@ -1245,7 +1245,12 @@ There should be an index on the `dms.Document.CreatedByOwnershipTokenId` column.
 **Namespace-based strategy**
 Resources that have a `Namespace` securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column, on whichever table — root or child collection — the reference lives on).
 
-The auth-index emission also skips creating a `DbIndexKind.Authorization` entry when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index: the unique index already supports the auth equality lookup with no extra storage or write cost. As a consequence, the inventory does not always carry an explicit `DbIndexKind.Authorization` row for every Namespace or EducationOrganization securable element — consumers verifying auth-index coverage must treat PK/UK leading-column membership as equivalent coverage. PrimaryAssociation indexes are not deduped this way because their `INCLUDE` column enables index-only scans that a plain PK/UK doesn't supply.
+For equality authorization predicates, auth-index emission skips creating a `DbIndexKind.Authorization` entry when the resolved `(table, column)` is already the leading column of an existing PrimaryKey or UniqueConstraint index: the unique index already supports that lookup with no extra storage or write cost.
+The current Namespace rule uses that same equality-style coverage check.
+The planned PostgreSQL prefix-`LIKE` story makes Namespace coverage predicate- and dialect-aware: when the selected mechanism requires a pattern operator class under a non-C collation, an ordinary PK/UK or B-tree authorization index on the same leading column will not be equivalent coverage and will not suppress the pattern-capable index.
+Only an existing index whose access method and operator class serve the required predicate will deduplicate it; SQL Server will retain its normal leading-column coverage rule.
+As a consequence, the current inventory does not always carry an explicit `DbIndexKind.Authorization` row for every EducationOrganization or Namespace securable element; the future Namespace coverage contract is owned by the Authorization story.
+PrimaryAssociation indexes are not deduped against PK/UK indexes because their `INCLUDE` column enables index-only scans that a plain PK/UK doesn't supply.
 
 Emitting an authorization index for a child-table Namespace path does not imply that every authorization operation uses that child table. Index emission follows physical path resolution; runtime authorization subject selection is strategy- and operation-specific.
 
