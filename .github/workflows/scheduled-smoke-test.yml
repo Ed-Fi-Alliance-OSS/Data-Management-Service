@@ -357,7 +357,13 @@ jobs:
         run: |
           Import-Module ./Template-Management.psm1 -Force
           Import-Module ../docker-compose/env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile (Join-Path "../docker-compose" "${{ matrix.environment_file }}")
+          # The SQL Server container was started from the composed engine env file (base +
+          # .env.mssql overlay), so credentials must be read from that same composed file,
+          # not the base file.
+          $dockerComposeRoot = (Resolve-Path "../docker-compose").Path
+          $baseEnvironmentFile = Join-Path $dockerComposeRoot "${{ matrix.environment_file }}"
+          $effectiveEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "${{ matrix.database_engine }}" -BaseEnvironmentFile $baseEnvironmentFile -DockerComposeRoot $dockerComposeRoot
+          $envValues = ReadValuesFromEnvFile $effectiveEnvironmentFile
           $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
           Restore-TemplatePackage -PackageDirectory "${{ github.workspace }}/template-package" -DatabaseName $env:SMOKE_DATABASE_NAME -DatabaseEngine "${{ matrix.database_engine }}" -MssqlPassword $mssqlPassword
         working-directory: eng/DatabaseTemplates/
@@ -371,7 +377,11 @@ jobs:
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "${{ matrix.environment_file }}"
+          # The SQL Server container was started from the composed engine env file (base +
+          # .env.mssql overlay), so credentials must be read from that same composed file,
+          # not the base file.
+          $effectiveEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "${{ matrix.database_engine }}" -BaseEnvironmentFile "${{ matrix.environment_file }}" -DockerComposeRoot (Resolve-Path ".").Path
+          $envValues = ReadValuesFromEnvFile $effectiveEnvironmentFile
           $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
           $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
 

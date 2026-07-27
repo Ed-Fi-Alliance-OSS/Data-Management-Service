@@ -190,7 +190,11 @@ jobs:
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
+          # The SQL Server container was started from the composed engine env file (base +
+          # .env.mssql overlay), so credentials must be read from that same composed file,
+          # not the base file.
+          $effectiveEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "${{ inputs.database_engine }}" -BaseEnvironmentFile "${{ inputs.environment_file }}" -DockerComposeRoot (Resolve-Path ".").Path
+          $envValues = ReadValuesFromEnvFile $effectiveEnvironmentFile
           $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
           $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
 
