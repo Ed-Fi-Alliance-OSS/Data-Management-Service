@@ -125,6 +125,16 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $result | Should -Match "database=db"
     }
 
+    It "keeps an empty connection-string password at end of line from consuming the next line's first token" {
+        # The whitespace around '=' must be horizontal only. A `\s*` span crossed the newline, so an
+        # empty value at end of line took the following line's first token as its value and replaced it
+        # with the marker - over-redaction that corrupts the next line of the artifact.
+        $result = Get-SanitizedText -Text "Password=`nServer=dms-mssql,1433;User Id=sa"
+
+        $result | Should -Match "Server=dms-mssql,1433"
+        $result | Should -Match "User Id=sa"
+    }
+
     It "redacts a comma-bearing ConnectionStrings__MssqlAdmin secret written to GITHUB_ENV" {
         $result = Get-SanitizedText -Text "ConnectionStrings__MssqlAdmin=Server=localhost,1433;User Id=sa;Password=Aa1!GH,ENVTAIL;TrustServerCertificate=true;"
 
@@ -234,6 +244,53 @@ DMS_DATASTORE=mssql
         $result | Should -Not -Match "TAIL"
         $result | Should -Match "$Name=\*\*\*REDACTED\*\*\*"
         $result | Should -Match "and continuing"
+    }
+
+    # Each quoted alternative must consume doubled delimiter pairs as part of the value, the same way the
+    # connection-string rule's quoted alternatives do. Without that, the alternative ends at the first
+    # quote of a doubled pair and publishes the remainder of the secret.
+    It "redacts a double-quoted env-style secret with doubled embedded quotes without leaking the tail" {
+        $result = Get-SanitizedText -Text 'DMS_CONFIG_IDENTITY_CLIENT_SECRET="EFRAGA ""EFRAGB"" EFRAGC" and continuing'
+
+        $result | Should -Not -Match "EFRAGA"
+        $result | Should -Not -Match "EFRAGB"
+        $result | Should -Not -Match "EFRAGC"
+        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "and continuing"
+    }
+
+    It "redacts a single-quoted env-style secret with doubled embedded quotes without leaking the tail" {
+        $result = Get-SanitizedText -Text 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY=''EFRAGD it''''EFRAGE''''s EFRAGF'' and continuing'
+
+        $result | Should -Not -Match "EFRAGD"
+        $result | Should -Not -Match "EFRAGE"
+        $result | Should -Not -Match "EFRAGF"
+        $result | Should -Match "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "and continuing"
+    }
+
+    It "redacts an XML-escaped env-style secret with doubled &quot;&quot; pairs inside a TRX without leaking the tail" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output>SOME_SERVICE_ACCESS_TOKEN=&quot;EFRAGG &quot;&quot;EFRAGH&quot;&quot; EFRAGI&quot;</Output>'
+
+        $result | Should -Not -Match "EFRAGG"
+        $result | Should -Not -Match "EFRAGH"
+        $result | Should -Not -Match "EFRAGI"
+        $result | Should -Match "SOME_SERVICE_ACCESS_TOKEN=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match ([regex]::Escape("</Output>"))
+        { [xml]$result } | Should -Not -Throw
+    }
+
+    It "keeps an empty credential value at end of line from consuming the next line's first token" {
+        # Same horizontal-whitespace requirement as the connection-string rule: a credential-suffixed key
+        # with an empty value at end of line must not span the newline and swallow the next line's key,
+        # which replaced that key name with the marker and corrupted the following line.
+        $result = Get-SanitizedText -Text "EMPTY_SECRET=`nSOME_SERVICE_ACCESS_TOKEN=PLACEHOLDERNEXTLINE`nbenign trailing prose"
+
+        $result | Should -Not -Match "PLACEHOLDERNEXTLINE"
+        $result | Should -Match "EMPTY_SECRET="
+        # The following line keeps its own key name and is redacted on its own account.
+        $result | Should -Match "SOME_SERVICE_ACCESS_TOKEN=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "benign trailing prose"
     }
 
     It "redacts a double-quoted env-style secret inside single-line TRX markup without consuming the closing tag" {

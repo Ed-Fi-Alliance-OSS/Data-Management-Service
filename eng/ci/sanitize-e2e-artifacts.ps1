@@ -68,9 +68,12 @@ $script:RedactionRules = @(
     # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. The
     # whole matched span is redacted so the enclosed secret is not left behind; a following key/value
     # after the real delimiter is preserved.
+    # The whitespace around '=' is horizontal only: a `\s*` span crosses a newline, so a key with an empty
+    # value at end of line consumed the next line's first token as its value and replaced it with the
+    # marker - over-redaction that corrupts the following line rather than leaking anything.
     [pscustomobject]@{
         Name             = "connection-string-password"
-        Pattern          = "(?i)((?:password|pwd)\s*=\s*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;{markup}\r\n]+)"
+        Pattern          = "(?i)((?:password|pwd)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;{markup}\r\n]+)"
         MarkupExclusions = '"<'
         Replacement      = "`${1}$($script:RedactionMarker)"
     },
@@ -128,13 +131,17 @@ $script:RedactionRules = @(
     # bare class stops at whitespace: without these alternatives the tail of a quoted secret containing
     # spaces survives, and in a markup artifact (where the class also excludes '"') a quoted value does
     # not match at all. PASSWORD-suffixed names are also reached by the connection-string rule's quoted
-    # alternatives; the SECRET/TOKEN/KEY suffixes are covered only here. Each quoted alternative stays on
-    # one line so an unterminated quote cannot pair with a later line's delimiter and swallow the
-    # diagnostics in between - that shape falls through to the bare class, which takes the whole token
-    # including the leading quote.
+    # alternatives; the SECRET/TOKEN/KEY suffixes are covered only here. Each quoted alternative consumes
+    # doubled delimiter pairs ("" / '' / &quot;&quot;) as part of the value, matching what the
+    # connection-string rule does: otherwise the alternative ends at the first quote of a doubled pair and
+    # publishes the remainder of the secret. Each also stays on one line so an unterminated quote cannot
+    # pair with a later line's delimiter and swallow the diagnostics in between - that shape falls through
+    # to the bare class, which takes the whole token including the leading quote.
+    # As in the connection-string rule, the whitespace around '=' is horizontal only so an empty value at
+    # end of line cannot span the newline and consume the next line's key name.
     [pscustomobject]@{
         Name             = "env-secret"
-        Pattern          = "(?im)(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)\s*=\s*)(&quot;(?:(?!&quot;)[^\r\n])*&quot;|""[^""\r\n]*""|'[^'\r\n]*'|[^\s{markup}\r\n]+)"
+        Pattern          = "(?im)(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;)[^\r\n]|&quot;&quot;)*&quot;|""(?:[^""\r\n]|"""")*""|'(?:[^'\r\n]|'')*'|[^\s{markup}\r\n]+)"
         MarkupExclusions = '"<>'
         Replacement      = "`${1}`${2}$($script:RedactionMarker)"
     },

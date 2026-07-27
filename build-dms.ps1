@@ -552,8 +552,14 @@ function Stop-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
+            # Both compose projects bind-mount the same .bootstrap workspace, and each primitive removes it
+            # after its own successful down. Only the last down may remove it: otherwise this local down
+            # deletes the workspace the dms-published project's DMS services are still bind-mounting, and a
+            # failing published down leaves a stopped-but-not-torn-down stack with no workspace to retry
+            # against. The published down below still performs the removal on the success path, because an
+            # absent project's down exits 0.
             Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$RemoveBootstrap
+                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$false
             }
             Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
                 ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$RemoveBootstrap

@@ -1950,12 +1950,17 @@ exit 0
             (Get-StandardCorePackage).Version | Should -Be @($versions)[0] -Because "the catalog core fallback pin must match the env files' SCHEMA_PACKAGES version"
         }
 
-        It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {
-            # Confirm that both teardown invocations in Start-DockerEnvironment pass -RemoveBootstrap so
-            # a manually-staged .bootstrap/ from a developer session cannot hijack the subsequent E2E start.
+        It "build-dms.ps1 teardown removes the stale bootstrap workspace only after the last compose project is down" {
+            # Both compose projects bind-mount the same .bootstrap workspace, and each primitive removes it
+            # after its own successful down. Teardown runs the local project first, so only the last
+            # primitive may remove the workspace: otherwise the local down deletes the directory the
+            # dms-published project's DMS services are still bind-mounting, and a failing published down
+            # leaves a stopped-but-not-torn-down stack with no workspace to retry against. Removal still
+            # happens on the success path (an absent project's down exits 0), which is what keeps a
+            # manually-staged .bootstrap/ from hijacking the subsequent E2E start.
             $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
-            $buildScript | Should -Match "start-local-dms\.ps1.*-d.*-v.*-RemoveBootstrap"
-            $buildScript | Should -Match "start-published-dms\.ps1.*-d.*-v.*-RemoveBootstrap"
+            $buildScript | Should -Match 'start-local-dms\.ps1.*-d.*-v.*-RemoveBootstrap:\$false'
+            $buildScript | Should -Match 'start-published-dms\.ps1.*-d.*-v.*-RemoveBootstrap:\$RemoveBootstrap'
         }
 
         It "build-dms.ps1 relational E2E startup clears schema process env overrides around compose calls" {
@@ -1979,8 +1984,8 @@ exit 0
             # Literal start-script references: one per teardown path, plus the two image-mode
             # selection lines (Start-DockerEnvironment and Initialize-E2EDatabase) naming both scripts.
             ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 6
-            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
-            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
+            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$false'
+            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$RemoveBootstrap'
             $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'
         }
 
