@@ -696,28 +696,30 @@ nested-trigger prerequisite. Generated `*_Stamp` triggers do not read
 `sys.configurations`. Runtime validation and the unsupported-change boundary are owned by
 [`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
 
-Trigger execution is least privilege:
+Trigger execution has a narrow encapsulation boundary without creating separate runtime
+DMS database identities:
 
 - PostgreSQL functions are hardened `SECURITY DEFINER` functions owned by a dedicated
   non-login projection-enqueue owner. They set a fixed safe `search_path` containing only
   `pg_catalog` and explicitly schema-qualify every DMS object. The owner receives only the
   state read and work-table DML needed by the trigger. `PUBLIC` receives no function
-  execution or work-table mutation rights. Canonical writer roles can cause the trigger
-  to run only through their ordinary DML on `dms.Document`; they receive no direct
-  `INSERT`, `UPDATE`, or `DELETE` grant on `dms.DocumentProjectionWork`.
-- SQL Server uses the same-owner ownership chain or a narrowly scoped `EXECUTE AS` owner
-  with equivalent rights. Canonical writer principals cannot directly mutate work.
-- The runtime projector principal can select work and conditionally acknowledge it, and
-  can perform the owned cache/latch operations. A distinct projection-administration
-  execution context has the additional work insert/update/delete and lifecycle/cache
-  clearing rights required by baseline, scrub, activation, deactivation, rebuild, and
-  recovery. CDC reader principals receive no work-table capture or DML grant. Unsupported
-  principals receive no queue-mutation grant.
+  execution or work-table mutation rights. Test-only restricted canonical-writer
+  principals prove that ordinary DML on `dms.Document` can fire the trigger without a
+  direct `INSERT`, `UPDATE`, or `DELETE` grant on `dms.DocumentProjectionWork`.
+- SQL Server uses the same-owner ownership chain with static schema-qualified references
+  and no `EXECUTE AS` principal. Test-only restricted canonical-writer principals prove
+  the equivalent trigger-encapsulation property without direct work-table permission.
+- Production uses one deployment-supplied DMS data-store credential with the union of
+  canonical write, projection, and projection-administration permissions. DDL creates no
+  separate runtime identities, role switching, connection strings, or grant matrix for
+  those application capabilities; narrow application interfaces enforce their use.
+  E19 owns the separate deployment-supplied CDC credential and ensures it receives no
+  `DocumentProjectionWork` capture or DML access.
 
 Provider DB-apply tests and introspection must prove trigger counts/names, set-based
-multi-row behavior, lifecycle gating, complete-transaction rollback, direct-DML denial,
-missing-singleton failure, and delete cascade. Runtime and activation tests own the SQL
-Server nested-trigger prerequisite.
+multi-row behavior, lifecycle gating, complete-transaction rollback, direct-DML denial for
+the test-only restricted writer, missing-singleton failure, and delete cascade. Runtime
+and activation tests own the SQL Server nested-trigger prerequisite.
 
 ##### 7) `dms.DocumentCacheState` (singleton projection state)
 

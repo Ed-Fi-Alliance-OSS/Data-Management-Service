@@ -40,8 +40,8 @@ The DDL generation utility is responsible for database objects derived from the 
     `dms.DocumentProjectionWork`, and singleton `dms.DocumentCacheState`; projection
     starts in durable lifecycle state `Disabled`
   - provider-equivalent `dms.Document` transactional enqueue triggers/functions,
-    lifecycle constraints, work paging/oldest-work indexes, and least-privilege grants
-    defined by the
+    lifecycle constraints, work paging/oldest-work indexes, and trigger-execution
+    ownership/grants defined by the
     [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue)
   - update tracking / Change Queries: `dms.ChangeVersionSequence`, `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server)
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
@@ -488,9 +488,12 @@ Rules:
      including the two PostgreSQL or one SQL Server projection-enqueue trigger
   8. Apply deterministic least-privilege ownership and grants. PostgreSQL revokes public
      function/work-table mutation rights and assigns the hardened security-definer owner;
-     SQL Server applies the equivalent ownership-chain or `EXECUTE AS` contract. Runtime
-     projector and projection-administration rights remain distinct, and CDC principals
-     receive no work-table access.
+     SQL Server applies the same-owner ownership-chain contract without `EXECUTE AS`.
+     These objects protect trigger execution but do not separate DMS application
+     capabilities: one deployment-supplied production DMS credential has the union of
+     canonical, projection, and projection-administration permissions, and no generated
+     runtime grant matrix is emitted. E19 owns the separate CDC credential and ensures it
+     receives no work-table access.
   9. Initialize provisioning data: insert `dms.DataStoreIdentity` and
      `dms.DocumentCacheState` only when absent, then seed deterministic data
      (`dms.ResourceKey`, `dms.EffectiveSchema`, `dms.SchemaComponent`, etc.)
@@ -553,9 +556,11 @@ DMS runtime should remain “validate-only”:
   - `api-schema-tools pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
 - A shared “artifact emitter” library used by both CLI and tests to produce normalized SQL + manifests for fixture comparisons (see `ddl-generator-testing.md`).
 - Manifests and introspection include projection-work table/columns/constraints/indexes,
-  lifecycle constraint values, state singleton defaults, trigger/function names and
-  counts, owners, and grants. DB-apply reruns prove mutable lifecycle/latch/work state is
-  not reset.
+  lifecycle constraint values, state singleton defaults, and trigger/function names and
+  counts. Focused provider catalog assertions cover PostgreSQL function
+  owner/security/search path/grants and SQL Server's absence of `EXECUTE AS`; the generic
+  structural manifest does not become a principal or permission model. DB-apply reruns
+  prove mutable lifecycle/latch/work state is not reset.
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:
   - stable naming,
   - DDL success,

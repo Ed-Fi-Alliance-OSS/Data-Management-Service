@@ -271,8 +271,12 @@ diagnostics.
 This intentionally couples write availability to the enqueue schema while tracking is
 enabled. It does not couple writes to projector availability or queue drain: when the
 projector is stopped, unrelated canonical writes continue and durable work accumulates.
-Least-privilege trigger execution permits canonical writers to enqueue only through the
-trigger while denying them direct work-table DML.
+The trigger mechanism supports a narrow encapsulation boundary: a restricted database
+principal with ordinary canonical DML but no direct work-table permission can still
+enqueue through the trigger. Provider fixtures use such a test-only principal to prove
+that property. V1 production uses one deployment-supplied DMS data-store credential with
+the union of canonical, projection, and projection-administration permissions, so this
+does not create database-enforced separation among trusted DMS components.
 
 ## Freshness and Reconciliation
 

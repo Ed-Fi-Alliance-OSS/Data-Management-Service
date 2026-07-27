@@ -60,10 +60,11 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
   `ContentVersion` updates leave the work row and both enqueue timestamps unchanged.
 - Missing-singleton fixtures prove the enqueue trigger fails the complete canonical
   transaction rather than treating an absent `StateId = 1` row as `Disabled`.
-- Access tests prove canonical writers enqueue through triggers but cannot directly mutate
-  work, projector writers can acknowledge, the administrative context can perform only
-  the owned lifecycle/baseline/repair DML, CDC principals cannot capture work, and reruns
-  preserve lifecycle, latch, cache, and pending work.
+- Access tests use test-only restricted canonical-writer principals to prove ordinary
+  `dms.Document` DML enqueues through triggers without direct work-table permission.
+  Production DDL creates no separate identity or grant matrix for canonical writes,
+  projection, or projection administration, emits no CDC capture object or work-table
+  access, and reruns preserve lifecycle, latch, cache, and pending work.
 - The test and documentation changes identify the design sections they verify rather than
   reproducing their tables or rules here.
 
@@ -246,3 +247,26 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    stamp reaches the enqueue mechanism, including SQL Server nested-trigger behavior.
    Defer full HTTP/API paths, descriptor-specific and cross-feature coverage to 18-07, and
    the bulk restamp command and resumability scenarios to 18-08.
+
+### Questions 3
+
+1. On a database whose `dms.EffectiveSchema` singleton already records the expected hash,
+   should a missing `dms.DataStoreIdentity` or `dms.DocumentCacheState` singleton row fail
+   the E18 preflight rather than be recreated? The simplest safe rule is to limit
+   insert-if-absent initialization to an initial apply before the expected hash is
+   recorded; recreating either row on a completed database could silently replace source
+   identity or projection safety state.
+2. The current `ddl emit` artifacts have no explicit transaction wrapper, while
+   `ddl provision` executes them in one transaction. Should 18-00 keep that artifact shape
+   and satisfy the standalone completed-schema rule with the focused phase-zero E18
+   preflight, leaving all-or-nothing execution of emitted SQL to the caller, rather than
+   introducing a cross-cutting transaction-wrapper change in this story?
+3. Should each provider enqueue trigger capture one database UTC timestamp per triggering
+   statement, use that value for both enqueue timestamps on a new work row and for every
+   requirement advanced by that statement, and leave both timestamps unchanged when no
+   required version advances? This is the smallest deterministic, provider-equivalent
+   timestamp contract for the required multi-row tests.
+
+### Answers 3
+
+
