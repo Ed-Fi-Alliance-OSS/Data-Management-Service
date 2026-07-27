@@ -161,11 +161,14 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    exists with the expected hash for an exact rerun. Once that singleton exists, either
    path must validate and preserve the complete current E18 inventory; a missing E18
    object is drift, not a recoverable partial apply. A different hash, legacy `Etag`,
-   obsolete cache UUID constraint, mismatched object/constraint/grant/index shape, or
-   mismatched deterministic seed must fail without a durable mutation rather than be
-   altered or repaired. CDC admission remains limited to E19's proven new-physical-
-   database initial workflow even if a standalone script was technically able to complete
-   an earlier partial apply.
+   obsolete cache UUID constraint, obsolete
+   `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` index, missing or mismatched
+   DDL-owned role/user or role attribute, mismatched schema/function/trigger ownership,
+   forbidden `EXECUTE AS`, mismatched object/constraint/grant/index shape, or mismatched
+   deterministic seed must fail without a durable mutation rather than be altered or
+   repaired. CDC admission remains limited to E19's proven new-physical-database initial
+   workflow even if a standalone script was technically able to complete an earlier
+   partial apply.
 5. Keep the provider-capture boundary in 19-01. Ordinary 18-00 DDL must grant CDC
    principals no `DocumentProjectionWork` access and must not create a publication or SQL
    Server capture instance for the work table. 18-00 access tests assert the absence of
