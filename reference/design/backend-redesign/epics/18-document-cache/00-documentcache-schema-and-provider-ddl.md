@@ -186,3 +186,239 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    forced enqueue failures, but define no new enqueue-error taxonomy. Story 18-06 owns
    target-scoped logging and metrics and may add provider-independent classification if a
    concrete consumer requires it.
+
+### Questions 2
+
+1. Specify the exact provider-specific grant matrix for `edfi_dms_writer`,
+   `edfi_dms_projector`, `edfi_dms_projection_admin`, and `edfi_dms_cdc_reader`, including
+   principal type/attributes, schema usage, canonical/resource table and sequence access,
+   cache/state/work permissions, function execution, and `SET ROLE`/`IMPERSONATE`
+   capability. Does 18-00 leave `edfi_dms_cdc_reader` without source/cache grants for
+   19-01 to add, or grant its non-work access now?
+2. What is the complete PostgreSQL ownership and rerun contract: which stable principal
+   owns the `dms` schema, tables, triggers, and non-enqueue functions; which objects are
+   owned by `edfi_dms_enqueue_owner`; and how must provisioning handle cluster-wide roles
+   that already exist because another database created them? State the required
+   provisioning privileges and the role attributes/ownership differences that count as
+   drift.
+3. Answer 1.4 requires an existing current-schema database with any E18 drift to fail
+   without repair, while the general emitters use `CREATE OR REPLACE`, `CREATE OR ALTER`,
+   and drop/recreate trigger patterns. What exact preflight/apply ordering and comparison
+   mechanism must standalone emitted SQL and `ddl provision` use so programmable-object,
+   owner, role, and grant drift cannot be overwritten before it is detected?
+4. What exact additions and versioning are required for the provisioned-schema manifest
+   and introspection model to prove the E18 inventory? Specify whether it must record
+   role attributes, grants, schema/object/function owners, function security/search path,
+   trigger enabled state and execution context, column collation, check expressions, and
+   FK delete actions, and whether mutable `DocumentCacheState` values belong in seed data
+   or are verified only by fresh-apply/rerun tests.
+
+### Answers 2
+
+1. Use the following generated permission sets. On PostgreSQL the four runtime principals
+   are `NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
+   NOBYPASSRLS` roles. On SQL Server they are database users `WITHOUT LOGIN`, with
+   `DEFAULT_SCHEMA = dms`, no database-role membership other than `public`, and no
+   ownership. SQL Server has no schema `USAGE` permission, so emit the corresponding
+   object/column grants rather than schema-wide `CONTROL`, `ALTER`, or ownership.
+
+   - `edfi_dms_writer` receives PostgreSQL `USAGE` on `dms`, `auth`, every generated
+     project schema, and every generated tracked-change schema. On both providers it may
+     `SELECT` `ResourceKey`, `DataStoreIdentity`, `EffectiveSchema`, `SchemaComponent`,
+     `Document`, `ReferentialIdentity`, and `Descriptor`; every generated concrete root,
+     collection/nested-collection, common-type extension, and `_ext` table; every
+     generated abstract-identity table and union view; the generated authorization
+     hierarchy table and baseline authorization views; and every generated tracked-change
+     table and ReadChanges authorization view. It receives `INSERT`/`UPDATE`/`DELETE` on
+     `Document`, `ReferentialIdentity`, `Descriptor`, all concrete/collection/extension
+     tables, and the generated abstract-identity, authorization-hierarchy, and
+     tracked-change tables maintained by supported write and trigger paths. It receives
+     PostgreSQL `USAGE, SELECT` or SQL Server `UPDATE` on
+     `ChangeVersionSequence` and `CollectionItemIdSequence`. It receives PostgreSQL
+     `EXECUTE` or SQL Server scalar-function `SELECT` only for the application-callable
+     `GetMaxChangeVersion` and `uuidv5` helpers, plus PostgreSQL `throw_error`. On SQL
+     Server it receives `EXECUTE, REFERENCES` on `BigIntTable` and
+     `UniqueIdentifierTable`.
+     It receives no permission on `DocumentCache`, `DocumentCacheState`, or
+     `DocumentProjectionWork`; enqueue occurs only through canonical `Document` DML.
+   - `edfi_dms_projector` receives PostgreSQL `USAGE` on `dms` and every project schema
+     and provider-equivalent `SELECT` on `ResourceKey`, `DataStoreIdentity`,
+     `EffectiveSchema`, `SchemaComponent`, `Document`, `Descriptor`, and every generated
+     concrete root, collection/nested-collection, common-type extension, and `_ext` table
+     used by compiled hydration. It receives no access to `ReferentialIdentity`,
+     abstract-identity tables or union views, authorization tables/views, tracked-change
+     tables/views, or canonical sequences. It receives `SELECT`, `INSERT`, and `UPDATE`
+     on `DocumentCache`; `SELECT` and `DELETE` on `DocumentProjectionWork`; `SELECT` on
+     `DocumentCacheState`; and column-level `UPDATE` only on
+     `DocumentCacheState.CacheAheadRecoveryRequired`. It receives no canonical-table DML,
+     sequence permission, lifecycle-column update, work insert/update, cache delete, or
+     ordinary- or trigger-function execution grant. On SQL Server it receives
+     `EXECUTE, REFERENCES` only on `BigIntTable`.
+   - `edfi_dms_projection_admin` receives the projector's source-read and state-read
+     grants explicitly, not through role membership; `SELECT`/`INSERT`/`UPDATE`/`DELETE`
+     on `DocumentCache` and `DocumentProjectionWork`; and column-level `UPDATE` on both
+     `DocumentCacheState.ProjectionLifecycleState` and
+     `CacheAheadRecoveryRequired`. For 18-08 restamping it additionally receives
+     column-level `UPDATE` on `Document.ContentVersion` and
+     `Document.ContentLastModifiedAt` and on the mirrored `ContentVersion` and
+     `ContentLastModifiedAt` columns of every concrete resource root and
+     `dms.Descriptor`, plus PostgreSQL `USAGE, SELECT` or SQL Server `UPDATE` on
+     `ChangeVersionSequence`. PostgreSQL guarded new-empty activation is exposed through
+     one generated `dms.ActivateDocumentCacheOnEmptyDataStore()` `SECURITY DEFINER`
+     function owned by `edfi_dms_owner`, with an exact configured `search_path` of
+     `pg_catalog` and schema-qualified references. The function performs the complete
+     Document lock, empty-table checks, singleton lock, and `Disabled -> Tracking`
+     transition; grant `EXECUTE` only to `edfi_dms_projection_admin`. This avoids granting
+     table-level `UPDATE` on `Document` merely to satisfy PostgreSQL `LOCK TABLE`. SQL
+     Server uses the administrator's existing `SELECT` permission to take the
+     provider-equivalent table lock in the guarded transaction. The administrator
+     receives `EXECUTE, REFERENCES` on SQL Server `BigIntTable`, but no insert/delete on
+     the state singleton, unrestricted canonical/resource DML, collection-id sequence
+     permission, or `TRUNCATE`, `ALTER`, ownership, or trigger-function execution
+     permission. Administrative clearing therefore uses the supported bounded `DELETE`
+     paths.
+   - 18-00 creates `edfi_dms_cdc_reader` but grants it no schema, table, sequence, or
+     function access. Story 19-01 adds the provider-specific non-work access only when CDC
+     is selected: source reads for `Document`, `DocumentCache`, and `CdcHeartbeat`,
+     heartbeat update, and the provider capture/replication rights. It never grants
+     `DocumentProjectionWork` access.
+
+   PostgreSQL explicitly revokes `ALL` from `PUBLIC` on `dms`, `auth`, every generated
+   project schema, and every generated tracked-change schema, and revokes `CREATE` from
+   `PUBLIC` on the database's `public` schema. Revoke `PUBLIC` execution from every
+   generated DMS function after creation, grant back only the calls above, and set
+   `ALTER DEFAULT PRIVILEGES` for `edfi_dms_owner` and
+   `edfi_dms_enqueue_owner` in their managed schemas to revoke `PUBLIC` function
+   execution for later generated functions. No runtime principal receives direct
+   execution on an enqueue, cache-UUID-validation, or other trigger function. SQL Server
+   relies on the Answer 1.2 ownership chain and grants no `EXECUTE AS` target permission
+   between managed users.
+
+   No PostgreSQL managed role is a member of any other role; SQL Server managed users
+   belong only to the implicit `public` role. The ordinary DMS deployment maps its login
+   to the writer, projector, and administrator principals with non-inherited `SET`
+   capability on PostgreSQL, or deployment-scoped `IMPERSONATE` on SQL Server. The
+   separate connector login maps only to the CDC-reader principal. Those deployment-named
+   mappings are not emitted by 18-00, and neither runtime login may assume an owner
+   principal.
+2. Add PostgreSQL-only `edfi_dms_owner` to the story's owned principal inventory; the
+   story and Answer 1.1 should be updated accordingly before task creation. It has the
+   same locked-down attributes as the runtime roles and is never granted to a DMS or CDC
+   login. It owns `dms`, `auth`, generated project/tracked-change schemas, all generated
+   tables, sequences, views, and ordinary functions, including
+   `TF_DocumentCache_ValidateDocumentUuid`. PostgreSQL triggers have no independent owner;
+   they are attached to tables owned by `edfi_dms_owner`.
+
+   `edfi_dms_enqueue_owner` has the same locked-down attributes and owns only
+   `TF_Document_EnqueueProjectionInsert` and
+   `TF_Document_EnqueueProjectionUpdate`. Both functions are `SECURITY DEFINER` with an
+   exact configured `search_path` of `pg_catalog` and schema-qualify every DMS reference.
+   The owner receives `USAGE` on `dms`, `SELECT` on `DocumentCacheState`, and the
+   `SELECT`/`INSERT`/`UPDATE` permissions on `DocumentProjectionWork` required by the
+   coalescing upsert; it receives no delete, cache, canonical-source, schema-create, or
+   runtime-role permission. `PUBLIC` and all runtime roles have no direct execution grant
+   on those functions.
+
+   PostgreSQL provisioning therefore requires a bootstrap principal with `CREATEROLE`,
+   `CREATE` on the target database, and `ADMIN`/`SET` capability for all managed roles so
+   it can create or reuse them and assign the required owners. A superuser satisfies this
+   contract, but is not required. If cluster-wide roles already exist, provisioning
+   accepts them only when their names and all security attributes above match; it neither
+   drops nor alters them and then applies or validates only database-local ownership and
+   grants.
+
+   Drift validation is deliberately limited to the managed roles and the generated
+   objects owned by this DDL in the target database. It fails on a managed-role attribute
+   mismatch; membership of a managed role in any other role; the wrong owner for a
+   generated schema, table, sequence, view, or function; an enqueue function owned by
+   anyone other than `edfi_dms_enqueue_owner`; an ordinary generated object owned by the
+   enqueue owner; or an effective managed-principal/`PUBLIC` permission that violates the
+   generated matrix. Existing deployment-login mappings and unrelated roles, objects,
+   owners, memberships, and grants are outside this comparison. If an existing managed
+   role is compatible but the provisioning principal lacks the required `ADMIN`/`SET`
+   capability, fail before database mutation with instructions to grant that capability
+   or run with the deployment bootstrap principal.
+3. Do not introduce a universal desired-inventory reconciler, and do not use the
+   provisioned-schema manifest as provisioning input. Generate provider-specific E18
+   preflight and postflight checks directly into the emitted SQL so standalone execution
+   and `ddl provision` run the same authoritative checks inside the existing single
+   create-only transaction. The command's current separate hash/seed preflight may remain
+   as an earlier diagnostic, but it is not the E18 drift authority.
+
+   The in-transaction preflight runs before any `CREATE OR REPLACE`, `CREATE OR ALTER`,
+   trigger drop/create, owner change, `GRANT`, or `REVOKE`. It:
+
+   1. classifies the database using `EffectiveSchema` and the expected hash/version under
+      Answer 1.4's new/partial/rerun rules;
+   2. rejects the legacy cache shape (`Etag`, the obsolete cache UUID constraint, and the
+      obsolete source-scan index);
+   3. validates any present E18-owned reserved object by qualified name, provider shape,
+      programmable-object definition, and required owner;
+   4. validates managed-principal attributes and memberships plus their effective
+      permissions on generated objects; and
+   5. rejects reserved security violations, including writer or `PUBLIC` access to
+      cache/state/work, CDC-reader access to work, direct trigger-function execution, and
+      any managed principal's ability to assume an owner principal.
+
+   An initial apply may create missing E18 inventory after all present reserved items pass.
+   An expected-hash rerun requires the complete E18 inventory to match and performs no
+   repair of drift. After ordinary emission, a postflight block repeats the targeted
+   completeness, owner, definition, and effective-permission checks before the completion
+   records are written and the transaction commits. Any failure rolls back the complete
+   transaction.
+
+   These checks own only E18's reserved names, generated definitions, managed principals,
+   required grants, and prohibitions. They ignore unrelated objects, custom authorization
+   views, E19-owned CDC objects and non-work grants, operator-added indexes, deployment
+   login mappings, and grants to unrelated principals unless an item collides with an E18
+   reserved name or violates a reserved prohibition. This preserves the create-only
+   contract without creating an extension-registration architecture.
+4. Bump `ProvisionedSchemaManifest.ManifestVersion` from `"1"` to `"2"` and make version 2
+   the post-apply verification shape used by this story. It remains snapshot/introspection
+   evidence and is not a provisioning comparison engine. Update both provider goldens
+   atomically; do not treat version 1 as sufficient E18 evidence. The introspector and
+   deterministic emitter must add:
+
+   - principals with provider type, login/inherit/superuser/create-role/create-database/
+     replication/bypass-RLS attributes on PostgreSQL and authentication type/default
+     schema on SQL Server;
+   - normalized managed-role membership and generated SQL Server permission entries,
+     while excluding deployment-named login mappings and their `IMPERSONATE` edges from
+     golden equality;
+   - owner on every schema, table, sequence, view, and function, plus whether SQL Server
+     object ownership is inherited from the schema;
+   - generated allow/deny grants for managed principals and `PUBLIC`, by grantee, object
+     kind and qualified signature, optional column, permission, and grant option,
+     including schema, table, sequence, function, type, and relevant impersonation
+     permissions; unrelated principals and operator/deployment grants are not golden
+     inventory;
+   - column collation, including the effective binary collation on the SQL Server
+     lifecycle column;
+   - normalized check expressions, constraint enabled/validated/trusted state, and
+     foreign-key update/delete actions;
+   - trigger enabled state, events/timing, normalized definition, linked PostgreSQL
+     function, and SQL Server execution context (`NULL` for the required caller context);
+   - function signature, owner, language, normalized definition, security-invoker/
+     definer flag, and normalized configured `search_path`.
+
+   Existing table/column/index/function/trigger names and counts remain in the manifest,
+   so these additions prove the full E18 inventory rather than only its security fields.
+   Add the design-required `DataStoreIdentity` table and singleton initialization to the
+   18-00 core emitter, manifest, introspection, snapshots, and provider-apply tests; it is
+   part of this story's always-provisioned metadata and is not left as a grant to an
+   otherwise absent table.
+
+   Do not add the mutable `DocumentCacheState` lifecycle or latch values to
+   `SeedData`: only deterministic `EffectiveSchema`, `SchemaComponent`, and `ResourceKey`
+   data belongs there. Fresh-apply tests assert the initial `Disabled`/clear row, current
+   preflight asserts that exactly `StateId = 1` exists with values admitted by the
+   constraints, and rerun tests mutate lifecycle/latch/cache/work first and prove they are
+   preserved.
+
+   The manifest-format bump does not itself change `EffectiveSchemaHash`, but E18's
+   replacement of the legacy cache contract and addition of correctness-critical tables
+   and triggers is a breaking relational mapping change. Bump
+   `SchemaHashConstants.RelationalMappingVersion` from `"v2"` to `"v3"` and update the
+   corresponding packaged-schema metadata so a pre-E18 database fails the ordinary hash
+   preflight. The targeted E18 checks above remain necessary for same-version tampering
+   and partial-apply detection.
