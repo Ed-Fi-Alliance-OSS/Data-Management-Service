@@ -149,3 +149,41 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    PostgreSQL SQLSTATE or SQL Server error number a public contract. Let permission,
    constraint, deadlock, timeout, and storage errors retain their native identifiers;
    tests assert the useful lifecycle diagnostic and rollback, not a new error taxonomy.
+
+### Questions 2
+
+1. The physical-model and DDL designs require the always-provisioned
+   `dms.DataStoreIdentity`, the current core emitter does not create it, and E19 consumes
+   it, but this story does not name it explicitly. Should 18-00 add only that table,
+   insert-if-missing singleton initialization, and rerun-preservation evidence, leaving
+   source-identity rotation and CDC binding behavior to E19?
+2. Does “update the derived relational model” require representing these fixed
+   `dms` tables, constraints, indexes, and triggers in `DerivedRelationalModelSet`, or may
+   18-00 follow the existing architecture and keep fixed core inventory in
+   `CoreDdlEmitter`/shared core definitions while leaving the resource-derived model
+   unchanged?
+3. Answer 1 establishes one production DMS database credential, so the database cannot
+   distinguish canonical-writer, projector, and projection-administrator capabilities.
+   Should the access evidence therefore use test-only restricted principals solely to
+   prove that a canonical writer can fire enqueue triggers without direct work-table DML,
+   while later E18 stories enforce projector/administrator operations at application
+   component boundaries, with no additional production roles or grant matrix in 18-00?
+4. For the cluster-wide PostgreSQL `edfi_dms_enqueue_owner`, may emitted DDL create the
+   `NOLOGIN` role when absent, reuse it when already present, grant only the required
+   database-local state/work permissions, and fail clearly when the provisioning
+   credential cannot create or assign that owner? Which existing-role conditions, beyond
+   an unexpected `LOGIN` capability, must make provisioning fail rather than reuse it?
+5. May the provisioned-schema manifest remain at its current version and shape, using its
+   existing table/column/constraint/index/trigger/function inventory plus focused provider
+   catalog assertions for lifecycle collation, PostgreSQL function owner/security/search
+   path/grants, and SQL Server's absent `EXECUTE AS`? Or must this story expand the generic
+   manifest to model those security details?
+6. For same-hash reruns, may compatibility checking stay narrowly scoped to the E18-owned
+   tables and known legacy cache artifacts—rejecting incompatible columns/constraints,
+   legacy `Etag`, the obsolete cache UUID constraint, and the obsolete source-scan index;
+   creating missing compatible objects; and refreshing replaceable functions/triggers—
+   without introducing a general schema-drift comparison framework?
+7. To avoid duplicating 18-07 and 18-08, should 18-00's provider-apply suite prove enqueue
+   DDL behavior through direct multi-row `dms.Document` changes and a representative
+   generated stamp path, while deferring full API-path, descriptor, bulk-restamp-utility,
+   and cross-story scenarios to their owning later stories?
