@@ -589,16 +589,16 @@ function Restore-BootstrapEnvSnapshot {
         $Snapshot
     )
 
+    # A $null snapshot value means the variable was absent and must be removed. Remove-Item is
+    # required for that: calling SetEnvironmentVariable with $null from PowerShell coerces the
+    # value to "", which newer pwsh/.NET on Unix stores as a present-but-blank variable instead
+    # of removing it, leaking blank bootstrap overrides into the calling shell.
     foreach ($name in $script:BootstrapEnvVarNames) {
-        if ($Snapshot.ContainsKey($name)) {
-            $value = $Snapshot[$name]
-            if ($null -eq $value) {
-                [System.Environment]::SetEnvironmentVariable($name, $null)
-            } else {
-                [System.Environment]::SetEnvironmentVariable($name, $value)
-            }
+        $value = if ($Snapshot.ContainsKey($name)) { $Snapshot[$name] } else { $null }
+        if ($null -eq $value) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
         } else {
-            [System.Environment]::SetEnvironmentVariable($name, $null)
+            [System.Environment]::SetEnvironmentVariable($name, $value)
         }
     }
 }

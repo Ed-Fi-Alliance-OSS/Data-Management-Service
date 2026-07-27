@@ -33,7 +33,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
                   | 2023       | true              | "year 2023"           |
 
         @ods-migrated
-        @e2e-ci-shard-4
+        @e2e-ci-shard-4 @MssqlRepresentative
         Scenario: 01 Session key change is reported in keyChanges
              When a POST request is made to "/ed-fi/schools" with
                   """

@@ -3,16 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using Microsoft.Data.SqlClient;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public abstract class ContainerSetupBase
 {
-    private const string PgAdminUser = "postgres";
-    private const string PgAdminPassword = "abcdefgh1!";
-
-    private const ushort DbPortExternal = 5435;
+    // The three DMS metadata tables preserved (not truncated) across an E2E reset on both engines.
+    private static readonly (string Schema, string Table)[] _mssqlExcludedTables =
+    [
+        ("dms", "EffectiveSchema"),
+        ("dms", "ResourceKey"),
+        ("dms", "SchemaComponent"),
+    ];
     private static readonly string _resetSql = """
         DO $$
         DECLARE
@@ -68,16 +73,180 @@ public abstract class ContainerSetupBase
 
     public static async Task ResetDatabase()
     {
-        var hostConnectionString = BuildHostConnectionString(AppSettings.DataStoreDatabaseName);
-        using var conn = new NpgsqlConnection(hostConnectionString);
-        await conn.OpenAsync();
-
-        var resetCommand = new NpgsqlCommand(_resetSql, conn);
-        await resetCommand.ExecuteNonQueryAsync();
+        // Both engines consume the opaque host-side admin/reset connection string the build
+        // orchestration resolved once from the selected environment (custom credentials, published
+        // port, and database, plus NoResetOnClose=true for PostgreSQL). PostgreSQL keeps Npgsql and the
+        // existing DO $$ reset SQL; MSSQL uses SqlClient and the shared MssqlDatabaseResetSql. The C#
+        // harness never re-derives ports or credentials. The reset TRUNCATEs every non-metadata table,
+        // so the admin connection string is first proven to target the configured E2E database.
+        await ResetDatabaseAsync(
+            AppSettings.DatabaseEngine,
+            AppSettings.DataStoreAdminConnectionString,
+            AppSettings.DataStoreDatabaseName,
+            ExecuteResetAsync
+        );
     }
 
-    private static string BuildHostConnectionString(string databaseName)
+    // Test seam: build the engine-specific reset plan and hand it to an executor. Kept internal so
+    // unit tests can assert branch selection and that only the selected provider path is produced,
+    // without opening a real database connection.
+    internal static async Task ResetDatabaseAsync(
+        string databaseEngine,
+        string connectionString,
+        string expectedDatabaseName,
+        Func<DatabaseResetPlan, Task> executeReset
+    )
     {
-        return $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={databaseName};NoResetOnClose=true;";
+        DatabaseResetPlan plan = BuildResetPlan(databaseEngine, connectionString, expectedDatabaseName);
+        await executeReset(plan);
     }
+
+    internal static DatabaseResetPlan BuildResetPlan(
+        string databaseEngine,
+        string connectionString,
+        string expectedDatabaseName
+    )
+    {
+        // Fail closed before producing any reset plan: the reset TRUNCATEs every non-metadata table in
+        // the target database, so a misconfigured admin connection string (empty, malformed, or a
+        // different database) must never reach a truncate against a primary DMS/CMS database.
+        RequireResetTargetsExpectedDatabase(databaseEngine, connectionString, expectedDatabaseName);
+
+        if (IsMssql(databaseEngine))
+        {
+            // Reuse the tested SQL Server reset (disables triggers/constraints, deletes, reseeds
+            // identities, restarts sequences, and re-enables constraints/triggers even on error),
+            // preserving exactly the three DMS metadata tables. The SQL is not duplicated here.
+            return new DatabaseResetPlan(
+                DatabaseResetProvider.SqlServer,
+                connectionString,
+                MssqlDatabaseResetSql.Build(_mssqlExcludedTables)
+            );
+        }
+
+        return new DatabaseResetPlan(DatabaseResetProvider.Postgres, connectionString, _resetSql);
+    }
+
+    // Proves the admin/reset connection string targets exactly the configured E2E database. Parses the
+    // database out of the provider-specific connection string (InitialCatalog for SQL Server, Database
+    // for PostgreSQL) and refuses on an unconfigured expected name, an empty/malformed connection
+    // string, or a database that differs from the configured E2E database. Error messages carry only
+    // database names, never the connection string or any credential.
+    internal static void RequireResetTargetsExpectedDatabase(
+        string databaseEngine,
+        string connectionString,
+        string expectedDatabaseName
+    )
+    {
+        if (string.IsNullOrWhiteSpace(expectedDatabaseName))
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the configured E2E data-store database name is empty."
+            );
+        }
+
+        string targetDatabase = IsMssql(databaseEngine)
+            ? ParseSqlServerDatabase(connectionString)
+            : ParsePostgresDatabase(connectionString);
+
+        if (string.IsNullOrWhiteSpace(targetDatabase))
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the admin connection string does not specify a database."
+            );
+        }
+
+        // SQL Server database identifiers are case-insensitive, but PostgreSQL database names are
+        // case-sensitive, so a case-only difference on PostgreSQL is a different database and must be
+        // refused rather than authorizing a reset of the wrong database.
+        StringComparison comparison = IsMssql(databaseEngine)
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        if (!string.Equals(targetDatabase, expectedDatabaseName, comparison))
+        {
+            throw new InvalidOperationException(
+                $"E2E database reset refused: the admin connection string targets database '{targetDatabase}', "
+                    + $"not the configured E2E database '{expectedDatabaseName}'."
+            );
+        }
+    }
+
+    private static string ParseSqlServerDatabase(string connectionString)
+    {
+        try
+        {
+            return new SqlConnectionStringBuilder(connectionString).InitialCatalog;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the SQL Server admin connection string is malformed."
+            );
+        }
+    }
+
+    private static string ParsePostgresDatabase(string connectionString)
+    {
+        try
+        {
+            return new NpgsqlConnectionStringBuilder(connectionString).Database ?? string.Empty;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the PostgreSQL admin connection string is malformed."
+            );
+        }
+    }
+
+    // The between-scenario/after-feature reset (disable constraints, delete every non-metadata row,
+    // reseed identities, restart sequences) can legitimately run long under lock contention with a live
+    // DMS. The 30-second ADO.NET default caused a required MSSQL E2E lane to time out in
+    // ExecuteResetAsync on a first clean attempt, so the reset uses the same generous command timeout
+    // the repository's integration reset helpers use (MssqlTestDatabaseHelper /
+    // *GeneratedDdlTestDatabase all use 300 seconds) rather than relying on a fresh-teardown rerun,
+    // which is not a deterministic acceptance strategy for a once-run required lane.
+    internal const int ResetCommandTimeoutSeconds = 300;
+
+    private static async Task ExecuteResetAsync(DatabaseResetPlan plan)
+    {
+        // Both providers implement IAsyncDisposable, so the connection and command are disposed
+        // asynchronously: a synchronous using would block the thread on the provider's teardown at the
+        // end of every scenario reset.
+        if (plan.Provider == DatabaseResetProvider.SqlServer)
+        {
+            await using var connection = new SqlConnection(plan.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(plan.Sql, connection);
+            ConfigureResetCommandTimeout(command);
+            await command.ExecuteNonQueryAsync();
+        }
+        else
+        {
+            await using var connection = new NpgsqlConnection(plan.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(plan.Sql, connection);
+            ConfigureResetCommandTimeout(command);
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    // Applies the explicit reset command timeout. Kept internal and connection-free so a unit test can
+    // assert the timeout is set on both providers without opening a database connection.
+    internal static void ConfigureResetCommandTimeout(System.Data.Common.DbCommand command)
+    {
+        command.CommandTimeout = ResetCommandTimeoutSeconds;
+    }
+
+    private static bool IsMssql(string databaseEngine) =>
+        string.Equals(databaseEngine, "mssql", StringComparison.OrdinalIgnoreCase);
 }
+
+internal enum DatabaseResetProvider
+{
+    Postgres,
+    SqlServer,
+}
+
+internal sealed record DatabaseResetPlan(DatabaseResetProvider Provider, string ConnectionString, string Sql);

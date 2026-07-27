@@ -132,6 +132,10 @@ if (-not $databaseOnlyStartup) {
     Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
 }
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+# Shared Compose-equivalent resolver so the readiness probes and the CMS data-store creation below
+# use the same port/password/database values the containers received (an ambient process/shell
+# value wins over the env file), matching start-local-dms.ps1 and the configure/provision phases.
+Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
@@ -214,7 +218,11 @@ if (-not $d) {
         throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores."
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and -not $envValues.CONFIG_SERVICE_TENANT) {
+    # Resolved once with Compose precedence and reused by the data-store creation below, so the
+    # tenant/multi-tenancy decision matches what the CMS container received.
+    $multiTenancyEnabled = (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_MULTI_TENANCY") -eq "true"
+    $configServiceTenant = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIG_SERVICE_TENANT"
+    if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $multiTenancyEnabled -and [string]::IsNullOrWhiteSpace($configServiceTenant)) {
         throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
     }
 }
@@ -267,8 +275,12 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "kafka.yml")
     }
 
-    if ($IdentityProvider -eq "keycloak") {
-        # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
+    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full
+    # environment. Teardown (-d) always includes it: the identity provider is resolved from the
+    # environment file, which need not name the provider the running stack was started with, and a
+    # compose file left out of the down set takes its named volume (dms-keycloak) with it, leaking
+    # <project>_dms-keycloak past `down -v`.
+    if ($d -or $IdentityProvider -eq "keycloak") {
         $files += @("-f", "keycloak.yml")
     }
 
@@ -458,13 +470,7 @@ else {
         }
 
         if ($DatabaseEngine -eq "mssql") {
-            $mssqlSaPassword =
-                if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                    "abcdefgh1!"
-                }
-                else {
-                    $envValues.MSSQL_SA_PASSWORD
-                }
+            $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
             Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
         }
         else {
@@ -505,13 +511,7 @@ else {
     if ($DatabaseEngine -eq "mssql") {
         # SQL Server accepts connections noticeably later than its container reports running;
         # poll before the phase commands need it. Default matches mssql.yml's compose default.
-        $mssqlSaPassword =
-            if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                "abcdefgh1!"
-            }
-            else {
-                $envValues.MSSQL_SA_PASSWORD
-            }
+        $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
     }
 
@@ -653,11 +653,12 @@ else {
             # Get configuration service token
             $configToken = Get-CmsToken -CmsUrl $cmsUrl -ClientId "dms-data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
 
-            # Create tenant if multi-tenancy is enabled
-            if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $envValues.CONFIG_SERVICE_TENANT) {
-                Write-Output "Multi-tenancy is enabled. Creating tenant: $($envValues.CONFIG_SERVICE_TENANT)"
+            # Create tenant if multi-tenancy is enabled. Both values were resolved above with
+            # Compose precedence so the tenant registered here matches the CMS container's view.
+            if ($multiTenancyEnabled -and -not [string]::IsNullOrWhiteSpace($configServiceTenant)) {
+                Write-Output "Multi-tenancy is enabled. Creating tenant: $configServiceTenant"
                 try {
-                    $tenantId = Add-Tenant -CmsUrl $cmsUrl -AccessToken $configToken -TenantName $envValues.CONFIG_SERVICE_TENANT
+                    $tenantId = Add-Tenant -CmsUrl $cmsUrl -AccessToken $configToken -TenantName $configServiceTenant
                     Write-Output "Tenant created successfully with ID: $tenantId"
                 }
                 catch {
@@ -665,23 +666,20 @@ else {
                 }
             }
 
-            # Get tenant from environment (for multi-tenant support)
-            $tenant = $envValues.CONFIG_SERVICE_TENANT
+            # Get tenant from the effective environment (for multi-tenant support). Database
+            # values below resolve with the same Compose precedence, and the defaults match the
+            # compose-file ${VAR:-default} fallbacks, so the registered data store targets exactly
+            # the database/credentials the containers received.
+            $tenant = $configServiceTenant
             $postgresDbName =
                 if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-                    $envValues.POSTGRES_DB_NAME
+                    Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
                 }
                 else {
                     $DataStoreDatabaseName
                 }
-            $postgresUser =
-                if ([string]::IsNullOrWhiteSpace([string]$envValues.POSTGRES_USER)) {
-                    "postgres"
-                }
-                else {
-                    [string]$envValues.POSTGRES_USER
-                }
-            $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
+            $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+            $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_PASSWORD")
 
             # Resolve the data-store connection string stored in CMS for the DMS datastore. For
             # MSSQL this is the SQL Server form pointing at the dms-mssql container; for PostgreSQL
@@ -689,22 +687,13 @@ else {
             # Postgres* values.
             $dataStoreConnectionString = ""
             if ($DatabaseEngine -eq "mssql") {
-                $mssqlPassword =
-                    if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                        "abcdefgh1!"
-                    }
-                    else {
-                        $envValues.MSSQL_SA_PASSWORD
-                    }
+                $mssqlPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
                 $mssqlDbName =
                     if (-not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                         $DataStoreDatabaseName
                     }
-                    elseif (-not [string]::IsNullOrWhiteSpace([string]$envValues.MSSQL_DB_NAME)) {
-                        [string]$envValues.MSSQL_DB_NAME
-                    }
                     else {
-                        "edfi_datamanagementservice"
+                        Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
                     }
                 $dataStoreConnectionString = New-DataStoreConnectionString `
                     -DatabaseEngine "mssql" `

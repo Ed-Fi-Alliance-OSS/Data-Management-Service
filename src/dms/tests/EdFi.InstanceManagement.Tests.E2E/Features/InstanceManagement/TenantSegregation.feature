@@ -3,22 +3,12 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup @instance-management-ci-shard-2
+@InstanceCleanup @InstanceFixture @instance-management-ci-shard-2
 Feature: Tenant Segregation
     Verify that users with access to one tenant cannot access another tenant's data.
     Each tenant has its own application with credentials that should only work for that tenant.
-
-    Background:
-        Given I am authenticated to the Configuration Service as system admin
-          And tenant "Tenant_255901" is set up with a vendor and instances:
-              | Route       |
-              | 255901/2024 |
-              | 255901/2025 |
-          And tenant "Tenant_255901" has an application for district "255901"
-          And tenant "Tenant_255902" is set up with a vendor and instances:
-              | Route       |
-              | 255902/2024 |
-          And tenant "Tenant_255902" has an application for district "255902"
+    Tenant_255901 owns instances 255901/2024 and 255901/2025; Tenant_255902 owns 255902/2024.
+    These tenants, instances, and applications are pre-registered by the suite-owned fixture.
 
     # Positive tests - users can access their own tenant's instances
 

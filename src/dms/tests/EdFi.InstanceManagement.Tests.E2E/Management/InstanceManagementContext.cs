@@ -6,6 +6,12 @@
 namespace EdFi.InstanceManagement.Tests.E2E.Management;
 
 /// <summary>
+/// A CMS record created by the current scenario, paired with the tenant that owns it so cleanup can select
+/// the correct tenant-scoped client.
+/// </summary>
+public readonly record struct OwnedRecord(string Tenant, int Id);
+
+/// <summary>
 /// Context object to track test data across scenarios
 /// </summary>
 public class InstanceManagementContext
@@ -106,10 +112,75 @@ public class InstanceManagementContext
     public DmsApiClient? DmsClient { get; set; }
 
     /// <summary>
+    /// Immutable suite-owned fixture application IDs hydrated for this scenario. These are knowledge only:
+    /// per-scenario cleanup must never delete them.
+    /// </summary>
+    public IReadOnlySet<int> FixtureApplicationIds { get; set; } = new HashSet<int>();
+
+    /// <summary>
+    /// Immutable suite-owned fixture data-store IDs hydrated for this scenario (never scenario-owned).
+    /// </summary>
+    public IReadOnlySet<int> FixtureDataStoreIds { get; set; } = new HashSet<int>();
+
+    /// <summary>
+    /// Immutable suite-owned fixture vendor IDs hydrated for this scenario (never scenario-owned).
+    /// </summary>
+    public IReadOnlySet<int> FixtureVendorIds { get; set; } = new HashSet<int>();
+
+    /// <summary>
+    /// Applications created by the current scenario via real CMS operations. Only these are deleted by
+    /// per-scenario cleanup, and only after independently excluding every immutable fixture ID.
+    /// </summary>
+    public List<OwnedRecord> ScenarioOwnedApplications { get; } = [];
+
+    /// <summary>
+    /// Data stores created by the current scenario via real CMS operations.
+    /// </summary>
+    public List<OwnedRecord> ScenarioOwnedDataStores { get; } = [];
+
+    /// <summary>
+    /// Vendors created by the current scenario via real CMS operations.
+    /// </summary>
+    public List<OwnedRecord> ScenarioOwnedVendors { get; } = [];
+
+    /// <summary>
+    /// Records an application the current scenario created so cleanup deletes it (unless it is a fixture ID).
+    /// </summary>
+    public void MarkApplicationScenarioOwned(string tenant, int applicationId) =>
+        AddOwned(ScenarioOwnedApplications, tenant, applicationId);
+
+    /// <summary>
+    /// Records a data store the current scenario created so cleanup deletes it (unless it is a fixture ID).
+    /// </summary>
+    public void MarkDataStoreScenarioOwned(string tenant, int dataStoreId) =>
+        AddOwned(ScenarioOwnedDataStores, tenant, dataStoreId);
+
+    /// <summary>
+    /// Records a vendor the current scenario created so cleanup deletes it (unless it is a fixture ID).
+    /// </summary>
+    public void MarkVendorScenarioOwned(string tenant, int vendorId) =>
+        AddOwned(ScenarioOwnedVendors, tenant, vendorId);
+
+    private static void AddOwned(List<OwnedRecord> owned, string tenant, int id)
+    {
+        var record = new OwnedRecord(tenant, id);
+        if (!owned.Contains(record))
+        {
+            owned.Add(record);
+        }
+    }
+
+    /// <summary>
     /// Reset context for new scenario
     /// </summary>
     public void Reset()
     {
+        FixtureApplicationIds = new HashSet<int>();
+        FixtureDataStoreIds = new HashSet<int>();
+        FixtureVendorIds = new HashSet<int>();
+        ScenarioOwnedApplications.Clear();
+        ScenarioOwnedDataStores.Clear();
+        ScenarioOwnedVendors.Clear();
         VendorId = null;
         VendorIdsByTenant.Clear();
         TenantNames.Clear();

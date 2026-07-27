@@ -18,7 +18,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @API-184 @PUT
-        @e2e-ci-shard-1
+        @e2e-ci-shard-1 @MssqlRepresentative
         Scenario: 01 Put an existing document (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with

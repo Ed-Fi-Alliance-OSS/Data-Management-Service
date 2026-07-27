@@ -206,6 +206,9 @@ if (-not $databaseOnlyStartup) {
 }
 $originalLocation = Get-Location
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+# Shared Compose-equivalent resolver so the readiness probes use the same port/password the container
+# received (ambient process/shell value wins over the env file), not a stale file value.
+Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
 if (-not [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
     if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
         # Caller supplied an explicit relative path - resolve against the caller's CWD.
@@ -343,8 +346,12 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "kafka.yml")
     }
 
-    if ($IdentityProvider -eq "keycloak") {
-        # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
+    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full
+    # environment. Teardown (-d) always includes it: the identity provider is resolved from the
+    # environment file, which need not name the provider the running stack was started with, and a
+    # compose file left out of the down set takes its named volume (dms-keycloak) with it, leaking
+    # <project>_dms-keycloak past `down -v`.
+    if ($d -or $IdentityProvider -eq "keycloak") {
         $files += @("-f", "keycloak.yml")
     }
 
@@ -540,13 +547,7 @@ else {
         }
 
         if ($DatabaseEngine -eq "mssql") {
-            $mssqlSaPassword =
-                if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                    "abcdefgh1!"
-                }
-                else {
-                    $envValues.MSSQL_SA_PASSWORD
-                }
+            $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
             Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
         }
         else {
@@ -585,13 +586,7 @@ else {
     if ($DatabaseEngine -eq "mssql") {
         # SQL Server accepts connections noticeably later than its container reports running;
         # poll before the phase commands need it. Default matches mssql.yml's compose default.
-        $mssqlSaPassword =
-            if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                "abcdefgh1!"
-            }
-            else {
-                $envValues.MSSQL_SA_PASSWORD
-            }
+        $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
     }
 

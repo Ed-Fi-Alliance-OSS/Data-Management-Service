@@ -461,8 +461,17 @@ exit $ExitCode
     }
 
     AfterEach {
+        # A $null snapshot value must remove the variable. Calling SetEnvironmentVariable with $null
+        # cannot do that from PowerShell: the [string] parameter coerces $null to "", and on newer
+        # pwsh/.NET on Unix an empty value is stored rather than removed, leaking a present-but-blank
+        # variable into every later test in the same Pester process.
         foreach ($name in $script:bootstrapEnvVars) {
-            [System.Environment]::SetEnvironmentVariable($name, $script:envSnapshot[$name])
+            if ($null -eq $script:envSnapshot[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $script:envSnapshot[$name])
+            }
         }
 
         if ($null -ne $script:repo -and (Test-Path -LiteralPath $script:repo.RepoRoot)) {
@@ -1538,9 +1547,9 @@ exit $ExitCode
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
             $env:DMS_CONFIG_CLAIMS_SOURCE = "existing"
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_CLAIMS_DIRECTORY", $null)
+            Remove-Item Env:DMS_CONFIG_CLAIMS_DIRECTORY -ErrorAction SilentlyContinue
             $env:USE_API_SCHEMA_PATH = "true"
-            [System.Environment]::SetEnvironmentVariable("API_SCHEMA_PATH", $null)
+            Remove-Item Env:API_SCHEMA_PATH -ErrorAction SilentlyContinue
             $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/prior/ApiSchema"
             $env:SCHEMA_PACKAGES = "prior-packages"
             $snapshot = Get-BootstrapEnvSnapshot
@@ -1673,8 +1682,16 @@ exit 0
                 $LASTEXITCODE | Should -Be 0 -Because ($runOutput -join [Environment]::NewLine)
             }
             finally {
+                # Restore absence with Remove-Item: SetEnvironmentVariable coerces a $null snapshot
+                # to "" from PowerShell, which newer pwsh/.NET on Unix stores as a present-but-blank
+                # variable instead of removing it — poisoning ambient-precedence checks downstream.
                 foreach ($name in $envNames) {
-                    [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    if ($null -eq $envSnapshot[$name]) {
+                        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    }
                 }
             }
 
@@ -1746,8 +1763,16 @@ exit 0
                     Should -Match "Skipping PostgreSQL readiness check for datastore 'mssql'\."
             }
             finally {
+                # Restore absence with Remove-Item: SetEnvironmentVariable coerces a $null snapshot
+                # to "" from PowerShell, which newer pwsh/.NET on Unix stores as a present-but-blank
+                # variable instead of removing it — poisoning ambient-precedence checks downstream.
                 foreach ($name in $envNames) {
-                    [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    if ($null -eq $envSnapshot[$name]) {
+                        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    }
                 }
             }
 
@@ -1855,8 +1880,11 @@ exit 0
 
         It "InstanceManagement E2E setup composes the Data Standard env file before start and route-context provisioning" {
             $imSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1") -Raw
-            $composePattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile[^\r\n]*\.env\.routeContext\.e2e.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile'
+            # The base env file defaults to the route-context file in the parameter block; the standalone
+            # path resolves it and then composes the Data Standard overlay before start/provisioning.
+            $composePattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile[^\r\n]*-Path\s+\$EnvironmentFile.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile'
 
+            $imSetup | Should -Match '(?m)^\s*\$EnvironmentFile\s*=\s*"\./\.env\.routeContext\.e2e"'
             $imSetup | Should -Match $composePattern
             $imSetup | Should -Match 'start-local-dms\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
             $imSetup | Should -Match 'provision-e2e-database\.ps1'
@@ -1922,12 +1950,17 @@ exit 0
             (Get-StandardCorePackage).Version | Should -Be @($versions)[0] -Because "the catalog core fallback pin must match the env files' SCHEMA_PACKAGES version"
         }
 
-        It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {
-            # Confirm that both teardown invocations in Start-DockerEnvironment pass -RemoveBootstrap so
-            # a manually-staged .bootstrap/ from a developer session cannot hijack the subsequent E2E start.
+        It "build-dms.ps1 teardown removes the stale bootstrap workspace only after the last compose project is down" {
+            # Both compose projects bind-mount the same .bootstrap workspace, and each primitive removes it
+            # after its own successful down. Teardown runs the local project first, so only the last
+            # primitive may remove the workspace: otherwise the local down deletes the directory the
+            # dms-published project's DMS services are still bind-mounting, and a failing published down
+            # leaves a stopped-but-not-torn-down stack with no workspace to retry against. Removal still
+            # happens on the success path (an absent project's down exits 0), which is what keeps a
+            # manually-staged .bootstrap/ from hijacking the subsequent E2E start.
             $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
-            $buildScript | Should -Match "start-local-dms\.ps1.*-d.*-v.*-RemoveBootstrap"
-            $buildScript | Should -Match "start-published-dms\.ps1.*-d.*-v.*-RemoveBootstrap"
+            $buildScript | Should -Match 'start-local-dms\.ps1.*-d.*-v.*-RemoveBootstrap:\$false'
+            $buildScript | Should -Match 'start-published-dms\.ps1.*-d.*-v.*-RemoveBootstrap:\$RemoveBootstrap'
         }
 
         It "build-dms.ps1 relational E2E startup clears schema process env overrides around compose calls" {
@@ -1942,10 +1975,17 @@ exit 0
             $buildScript | Should -Match '"SCHEMA_PACKAGES"'
             $buildScript | Should -Match 'Remove-Item "Env:\$name"'
             $buildScript | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
-            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 4
-            ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 4
-            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
-            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
+            # Five compose calls are gated on the caller's -UseEnvironmentFileSchemaSettings: the two
+            # teardown paths and the three Start-DockerEnvironment startup shapes (deferred InfraOnly,
+            # published full start, local full start). The deferred -DmsOnly start after provisioning
+            # runs inside Initialize-E2EDatabase and is gated on the E2E settings object instead.
+            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 5
+            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$E2ETestSettings\.ShouldProvisionE2EDatabase -Action')).Count | Should -Be 1
+            # Literal start-script references: one per teardown path, plus the two image-mode
+            # selection lines (Start-DockerEnvironment and Initialize-E2EDatabase) naming both scripts.
+            ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 6
+            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$false'
+            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$RemoveBootstrap'
             $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'
         }
 

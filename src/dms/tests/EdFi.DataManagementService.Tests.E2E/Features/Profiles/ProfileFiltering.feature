@@ -31,7 +31,7 @@ Feature: Profile Response Filtering
                   }
                   """
 
-        @e2e-ci-shard-2
+        @e2e-ci-shard-2 @MssqlRepresentative
         Scenario: 01 GET by ID with IncludeOnly profile returns only included fields
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200

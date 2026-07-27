@@ -15,7 +15,7 @@ Feature: Delete a Descriptor
                   """
 
         @API-022
-        @e2e-ci-shard-2
+        @e2e-ci-shard-2 @MssqlRepresentative
         Scenario: 01 Verify deleting a specific descriptor by ID
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204

@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup @instance-management-ci-shard-2
+@InstanceCleanup @InstanceFixture @instance-management-ci-shard-2
 Feature: Management Claimset Endpoints
     Verify that the claimset management endpoints (view-claimsets and reload-claimsets)
     are tenant-aware in multi-tenant deployments.
@@ -11,12 +11,7 @@ Feature: Management Claimset Endpoints
     - Endpoints with valid tenant should return 200
     - Endpoints with invalid tenant should return 404
     - Tenant validation should be case-insensitive
-
-    Background:
-        Given I am authenticated to the Configuration Service as system admin
-          And tenant "Tenant_Claimset_Test" is set up with a vendor and instances:
-              | Route       |
-              | 255901/2024 |
+    Tenant_255901 is pre-registered by the suite-owned fixture.
 
     # View Claimsets endpoint tests
 
@@ -25,7 +20,7 @@ Feature: Management Claimset Endpoints
          Then it should respond with 404
 
     Scenario: View claimsets with valid tenant returns 200
-         When a GET request is made to view-claimsets endpoint with tenant "Tenant_Claimset_Test"
+         When a GET request is made to view-claimsets endpoint with tenant "Tenant_255901"
          Then it should respond with 200
 
     Scenario: View claimsets with invalid tenant returns 404
@@ -33,7 +28,7 @@ Feature: Management Claimset Endpoints
          Then it should respond with 404
 
     Scenario: View claimsets tenant validation is case-insensitive
-         When a GET request is made to view-claimsets endpoint with tenant "tenant_claimset_test"
+         When a GET request is made to view-claimsets endpoint with tenant "tenant_255901"
          Then it should respond with 200
 
     # Reload Claimsets endpoint tests
@@ -43,7 +38,7 @@ Feature: Management Claimset Endpoints
          Then it should respond with 404
 
     Scenario: Reload claimsets with valid tenant returns 200
-         When a POST request is made to reload-claimsets endpoint with tenant "Tenant_Claimset_Test"
+         When a POST request is made to reload-claimsets endpoint with tenant "Tenant_255901"
          Then it should respond with 200
 
     Scenario: Reload claimsets with invalid tenant returns 404
@@ -51,5 +46,5 @@ Feature: Management Claimset Endpoints
          Then it should respond with 404
 
     Scenario: Reload claimsets tenant validation is case-insensitive
-         When a POST request is made to reload-claimsets endpoint with tenant "TENANT_CLAIMSET_TEST"
+         When a POST request is made to reload-claimsets endpoint with tenant "TENANT_255901"
          Then it should respond with 200

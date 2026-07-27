@@ -13,7 +13,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
-        @e2e-ci-shard-4
+        @e2e-ci-shard-4 @MssqlRepresentative
         Scenario: 01 Ensure client can create a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -131,7 +131,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
-        @e2e-ci-shard-4
+        @e2e-ci-shard-4 @MssqlRepresentative
         Scenario: 03 Ensure client can not create a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """

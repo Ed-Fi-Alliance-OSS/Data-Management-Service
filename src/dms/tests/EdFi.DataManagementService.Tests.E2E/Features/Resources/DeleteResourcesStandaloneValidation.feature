@@ -4,7 +4,7 @@ Feature: Resources "Delete" Operation standalone validations
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-180
-        @e2e-ci-shard-1
+        @e2e-ci-shard-1 @MssqlRepresentative
         Scenario: 01 Verify response when deleting
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """

@@ -7,7 +7,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade              |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-3 @MssqlRepresentative
         Scenario: 01 Deleted School appears in deletes response
              When a POST request is made to "/ed-fi/schools" with
                   """

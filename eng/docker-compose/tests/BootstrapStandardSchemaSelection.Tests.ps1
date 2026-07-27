@@ -1184,7 +1184,14 @@ exit $ExitCode
                     Should -BeFalse
             }
             finally {
-                [System.Environment]::SetEnvironmentVariable("SCHEMA_PACKAGES", $savedSchemaPackages)
+                # Restore absence with Remove-Item: SetEnvironmentVariable coerces a $null saved
+                # value to "", which newer pwsh/.NET on Unix stores as a present-but-blank variable.
+                if ($null -eq $savedSchemaPackages) {
+                    Remove-Item Env:SCHEMA_PACKAGES -ErrorAction SilentlyContinue
+                }
+                else {
+                    [System.Environment]::SetEnvironmentVariable("SCHEMA_PACKAGES", $savedSchemaPackages)
+                }
             }
         }
     }

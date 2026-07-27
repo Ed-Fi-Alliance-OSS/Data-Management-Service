@@ -42,6 +42,9 @@ $script:ResolvedSchemaDirectory = $null
 
 Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+# Shared database-name safety guards (safe-name and dedicated-E2E rules), also consumed by the
+# Instance Management E2E orchestration so both validate route-context names with the same logic.
+Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
 
 if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
     function Format-LogSafeText {
@@ -83,60 +86,13 @@ function Resolve-ScriptRelativePath {
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $Path))
 }
 
-function ConvertFrom-ComposeEnvironmentValue {
-    param(
-        [AllowEmptyString()]
-        [string]$Value
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $Value
-    }
-
-    $trimmedValue = $Value.Trim()
-    $firstCharacter = $trimmedValue[0]
-
-    if ($firstCharacter -in @("'", '"')) {
-        $closingQuoteIndex = -1
-        $escaped = $false
-
-        for ($index = 1; $index -lt $trimmedValue.Length; $index++) {
-            $character = $trimmedValue[$index]
-
-            if ($character -eq "\" -and -not $escaped) {
-                $escaped = $true
-                continue
-            }
-
-            if ($character -eq $firstCharacter -and -not $escaped) {
-                $closingQuoteIndex = $index
-                break
-            }
-
-            $escaped = $false
-        }
-
-        if ($closingQuoteIndex -gt 0) {
-            $trailingContent = $trimmedValue.Substring($closingQuoteIndex + 1).Trim()
-            if ([string]::IsNullOrEmpty($trailingContent) -or $trailingContent.StartsWith("#")) {
-                $unquotedValue = $trimmedValue.Substring(1, $closingQuoteIndex - 1)
-                if ($firstCharacter -eq "'") {
-                    return $unquotedValue.Replace("\'", "'")
-                }
-
-                return $unquotedValue.Replace('\"', '"').Replace('\\', '\')
-            }
-        }
-    }
-
-    # Docker Compose treats a # preceded by whitespace as an inline comment for an unquoted
-    # value. A # without leading whitespace remains part of the value.
-    return ($trimmedValue -replace '[ \t]+#.*$', '').Trim()
-}
-
 function Get-EnvironmentValueMap {
     param([string]$EnvironmentFilePath)
 
+    # Store RAW env-file values (like every other resolver consumer): the shared Compose resolver
+    # applies quote/comment conversion itself, and its single-quote-literal rule keys off the raw
+    # leading quote. A pre-converted map would let a single-quoted value be interpolated ('$$'
+    # collapsed, ${VAR} expanded) even though Docker Compose gives the container the literal value.
     $environmentValues = @{}
 
     foreach ($line in Get-Content $EnvironmentFilePath) {
@@ -151,8 +107,7 @@ function Get-EnvironmentValueMap {
         }
 
         $key = $line.Substring(0, $separatorIndex).Trim()
-        $value = ConvertFrom-ComposeEnvironmentValue -Value $line.Substring($separatorIndex + 1)
-        $environmentValues[$key] = $value
+        $environmentValues[$key] = $line.Substring($separatorIndex + 1).Trim()
     }
 
     return $environmentValues
@@ -171,153 +126,6 @@ function Get-RequiredEnvValue {
     }
 
     return $value
-}
-
-function Assert-SafeDatabaseName {
-    param([string]$DatabaseName)
-
-    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
-        throw "Database name '$DatabaseName' contains unsupported characters."
-    }
-
-    if ($DatabaseName -iin @("postgres", "template0", "template1")) {
-        throw "Database name '$DatabaseName' is a reserved PostgreSQL system database and cannot be used for E2E provisioning."
-    }
-
-    if ($DatabaseName -iin @("master", "model", "msdb", "tempdb")) {
-        throw "Database name '$DatabaseName' is a reserved SQL Server system database and cannot be used for E2E provisioning."
-    }
-}
-
-function Resolve-EnvironmentValueReference {
-    param(
-        [string]$Value,
-        [hashtable]$EnvironmentValues,
-        [System.Collections.Generic.HashSet[string]]$VisitedKeys
-    )
-
-    $Value = ConvertFrom-ComposeEnvironmentValue -Value $Value
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $Value
-    }
-
-    $match = [Regex]::Match($Value, '^\$\{(?<key>[^}]+)\}$')
-
-    if (-not $match.Success) {
-        return $Value
-    }
-
-    $referencedKey = $match.Groups["key"].Value
-    if (-not $EnvironmentValues.ContainsKey($referencedKey)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is not defined."
-    }
-
-    $resolvedValue = [string]$EnvironmentValues[$referencedKey]
-    if ([string]::IsNullOrWhiteSpace($resolvedValue)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is blank."
-    }
-
-    if ($null -eq $VisitedKeys) {
-        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    }
-    if (-not $VisitedKeys.Add($referencedKey)) {
-        throw "Environment value reference '$Value' is cyclic at '$referencedKey'."
-    }
-
-    try {
-        return Resolve-EnvironmentValueReference `
-            -Value $resolvedValue `
-            -EnvironmentValues $EnvironmentValues `
-            -VisitedKeys $VisitedKeys
-    }
-    finally {
-        $null = $VisitedKeys.Remove($referencedKey)
-    }
-}
-
-function Get-DatabaseNameFromConnectionString {
-    param(
-        [string]$ConnectionString,
-        [hashtable]$EnvironmentValues
-    )
-
-    $ConnectionString = ConvertFrom-ComposeEnvironmentValue -Value $ConnectionString
-
-    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-        return $null
-    }
-
-    try {
-        $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
-        # DbConnectionStringBuilder implements IDictionary, so PowerShell's adapted view treats
-        # `.ConnectionString = ...` as an item named "ConnectionString". PSBase selects the real
-        # CLR property and exposes the parsed keys/items.
-        $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
-
-        foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
-                return Resolve-EnvironmentValueReference `
-                    -Value ([string]$connectionStringBuilder.PSBase.get_Item($key)) `
-                    -EnvironmentValues $EnvironmentValues
-            }
-        }
-    }
-    catch {
-        throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
-    }
-
-    return $null
-}
-
-function Assert-E2EDatabaseIsDedicated {
-    param(
-        [hashtable]$EnvironmentValues,
-        [string]$EnvironmentFilePath,
-        [string]$E2EDatabaseName
-    )
-
-    Assert-SafeDatabaseName -DatabaseName $E2EDatabaseName
-
-    # All comparisons are case-insensitive: SQL Server's default collation treats database
-    # identifiers case-insensitively, so a case-variant of a protected name IS the same database
-    # there and would still be dropped. PostgreSQL names are case-sensitive, so this is stricter
-    # than required on that engine - acceptable for a guard in front of DROP DATABASE, where a
-    # false positive costs a rename and a false negative drops shared state.
-    foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
-        $protectedDatabaseName = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$databaseNameKey]) `
-            -EnvironmentValues $EnvironmentValues
-
-        if (-not [string]::IsNullOrWhiteSpace($protectedDatabaseName) -and $E2EDatabaseName -ieq $protectedDatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
-        }
-    }
-
-    foreach ($connectionStringKey in @(
-            "DATABASE_CONNECTION_STRING_ADMIN",
-            "DMS_CONFIG_DATABASE_CONNECTION_STRING"
-        )) {
-        $connectionString = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$connectionStringKey]) `
-            -EnvironmentValues $EnvironmentValues
-
-        if ([string]::IsNullOrWhiteSpace($connectionString)) {
-            continue
-        }
-
-        $connectionStringDatabaseName = Get-DatabaseNameFromConnectionString `
-            -ConnectionString $connectionString `
-            -EnvironmentValues $EnvironmentValues
-
-        if ([string]::IsNullOrWhiteSpace($connectionStringDatabaseName)) {
-            throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
-        }
-
-        if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
-        }
-    }
 }
 
 function Wait-ForPostgresql {
@@ -415,6 +223,26 @@ function Reset-E2EDatabase {
     }
 }
 
+function Get-MssqlResetBatch {
+    param([string]$DatabaseName)
+
+    # SQL Server has no equivalent of pg_terminate_backend + dropdb --if-exists: dropping active
+    # connections and reclaiming the database is an ALTER DATABASE SET SINGLE_USER WITH ROLLBACK
+    # IMMEDIATE followed by DROP DATABASE. Both statements MUST run in ONE batch on ONE connection:
+    # SET SINGLE_USER puts the database in single-user mode, and if the DROP ran in a separate
+    # sqlcmd invocation an intervening client could seize the single-user slot and block/fail the
+    # drop. Emitting them as a single guarded batch (a no-op when the database does not exist)
+    # closes that window. Returned as a pure string so the batch shape can be unit tested without
+    # touching SQL Server.
+    return @"
+IF DB_ID(N'$DatabaseName') IS NOT NULL
+BEGIN
+    ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE [$DatabaseName];
+END
+"@
+}
+
 function Reset-E2EMssqlDatabase {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     [CmdletBinding(SupportsShouldProcess)]
@@ -430,24 +258,12 @@ function Reset-E2EMssqlDatabase {
         return
     }
 
-    # SQL Server has no equivalent of pg_terminate_backend + dropdb --if-exists: dropping active
-    # connections and reclaiming the database is instead a two-statement ALTER DATABASE / DROP
-    # DATABASE sequence, each guarded so a database that does not yet exist is a no-op.
-    $setSingleUserSql =
-        "IF DB_ID(N'$DatabaseName') IS NOT NULL ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
+    $resetBatch = Get-MssqlResetBatch -DatabaseName $DatabaseName
 
-    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $setSingleUserSql -C -b
+    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $resetBatch -C -b
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to terminate active connections for E2E database '$DatabaseName'."
-    }
-
-    $dropDatabaseSql = "DROP DATABASE IF EXISTS [$DatabaseName];"
-
-    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $dropDatabaseSql -C -b
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to drop E2E database '$DatabaseName'."
+        throw "Failed to reset E2E database '$DatabaseName'."
     }
 }
 
@@ -462,11 +278,28 @@ function Build-ConnectionString {
         [string]$Dialect = "pgsql"
     )
 
+    # Build through DbConnectionStringBuilder rather than string interpolation so a credential, database
+    # name, or host containing connection-string metacharacters (';', '=', '"', or whitespace) is quoted
+    # per the ADO.NET rules the SchemaTools SqlClient/Npgsql providers parse, instead of silently
+    # corrupting or truncating the connection string.
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+
     if ($Dialect -eq "mssql") {
-        return "Server=$ServerHost,$Port;Initial Catalog=$DatabaseName;User ID=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);TrustServerCertificate=true;"
+        $builder["Server"] = "$ServerHost,$Port"
+        $builder["Initial Catalog"] = $DatabaseName
+        $builder["User ID"] = $Credential.UserName
+        $builder["Password"] = $Credential.GetNetworkCredential().Password
+        $builder["TrustServerCertificate"] = "true"
+        return $builder.ConnectionString
     }
 
-    return "Host=$ServerHost;Port=$Port;Username=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);Database=$DatabaseName;NoResetOnClose=true;"
+    $builder["Host"] = $ServerHost
+    $builder["Port"] = "$Port"
+    $builder["Username"] = $Credential.UserName
+    $builder["Password"] = $Credential.GetNetworkCredential().Password
+    $builder["Database"] = $DatabaseName
+    $builder["NoResetOnClose"] = "true"
+    return $builder.ConnectionString
 }
 
 # Dot-sourcing stops here so tests can exercise the functions above without provisioning
@@ -486,18 +319,22 @@ $environmentValues = Get-EnvironmentValueMap $environmentFilePath
 # for backward compatibility with existing callers.
 $mssqlContainerName = "dms-mssql"
 
+# Resolve required credentials/ports with Docker Compose precedence (ambient process/shell value wins
+# over the env file, references are followed, single quotes stay literal) so provisioning connects with
+# exactly the port/password the running container received - not a stale file value an ambient override
+# replaced.
 if ($DatabaseEngine -eq "mssql") {
-    $mssqlPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "MSSQL_PORT"
-    $mssqlSaPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "MSSQL_SA_PASSWORD"
+    $mssqlPort = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "MSSQL_PORT"
+    $mssqlSaPassword = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "MSSQL_SA_PASSWORD"
 }
 else {
-    $postgresPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PORT"
-    $postgresPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PASSWORD"
+    $postgresPort = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PORT"
+    $postgresPassword = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PASSWORD"
 }
 
 $e2eDatabaseName =
     if ([string]::IsNullOrWhiteSpace($DatabaseName)) {
-        Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "E2E_DATABASE_NAME"
+        Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "E2E_DATABASE_NAME"
     }
     else {
         $DatabaseName
@@ -515,13 +352,7 @@ if ($DatabaseEngine -eq "mssql") {
     )
 }
 else {
-    $postgresUsername =
-        if ([string]::IsNullOrWhiteSpace([string]$environmentValues["POSTGRES_USER"])) {
-            "postgres"
-        }
-        else {
-            [string]$environmentValues["POSTGRES_USER"]
-        }
+    $postgresUsername = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
     $securePostgresPassword = New-Object System.Security.SecureString
     foreach ($character in $postgresPassword.ToCharArray()) {
         $securePostgresPassword.AppendChar($character)
