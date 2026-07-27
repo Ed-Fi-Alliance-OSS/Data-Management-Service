@@ -443,12 +443,9 @@ the canonical relational API. V1 validates these settings when initializing the 
 execution context and before activation from `Disabled`, but does not continuously
 revalidate an active target. The correction-and-restart workflow after an
 initialization-time failure is supported only when the observed lifecycle is `Disabled`.
-For any other lifecycle, restart alone must not restore projection health or CDC
-eligibility. A
-`Tracking` target may have missed indirect projection work while `nested triggers` was
-disabled and requires a writer fence plus integrity scrub or rebuild before eligibility
-can be restored. V1 has no such fence for an admitted database, so the target remains
-projection- and CDC-ineligible. An activation-preflight failure changes no lifecycle state
+A prerequisite failure observed in any other lifecycle is outside the supported v1
+contract; v1 defines neither recovery nor renewed projection-health or CDC-readiness
+guarantees for that database. An activation-preflight failure changes no lifecycle state
 and may be retried after correction. Activation validation is command-local;
 target-context initialization owns process-local validation. Changing either prerequisite
 after successful validation while the target is active, including its effects and

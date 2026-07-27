@@ -54,15 +54,14 @@ workers, lifecycle administration, cache reads, and health reporting.
   A disabled or unreadable prerequisite fails only projection/cache eligibility, emits
   explicit diagnostics, and never changes the setting. The correction-and-restart
   workflow after an initialization-time failure is supported only when lifecycle is
-  `Disabled`. Restart alone cannot restore projection health or CDC eligibility for any
-  other lifecycle; a `Tracking` target remains unavailable because v1 lacks the
-  admitted-database writer fence required for integrity scrub or rebuild. An
-  activation-preflight failure changes no lifecycle state and can be retried after
-  correction. Activation validation is command-local; target-context initialization owns
-  process-local validation. V1 does not continuously recheck active targets or add a
-  write-side stamp guard; changing either prerequisite after successful validation while
-  the target is active, including its effects and recovery, is outside the supported v1
-  contract.
+  `Disabled`. A failure observed in any other lifecycle is outside the supported v1
+  contract, which defines neither recovery nor renewed projection-health or CDC-readiness
+  guarantees. An activation-preflight failure changes no lifecycle state and can be
+  retried after correction. Activation validation is command-local; target-context
+  initialization owns process-local validation. V1 does not continuously recheck active
+  targets or add a write-side stamp guard; changing either prerequisite after successful
+  validation while the target is active, including its effects and recovery, is outside
+  the supported v1 contract.
 - Add supported appsettings examples that link to the authoritative design.
 - Add target-scoped diagnostics needed by health reporting.
 
@@ -73,7 +72,7 @@ workers, lifecycle administration, cache reads, and health reporting.
 - Provider integration tests cover target prerequisite validation and isolation, including
   initialization failure that remains ineligible for the lifetime of that execution
   context, successful validation by a newly initialized `Disabled` context after
-  correction, and no correction-and-restart eligibility for a `Tracking` target.
+  correction, and unsupported-incident classification for any other lifecycle.
 - Preflight and contract tests cover legal/illegal transition requests, `Resetting`
   mismatch, target pause/resume, nonempty activation rejection, and
   active/historical-binding rejection, including SQL Server prerequisite-failure result
