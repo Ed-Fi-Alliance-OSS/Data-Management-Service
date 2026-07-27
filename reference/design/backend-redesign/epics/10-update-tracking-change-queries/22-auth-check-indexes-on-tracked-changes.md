@@ -43,13 +43,15 @@ Per-strategy shapes (subjects AND within a strategy, strategies OR across, `Name
 | `NamespaceBased` | n/a | resolved namespace column | none (prefix `LIKE` against token prefixes; `LIKE ANY(@array)` on PostgreSQL, OR-chain on SQL Server) | `OldNamespace` (per-resource), or shared-descriptor `OldNamespace` behind the `Discriminator` filter | shared table served by Tier-1 `(Discriminator, ChangeVersion)`; per-resource deferred pending predicate-shape + operator-class work |
 
 All probes are equality except the namespace prefix `LIKE`; on the shared descriptor table every shape is preceded by the `Discriminator IN (2 values)` filter, which is why `Discriminator` leads the Tier-1 index there.
+Securable coverage in tracked-change tables is root-scoped: array-nested (`[*]`) EdOrg and namespace securable paths (the child-table cases `auth.md` enumerates for live-side indexing, e.g. GraduationPlan's nested namespace) have no tracked columns by design and fail closed under the corresponding `ReadChanges` strategies; see `change-queries.md` § "Per-resource securable-element indexes are deferred".
 Because strategies OR-combine and subjects AND-combine, single-column indexes are the right granularity.
 
 **Derivation (AC 3-4).**
 One new pass, `DeriveTrackedChangeIndexInventoryPass`, ordered after `DeriveAuthorizationIndexInventoryPass`; zero new inventory contracts (inputs are `TrackedChangeColumnInfo.Origin/Role/PersonJoinName`, the PA literals, and shared-descriptor system columns).
 The AC's "extend `DeriveIndexInventoryPass`" is honored in spirit, not literally: that pass runs before `DeriveTrackedChangeInventoryPass`, and its position is load-bearing.
 
-**Benefit vs write cost (AC 5), measured on PostgreSQL 16.8 with golden-faithful DDL and planner-exact queries at 2M/10M tombstones.**
+**Benefit vs write cost (AC 5), measured on PostgreSQL 16.8 with golden-faithful DDL and planner-exact queries at 2M/10M tombstones, on an arm64 macOS Docker host (tmpfs).**
+Timing absolutes are environment- and CPU-architecture-specific (the team develops on Windows/amd64 and Linux); the durable evidence is plan shapes and same-run relative factors, which is how the implementation stories gate.
 Adopted (Tier 1): the five tracked PrimaryAssociation covering indexes plus the shared-descriptor `(Discriminator, ChangeVersion)` index; measured 3.5-10x on `*IncludingDeletes` view evaluation, 1.5-10x on descriptor `/deletes`, 3x on `/keyChanges` and single-school `/deletes`.
 One bounded read-side regression is known, disclosed in the design doc, and accepted: narrow-window `/deletes` against the five PA resources themselves can flip anti-join shape on PostgreSQL (0.5s to 2.5s at 10M rows, reproducible under forward and reverse controls); same root cause as the Tier-2 deferral, expected to be removed by the subject pre-resolution story.
 Deferred (Tier 2): per-resource securable/person/namespace outer-predicate indexes; PostgreSQL's default-200 distinct estimate for the `UNION` views' output makes them plan hazards (reproducible regressions up to 18x on `/keyChanges`), until a runtime query-shape change exposes real subject-set cardinalities.
