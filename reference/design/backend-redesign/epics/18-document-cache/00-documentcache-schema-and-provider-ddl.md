@@ -187,3 +187,62 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    DDL behavior through direct multi-row `dms.Document` changes and a representative
    generated stamp path, while deferring full API-path, descriptor, bulk-restamp-utility,
    and cross-story scenarios to their owning later stories?
+
+### Answers 2
+
+1. Yes. Add `dms.DataStoreIdentity` as fixed core inventory, including its singleton
+   constraint, database-generated UUID initialization when
+   `DataStoreIdentitySingletonId = 1` is absent, and fresh-apply/rerun tests proving that
+   the UUID is nonempty and preserved. For this table, 18-00 owns only physical
+   provisioning and preservation. E19 owns reading the identity for a source fingerprint
+   and every clone, restore, rotation, binding, and CDC recovery rule. Do not add an
+   identity-rotation command or CDC binding behavior to 18-00.
+2. Keep the existing architecture. Fixed `dms` inventory belongs in `CoreDdlEmitter` and
+   focused shared core definitions; `DerivedRelationalModelSet` remains the
+   effective-schema-derived resource model. Add a reusable core definition only where it
+   prevents emitter, provisioning, and validation code from duplicating names or shape.
+   Do not add fixed tables, constraints, indexes, or triggers to the model-set record or
+   require every model builder and consumer to carry them.
+3. Yes. The production DMS credential necessarily has the union of permissions needed by
+   the canonical path and later projection/administration components, so 18-00 must not
+   claim database-enforced separation among those uses. Use test-only restricted
+   principals to prove the narrower trigger property: ordinary `dms.Document` DML can
+   enqueue through the PostgreSQL security-definer functions or SQL Server ownership
+   chain without direct work-table permission. Later E18 stories enforce projector and
+   administrator capabilities through narrow application interfaces and tests. Do not
+   add production roles, role switching, connection strings, or a generated runtime grant
+   matrix.
+4. Yes. Create `edfi_dms_enqueue_owner` when absent and otherwise reuse it only when it is
+   a locked-down ownership role: `NOLOGIN`, `NOINHERIT`, `NOSUPERUSER`, `NOCREATEDB`,
+   `NOCREATEROLE`, `NOREPLICATION`, and `NOBYPASSRLS`, with no privilege-bearing role
+   memberships. An administrator-only membership used by the provisioning principal is
+   acceptable only when it grants neither inherited nor `SET ROLE` access. Fail rather
+   than alter an existing role with a different security attribute or effective
+   membership. Apply and verify only the required grants in the current database; owning
+   enqueue functions and holding the same narrow grants in other DMS databases is expected
+   for this cluster-wide role and does not require a cluster-wide privilege auditor.
+   Fail with a clear prerequisite diagnostic when the provisioning credential cannot
+   create the role, assign function ownership, or apply the local grants.
+5. Keep `ProvisionedSchemaManifest` at its current version and shape. Its existing
+   structural inventory should naturally include the new tables, columns, constraints,
+   index, triggers, and functions. Use focused provider catalog assertions for the SQL
+   Server lifecycle collation, PostgreSQL function owner/security/search path and grants,
+   SQL Server's absent `EXECUTE AS`, and preservation of the mutable singleton rows.
+   These provider-specific security facts do not justify turning the generic structural
+   manifest into a principal and permission model.
+6. Do not introduce a general schema-drift comparison framework. Add a small preflight
+   limited to E18's reserved inventory and known legacy cache artifacts. However, an
+   existing expected-hash singleton marks a completed schema: both standalone SQL and
+   `ddl provision` must reject any missing or incompatible required E18 object, legacy
+   `Etag`, obsolete cache UUID constraint, or obsolete source-scan index before durable
+   mutation. Missing compatible objects may be created only during an initial apply under
+   the existing new/partial-apply rules; a complete same-hash rerun may refresh present
+   replaceable functions and triggers and must preserve all mutable data. This clarifies
+   Answer 1.4's permission to create missing objects; it does not permit repairing a
+   database that already records the expected hash.
+7. Yes. Exercise the complete lifecycle, coalescing, timestamp-preservation, missing-state,
+   rollback, and delete-cascade matrix with direct set-based `dms.Document` changes, then
+   add one representative generated resource-stamp path per provider to prove that the
+   stamp reaches the enqueue mechanism, including SQL Server nested-trigger behavior.
+   Defer full HTTP/API paths, descriptor-specific and cross-feature coverage to 18-07, and
+   the bulk restamp command and resumability scenarios to 18-08.
