@@ -160,6 +160,29 @@ public class FailureResponseTests
     }
 
     [Test]
+    public void ForParameterValidation_ShouldReturnCorrectJsonNode()
+    {
+        // Arrange
+        string[] errors = ["'limit' must be greater than 0."];
+
+        // Act
+        var result = FailureResponse.ForParameterValidation(errors, CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]
+            ?.GetValue<string>()
+            .Should()
+            .Be("Parameter validation failed. See 'errors' for details.");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+        result["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+        result["status"]?.GetValue<int>().Should().Be(400);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
+    }
+
+    [Test]
     public void ForBadGateway_ShouldReturnCorrectJsonNode()
     {
         // Arrange

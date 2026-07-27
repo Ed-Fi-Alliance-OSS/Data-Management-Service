@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
@@ -38,10 +39,38 @@ public abstract class PagingQueryValidator<T> : AbstractValidator<T>
 
         RuleFor(q => q.OrderBy)
             .Must(ob => ob is null || allowedOrderByFields.Contains(ob))
-            .WithMessage(q =>
-                $"'orderBy' value '{q.OrderBy}' is not a valid field. "
-                + $"Allowed values: {string.Join(", ", allowedOrderByFields)}."
+            // Fixed, server-controlled message only: the raw client-supplied value is never echoed back,
+            // so an injection-style orderBy value cannot be reflected into the response.
+            .WithMessage(
+                $"'orderBy' is not a valid field. Allowed values: {string.Join(", ", allowedOrderByFields)}."
             );
+    }
+}
+
+/// <summary>
+/// More specific than <see cref="ValidatorExtensions.GuardAsync{TRequest}(IValidator{TRequest}, TRequest?)"/>
+/// for any <see cref="PagingQueryValidator{T}"/>-derived validator. Every paging/query module handler
+/// declares its validator parameter as the validator's concrete type (e.g. <c>ProfilePagingQueryValidator
+/// validator</c>), so C# overload resolution selects this overload automatically for all such call
+/// sites — no per-endpoint changes are needed. Throws <see cref="ParameterValidationException"/> instead
+/// of the generic <see cref="ValidationException"/>, so <c>GlobalExceptionHandler</c> can classify
+/// query/pagination failures as urn:ed-fi:api:bad-request:parameter without message parsing.
+/// </summary>
+public static class PagingQueryValidatorExtensions
+{
+    public static async Task GuardAsync<TRequest>(
+        this PagingQueryValidator<TRequest> validator,
+        TRequest? request
+    )
+        where TRequest : PagingQuery
+    {
+        request ??= Activator.CreateInstance<TRequest>();
+        var validationResult = await validator.ValidateAsync(request);
+
+        if (!validationResult.IsValid)
+        {
+            throw new ParameterValidationException(validationResult.Errors);
+        }
     }
 }
 

@@ -164,6 +164,22 @@ public static class FailureResponse
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
         );
 
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:api:bad-request:parameter</c> response for a query/pagination
+    /// parameter failure (as opposed to a request-body data-validation failure). Per the Knowledge
+    /// Base's "Invalid Limit Count" example, <c>validationErrors</c> stays empty and the specific,
+    /// pre-sanitized reasons are carried in <c>errors</c>.
+    /// </summary>
+    public static JsonNode ForParameterValidation(string[] errors, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "Parameter validation failed. See 'errors' for details.",
+            type: $"{_badRequestTypePrefix}:parameter",
+            title: "Parameter Validation Failed",
+            status: 400,
+            correlationId: correlationId,
+            errors: errors
+        );
+
     public static JsonNode ForNonUniqueIdentity(
         string detail,
         string correlationId,

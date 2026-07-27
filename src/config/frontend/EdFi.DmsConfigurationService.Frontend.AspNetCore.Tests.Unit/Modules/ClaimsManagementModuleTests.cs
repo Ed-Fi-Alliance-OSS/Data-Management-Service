@@ -922,4 +922,48 @@ public abstract class ClaimsManagementModuleTests
             await AssertInternalServerErrorContract(response, Sentinel);
         }
     }
+
+    /// <summary>
+    /// A malformed JSON request body fails Minimal API model binding before the handler runs. Before
+    /// RouteHandlerOptions.ThrowOnBadRequest was enabled (Program.cs), this was an empty 400 body that
+    /// never reached GlobalExceptionHandler; it now returns the full data-validation contract via the
+    /// real production pipeline, in the non-Development-equivalent "Test" environment.
+    /// </summary>
+    [TestFixture]
+    public class Given_upload_claims_receives_a_malformed_json_body : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract_instead_of_an_empty_body()
+        {
+            using var malformedBody = new StringContent(
+                "{\"claims\":{\"claimSets\":[],}}",
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, malformedBody);
+
+            await AssertDataValidationContract(
+                response,
+                validationErrors =>
+                {
+                    validationErrors.Count.Should().Be(1);
+                    validationErrors["$"]!
+                        .AsArray()
+                        .Select(node => node!.GetValue<string>())
+                        .Should()
+                        .Equal("The request body contains invalid JSON.");
+                }
+            );
+
+            string content = await response.Content.ReadAsStringAsync();
+            content.Should().NotContain("JsonException");
+            content.Should().NotContain("System.Text.Json");
+            content.Should().NotContain("LineNumber");
+        }
+    }
 }

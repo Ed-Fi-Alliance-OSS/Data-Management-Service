@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using FluentValidation;
@@ -16,11 +18,14 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 
 /// <summary>
 /// Verifies the CMS exception handler shapes every branch into the Ed-Fi contract and derives the HTTP
-/// status from the body: <see cref="BadHttpRequestException"/> is status-aware (400 → generic
-/// bad-request, 415 → unsupported-media-type, other reachable → RFC 9457 about:blank per D-08), the
-/// validation exception yields the data-validation contract, and any other exception yields a 500 —
-/// never exposing the exception message (DMS-1218 INV-30). This is a non-fixture container; the runnable
-/// fixtures are the nested <c>Given_…</c> classes.
+/// status from the body: <see cref="BadHttpRequestException"/> is status-aware (400 with a
+/// <see cref="JsonException"/> inner exception → data-validation; 400 with no inner exception →
+/// parameter-validation; 415 → unsupported-media-type; other reachable → RFC 9457 about:blank per D-08),
+/// <see cref="ParameterValidationException"/> yields the parameter-validation contract (matched before the
+/// generic FluentValidation type it derives from), the generic validation exception yields the
+/// data-validation contract, and any other exception yields a 500 — never exposing the exception message
+/// (DMS-1218 INV-30). This is a non-fixture container; the runnable fixtures are the nested
+/// <c>Given_…</c> classes.
 /// </summary>
 public class GlobalExceptionHandlerTests
 {
@@ -67,7 +72,7 @@ public class GlobalExceptionHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_bad_http_request_with_status_400
+    public class Given_a_bad_http_request_with_status_400_and_no_inner_exception
     {
         private const string Sentinel = "SENTINEL_BADREQ_400_3a1c_must_not_leak";
 
@@ -78,6 +83,8 @@ public class GlobalExceptionHandlerTests
 
         [SetUp]
         public async Task Setup() =>
+            // No inner exception → classified as parameter validation, not the generic bad-request
+            // taxonomy this branch used previously.
             (_handled, _context, _content, _body) = await HandleAsync(
                 new BadHttpRequestException(Sentinel, StatusCodes.Status400BadRequest),
                 "trace-400"
@@ -87,24 +94,125 @@ public class GlobalExceptionHandlerTests
         public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
 
         [Test]
-        public void It_returns_the_generic_bad_request_contract() =>
+        public void It_returns_the_parameter_validation_contract() =>
             AssertHandledContract(
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
-                "Bad Request",
-                "The request was malformed or invalid."
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "Parameter validation failed. See 'errors' for details."
             );
 
         [Test]
         public void It_does_not_leak_the_exception_message() => _content.Should().NotContain(Sentinel);
 
         [Test]
-        public void It_includes_empty_extension_members()
+        public void It_has_empty_validation_errors_and_a_fixed_value_free_errors_entry()
         {
             _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(1);
+            _body["errors"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The request contains one or more invalid parameters.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_bad_http_request_with_status_400_and_a_json_inner_exception
+    {
+        private const string Sentinel = "SENTINEL_BADREQ_JSON_9e2f_must_not_leak";
+
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            // A JsonException inner exception is the framework's signal (not message text) that this 400
+            // came from request-body JSON deserialization.
+            (_handled, _context, _content, _body) = await HandleAsync(
+                new BadHttpRequestException(
+                    "Failed to read parameter from the request body as JSON.",
+                    StatusCodes.Status400BadRequest,
+                    new JsonException(Sentinel)
+                ),
+                "trace-400-json"
+            );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_data_validation_contract() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details."
+            );
+
+        [Test]
+        public void It_does_not_leak_the_parser_exception_message() => _content.Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_populates_validation_errors_at_the_document_root_with_empty_errors()
+        {
+            var validationErrors = _body["validationErrors"]!.AsObject();
+            validationErrors.ContainsKey("$").Should().BeTrue();
+            validationErrors["$"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("The request body contains invalid JSON.");
             _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_parameter_validation_exception
+    {
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var failures = new List<ValidationFailure> { new("Limit", "'limit' must be greater than 0.") };
+            (_handled, _context, _, _body) = await HandleAsync(
+                new ParameterValidationException(failures),
+                "trace-parameter"
+            );
+        }
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_parameter_validation_contract_not_the_data_validation_contract() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "Parameter validation failed. See 'errors' for details."
+            );
+
+        [Test]
+        public void It_carries_the_validator_message_in_errors_with_empty_validation_errors()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("'limit' must be greater than 0.");
         }
     }
 

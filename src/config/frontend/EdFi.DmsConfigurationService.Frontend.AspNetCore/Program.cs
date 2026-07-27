@@ -43,6 +43,13 @@ if (useReverseProxyHeaders)
     );
 }
 
+// A Minimal API binding failure (malformed JSON body, unparsable route/query/header parameter) can be
+// written as a bodiless 400 that never reaches GlobalExceptionHandler. The default behavior varies by
+// environment (Development throws via its auto-registered exception page; Test/Production leave it
+// bodiless), so this makes binding failures reach the handler consistently in every environment. Safe
+// because GlobalExceptionHandler never surfaces exception.Message — only fixed, sanitized text.
+builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
+
 var app = builder.Build();
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");

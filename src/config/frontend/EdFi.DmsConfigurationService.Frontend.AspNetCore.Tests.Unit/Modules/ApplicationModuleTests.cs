@@ -1826,12 +1826,75 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationQueryResult.Success([]));
         }
 
+        /// <summary>
+        /// Asserts the full urn:ed-fi:api:bad-request:parameter contract (real pipeline, not a
+        /// unit-level construction) for both binding-level (offset/limit non-numeric) and
+        /// validation-rule-level (limit=0, negative offset, invalid orderBy) query-parameter failures,
+        /// including a fixed <c>detail</c> and exactly one <c>errors</c> entry. <paramref name="exactMatch"/>
+        /// is false only for the orderBy cases, whose message includes the allowed-fields list and so is
+        /// matched as a substring rather than depending on set-enumeration order.
+        /// </summary>
+        private static async Task AssertParameterValidationContract(
+            HttpResponseMessage response,
+            string expectedError,
+            bool exactMatch = true
+        )
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+            string content = await response.Content.ReadAsStringAsync();
+            JsonNode body = JsonNode.Parse(content)!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Parameter validation failed. See 'errors' for details.");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+
+            var errors = body["errors"]!.AsArray().Select(node => node!.GetValue<string>()).ToList();
+            errors.Should().HaveCount(1);
+            if (exactMatch)
+            {
+                errors[0].Should().Be(expectedError);
+            }
+            else
+            {
+                errors[0].Should().Contain(expectedError);
+            }
+        }
+
         [Test]
         public async Task Should_return_400_when_orderBy_is_invalid()
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/applications?orderBy=invalidField");
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await AssertParameterValidationContract(
+                response,
+                "'orderBy' is not a valid field.",
+                exactMatch: false
+            );
+        }
+
+        [Test]
+        public async Task Should_not_reflect_an_injection_style_orderBy_value_in_the_response()
+        {
+            using var client = SetUpClient();
+            const string sentinel = "<script>SENTINEL_ORDERBY_APP_9f2c</script>";
+            var response = await client.GetAsync(
+                $"/v3/applications?orderBy={Uri.EscapeDataString(sentinel)}"
+            );
+
+            await AssertParameterValidationContract(
+                response,
+                "'orderBy' is not a valid field.",
+                exactMatch: false
+            );
+            string content = await response.Content.ReadAsStringAsync();
+            content.Should().NotContain(sentinel);
         }
 
         [Test]
@@ -1839,7 +1902,10 @@ public class ApplicationModuleTests
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/applications?orderBy=id&direction=SIDEWAYS");
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await AssertParameterValidationContract(
+                response,
+                "The direction query parameter must be one of: asc, ascending, desc, descending."
+            );
         }
 
         [Test]
@@ -1847,7 +1913,7 @@ public class ApplicationModuleTests
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/applications?offset=-1");
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await AssertParameterValidationContract(response, "'offset' must be greater than or equal to 0.");
         }
 
         [Test]
@@ -1855,7 +1921,7 @@ public class ApplicationModuleTests
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/applications?limit=0");
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await AssertParameterValidationContract(response, "'limit' must be greater than 0.");
         }
 
         [Test]
@@ -1923,7 +1989,10 @@ public class ApplicationModuleTests
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/applications?offset=abc");
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await AssertParameterValidationContract(
+                response,
+                "The request contains one or more invalid parameters."
+            );
         }
 
         [Test]
@@ -1931,7 +2000,10 @@ public class ApplicationModuleTests
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/applications?limit=xyz");
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await AssertParameterValidationContract(
+                response,
+                "The request contains one or more invalid parameters."
+            );
         }
 
         [Test]
