@@ -1610,7 +1610,7 @@ One bounded PostgreSQL read-side regression is a candidate exception: with the t
 The root cause is the same `UNION`-view cardinality misestimate that defers the per-resource person and EdOrg indexes below.
 The exception is permitted only if the checked-in DMS-1185 protocol passes; the later subject-cardinality work is expected to remove it.
 That exception is not granted to SQL Server: it requires its own evidence and provider-specific limit.
-Implementation verification uses the reproducible protocol and numeric gates in the DMS-1185 spike outcome rather than absolute timings tied to the original arm64 macOS Docker host.
+Implementation verification uses the reproducible protocol and numeric gates in the new Tier-1 emission story rather than absolute timings tied to the original arm64 macOS Docker host.
 
 ##### Per-resource securable-element indexes are deferred
 
