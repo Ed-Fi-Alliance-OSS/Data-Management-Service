@@ -171,10 +171,15 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    Server capture instance for the work table. 18-00 access tests assert the absence of
    work-table grants; 19-01 owns publication/capture exclusion, provider-metadata
    validation, and proof that work DML produces no captured record.
-6. Requires human decision: the designs require target-specific enqueue diagnostics but
-   define neither a PostgreSQL SQLSTATE nor a SQL Server error number or failure-to-code
-   mapping. Decide whether stable database error identifiers are part of the v1 contract
-   and, if they are, specify the exact provider codes and covered failure classes. Until
-   that decision is recorded, 18-00 must not invent codes; its current enforceable
-   contract is statement/transaction failure with complete rollback, while 18-06 owns
-   higher-level enqueue-failure telemetry distinct from projector-processing failures.
+6. Do not define dedicated DocumentCache enqueue-error identifiers in v1. Generic
+   statement failure plus complete rollback is sufficient. For a missing `StateId = 1`
+   row or invalid lifecycle value, emit a clear deterministic error using the existing
+   provider conventions: PostgreSQL `RAISE EXCEPTION` with its default `P0001` SQLSTATE
+   and SQL Server `THROW 50000, ..., 1`. An unreadable row and other permission,
+   constraint, storage, deadlock, serialization, or lock-timeout failures retain their
+   native provider errors; do not catch, wrap, or renumber them.
+
+   Tests assert the explicit lifecycle diagnostic and complete canonical rollback for
+   forced enqueue failures, but define no new enqueue-error taxonomy. Story 18-06 owns
+   target-scoped logging and metrics and may add provider-independent classification if a
+   concrete consumer requires it.
