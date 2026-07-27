@@ -42,16 +42,17 @@ projection lifecycle/recovery entry points.
   SQL Server identities and execute the 18-01 command contracts for guarded new-empty
   `Disabled -> Tracking` and offline activation/deactivation. Guarded new-empty execution
   owns the one-time writer-blocking `dms.Document` lock, exclusive state-row lock,
-  clear-latch and empty canonical/cache/work checks, and racing-insert safety. Also own
-  `Resetting` orchestration for online cache rebuild and offline internal-only cache-ahead
-  recovery, plus explicit integrity scrub. Scrub preflight admits only lifecycle
-  `Tracking` with a clear cache-ahead latch and rejects any other lifecycle or a latch
-  already set before its O(N) scan or mutation. Scrub may set the latch for current
-  cache-ahead state but never clears it. All administrative entry points, including 18-08,
-  consume this adapter rather than deriving a lock from logical target or connection
-  metadata. The adapter executes every coordinator-issued administrative database mutation
-  on its mutex-owning physical session across separate short transactions, and never
-  transparently reconnects under presumed ownership.
+  clear-latch and empty canonical/cache/work checks, SQL Server prerequisite validation
+  immediately before activation, and racing-insert safety. Also own `Resetting`
+  orchestration for online cache rebuild and offline internal-only cache-ahead recovery,
+  plus explicit integrity scrub. Scrub preflight admits only lifecycle `Tracking` with a
+  clear cache-ahead latch and rejects any other lifecycle or a latch already set before its
+  O(N) scan or mutation. Scrub may set the latch for current cache-ahead state but never
+  clears it. All administrative entry points, including 18-08, consume this adapter rather
+  than deriving a lock from logical target or connection metadata. The adapter executes
+  every coordinator-issued administrative database mutation on its mutex-owning physical
+  session across separate short transactions, and never transparently reconnects under
+  presumed ownership.
 - Keep the operation-specific clear boundaries distinct. Before online rebuild enters
   `Resetting`, atomically require lifecycle `Tracking` or `Rebuilding` and a clear
   cache-ahead latch; a set latch rejects the command without changing lifecycle, cache,
@@ -88,6 +89,8 @@ projection lifecycle/recovery entry points.
   fences and downstream-history eligibility; internal-only cache-ahead recovery clears
   stale work so a pre-recovery higher requirement cannot later be acknowledged; and
   possibly published state remains latched and intact.
+- SQL Server activation tests prove an unsatisfied provider prerequisite leaves lifecycle,
+  cache, and work state unchanged, and that retry succeeds after correction.
 - PostgreSQL and SQL Server scrub tests prove only clear-latch `Tracking` is admitted;
   `Disabled`, `Resetting`, `Rebuilding`, and a pre-existing set latch reject before the
   relationship scan with lifecycle, cache, work, and latch state unchanged. An admitted

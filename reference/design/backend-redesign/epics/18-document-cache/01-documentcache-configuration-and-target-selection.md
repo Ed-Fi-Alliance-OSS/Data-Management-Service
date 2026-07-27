@@ -49,11 +49,16 @@ workers, lifecycle administration, cache reads, and health reporting.
   consumer/CDC binding.
 - Replace scan/audit tuning with queue poll, page, concurrency, backoff, seeding
   high-water, and direct-fill settings.
-- Validate RCSI and server-level `nested triggers` for SQL Server. Runtime validation of a
-  disabled or unreadable prerequisite fails only projection/cache eligibility, emits
-  explicit diagnostics, and never changes the setting. The DMS-1310 write-side guard
-  separately rejects affected indirect stamps in an enqueue-enabled lifecycle so they
-  cannot commit without work.
+- Validate RCSI and server-level `nested triggers` for SQL Server when initializing or
+  replacing a resolved target execution context and before activation from `Disabled`.
+  A disabled or unreadable prerequisite fails only projection/cache eligibility, emits
+  explicit diagnostics, and never changes the setting. Correcting an initialization-time
+  failure requires restart of the affected DMS/projector process. An activation-preflight
+  failure changes no lifecycle state and can be retried after correction. Activation
+  validation is command-local; target-context initialization owns process-local
+  validation. V1 does not continuously recheck active targets or add a write-side stamp
+  guard; changing either prerequisite after successful validation while the target is
+  active, including its effects and recovery, is outside the supported v1 contract.
 - Add supported appsettings examples that link to the authoritative design.
 - Add target-scoped diagnostics needed by health reporting.
 
@@ -61,10 +66,13 @@ workers, lifecycle administration, cache reads, and health reporting.
 
 - Configuration, validation, and command-contract tests cover the states, requests, and
   preflight classifications enumerated by the referenced design sections.
-- Provider integration tests cover target prerequisite validation and isolation.
+- Provider integration tests cover target prerequisite validation and isolation, including
+  initialization failure that remains ineligible for the lifetime of that execution
+  context and successful validation by a newly initialized context after correction.
 - Preflight and contract tests cover legal/illegal transition requests, `Resetting`
   mismatch, target pause/resume, nonempty activation rejection, and
-  active/historical-binding rejection.
+  active/historical-binding rejection, including SQL Server prerequisite-failure result
+  classifications.
 - Appsettings and diagnostics are verified against the implementation and defer behavioral
   explanation to the design owner.
 

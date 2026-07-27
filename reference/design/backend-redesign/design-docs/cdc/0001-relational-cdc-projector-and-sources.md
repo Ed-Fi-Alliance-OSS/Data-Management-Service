@@ -223,13 +223,14 @@ is closed and in-flight writers have drained. Under the administrative mutex, it
 3. verifies `Disabled` and a clear cache-ahead latch;
 4. verifies `dms.Document`, `dms.DocumentCache`, and
    `dms.DocumentProjectionWork` are empty; and
-5. changes the lifecycle to `Tracking` and commits before write admission opens.
+5. for SQL Server, revalidates RCSI and server-level `nested triggers`; and
+6. changes the lifecycle to `Tracking` and commits before write admission opens.
 
-If any table is nonempty, no state changes. A deliberately racing canonical insert either
-commits first and makes activation reject the nonempty database, or commits after
-activation and transactionally enqueues work. CDC v1 rejects the nonempty case rather
-than retrofitting capture. Read acceleration on an existing database uses the explicit
-offline activation workflow below.
+If any table is nonempty or a provider prerequisite is not satisfied, no state changes.
+A deliberately racing canonical insert either commits first and makes activation reject
+the nonempty database, or commits after activation and transactionally enqueues work. CDC
+v1 rejects the nonempty case rather than retrofitting capture. Read acceleration on an
+existing database uses the explicit offline activation workflow below.
 
 ## Transactional Enqueue
 
@@ -243,11 +244,8 @@ version and every real `ContentVersion` change:
 - SQL Server uses one set-based `AFTER INSERT, UPDATE` trigger over `inserted` and
   `deleted`. Because resource `*_Stamp` triggers update `dms.Document`, a SQL Server
   projection target requires server-level `nested triggers` with `value_in_use = 1`.
-  Generated `*_Stamp` triggers fail the complete canonical transaction before their
-  `dms.Document` update when lifecycle is enqueue-enabled and the
-  `sys.configurations` row named `nested triggers` is unreadable or its `value_in_use` is
-  not `1`. Runtime target validation controls projection/cache eligibility, but it cannot
-  replace this write-side guard.
+  Target-context initialization and activation from `Disabled` validate this prerequisite;
+  generated `*_Stamp` triggers do not query `sys.configurations`.
 
 Each implementation reads exactly the `StateId = 1` lifecycle row once per triggering
 statement. A missing singleton or an unreadable/invalid lifecycle is an enqueue failure,
@@ -435,16 +433,20 @@ behind, or failed means cache-backed reads fall back to relational reconstructio
 presence or a projection-only failure does not remove an otherwise healthy DMS replica
 from normal API routing.
 
-Process eligibility requires target/source resolution, running execution context,
-validated state/work schema and enabled enqueue trigger inventory, and provider
-prerequisites. SQL Server additionally requires RCSI and
+Process eligibility requires target/source resolution, a running execution context,
+validated state/work schema and enabled enqueue trigger inventory, and successful
+provider-prerequisite validation for the current execution context. SQL Server
+additionally requires RCSI and
 `sys.configurations.value_in_use = 1` for `nested triggers`. A false or unreadable result
 makes projection/cache use ineligible without changing the server setting or the health of
-the canonical relational API. That runtime status does not authorize untracked writes:
-while lifecycle is enqueue-enabled, the generated SQL Server stamp guard described under
-[Transactional Enqueue](#transactional-enqueue) rejects affected indirect canonical
-mutations until the prerequisite is restored or projection is eligible for offline
-deactivation.
+the canonical relational API. V1 validates these settings when initializing the target
+execution context and before activation from `Disabled`, but does not continuously
+revalidate an active target. After an initialization-time failure, operators correct the
+prerequisite and restart the affected DMS/projector process. An activation-preflight
+failure changes no lifecycle state and may be retried after correction. Activation
+validation is command-local; target-context initialization owns process-local validation.
+Changing either prerequisite after successful validation while the target is active,
+including its effects and recovery, is outside the supported v1 contract.
 
 The durable operational-health observation is:
 
@@ -484,10 +486,12 @@ Every operation in this section holds the database administrative mutex.
 Runtime configuration never activates database tracking. To activate an existing
 `Disabled` database, operators stop all DMS replicas, projectors, direct fill, seed/bulk
 loaders, administrative writers, and every other canonical writer, then drain in-flight
-transactions. The coordinator clears residual cache/work state through supported
-bounded/qualified paths, exclusively locks the state row in one short transaction,
-verifies `Disabled`, a clear cache-ahead latch, and both tables empty, and enters
-`Rebuilding`.
+transactions. The coordinator revalidates provider prerequisites, including SQL Server
+RCSI and server-level `nested triggers`, then clears residual cache/work state through
+supported bounded/qualified paths, exclusively locks the state row in one short
+transaction, verifies `Disabled`, a clear cache-ahead latch, and both tables empty, and
+enters `Rebuilding`. Failed prerequisite validation leaves lifecycle and tables unchanged
+and the operation may be retried after correction.
 
 With write admission still closed, it starts only the designated projector execution
 needed to drain seeded work, captures a maximum `DocumentId` boundary, and keyset-scans

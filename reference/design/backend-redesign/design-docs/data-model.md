@@ -691,15 +691,10 @@ required version advances. In `Disabled`, it performs no work-table DML. Errors 
 suppressed: any enqueue failure rolls back the complete canonical statement and
 transaction.
 
-The generated SQL Server `*_Stamp` triggers also enforce the nested-trigger prerequisite
-at the canonical mutation boundary. Before an enqueue-enabled stamp transaction updates
-`dms.Document`, the trigger requires the `sys.configurations` row named
-`nested triggers` to be readable with `value_in_use = 1` and throws otherwise. Runtime
-target validation remains necessary for projection eligibility, but it is not the
-completeness mechanism: changing the server option cannot silently let an indirect
-supported `ContentVersion` mutation commit without invoking
-`TR_Document_EnqueueProjectionWork`. In `Disabled`, this projection-specific guard does
-not reject canonical writes.
+Runtime target initialization and activation from `Disabled` validate the SQL Server
+nested-trigger prerequisite. Generated `*_Stamp` triggers do not read
+`sys.configurations`. Runtime validation and the unsupported-change boundary are owned by
+[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
 
 Trigger execution is least privilege:
 
@@ -721,8 +716,8 @@ Trigger execution is least privilege:
 
 Provider DB-apply tests and introspection must prove trigger counts/names, set-based
 multi-row behavior, lifecycle gating, complete-transaction rollback, direct-DML denial,
-missing-singleton failure, SQL Server nested-trigger fail-closed behavior, and delete
-cascade.
+missing-singleton failure, and delete cascade. Runtime and activation tests own the SQL
+Server nested-trigger prerequisite.
 
 ##### 7) `dms.DocumentCacheState` (singleton projection state)
 

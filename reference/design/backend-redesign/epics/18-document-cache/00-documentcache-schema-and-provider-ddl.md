@@ -37,9 +37,9 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
   `Disabled`/`Resetting`/`Rebuilding`/`Tracking` lifecycle, and the orthogonal
   `CacheAheadRecoveryRequired` latch.
 - Emit two PostgreSQL statement enqueue triggers/functions and one SQL Server set-based
-  enqueue trigger, with provider-equivalent least-privilege execution. Add the SQL Server
-  enqueue-enabled `*_Stamp` guard for the nested-trigger prerequisite. Reassess/remove the
-  source-scan index.
+  enqueue trigger, with provider-equivalent least-privilege execution. SQL Server
+  `*_Stamp` triggers do not inspect the server-level nested-trigger setting.
+  Reassess/remove the source-scan index.
 - Integrate the objects with create-only provisioning, DB-apply manifests, and
   introspection.
 - Update unit, snapshot, and provider-apply fixtures.
@@ -60,9 +60,6 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
   `ContentVersion` updates leave the work row and both enqueue timestamps unchanged.
 - Missing-singleton fixtures prove the enqueue trigger fails the complete canonical
   transaction rather than treating an absent `StateId = 1` row as `Disabled`.
-- SQL Server fixtures prove an enqueue-enabled indirect stamp fails the complete canonical
-  transaction when nested triggers are disabled, while `Disabled` writes remain
-  projection-independent.
 - Access tests prove canonical writers enqueue through triggers but cannot directly mutate
   work, projector writers can acknowledge, the administrative context can perform only
   the owned lifecycle/baseline/repair DML, CDC principals cannot capture work, and reruns

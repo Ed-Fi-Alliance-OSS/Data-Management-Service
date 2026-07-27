@@ -31,8 +31,8 @@ guidance.
 - Cover transactional set-based enqueue, forced enqueue failure with complete canonical
   rollback, complete-transaction deadlock retry, least-privilege trigger execution,
   direct-work-DML denial, disabled writes, projector-stopped writes, cascades, descriptors,
-  restamp, SQL Server nested-trigger fail-closed stamping, and guarded new-empty activation
-  including racing inserts.
+  restamp, SQL Server prerequisite validation, and guarded new-empty activation including
+  prerequisite failure and racing inserts.
 - Cover current source/cache/work classification, stale-candidate suppression,
   candidate-independent `S = C = W` acknowledgement, cache-ahead-only latching, blocked
   work mismatches, conditional scrub/rebuild-page repair, enqueue/ack races, delete,
@@ -68,6 +68,10 @@ guidance.
   provider-specific performance/maintenance evidence.
 - Runbooks require an explicit scrub after suspected restore or unsupported direct
   mutation before operators rely on queue-empty caught-up status.
+- Runbooks cover correction and restart after SQL Server prerequisite initialization
+  failure, correction and retry after activation-preflight failure, and state that changing
+  RCSI or `nested triggers` after successful validation is outside the supported v1
+  contract.
 - Runbooks link to the owning design sections for contracts, recovery constraints, and
   deferrals instead of copying them.
 

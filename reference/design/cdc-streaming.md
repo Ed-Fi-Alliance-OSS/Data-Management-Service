@@ -240,21 +240,24 @@ A SQL Server data store selected in `DocumentCache:Targets` must have
 `READ_COMMITTED_SNAPSHOT ON` and server-level `nested triggers` with
 `sys.configurations.value_in_use = 1`. These are projection and cache-use prerequisites,
 not global SQL Server DMS requirements: an unlisted relational-only data store may continue
-to use locking `READ COMMITTED`. DMS validates both when it resolves or replaces a target
-execution context and before classification on a newly opened target connection; it never
-changes either setting at runtime. A false or unreadable result leaves that target
-resolved but projection-ineligible and non-operational. DMS performs no queue processing,
-direct fill, cache-backed read, or cache-ahead latch update for that target and continues
-canonical relational API processing with relational reads. If lifecycle remains
-enqueue-enabled, generated `*_Stamp` triggers also reject affected canonical mutations
-when the `sys.configurations` row named `nested triggers` is unreadable or has
-`value_in_use` other than `1`, preserving transactional work completeness without making
-general API health/readiness projection-dependent. An operator must restore the
-prerequisite or use the eligible offline deactivation workflow before those writes can
-resume. The bounded supervisor
-rechecks the prerequisites so an operator can correct them and restore eligibility without
-changing target membership. `ALLOW_SNAPSHOT_ISOLATION` remains optional because v1 does
-not use an explicit SQL Server `SNAPSHOT` transaction for projection.
+to use locking `READ COMMITTED`. DMS validates both when it initializes or replaces a
+resolved target execution context and immediately before a guarded new-empty or offline
+activation transitions the target from `Disabled`; it never changes either setting. A
+false or unreadable result leaves that target resolved but projection-ineligible and
+non-operational. DMS performs no queue processing, direct fill, cache-backed read, or
+cache-ahead latch update for that target and continues canonical relational API
+processing with relational reads. After an initialization-time prerequisite failure,
+operators correct the prerequisite and restart the affected DMS/projector process to
+create and validate a new target execution context. An activation-preflight failure
+changes no lifecycle state and may be retried after correction. Activation validation is
+command-local; target-context initialization owns process-local validation.
+
+After successful validation, v1 does not continuously recheck these settings, and
+generated `*_Stamp` triggers do not query `sys.configurations`. Changing either RCSI or
+`nested triggers` after successful validation while the target is active, including its
+effects and recovery, is outside the supported v1 contract. `ALLOW_SNAPSHOT_ISOLATION`
+remains optional because v1 does not use an explicit SQL Server `SNAPSHOT` transaction for
+projection.
 
 Deployment automation selects CDC targets separately and must configure every CDC target
 on at least one designated DMS projector host as a `DocumentCache:Targets` entry. Kafka
@@ -303,7 +306,9 @@ the same physical database; independent databases on one server or PostgreSQL cl
 not block each other's administration.
 
 - Offline activation stops all writers, enters `Rebuilding`, performs bounded,
-  backpressured work seeding, drains the queue, and enters `Tracking`.
+  backpressured work seeding, drains the queue, and enters `Tracking`. Before leaving
+  `Disabled`, it revalidates provider prerequisites, including SQL Server RCSI and
+  `nested triggers`, and rejects without changing lifecycle when validation fails.
 - Offline deactivation enters `Resetting`, clears cache and work, verifies both empty,
   then enters `Disabled`.
 - Online cache rebuild atomically verifies lifecycle `Tracking` or `Rebuilding` and a
@@ -343,8 +348,9 @@ Projection exposes two independent DMS-owned signals for each explicit
 
 1. **Operational health** means the target can safely process ordinary projection work.
    It requires source resolution, validated state/work schema and enabled enqueue trigger
-   inventory, satisfied provider prerequisites, a running/unfaulted execution context, and
-   one durable observation of lifecycle `Tracking` with
+   inventory, successful provider-prerequisite validation for the current execution
+   context, a running/unfaulted execution context, and one durable observation of
+   lifecycle `Tracking` with
    `CacheAheadRecoveryRequired = false`.
 2. **Caught-up status** requires process eligibility and one provider-consistent database
    statement that observes lifecycle `Tracking`, a clear cache-ahead latch, and no row in
@@ -361,7 +367,8 @@ Status reports at least:
 
 - target resolution, provider, and opaque physical-source fingerprint;
 - validated state/work table, constraint, index, and enqueue-trigger inventory;
-- RCSI and `nested triggers` prerequisite results for SQL Server;
+- the current execution context's last RCSI and `nested triggers` validation results for
+  SQL Server;
 - lifecycle state and `CacheAheadRecoveryRequired`;
 - operational-health and caught-up fields from the current observation;
 - queue presence and oldest-work timestamp/age from indexed queries;
@@ -1450,7 +1457,8 @@ Structured logs and metrics cover:
   fallback,
 - unresolved explicit targets, retryable source-resolution failures, and the current
   opaque projection-source fingerprint,
-- SQL Server projection-target RCSI and nested-trigger validation failures and recovery.
+- SQL Server projection-target RCSI and nested-trigger initialization/activation
+  validation failures.
 
 Deployment-owned CDC status additionally covers binding presence and match, connector
 running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, last error,
@@ -1485,8 +1493,10 @@ binding-generation retirement, require recorded platform purge evidence, and lea
 unavailable rather than republishing into or recreating the affected topic.
 They distinguish the projection-scoped SQL Server RCSI and nested-trigger prerequisites
 from ordinary relational-only DMS support, show how to inspect and enable them during an
-appropriate maintenance step, state that DMS never changes them at runtime, and include
-row-version-store capacity and health monitoring.
+appropriate maintenance step, state that DMS never changes them or continuously
+revalidates an active target, and explain that changing them after successful validation
+is outside the supported v1 contract. They also include row-version-store capacity and
+health monitoring.
 They document the seven-day public-topic tombstone-retention minimum and the 24-hour
 consumer-bootstrap deadline, how a consumer captures and completes an end-offset barrier,
 how to capacity-test the largest supported retained log rather than only its live-key count,

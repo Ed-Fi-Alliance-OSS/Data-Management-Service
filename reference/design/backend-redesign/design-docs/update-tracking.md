@@ -181,11 +181,12 @@ enqueue after commit; retryable provider failures replay the complete canonical
 transaction.
 
 On SQL Server, indirect `*_Stamp` updates depend on the server-level nested-trigger
-setting. Each generated stamping trigger requires the `sys.configurations` row named
-`nested triggers` to be readable with `value_in_use = 1` before updating `dms.Document`
-in an enqueue-enabled lifecycle and throws otherwise. Runtime projection validation
-reports the same prerequisite, but only the in-transaction guard ensures an affected
-stamp cannot commit without its required work. The guard is inactive in `Disabled`.
+setting. DMS validates `sys.configurations.value_in_use = 1` when initializing a target
+execution context and before activation from `Disabled`; generated stamping triggers do
+not recheck it. Changing the setting after successful validation while lifecycle is
+enqueue-enabled is unsupported in v1 and can allow an indirect stamp to commit without its
+required work. Validation and the unsupported-change boundary are owned by
+[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
 
 Projection work is current-state materialization inventory. It is not Change Query
 history, does not change `ChangeVersion` semantics, and is not returned by any Change

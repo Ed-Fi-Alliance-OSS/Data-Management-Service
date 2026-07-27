@@ -195,15 +195,11 @@ This inventory is the explicit “what exists in the database” contract that t
   `AFTER INSERT, UPDATE` trigger over `inserted` and `deleted`.
 - Provider snapshots, manifests, introspection, and DB-apply tests MUST prove these stable
   names/counts, multi-row behavior, unchanged-`ContentVersion` filtering and timestamp
-  preservation, lifecycle gating, missing-singleton failure, error rollback, and the SQL
-  Server nested-trigger prerequisite used by indirect `*_Stamp` updates. Enqueue triggers
-  MUST read exactly the `StateId = 1` lifecycle row and MUST NOT interpret a missing or
-  unreadable/invalid lifecycle as `Disabled`. SQL Server generated `*_Stamp` triggers
-  MUST fail the complete canonical transaction before a nonempty indirect `dms.Document`
-  stamp when lifecycle is enqueue-enabled but the
-  `sys.configurations` row named `nested triggers` is unreadable or has `value_in_use`
-  other than `1`; runtime projection validation is not a substitute for this write-side
-  completeness guard.
+  preservation, lifecycle gating, missing-singleton failure, and error rollback. Enqueue
+  triggers MUST read exactly the `StateId = 1` lifecycle row and MUST NOT interpret a
+  missing or unreadable/invalid lifecycle as `Disabled`. SQL Server generated `*_Stamp`
+  triggers do not read `sys.configurations`; the nested-trigger prerequisite is validated
+  when a target execution context is initialized and before activation from `Disabled`.
 - Stamping and change-tracking triggers are emitted at the per-project / per-resource layer
   (see §3); the shared `dms.Descriptor` table receives a `*_Stamp` trigger as part of that
   pass.

@@ -441,14 +441,12 @@ fails only projection/cache use for the affected target rather than executing
 [`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
 The target additionally requires server-level `nested triggers` with
 `sys.configurations.value_in_use = 1`; otherwise indirect `*_Stamp` updates do not invoke
-the `dms.Document` enqueue trigger. Runtime validates but never changes either
-prerequisite. Generated SQL Server `*_Stamp` triggers also require the
-`sys.configurations` row named `nested triggers` to be readable with
-`value_in_use = 1` before updating `dms.Document` in `Tracking`, `Resetting`, or
-`Rebuilding`, and throw otherwise. Thus a disabled or unreadable setting makes
-projection/cache use ineligible and rejects affected canonical mutations instead of
-silently committing an untracked `ContentVersion`; it does not make ordinary canonical
-API health/readiness depend on projection.
+the `dms.Document` enqueue trigger. DMS validates but never changes either prerequisite
+when initializing a target execution context and before activation from `Disabled`.
+Generated SQL Server `*_Stamp` triggers do not recheck the server setting. Changing either
+prerequisite after successful validation while the target is active is unsupported in v1.
+The linked integration design owns validation and the unsupported-change boundary.
+Ordinary canonical API health/readiness remains independent from projection.
 
 ---
 
