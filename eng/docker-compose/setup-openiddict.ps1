@@ -495,6 +495,31 @@ function Invoke-MssqlParameterizedQuery {
     }
 }
 
+function New-MssqlCreateDatabaseStatement {
+    <#
+    .SYNOPSIS
+        Builds the create-if-absent statement for the identity-store database, escaping the name for
+        both T-SQL positions it lands in.
+    .DESCRIPTION
+        The database name comes from configuration - an env-file value, or an ambient process value that
+        wins Docker Compose interpolation precedence - so it is not a trusted literal. A name carrying a
+        single quote would terminate the N'...' literal and a name carrying ']' would terminate the
+        [...] identifier, in either case leaving the remainder to execute as statement text against the
+        master database. Doubling each delimiter (what QUOTENAME does) keeps every legal SQL Server
+        database name usable, including one with characters a bare identifier could not carry.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure statement-text factory despite the New- verb; it creates no system state, so -WhatIf/-Confirm semantics add no value.')]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName
+    )
+
+    $quotedLiteral = $DatabaseName.Replace("'", "''")
+    $quotedIdentifier = $DatabaseName.Replace("]", "]]")
+
+    return "IF DB_ID(N'$quotedLiteral') IS NULL CREATE DATABASE [$quotedIdentifier];"
+}
+
 # Main logic
 function Invoke-InitDbScripts {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function runs a sequence of database initialization scripts.')]
@@ -505,7 +530,7 @@ function Invoke-InitDbScripts {
     if ($DbType -eq "MSSQL") {
         Write-Host "Create database if not exists"
         $dbName = Resolve-EnvValue $DbName
-        Invoke-DbQuery -UseMasterDatabase "IF DB_ID(N'$dbName') IS NULL CREATE DATABASE [$dbName];"
+        Invoke-DbQuery -UseMasterDatabase (New-MssqlCreateDatabaseStatement -DatabaseName $dbName)
 
         Write-Host "Create schema if not exists: dmscs"
         Invoke-DbQuery "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'dmscs') EXEC('CREATE SCHEMA dmscs');"

@@ -211,19 +211,22 @@ public abstract class ContainerSetupBase
 
     private static async Task ExecuteResetAsync(DatabaseResetPlan plan)
     {
+        // Both providers implement IAsyncDisposable, so the connection and command are disposed
+        // asynchronously: a synchronous using would block the thread on the provider's teardown at the
+        // end of every scenario reset.
         if (plan.Provider == DatabaseResetProvider.SqlServer)
         {
-            using var connection = new SqlConnection(plan.ConnectionString);
+            await using var connection = new SqlConnection(plan.ConnectionString);
             await connection.OpenAsync();
-            using var command = new SqlCommand(plan.Sql, connection);
+            await using var command = new SqlCommand(plan.Sql, connection);
             ConfigureResetCommandTimeout(command);
             await command.ExecuteNonQueryAsync();
         }
         else
         {
-            using var connection = new NpgsqlConnection(plan.ConnectionString);
+            await using var connection = new NpgsqlConnection(plan.ConnectionString);
             await connection.OpenAsync();
-            using var command = new NpgsqlCommand(plan.Sql, connection);
+            await using var command = new NpgsqlCommand(plan.Sql, connection);
             ConfigureResetCommandTimeout(command);
             await command.ExecuteNonQueryAsync();
         }

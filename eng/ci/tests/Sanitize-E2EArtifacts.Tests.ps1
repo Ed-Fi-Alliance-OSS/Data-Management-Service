@@ -205,6 +205,65 @@ DMS_DATASTORE=mssql
         $result | Should -Match "and continuing"
     }
 
+    # A diagnostic that echoes an env-file line, a `docker inspect` fragment, or a shell command carries
+    # the value with its surrounding quotes, and the env-secret bare value class stops at whitespace: the
+    # tail of a quoted secret must not survive in a plain-text artifact, and in a markup artifact (where
+    # the class also excludes '"') the quoted value must still match. PASSWORD-suffixed names are also
+    # reached by the connection-string rule; the SECRET/TOKEN/KEY suffixes are covered only by env-secret.
+    It "redacts a double-quoted <Name> value containing spaces without leaking its tail" -ForEach @(
+        @{ Name = "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
+        @{ Name = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+        @{ Name = "SOME_SERVICE_ACCESS_TOKEN" }
+    ) {
+        $result = Get-SanitizedText -Text "$Name=""PLACEHOLDER with a TAIL"" and continuing"
+
+        $result | Should -Not -Match "PLACEHOLDER"
+        $result | Should -Not -Match "TAIL"
+        $result | Should -Match "$Name=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "and continuing"
+    }
+
+    It "redacts a single-quoted <Name> value containing spaces without leaking its tail" -ForEach @(
+        @{ Name = "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
+        @{ Name = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+        @{ Name = "SOME_SERVICE_ACCESS_TOKEN" }
+    ) {
+        $result = Get-SanitizedText -Text "$Name='PLACEHOLDER with a TAIL' and continuing"
+
+        $result | Should -Not -Match "PLACEHOLDER"
+        $result | Should -Not -Match "TAIL"
+        $result | Should -Match "$Name=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "and continuing"
+    }
+
+    It "redacts a double-quoted env-style secret inside single-line TRX markup without consuming the closing tag" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>DMS_CONFIG_IDENTITY_CLIENT_SECRET="PLACEHOLDER with a TAIL"</StdOut></Output>'
+
+        $result | Should -Not -Match "PLACEHOLDER"
+        $result | Should -Not -Match "TAIL"
+        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match ([regex]::Escape("</StdOut></Output>"))
+        { [xml]$result } | Should -Not -Throw
+    }
+
+    It "redacts an XML-escaped quoted env-style secret as it appears inside a TRX" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output>DMS_CONFIG_DATABASE_ENCRYPTION_KEY=&quot;PLACEHOLDER with a TAIL&quot;</Output>'
+
+        $result | Should -Not -Match "PLACEHOLDER"
+        $result | Should -Not -Match "TAIL"
+        $result | Should -Match "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match ([regex]::Escape("</Output>"))
+    }
+
+    It "redacts an unterminated-quote env-style secret in a plain-text artifact" {
+        # No closing delimiter, so the quoted alternatives cannot match; the bare class must still take
+        # the whole token (leading quote included) rather than leaving the value in the artifact.
+        $result = Get-SanitizedText -Text 'SOME_SERVICE_ACCESS_TOKEN="PLACEHOLDERUNTERMINATED'
+
+        $result | Should -Not -Match "PLACEHOLDERUNTERMINATED"
+        $result | Should -Match "SOME_SERVICE_ACCESS_TOKEN=\*\*\*REDACTED\*\*\*"
+    }
+
     It "keeps a longer benign name from being partially matched as a credential name" {
         $text = "PGPASSWORDFILE_PATH=/tmp/pgpass MY_KEYSTORE_PATH=/tmp/keystore"
 

@@ -152,6 +152,43 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
     }
 
+    Context "setup-openiddict New-MssqlCreateDatabaseStatement" {
+        BeforeAll {
+            # Same AST extraction as above: the statement builder is a pure function, so it is exercised
+            # without the script's Docker/SQL orchestration.
+            $parseErrors = $null
+            $tokens = $null
+            $setupScript = Join-Path $script:dockerComposeRoot "setup-openiddict.ps1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($setupScript, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "New-MssqlCreateDatabaseStatement" }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "New-MssqlCreateDatabaseStatement was not found in setup-openiddict.ps1." }
+            . ([scriptblock]::Create($functionAst.Extent.Text))
+        }
+
+        It "creates the configured database when the name is an ordinary identifier" {
+            New-MssqlCreateDatabaseStatement -DatabaseName "edfi_configurationservice" |
+                Should -Be "IF DB_ID(N'edfi_configurationservice') IS NULL CREATE DATABASE [edfi_configurationservice];"
+        }
+
+        It "doubles a single quote so the name cannot terminate the N'...' literal" {
+            # The name is configuration-supplied (env file, or an ambient value that wins Compose
+            # precedence), so an unescaped quote would end the literal and leave the remainder to run as
+            # statement text against master.
+            New-MssqlCreateDatabaseStatement -DatabaseName "db'; DROP DATABASE [edfi_datamanagementservice]; --" |
+                Should -Be "IF DB_ID(N'db''; DROP DATABASE [edfi_datamanagementservice]; --') IS NULL CREATE DATABASE [db'; DROP DATABASE [edfi_datamanagementservice]]; --];"
+        }
+
+        It "doubles a closing bracket so the name cannot terminate the [...] identifier" {
+            New-MssqlCreateDatabaseStatement -DatabaseName "db]; DROP DATABASE [edfi_datamanagementservice" |
+                Should -Be "IF DB_ID(N'db]; DROP DATABASE [edfi_datamanagementservice') IS NULL CREATE DATABASE [db]]; DROP DATABASE [edfi_datamanagementservice];"
+        }
+
+        It "keeps a legal name that a bare identifier could not carry" {
+            New-MssqlCreateDatabaseStatement -DatabaseName "edfi-config service" |
+                Should -Be "IF DB_ID(N'edfi-config service') IS NULL CREATE DATABASE [edfi-config service];"
+        }
+    }
+
     Context "phase wiring for the Compose-equivalent resolver" {
         # Wiring guards for the two seams that cannot be invoked without a Docker stack: the
         # published startup's inline readiness/data-store block and the standard E2E setup wrapper's

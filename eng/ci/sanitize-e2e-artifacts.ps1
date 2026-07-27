@@ -121,11 +121,20 @@ $script:RedactionRules = @(
     # text after the value, neither of which an anchored rule matches. This rule is also what covers
     # underscore-prefixed credential names (`..._CLIENT_SECRET=`): the form-credential rule's \b cannot
     # match a key boundary made of '_', which is a word character. The preceding character is captured
-    # rather than consumed so the match cannot start inside a longer name, and the value class keeps ';'
-    # and ',' (legal in a secret) while stopping at whitespace so following prose is preserved.
+    # rather than consumed so the match cannot start inside a longer name, and the bare value class keeps
+    # ';' and ',' (legal in a secret) while stopping at whitespace so following prose is preserved.
+    # A quoted value is matched by its own alternative first, because a diagnostic that echoes an env-file
+    # line, a `docker inspect` fragment, or a shell command carries the value wrapped in quotes and the
+    # bare class stops at whitespace: without these alternatives the tail of a quoted secret containing
+    # spaces survives, and in a markup artifact (where the class also excludes '"') a quoted value does
+    # not match at all. PASSWORD-suffixed names are also reached by the connection-string rule's quoted
+    # alternatives; the SECRET/TOKEN/KEY suffixes are covered only here. Each quoted alternative stays on
+    # one line so an unterminated quote cannot pair with a later line's delimiter and swallow the
+    # diagnostics in between - that shape falls through to the bare class, which takes the whole token
+    # including the leading quote.
     [pscustomobject]@{
         Name             = "env-secret"
-        Pattern          = "(?im)(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)\s*=\s*)([^\s{markup}\r\n]+)"
+        Pattern          = "(?im)(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)\s*=\s*)(&quot;(?:(?!&quot;)[^\r\n])*&quot;|""[^""\r\n]*""|'[^'\r\n]*'|[^\s{markup}\r\n]+)"
         MarkupExclusions = '"<>'
         Replacement      = "`${1}`${2}$($script:RedactionMarker)"
     },
