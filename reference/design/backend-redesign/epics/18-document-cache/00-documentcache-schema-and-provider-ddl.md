@@ -126,12 +126,26 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    Story 18-00 creates and verifies the roles, ownership, and grants. The existing
    relational path uses the writer context; 18-03/18-04 wire the projector context; 18-04
    wires administration; 18-08 reuses it; and 19-01 maps the separate CDC credential.
-2. Requires human decision: `data-model.md` explicitly permits either same-owner ownership
-   chaining or a narrowly scoped `EXECUTE AS` owner and defines no stable SQL Server
-   owner/user name. Select one execution model and the exact schema, table, trigger, and
-   execution-principal ownership plus grant inventory. 18-00 must then emit that one model
-   deterministically and assert it in snapshots, manifests, introspection, and access
-   tests; it must not accept either model at runtime.
+2. Use SQL Server same-owner ownership chaining. Create the `dms` schema with
+   `AUTHORIZATION dbo`; `dms.Document`, `dms.DocumentCacheState`,
+   `dms.DocumentProjectionWork`, and `TR_Document_EnqueueProjectionWork` inherit that
+   schema owner without object-specific ownership overrides. The trigger omits
+   `EXECUTE AS`, retains the caller context, and uses only static, schema-qualified
+   references to those same-database objects. Do not create a SQL Server enqueue user;
+   `edfi_dms_enqueue_owner` remains PostgreSQL-only.
+
+   Grant `edfi_dms_writer` its ordinary canonical DML but no direct
+   `DocumentProjectionWork` DML or `DocumentCacheState` read. Grant `PUBLIC` no access to
+   either projection-internal table. The separately assumed `edfi_dms_projector` and
+   `edfi_dms_projection_admin` users receive only their Answer 1.1 grants; their
+   permissions are not part of the enqueue trigger's execution chain.
+
+   Snapshots, manifests, introspection, and rerun validation assert the `dbo` schema
+   owner, inherited object ownership, absence of `EXECUTE AS`, and absence of forbidden
+   writer/`PUBLIC` grants. A different schema owner, an object-specific ownership
+   override, an `EXECUTE AS` clause, or a forbidden grant is drift and fails without
+   repair. Access tests prove an assumed `edfi_dms_writer` can enqueue through ordinary
+   `dms.Document` DML but cannot directly read lifecycle state or mutate projection work.
 3. Yes. Remove `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` from the desired
    model, emitted DDL, snapshots, manifests, and introspection expectations. Do not emit a
    `dms.Document(ContentVersion, DocumentId)` index. Ordinary discovery and oldest-work
