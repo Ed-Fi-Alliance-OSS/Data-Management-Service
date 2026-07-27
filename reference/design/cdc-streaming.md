@@ -246,10 +246,15 @@ activation transitions the target from `Disabled`; it never changes either setti
 false or unreadable result leaves that target resolved but projection-ineligible and
 non-operational. DMS performs no queue processing, direct fill, cache-backed read, or
 cache-ahead latch update for that target and continues canonical relational API
-processing with relational reads. After an initialization-time prerequisite failure,
-operators correct the prerequisite and restart the affected DMS/projector process to
-create and validate a new target execution context. An activation-preflight failure
-changes no lifecycle state and may be retried after correction. Activation validation is
+processing with relational reads. An initialization-time prerequisite failure is
+recoverable by correcting the prerequisite and restarting the affected DMS/projector
+process only when the observed lifecycle is `Disabled`. For any other lifecycle, restart
+alone must not restore projection health or CDC eligibility. In particular, a `Tracking`
+target may have missed indirect projection work while `nested triggers` was disabled and
+requires a writer fence plus integrity scrub or rebuild before eligibility can be
+restored. Because v1 does not provide that fence for an admitted database, the target
+remains projection- and CDC-ineligible. An activation-preflight failure changes no
+lifecycle state and may be retried after correction. Activation validation is
 command-local; target-context initialization owns process-local validation.
 
 After successful validation, v1 does not continuously recheck these settings, and
@@ -1495,8 +1500,10 @@ They distinguish the projection-scoped SQL Server RCSI and nested-trigger prereq
 from ordinary relational-only DMS support, show how to inspect and enable them during an
 appropriate maintenance step, state that DMS never changes them or continuously
 revalidates an active target, and explain that changing them after successful validation
-is outside the supported v1 contract. They also include row-version-store capacity and
-health monitoring.
+is outside the supported v1 contract. They limit initialization correction-and-restart to
+`Disabled`; an initialization failure in `Tracking` leaves projection and CDC unavailable
+because v1 has no admitted-database writer fence for the required scrub or rebuild. They
+also include row-version-store capacity and health monitoring.
 They document the seven-day public-topic tombstone-retention minimum and the 24-hour
 consumer-bootstrap deadline, how a consumer captures and completes an end-offset barrier,
 how to capacity-test the largest supported retained log rather than only its live-key count,

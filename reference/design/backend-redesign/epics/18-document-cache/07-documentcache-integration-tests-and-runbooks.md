@@ -68,10 +68,11 @@ guidance.
   provider-specific performance/maintenance evidence.
 - Runbooks require an explicit scrub after suspected restore or unsupported direct
   mutation before operators rely on queue-empty caught-up status.
-- Runbooks cover correction and restart after SQL Server prerequisite initialization
-  failure, correction and retry after activation-preflight failure, and state that changing
-  RCSI or `nested triggers` after successful validation is outside the supported v1
-  contract.
+- Runbooks limit correction and restart after SQL Server prerequisite initialization
+  failure to lifecycle `Disabled`, leave a `Tracking` target projection- and
+  CDC-ineligible pending the deferred fenced integrity-recovery capability, cover
+  correction and retry after activation-preflight failure, and state that changing RCSI or
+  `nested triggers` after successful validation is outside the supported v1 contract.
 - Runbooks link to the owning design sections for contracts, recovery constraints, and
   deferrals instead of copying them.
 

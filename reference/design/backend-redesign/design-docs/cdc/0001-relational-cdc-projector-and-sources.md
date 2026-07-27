@@ -441,12 +441,18 @@ additionally requires RCSI and
 makes projection/cache use ineligible without changing the server setting or the health of
 the canonical relational API. V1 validates these settings when initializing the target
 execution context and before activation from `Disabled`, but does not continuously
-revalidate an active target. After an initialization-time failure, operators correct the
-prerequisite and restart the affected DMS/projector process. An activation-preflight
-failure changes no lifecycle state and may be retried after correction. Activation
-validation is command-local; target-context initialization owns process-local validation.
-Changing either prerequisite after successful validation while the target is active,
-including its effects and recovery, is outside the supported v1 contract.
+revalidate an active target. The correction-and-restart workflow after an
+initialization-time failure is supported only when the observed lifecycle is `Disabled`.
+For any other lifecycle, restart alone must not restore projection health or CDC
+eligibility. A
+`Tracking` target may have missed indirect projection work while `nested triggers` was
+disabled and requires a writer fence plus integrity scrub or rebuild before eligibility
+can be restored. V1 has no such fence for an admitted database, so the target remains
+projection- and CDC-ineligible. An activation-preflight failure changes no lifecycle state
+and may be retried after correction. Activation validation is command-local;
+target-context initialization owns process-local validation. Changing either prerequisite
+after successful validation while the target is active, including its effects and
+recovery, is outside the supported v1 contract.
 
 The durable operational-health observation is:
 

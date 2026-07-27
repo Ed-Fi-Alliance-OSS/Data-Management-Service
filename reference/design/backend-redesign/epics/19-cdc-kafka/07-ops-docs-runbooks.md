@@ -51,8 +51,10 @@ Publish verified operator guidance for the implemented relational CDC capability
 - Runbook commands are exercised against the supported PostgreSQL and SQL Server workflows.
 - Provider exercises cover RCSI/nested-trigger target and activation validation, guidance
   that post-validation changes to either setting are outside the supported v1 contract,
-  initialization correction-and-restart, activation correction-and-retry, restart without
-  source scan, reset/rebuild crash recovery, and work-table capture exclusion.
+  `Disabled`-only initialization correction-and-restart, continued projection/CDC
+  ineligibility for an initialization failure in `Tracking`, activation
+  correction-and-retry, restart without source scan, reset/rebuild crash recovery, and
+  work-table capture exclusion.
 - Documentation tests detect drift from the shipped configuration, status, and lifecycle
   surfaces.
 - Every behavioral, security, recovery, or compatibility statement links to its owning
