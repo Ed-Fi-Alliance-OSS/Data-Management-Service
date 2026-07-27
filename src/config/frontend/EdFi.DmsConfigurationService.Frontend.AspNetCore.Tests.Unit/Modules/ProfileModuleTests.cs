@@ -375,7 +375,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task DeleteProfile_InUse_ShouldReturnBadRequest()
+    public async Task DeleteProfile_InUse_ShouldReturnConflict()
     {
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.FailureInUse(1));
@@ -384,11 +384,21 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         actualResponse!["detail"]!
             .GetValue<string>()
             .Should()
-            .Contain("Profile is assigned to applications and cannot be deleted");
+            .Be("Profile is assigned to applications and cannot be deleted.");
+        actualResponse["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:conflict:dependent-item-exists");
+        actualResponse["title"]!.GetValue<string>().Should().Be("Dependent Item Exists");
+        actualResponse["status"]!.GetValue<int>().Should().Be(409);
+        actualResponse["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]!.AsArray().Count.Should().Be(0);
     }
 
     [Test]

@@ -149,6 +149,26 @@ public static class FailureResponse
             []
         );
 
+    public static JsonNode ForDependentItemExists(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:dependent-item-exists",
+            title: "Dependent Item Exists",
+            status: 409,
+            correlationId: correlationId,
+            []
+        );
+
+    public static JsonNode ForUnresolvedReference(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:unresolved-reference",
+            title: "Unresolved Reference",
+            status: 409,
+            correlationId: correlationId,
+            []
+        );
+
     public static JsonNode ForDataValidation(
         IEnumerable<ValidationFailure> validationFailures,
         string correlationId

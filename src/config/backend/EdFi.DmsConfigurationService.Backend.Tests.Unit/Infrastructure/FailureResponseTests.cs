@@ -111,6 +111,82 @@ public class FailureResponseTests
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
     }
 
+    [TestFixture]
+    public class Given_a_dependent_item_exists_failure
+    {
+        private const string Detail = "Profile is assigned to applications and cannot be deleted.";
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForDependentItemExists(Detail, CorrelationId);
+
+        [Test]
+        public void It_returns_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_expected_detail() => _result["detail"]?.GetValue<string>().Should().Be(Detail);
+
+        [Test]
+        public void It_has_the_dependent_item_exists_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:dependent-item-exists");
+
+        [Test]
+        public void It_has_the_dependent_item_exists_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Dependent Item Exists");
+
+        [Test]
+        public void It_has_a_status_of_409() => _result["status"]?.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_unresolved_reference_failure
+    {
+        private const string Detail = "The specified DataStore does not exist.";
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForUnresolvedReference(Detail, CorrelationId);
+
+        [Test]
+        public void It_returns_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_expected_detail() => _result["detail"]?.GetValue<string>().Should().Be(Detail);
+
+        [Test]
+        public void It_has_the_unresolved_reference_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+
+        [Test]
+        public void It_has_the_unresolved_reference_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Unresolved Reference");
+
+        [Test]
+        public void It_has_a_status_of_409() => _result["status"]?.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
     [Test]
     public void ForDataValidation_ShouldReturnCorrectJsonNode()
     {
