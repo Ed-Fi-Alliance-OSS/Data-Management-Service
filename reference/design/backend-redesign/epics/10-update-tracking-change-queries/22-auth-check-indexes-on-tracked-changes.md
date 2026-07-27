@@ -30,7 +30,19 @@ Summary of decisions against the acceptance criteria:
 
 **Catalog (AC 1-2).**
 Five scan surfaces were cataloged from the runtime SQL generators (`TrackedChangeQueryPlanner`, `TrackedChangeAuthorizationSqlEmitter`, `ReadChangesAuthorizationPlanner`, `AuthObjectDefinitions`): the `/deletes` outer query, the shared-descriptor `/deletes` (always `Discriminator IN (2 values)`), the `/keyChanges` CTE, the tracked-change arms of the four `*IncludingDeletes` views (equality probes of five `tracked_changes_edfi` association tables on every people-strategy request, the highest-frequency surface), and the `dms.Descriptor` identity probes.
-All six strategies resolve to equality probes on `Old*` columns except `NamespaceBased` (prefix `LIKE`).
+Per-strategy shapes (subjects AND within a strategy, strategies OR across, `NamespaceBased` AND-ed with the relationship OR-group):
+
+| Strategy | Direction | Subjects | View probed by the predicate | Tracked `Old*` column probed | Index disposition |
+|---|---|---|---|---|---|
+| `NoFurtherAuthorizationRequired` | n/a | none | none | none (window + tombstone filters only) | PK on `ChangeVersion` suffices |
+| `RelationshipsWithEdOrgsOnly` | Normal | one per EdOrg securable | `auth.EducationOrganizationIdToEducationOrganizationId` (subject `TargetEducationOrganizationId`, claim `SourceEducationOrganizationId`), OR-ed with a direct `= ANY(claims)` arm | `Old<EdOrg canonical column>`, e.g. `OldSchoolId_Unified` | Tier 1 where it leads a PA covering index; otherwise deferred |
+| `RelationshipsWithEdOrgsOnlyInverted` | Inverted | one per EdOrg securable | same view with subject/claim columns swapped | same | same |
+| `RelationshipsWithEdOrgsAndPeopleIncludingDeletes` | Normal | EdOrg AND Student AND Contact AND Staff securables | hierarchy view plus `...StudentDocumentIdIncludingDeletes`, `...ContactDocumentIdIncludingDeletes`, `...StaffDocumentIdIncludingDeletes` | EdOrg column plus one `Old<person>_DocumentId` per person path | view arms served by Tier 1; outer columns deferred |
+| `RelationshipsWithStudentsOnlyIncludingDeletes` | Normal | Student securables | `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes` | `Old<path>_Student_DocumentId` (self-identity `OldStudent_DocumentId` on Student) | view arm served by Tier 1; outer column deferred |
+| `RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes` | Normal | Student securables | `auth.EducationOrganizationIdToStudentDocumentIdDeletedResponsibility` | same shape | same |
+| `NamespaceBased` | n/a | resolved namespace column | none (prefix `LIKE` against token prefixes; `LIKE ANY(@array)` on PostgreSQL, OR-chain on SQL Server) | `OldNamespace` (per-resource), or shared-descriptor `OldNamespace` behind the `Discriminator` filter | shared table served by Tier-1 `(Discriminator, ChangeVersion)`; per-resource deferred pending predicate-shape + operator-class work |
+
+All probes are equality except the namespace prefix `LIKE`; on the shared descriptor table every shape is preceded by the `Discriminator IN (2 values)` filter, which is why `Discriminator` leads the Tier-1 index there.
 Because strategies OR-combine and subjects AND-combine, single-column indexes are the right granularity.
 
 **Derivation (AC 3-4).**
@@ -39,6 +51,7 @@ The AC's "extend `DeriveIndexInventoryPass`" is honored in spirit, not literally
 
 **Benefit vs write cost (AC 5), measured on PostgreSQL 16.8 with golden-faithful DDL and planner-exact queries at 2M/10M tombstones.**
 Adopted (Tier 1): the five tracked PrimaryAssociation covering indexes plus the shared-descriptor `(Discriminator, ChangeVersion)` index; measured 3.5-10x on `*IncludingDeletes` view evaluation, 1.5-10x on descriptor `/deletes`, 3x on `/keyChanges` and single-school `/deletes`.
+One bounded read-side regression is known, disclosed in the design doc, and accepted: narrow-window `/deletes` against the five PA resources themselves can flip anti-join shape on PostgreSQL (0.5s to 2.5s at 10M rows, reproducible under forward and reverse controls); same root cause as the Tier-2 deferral, expected to be removed by the subject pre-resolution story.
 Deferred (Tier 2): per-resource securable/person/namespace outer-predicate indexes; PostgreSQL's default-200 distinct estimate for the `UNION` views' output makes them plan hazards (reproducible regressions up to 18x on `/keyChanges`), until a runtime query-shape change exposes real subject-set cardinalities.
 Write amplification: ~1 µs/row on bulk tombstone inserts (+69% relative on an index-light table), covering-index storage ~30% of table size; only bulk delete/key-change workloads notice.
 

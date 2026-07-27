@@ -1588,7 +1588,7 @@ For each of the five PrimaryAssociation resources, one `DbIndexKind.Authorizatio
 | `StaffEducationOrganizationEmploymentAssociation` | `OldEducationOrganization_EducationOrganizationId` | `OldStaff_DocumentId` |
 | `StudentEducationOrganizationResponsibilityAssociation` | `OldEducationOrganization_EducationOrganizationId` | `OldStudent_DocumentId` |
 
-These are the tracked-side mirror of the five live PrimaryAssociation covering indexes and make the tracked-change arms of every `*IncludingDeletes` view an index-only scan.
+These are the tracked-side mirror of the five live PrimaryAssociation covering indexes and make the tracked-change arms of every `*IncludingDeletes` view servable from the index alone (index-only capable on PostgreSQL, subject to visibility-map coverage; a covering seek without lookups on SQL Server).
 Names follow the standard `_Auth` authorization-index convention.
 Gating is per table (the tracked table must be present in the inventory and carry both mapped columns), deliberately not the all-five gating the `*IncludingDeletes` views use: an index without its view is harmless, and the views degrade gracefully without indexes.
 
@@ -1602,13 +1602,18 @@ Write cost is bounded by design: tracked-change rows are inserted only on delete
 Measured on PostgreSQL (DMS-1185), the emitted indexes add roughly one microsecond per row to bulk tombstone inserts (+69% relative on an index-light table, trivial absolute), with covering-index storage around 30% of table size.
 Workloads dominated by bulk deletes or cascading key changes (year-end purges, delete-and-reload resyncs) are the only ones that see meaningful overhead.
 
+One bounded read-side regression is known and accepted: with the tracked PA covering index present, PostgreSQL can flip narrow-`ChangeVersion`-window `/deletes` requests against the five PrimaryAssociation resources themselves from a hash anti-join to a join-filter nested loop (measured 0.5s to 2.5s at 10M tombstones, reproducible under forward and reverse controls).
+The root cause is the same `UNION`-view cardinality misestimate that defers the per-resource indexes below, so the subject pre-resolution work is expected to remove it; until then the regression is bounded to that request shape and accepted because the view-arm wins apply to every people-strategy request on every resource.
+
 ##### Per-resource securable-element indexes are deferred
 
 Indexes on the outer `ReadChanges` predicate columns of per-resource tracked-change tables (EducationOrganization securable columns, person `Old*_DocumentId` columns, and namespace columns) are deliberately not emitted yet.
 DMS-1185 benchmarks showed they are a planner hazard on PostgreSQL as long as the authorization predicate is `IN (SELECT ... FROM <UNION view>)`: PostgreSQL estimates the views' deduplicated output at the default 200 distinct rows (measured actuals 20k-80k), and the resulting misestimates flip plans to per-row nested loops and join-filter anti-joins, with measured regressions up to 18x on `/keyChanges` at 10M tombstones.
 The prerequisite is a runtime query-shape change that exposes real subject-set cardinalities to the planner (for example, resolving the claim's person and EdOrg subject sets before composing the main query).
-Once that lands, the same derivation pass gains the per-resource rules; their inputs already exist on the inventory (`TrackedChangeColumnInfo.Origin` securable-element flag with `Role = Scalar`, `Role = PersonDocumentId`), so no new contracts are required.
-Related PostgreSQL caveat, tracked separately: under non-C collations a plain B-tree never uses a prefix `LIKE` as an index boundary, which already limits the live-side `IX_*_Namespace_Auth` indexes to full-index-scan-plus-filter behavior; namespace indexes need an operator-class decision (`varchar_pattern_ops`) before they are worth emitting on either side.
+Once that lands, the same derivation pass gains the per-resource rules; no new inventory records are required.
+Person columns are selected by `Role = PersonDocumentId`; EdOrg and namespace columns both surface as `TrackedChangeColumnInfo.Origin` securable-element flag with `Role = Scalar`, so the pass must distinguish them by cross-referencing `SourceJsonPath` against the resource's `SecurableElements.Namespace` paths (and descriptor namespace metadata for shared-descriptor resources) - the same rule the runtime planner applies in `ReadChangesAuthorizationPlanner.ResolveTrackedNamespaceColumn`, preserving the both-sides-agree contract.
+Related PostgreSQL caveat, tracked separately: the production namespace predicate is a parameterized `LIKE ANY(@array)`, which PostgreSQL never rewrites into index boundary conditions regardless of operator class, and under non-C collations even a single constant-pattern prefix `LIKE` needs `varchar_pattern_ops` to seek; the live-side `IX_*_Namespace_Auth` indexes therefore run as full-index-scan-plus-filter today.
+Namespace indexes are not worth emitting on either side until both the predicate shape and the index operator class are addressed together.
 
 ### Authorization
 
@@ -1819,7 +1824,7 @@ For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>
 
 Descriptor `/deletes` uses the same conceptual anti-join, but it probes `dms.Descriptor` by `(Discriminator, CodeValue, Namespace)`. DMS will not add a separate descriptor identity lookup index for this path.
 The durable reason is not that descriptor deletes are rare: the same probe shape also runs per tombstone row for every resource `/deletes` whose identity includes a descriptor reference.
-It is that `dms.Descriptor` is small and every probe leads with `Discriminator`, so the existing `Discriminator`-leading access paths (`IX_Descriptor_Discriminator_ContentVersion`, and `UX_Descriptor_Uri_Discriminator` for Uri-shaped probes) already bound the probe cost.
+It is that `dms.Descriptor` is small and every probe leads with `Discriminator`, so the existing `Discriminator`-leading index `IX_Descriptor_Discriminator_ContentVersion` already bounds the probe cost (`UX_Descriptor_Uri_Discriminator` leads on `Uri` and does not serve this probe).
 DMS-1185 measured this at 10M tracked rows: a dedicated `(Discriminator, Namespace, CodeValue)` index produced no observable improvement over the existing paths.
 Revisit only if `dms.Descriptor` grows by orders of magnitude or loses its `Discriminator`-leading indexes.
 

@@ -11,6 +11,7 @@ Implement the Tier-1 index set decided by spike DMS-1185 and specified normative
 
 These indexes back the tracked-change arms of the four `*IncludingDeletes` authorization views (evaluated on every people-strategy `/deletes` and `/keyChanges` request for any resource) and the `Discriminator` filter every descriptor `/deletes` applies to the shared tracked-change table.
 Measured improvements on PostgreSQL at 10M tombstones: 3.5-10x on view evaluation, 1.5-10x on descriptor `/deletes`, 3x on `/keyChanges` and single-school `/deletes`, at ~1 µs/row bulk-insert overhead.
+One bounded regression is known, accepted, and disclosed in `change-queries.md` § "Indexes on the `tracked_changes*` tables" (narrow-window `/deletes` on the PA resources); the spike's measurements are PostgreSQL-only, so this story also owns producing the SQL Server evidence.
 
 Per-resource securable-element indexes are explicitly out of scope (deferred pending the runtime query-shape change; see the follow-on subject-preresolution story).
 
@@ -28,3 +29,5 @@ Per-resource securable-element indexes are explicitly out of scope (deferred pen
 - Unit tests (`DeriveTrackedChangeIndexInventoryPassTests`, using `CommonInventoryTestSchemaBuilder`): PA table present/absent, missing mapped column under strict (throws) and default (skips), shared-descriptor emission, no per-resource emission, deterministic ordering, and identifier-shortening interplay for long tracked-change table names.
 - Golden regeneration (`UPDATE_GOLDENS=1`, full suite): `Fixtures/authoritative/{sample,ds-5.2,ds-5.2-tpdm}` (pgsql.sql, mssql.sql, ddl.manifest.json, relational-model manifests), `Backend.Ddl.Tests.Unit/Fixtures/ddl-emission` including a new focused tracked-change-index case, `Backend.IntegrationFixtures`, and `RelationalModel.Tests.Unit` fixture families.
 - `Backend.{Postgresql,Mssql}.Tests.Integration` generated-DDL authoritative smoke tests pass with the new indexes.
+- SQL Server A/B evidence for the Tier-1 set, using the spike's benchmark shapes translated to T-SQL: record seek-vs-scan plan shapes for `*IncludingDeletes` view evaluation and descriptor `/deletes`, and measure bulk tombstone insert overhead and index storage, completing the spike's cost quantification on the second dialect. Any regression found is triaged before the indexes ship on SQL Server.
+- PostgreSQL verification that the known bounded narrow-window `/deletes` regression on the PA resources (disclosed in `change-queries.md` § "Indexes on the `tracked_changes*` tables") stays bounded with the shipped index set; record the measurement.
