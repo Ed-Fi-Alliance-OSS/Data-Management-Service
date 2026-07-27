@@ -6,6 +6,12 @@
 #Requires -Version 7
 
 Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
+    # Two value-class modes. Default (plain text: *.log, *.txt, *.out, *.err) redacts a bare value to
+    # its real terminator so no suffix of a secret survives. -PreserveMarkup (*.trx, *.xml) stops the
+    # same value before markup, because those artifacts are parsed by the CI test reporter and a
+    # redaction that swallowed a closing tag would publish an unparseable document. Tests that assert
+    # surviving markup pass -PreserveMarkup; tests that assert complete redaction of a markup-bearing
+    # secret do not.
     BeforeAll {
         $script:sanitizer = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../sanitize-e2e-artifacts.ps1"))
         # Dot-source to load the functions; the script's run guard prevents Invoke-ArtifactSanitization
@@ -51,7 +57,7 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
     }
 
     It "redacts an XML-escaped connection-string password as it appears inside a TRX" {
-        $result = Get-SanitizedText -Text '<Output>connect failed: Server=s;Password=&quot;Aa1!xmlSecretValue&quot;;TrustServerCertificate=true</Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output>connect failed: Server=s;Password=&quot;Aa1!xmlSecretValue&quot;;TrustServerCertificate=true</Output>'
 
         $result | Should -Not -Match "Aa1!xmlSecretValue"
         $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
@@ -73,7 +79,7 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
     }
 
     It "redacts an XML-escaped password with doubled &quot;&quot; pairs inside a TRX without leaking the tail" {
-        $result = Get-SanitizedText -Text '<Output>Server=s;Password=&quot;XFRAGA; space &quot;&quot;XFRAGB&quot;&quot; XFRAGC&quot;;TrustServerCertificate=true</Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output>Server=s;Password=&quot;XFRAGA; space &quot;&quot;XFRAGB&quot;&quot; XFRAGC&quot;;TrustServerCertificate=true</Output>'
 
         $result | Should -Not -Match "XFRAGA"
         $result | Should -Not -Match "XFRAGB"
@@ -209,7 +215,7 @@ DMS_DATASTORE=mssql
         # The bare (unquoted) value runs to the ';' terminator or end of line. In a single-line TRX the
         # element body is followed immediately by the closing tag, so the value must stop at '<' or the
         # sanitized artifact is malformed XML and the test reporter cannot parse it.
-        $result = Get-SanitizedText -Text '<Output><StdErr>login failed for Server=dms-mssql,1433;Password=Aa1!TrxBareSecret</StdErr></Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdErr>login failed for Server=dms-mssql,1433;Password=Aa1!TrxBareSecret</StdErr></Output>'
 
         $result | Should -Not -Match "Aa1!TrxBareSecret"
         $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
@@ -217,7 +223,7 @@ DMS_DATASTORE=mssql
     }
 
     It "redacts a form-encoded credential inside single-line TRX markup without consuming the closing tag" {
-        $result = Get-SanitizedText -Text '<Output><StdOut>token request: grant_type=client_credentials&client_secret=Aa1!TrxFormSecret</StdOut></Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>token request: grant_type=client_credentials&client_secret=Aa1!TrxFormSecret</StdOut></Output>'
 
         $result | Should -Not -Match "Aa1!TrxFormSecret"
         $result | Should -Match "client_secret=\*\*\*REDACTED\*\*\*"
@@ -226,7 +232,7 @@ DMS_DATASTORE=mssql
     }
 
     It "redacts an Authorization header inside single-line TRX markup without consuming the closing tag" {
-        $result = Get-SanitizedText -Text '<Output><StdOut>Authorization: Bearer eyJhbGciTrxHeaderToken.payload.signature</StdOut></Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>Authorization: Bearer eyJhbGciTrxHeaderToken.payload.signature</StdOut></Output>'
 
         $result | Should -Not -Match "eyJhbGciTrxHeaderToken"
         $result | Should -Match "Authorization: Bearer \*\*\*REDACTED\*\*\*"
@@ -234,11 +240,83 @@ DMS_DATASTORE=mssql
     }
 
     It "redacts a secret inside a single-line TRX attribute without consuming the closing attribute quote" {
-        $result = Get-SanitizedText -Text '<UnitTestResult testName="It reports MSSQL_SA_PASSWORD=Aa1!TrxAttrSecret" outcome="Failed" />'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<UnitTestResult testName="It reports MSSQL_SA_PASSWORD=Aa1!TrxAttrSecret" outcome="Failed" />'
 
         $result | Should -Not -Match "Aa1!TrxAttrSecret"
         $result | Should -Match "MSSQL_SA_PASSWORD=\*\*\*REDACTED\*\*\*"
         $result | Should -Match ([regex]::Escape('" outcome="Failed" />'))
+    }
+
+    It "redacts XML-escaped JSON credential properties inside a TRX output block" {
+        # A scenario log that echoes a JSON credential body into stdout reaches the TRX with its quotes
+        # escaped as &quot;, which the literal-quote JSON rule cannot see, so the value was published.
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>{&quot;clientId&quot;: &quot;svc-1&quot;, &quot;clientSecret&quot;: &quot;XJFRAGA&quot;, &quot;password&quot;: &quot;XJFRAGB&quot;}</StdOut></Output>'
+
+        $result | Should -Not -Match "XJFRAGA"
+        $result | Should -Not -Match "XJFRAGB"
+        $result | Should -Match ([regex]::Escape("&quot;clientId&quot;: &quot;svc-1&quot;"))
+        $result | Should -Match ([regex]::Escape("</StdOut></Output>"))
+    }
+
+    It "redacts a JSON credential value containing a JSON-escaped quote without leaking the tail" {
+        # JSON escapes an embedded quote as \"; a value class that stops at the first quote character
+        # ends the match inside the secret and leaves the remainder in the artifact.
+        $result = Get-SanitizedText -Text '{ "clientSecret": "JFRAGA\"JFRAGB", "tenant": "Tenant_255901" }'
+
+        $result | Should -Not -Match "JFRAGA"
+        $result | Should -Not -Match "JFRAGB"
+        $result | Should -Match ([regex]::Escape('"tenant": "Tenant_255901"'))
+    }
+
+    It "redacts an XML-escaped JSON credential value containing a JSON-escaped quote without leaking the tail" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output>{&quot;clientSecret&quot;: &quot;XEFRAGA\&quot;XEFRAGB&quot;, &quot;tenant&quot;: &quot;Tenant_255901&quot;}</Output>'
+
+        $result | Should -Not -Match "XEFRAGA"
+        $result | Should -Not -Match "XEFRAGB"
+        $result | Should -Match ([regex]::Escape("&quot;tenant&quot;: &quot;Tenant_255901&quot;"))
+        $result | Should -Match ([regex]::Escape("</Output>"))
+    }
+
+    # Plain-text artifacts (*.log, *.txt, *.out, *.err) are not parsed as markup, so a value carrying
+    # '<' or '>' must still be redacted to its real terminator. Stopping at the markup character there
+    # ends the match inside the secret and publishes its suffix.
+    It "redacts a bare connection-string password containing a markup character in a plain-text artifact" {
+        $result = Get-SanitizedText -Text "host=h;password=Aa1!<PFRAGA<PFRAGB;database=db"
+
+        $result | Should -Not -Match "PFRAGA"
+        $result | Should -Not -Match "PFRAGB"
+        $result | Should -Match "password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "database=db"
+    }
+
+    It "redacts a form-encoded credential containing markup characters in a plain-text artifact" {
+        $result = Get-SanitizedText -Text "grant_type=client_credentials&client_id=CMSReadOnlyAccess&client_secret=Aa1!<FFRAGA>FFRAGB"
+
+        $result | Should -Not -Match "FFRAGA"
+        $result | Should -Not -Match "FFRAGB"
+        $result | Should -Match "client_secret=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "client_id=CMSReadOnlyAccess"
+    }
+
+    It "redacts an Authorization header token containing a markup character in a plain-text artifact" {
+        $result = Get-SanitizedText -Text "Authorization: Bearer eyJhbGci<HFRAGA<HFRAGB"
+
+        $result | Should -Not -Match "HFRAGA"
+        $result | Should -Not -Match "HFRAGB"
+        $result | Should -Match "Authorization: Bearer \*\*\*REDACTED\*\*\*"
+    }
+
+    It "redacts an environment-style secret containing markup characters in a plain-text artifact" {
+        # A SECRET-suffixed name, which only the env-secret rule covers: its value stops at whitespace,
+        # so the prose after it is preserved while the markup characters inside the value are not a
+        # terminator. (A PASSWORD-suffixed name is instead claimed by the connection-string rule, whose
+        # bare value deliberately runs past spaces to the ';' terminator.)
+        $result = Get-SanitizedText -Text "starting stack with DMS_CONFIG_IDENTITY_CLIENT_SECRET=Aa1!<EFRAGA>EFRAGB and continuing"
+
+        $result | Should -Not -Match "EFRAGA"
+        $result | Should -Not -Match "EFRAGB"
+        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "and continuing"
     }
 
     It "redacts the ConnectionStrings__MssqlAdmin secret written to GITHUB_ENV" {
@@ -311,6 +389,29 @@ Describe "sanitize-e2e-artifacts Invoke-ArtifactSanitization (DMS-1284)" {
 
         $content = Get-Content -LiteralPath $logFile -Raw
         $content | Should -Not -Match "leakedValue123"
+        $content | Should -Match "host=dms-mssql"
+    }
+
+    It "keeps a .trx artifact parseable by stopping the redaction before the closing tag" {
+        $trxFile = Join-Path $TestDrive "results.trx"
+        Set-Content -LiteralPath $trxFile -Value '<Output><StdErr>login failed for Server=s;Password=Aa1!TrxFileSecret</StdErr></Output>' -NoNewline
+
+        Invoke-ArtifactSanitization -Path $trxFile
+
+        $content = Get-Content -LiteralPath $trxFile -Raw
+        $content | Should -Not -Match "Aa1!TrxFileSecret"
+        { [xml]$content } | Should -Not -Throw
+    }
+
+    It "redacts a markup-bearing secret in a plain-text log through its terminator" {
+        $logFile = Join-Path $TestDrive "markup-bearing-secret.log"
+        Set-Content -LiteralPath $logFile -Value "connecting Password=Aa1!<LFRAGA<LFRAGB;host=dms-mssql" -NoNewline
+
+        Invoke-ArtifactSanitization -Path $logFile
+
+        $content = Get-Content -LiteralPath $logFile -Raw
+        $content | Should -Not -Match "LFRAGA"
+        $content | Should -Not -Match "LFRAGB"
         $content | Should -Match "host=dms-mssql"
     }
 

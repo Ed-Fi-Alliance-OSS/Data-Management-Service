@@ -20,8 +20,14 @@
     The compose projects are the sole authority for which containers, networks, and volumes are
     removed; this module never enumerates or removes resources by dangling state, by
     container-name pattern, by unprefixed volume name, or by removing the shared external `dms`
-    network. The only removals outside the compose projects are the two known locally-built images,
-    matched by their exact repository names so published and unrelated images are never touched.
+    network. The only removals outside the compose projects are the staged `.bootstrap` workspace
+    and the two known locally-built images, matched by their exact repository names so published and
+    unrelated images are never touched.
+
+    The `.bootstrap` workspace is shared by both compose projects and bind-mounted into the DMS
+    services, so it is removed by this module once - after every `down` has succeeded - rather than
+    by each primitive's -RemoveBootstrap after its own project. A failed `down` leaves it in place
+    for the still-running stack and for the retry.
 
     Parameters are forwarded to the primitives by name (hashtable splatting), so switches such as
     -d and -v bind as switches rather than positional argument strings.
@@ -79,25 +85,29 @@ function Get-E2ETeardownPlan {
     }
 
     # Named parameters for the project-scoped teardown primitives. Splatted as a hashtable so
-    # -d / -v / -RemoveBootstrap bind as switches. -RemoveBootstrap clears the .bootstrap
-    # workspace only after a successful down (the primitive gates it), so a subsequent setup
-    # does not trip fingerprint-mismatch fail-fast.
+    # -d / -v / -RemoveBootstrap bind as switches. -RemoveBootstrap is deliberately off: the
+    # .bootstrap workspace is shared by every compose project and bind-mounted into the DMS
+    # services, so a primitive that removed it after its own down would take it away from a project
+    # that is still running. Invoke-E2EEngineAwareTeardown removes it once, after every down.
     $startParameters = @{
         d               = $true
         v               = $true
         DatabaseEngine  = $DatabaseEngine
         EnvironmentFile = $environmentFilePath
-        RemoveBootstrap = $true
+        RemoveBootstrap = $false
     }
 
     [pscustomobject]@{
-        DatabaseEngine       = $DatabaseEngine
-        ComposeRoot          = $resolvedComposeRoot
-        EnvironmentFilePath  = $environmentFilePath
+        DatabaseEngine         = $DatabaseEngine
+        ComposeRoot            = $resolvedComposeRoot
+        EnvironmentFilePath    = $environmentFilePath
+        # The staged workspace the bootstrap scripts write next to the compose files, shared by both
+        # compose projects and removed once every project is down.
+        BootstrapWorkspacePath = [System.IO.Path]::GetFullPath((Join-Path $resolvedComposeRoot ".bootstrap"))
         # Every compose project is torn down with the same engine, environment file, and switches.
         # Each step gets its own parameter copy so a caller inspecting or adjusting one step cannot
         # silently change another.
-        TeardownSteps        = @(
+        TeardownSteps          = @(
             foreach ($primitiveScript in $script:TeardownPrimitiveScripts) {
                 [pscustomobject]@{
                     StartScript     = Join-Path $resolvedComposeRoot $primitiveScript
@@ -105,7 +115,7 @@ function Get-E2ETeardownPlan {
                 }
             }
         )
-        KnownLocalImageNames = $script:KnownLocalImageNames
+        KnownLocalImageNames   = $script:KnownLocalImageNames
     }
 }
 
@@ -130,6 +140,27 @@ function Invoke-ComposeProjectTeardown {
     if ($LASTEXITCODE -ne 0) {
         $primitiveName = [System.IO.Path]::GetFileName($StartScript)
         throw "Engine-aware teardown failed: $primitiveName exited with code $LASTEXITCODE."
+    }
+}
+
+function Remove-E2EBootstrapWorkspace {
+    <#
+    .SYNOPSIS
+        Removes the staged .bootstrap workspace, if present, so a subsequent setup does not trip
+        fingerprint-mismatch fail-fast. Only safe once every compose project is down: the DMS services
+        bind-mount the workspace, so a still-running stack must keep it.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
+    param(
+        [Parameter(Mandatory)]
+        [string] $BootstrapWorkspacePath
+    )
+
+    if ((Test-Path -LiteralPath $BootstrapWorkspacePath) -and
+        $PSCmdlet.ShouldProcess($BootstrapWorkspacePath, "Remove staged bootstrap workspace")) {
+        # Remove-Item is non-terminating by default; promote to a terminating error so a failed cleanup
+        # cannot leave a stale manifest behind for the next setup to pick up.
+        Remove-Item -LiteralPath $BootstrapWorkspacePath -Recurse -Force -ErrorAction Stop
     }
 }
 
@@ -195,6 +226,12 @@ function Invoke-E2EEngineAwareTeardown {
         throw ($teardownFailures -join [System.Environment]::NewLine)
     }
 
+    # Every project is down, so nothing bind-mounts the shared .bootstrap workspace any more. Removing
+    # it here rather than through a primitive's -RemoveBootstrap is what keeps one project's down from
+    # deleting the workspace another still-running project depends on, and the throw above preserves it
+    # whenever any down failed.
+    Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $plan.BootstrapWorkspacePath
+
     if (-not $SkipLocalImageRemoval) {
         foreach ($imageName in $plan.KnownLocalImageNames) {
             Remove-KnownLocalImage -ImageName $imageName
@@ -207,5 +244,6 @@ function Invoke-E2EEngineAwareTeardown {
 Export-ModuleMember -Function `
     Get-E2ETeardownPlan, `
     Invoke-ComposeProjectTeardown, `
+    Remove-E2EBootstrapWorkspace, `
     Remove-KnownLocalImage, `
     Invoke-E2EEngineAwareTeardown

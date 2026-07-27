@@ -39,15 +39,32 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
                 Should -Be @("start-local-dms.ps1", "start-published-dms.ps1")
         }
 
-        It "forwards the postgresql engine with -d -v -RemoveBootstrap as named switches to every project" {
+        It "forwards the postgresql engine with -d -v as named switches to every project" {
             $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
 
             foreach ($step in $plan.TeardownSteps) {
                 $step.StartParameters.d | Should -BeTrue
                 $step.StartParameters.v | Should -BeTrue
-                $step.StartParameters.RemoveBootstrap | Should -BeTrue
                 $step.StartParameters.DatabaseEngine | Should -Be "postgresql"
             }
+        }
+
+        It "keeps -RemoveBootstrap off in every project so no primitive deletes the shared workspace mid-teardown" {
+            # The .bootstrap workspace is shared by both compose projects and bind-mounted into the DMS
+            # services. A primitive that removed it after its own down would take it away from a project
+            # that is still running, so the wrapper owns the removal instead.
+            $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
+
+            foreach ($step in $plan.TeardownSteps) {
+                $step.StartParameters.RemoveBootstrap | Should -BeFalse
+            }
+        }
+
+        It "resolves the shared bootstrap workspace under the compose root" {
+            $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
+
+            $plan.BootstrapWorkspacePath |
+                Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot ".bootstrap")))
         }
 
         It "forwards the mssql engine to every project" {
@@ -135,13 +152,13 @@ exit 0
             }
         }
 
-        It "binds -d and -v as switches and forwards the mssql engine, environment file, and -RemoveBootstrap to <_>" -ForEach @("start-local-dms", "start-published-dms") {
+        It "binds -d and -v as switches and forwards the mssql engine and environment file to <_>" -ForEach @("start-local-dms", "start-published-dms") {
             Invoke-E2EEngineAwareTeardown -DatabaseEngine mssql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot -SkipLocalImageRemoval | Out-Null
 
             $bound = Get-Content -LiteralPath (Join-Path $script:composeRoot "$_.bound.json") -Raw | ConvertFrom-Json
             $bound.d | Should -BeTrue
             $bound.v | Should -BeTrue
-            $bound.RemoveBootstrap | Should -BeTrue
+            $bound.RemoveBootstrap | Should -BeFalse
             $bound.DatabaseEngine | Should -Be "mssql"
             $bound.EnvironmentFile | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot ".env.e2e")))
         }
@@ -194,7 +211,7 @@ exit 0
                 ($StartScript -match $primitivePattern) -and
                 ($StartParameters.d -eq $true) -and
                 ($StartParameters.v -eq $true) -and
-                ($StartParameters.RemoveBootstrap -eq $true) -and
+                ($StartParameters.RemoveBootstrap -eq $false) -and
                 ($StartParameters.DatabaseEngine -eq "mssql") -and
                 ($StartParameters.EnvironmentFile -match "\.env\.e2e$")
             }
@@ -218,6 +235,45 @@ exit 0
 
             Should -Invoke -ModuleName e2e-teardown Invoke-ComposeProjectTeardown -Times 1 -Exactly -ParameterFilter {
                 $StartScript -match "start-published-dms\.ps1$"
+            }
+        }
+
+        It "removes the shared bootstrap workspace after every compose project is down" {
+            $bootstrapWorkspace = Join-Path $script:composeRoot ".bootstrap"
+            New-Item -ItemType Directory -Path (Join-Path $bootstrapWorkspace "ApiSchema") -Force | Out-Null
+
+            Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot | Out-Null
+
+            Test-Path -LiteralPath $bootstrapWorkspace | Should -BeFalse
+        }
+
+        It "removes the shared bootstrap workspace once rather than once per compose project" {
+            Mock -ModuleName e2e-teardown Remove-E2EBootstrapWorkspace { }
+
+            Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot | Out-Null
+
+            Should -Invoke -ModuleName e2e-teardown Remove-E2EBootstrapWorkspace -Times 1 -Exactly
+        }
+
+        It "preserves the bootstrap workspace when a compose project's down fails" {
+            # The surviving project's DMS services still bind-mount the workspace, and the developer
+            # needs it in place to retry, so a failed down must leave it alone.
+            Mock -ModuleName e2e-teardown Invoke-ComposeProjectTeardown {
+                if ($StartScript -match "start-published-dms\.ps1$") {
+                    throw "Engine-aware teardown failed: start-published-dms.ps1 exited with code 1."
+                }
+            }
+            $bootstrapWorkspace = Join-Path $script:composeRoot ".bootstrap"
+            New-Item -ItemType Directory -Path (Join-Path $bootstrapWorkspace "ApiSchema") -Force | Out-Null
+
+            try {
+                { Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot } |
+                    Should -Throw -ExpectedMessage "*start-published-dms.ps1 exited with code 1*"
+
+                Test-Path -LiteralPath $bootstrapWorkspace | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $bootstrapWorkspace -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
