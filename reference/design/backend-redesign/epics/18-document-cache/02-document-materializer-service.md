@@ -19,8 +19,8 @@ This story is only the work package for implementing them.
 
 ## Outcome
 
-Add the reusable cache-projection materializer used by reconciliation, optional direct
-fill, and CDC fixtures.
+Add the reusable cache-projection materializer used by durable-work processing, optional
+direct fill, and CDC fixtures.
 
 ## Dependencies
 
@@ -32,6 +32,9 @@ fill, and CDC fixtures.
 - Add the materializer interface, result model, and runtime implementation.
 - Reuse compiled read plans, reconstitution, and the shared served-ETag composer.
 - Add source-coherence and result-invariant validation at the materializer boundary.
+- Accept a selected durable work item and materialize the latest canonical version required
+  by current source/work state; the selected worker-local version never overrides the
+  final current-state classification.
 - Add representative materialized-document fixtures for projection and CDC verification.
 
 ## Acceptance Evidence

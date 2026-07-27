@@ -29,8 +29,12 @@ relational read path as the correctness path.
 ## Implementation Scope
 
 - Add the provider cache-lookup adapter to the relational read pipeline.
+- Require lifecycle `Tracking`, a clear cache-ahead latch, and row-level content-version
+  equality. `Disabled`, `Resetting`, `Rebuilding`, latch, missing, and stale states all
+  use relational fallback.
 - Integrate response shaping and authorization with cached and fallback materialization.
-- Integrate optional direct fill through the shared materializer and cache writer.
+- Integrate optional direct fill through the shared materializer and atomic
+  cache-write/conditional-acknowledgement component.
 - Add cache-read and fallback metrics.
 
 ## Acceptance Evidence

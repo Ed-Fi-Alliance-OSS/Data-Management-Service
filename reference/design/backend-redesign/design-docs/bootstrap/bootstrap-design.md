@@ -535,7 +535,16 @@ prepare-dms-schema.ps1
 > `dms.educationorganizationhierarchytermslookup`, or the `to_debezium` publication. The future opt-in uses
 > deployment-owned binding state under a separate `.cdc-state` root (or an explicit persistent override), never
 > the root bootstrap manifest; DMS consumes only its explicit `DocumentCache:Targets` configuration and exposes
-> per-database projection health. Non-bootstrap local startup
+> per-database projection operational-health and caught-up status. With CDC opt-in,
+> E19-S04 owns orchestration while canonical write admission is closed: provision the
+> current cache/work/lifecycle schema, reject a nonempty canonical/cache/work database,
+> atomically create or exact-match the immutable binding, and then invoke the guarded
+> new-empty `Disabled -> Tracking` transition before any seed/API write. It configures the
+> matching DMS target, starts queue processing, waits for durable work drain, crosses the
+> provider heartbeat barrier, and rechecks caught-up status. The CDC design owns fail-closed
+> binding/lifecycle retry classification. DMS startup itself never enables tracking.
+> Mutable lifecycle, queue, binding, connector, topic, and readiness state remains outside
+> the bootstrap manifest. Non-bootstrap local startup
 > can still use the existing `SCHEMA_PACKAGES` downloader path.
 
 This reuses the existing host-side pattern already present in `eng/preflight-dms-schema-compile.ps1`: the
@@ -2332,7 +2341,7 @@ API-based seed-delivery slice (see [Companion Implementation Stories](#13-compan
 ### 11.5 Selected ApiSchema.json Drives Exact Physical DDL Shape
 
 The DDL deployed to the database is derived from the selected staged `ApiSchema.json` set for the run (see
-[Section 8.2](#82-proposed--extensions-parameter) and [Section 11.3](#113-proposed-ddl-provisioning-hook)).
+[Section 8.2](#82-how-extensions-are-selected) and [Section 11.3](#113-proposed-ddl-provisioning-hook)).
 Under this strong DMS-916 reading, selecting different extension combinations changes the required physical
 table set, not just the expected hash or runtime API surface. The separation of concerns is:
 

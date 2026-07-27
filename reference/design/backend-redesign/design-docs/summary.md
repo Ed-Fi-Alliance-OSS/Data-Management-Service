@@ -35,8 +35,10 @@ Source documents:
 - Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
-- The `DocumentCache` table is always provisioned; optional projection/read behavior and
-  relational CDC follow the authoritative
+- `DocumentCache`, `DocumentProjectionWork`, and the constrained lifecycle singleton are
+  always provisioned. Canonical transactions record coalesced work in every
+  enqueue-enabled lifecycle state; optional projection/read behavior and relational CDC
+  follow the authoritative
   configuration, lifecycle, readiness, and deployment design in
   [`cdc-streaming.md`](../../cdc-streaming.md).
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
@@ -86,8 +88,19 @@ Source documents:
     used only through the versioned opaque CDC source-fingerprint contract.
 
 - `dms.DocumentCache`
-  - Always-provisioned projection table; target configuration controls whether it is
-    populated, and read acceleration independently controls whether API reads use it.
+  - Always-provisioned projection table. Durable lifecycle controls whether work may be
+    recorded or applied; process-local target configuration selects which DMS processes
+    execute eligible work, and read acceleration independently controls whether API reads
+    may use eligible rows.
+
+- `dms.DocumentProjectionWork`
+  - Always-provisioned, transactionally maintained, coalesced requirement per changed
+    document; its oldest-work index drives fair bounded paging and no-scan caught-up
+    observations.
+
+- `dms.DocumentCacheState`
+  - Singleton constrained lifecycle (`Disabled`, `Resetting`, `Rebuilding`, `Tracking`)
+    plus the orthogonal durable `CacheAheadRecoveryRequired` latch.
 
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.

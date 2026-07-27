@@ -72,7 +72,10 @@ The new lifecycle splits startup into explicit phases:
      - fail fast on mismatch.
 5. **Initialize configured projection/CDC contexts** according to
    [Relational CDC and Document Projection](../../cdc-streaming.md). Target keys can be
-   bound after instances load; physical-source checks wait for provisioned databases.
+   bound after instances load; physical-source, lifecycle, work-schema, enqueue-trigger,
+   and provider-prerequisite checks wait for provisioned databases. Startup never changes
+   `ProjectionLifecycleState`; a `Disabled` target remains projection-unavailable until an
+   explicit deployment-owned activation.
 6. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
    - warm OIDC discovery/JWKS metadata (if configured),
    - retrieve and cache claim-set/strategy metadata used by request authorization (see `auth.md`),
@@ -89,7 +92,9 @@ becomes:
 2. Optional DB deploy (`InitializeDatabase(app)`; already present)
 3. **New**: `InitializeApiSchemas(app)` (Core)
 4. **New**: `InitializeBackendMappings(app)` (backend-specific)
-5. Initialize configured projection/CDC contexts using the authoritative design
+5. Initialize configured projection/CDC contexts using the authoritative design; resume
+   durable queued work only for lifecycle-eligible targets and perform no startup
+   source/cache full scan or implicit tracking activation
 6. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
 7. Start request routing
 

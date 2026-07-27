@@ -34,6 +34,8 @@ the published `DocumentState` transform.
 
 - Add typed connector-template inputs and validation.
 - Add PostgreSQL and SQL Server configuration renderers.
+- Render exact include lists for `Document`, `DocumentCache`, and heartbeat sources and
+  reject any connector configuration that includes `DocumentProjectionWork`.
 - Integrate binding-derived identity, provider setup, Kafka policy, transform, heartbeat,
   metrics, and source-offset settings owned by the design.
 - Add pinned-image loading, rendering, restart, and provider smoke fixtures.
@@ -42,6 +44,7 @@ the published `DocumentState` transform.
 
 - Rendering tests cover every generated and rejected configuration category in the design
   references.
+- Live connector validation confirms the work table is absent from effective capture.
 - Pinned-image tests cover transform loading, producer/partition behavior, heartbeat and
   offset visibility, and provider restart integration.
 - SQL Server image coverage includes the qualified database/runtime combination identified

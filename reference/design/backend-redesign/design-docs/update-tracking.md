@@ -154,6 +154,44 @@ Notes:
   - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
   - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).
 
+### Projection work follows every committed content stamp
+
+When `dms.DocumentCacheState.ProjectionLifecycleState` is `Tracking`, `Resetting`, or
+`Rebuilding`, the provider `dms.Document` enqueue trigger records the inserted or changed
+`ContentVersion` in `dms.DocumentProjectionWork` in the same transaction. It preserves one
+coalesced current requirement per document. In `Disabled`, it records no projection work.
+The trigger requires exactly the `StateId = 1` lifecycle row. A missing singleton or an
+unreadable/invalid lifecycle fails the canonical transaction and is never interpreted as
+`Disabled`.
+
+This rule applies to every supported path that initializes or changes `ContentVersion`:
+
+- direct root, child, and extension writes;
+- set-based `*_Stamp` trigger updates;
+- propagated reference-identity cascades;
+- descriptor writes;
+- out-of-band representation restamping; and
+- multi-document/bulk stamping.
+
+A no-op write that does not change `ContentVersion` does not enqueue. A canonical delete
+cascades any pending work. In every enqueue-enabled lifecycle state, failure to insert or
+advance the required work rolls back the complete transaction, including the content
+stamp and all associated resource/derived changes. The application never retries only the
+enqueue after commit; retryable provider failures replay the complete canonical
+transaction.
+
+On SQL Server, indirect `*_Stamp` updates depend on the server-level nested-trigger
+setting. DMS validates `sys.configurations.value_in_use = 1` when initializing a target
+execution context and before activation from `Disabled`; generated stamping triggers do
+not recheck it. Changing the setting after successful validation while lifecycle is
+enqueue-enabled is unsupported in v1 and can allow an indirect stamp to commit without its
+required work. Validation and the unsupported-change boundary are owned by
+[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
+
+Projection work is current-state materialization inventory. It is not Change Query
+history, does not change `ChangeVersion` semantics, and is not returned by any Change
+Queries endpoint.
+
 ## Serving API metadata (normative)
 
 For a document `P`:
@@ -249,6 +287,11 @@ Change Query candidate selection is defined in [change-queries.md](change-querie
 - `/availableChangeVersions` is served by `GetMaxChangeVersion` (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server).
 
 `update-tracking.md` owns the stamping contract on `dms.Document` and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
+The projection enqueue consequence of a stamp is described above; its table, trigger, and
+acknowledgement contracts are owned by
+[`data-model.md`](data-model.md#6a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
+and the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue).
 
 ## ETag preconditions (`If-Match` and `If-None-Match`)
 

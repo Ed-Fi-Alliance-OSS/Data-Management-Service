@@ -1,6 +1,6 @@
 ---
 status: proposed
-date: 2026-07-20
+date: 2026-07-24
 jira: DMS-1245
 related:
   - DMS-1246
@@ -350,23 +350,28 @@ Database cache transitions and consumer-applied non-null upserts are monotonic, 
 stream is eventually convergent rather than linearizable to the canonical source at each
 cache commit. Raw Kafka delivery is at-least-once: duplicates and replays are allowed,
 including a lower-version replay after a higher version, and consumers apply the ordering
-rule above rather than treating delivery order alone as canonical-state order. Independently,
-a projector may coherently materialize version 10, complete its final optimistic source
-check, a canonical writer may commit version 11, and the version-10 cache upsert may then
-commit and publish before reconciliation publishes version 11. The database upsert never
-lets version 10 replace an already cached version 11. A consumer that has not yet observed
-version 11 may temporarily retain version 10; this is ordinary projection lag, not a
-contract violation. V1 consciously accepts that lag so optional projection does not take a
-write-conflicting source-row lock that can delay canonical writers.
+rule above rather than treating delivery order alone as canonical-state order.
+Independently, a projector transaction may validate and write version 10 while a concurrent
+canonical writer is preparing version 11. Provider serialization can commit the version-10
+cache transaction before or after the canonical version-11 transaction while preserving
+version-11 durable work. Durable work processing subsequently publishes version 11, and
+the monotonic cache upsert never lets version 10 replace an already cached version 11. A
+consumer that has not yet observed version 11 may temporarily retain version 10; this is
+ordinary projection lag, not a contract violation. V1 consciously accepts that lag so
+optional projection does not take a write-conflicting source-row lock that can delay
+canonical writers.
 
 Consequently, a lower `contentVersion` is never an in-place correction for a higher value
-already observed on the topic. If projection health detects
-`DocumentCache.ContentVersion > Document.ContentVersion` and that higher cache value may
-have been published, v1 fences publication and keeps the cache-ahead latch set. Safe
-recovery would require a new binding generation, topic, consumer state namespace, and
-snapshot, but that baseline-replacing workflow is deferred from v1. Internal-only
-projections whose rows cannot have been observed downstream may instead clear the full cache
-and latch in one transaction and rebuild from canonical state.
+already observed on the topic. If current worker classification or an explicit integrity
+scrub detects `DocumentCache.ContentVersion > Document.ContentVersion`, it sets the
+cache-ahead latch. Projection health observes that latch; it does not discover the
+relationship through a routine scan. If the higher cache value may have been published,
+v1 fences publication and keeps the latch set. Safe recovery would require a new binding
+generation, topic, consumer state namespace, and snapshot, but that baseline-replacing
+workflow is deferred from v1. Internal-only projections whose rows cannot have been
+observed downstream may instead use the restart-safe `Resetting -> Rebuilding` recovery
+workflow to clear cache and work, clear the latch only at the rebuilt-state boundary, and
+seed fresh durable work from canonical state.
 
 ## V1 Compatibility and Corrective Republishes
 
@@ -395,16 +400,19 @@ when the corrected `StreamEtag` would differ.
 
 The out-of-band representation-restamp utility may run only while the selected data store
 is explicitly offline and all DMS replicas and external writers have been stopped outside
-the utility.
-It assigns fresh `ContentVersion` values so ordinary projection and streaming can publish
-higher-version state eventually when prior Kafka records do not require purging. It does
-not certify another exact CDC baseline. If corrected bytes remove or mask sensitive data
-that should never have been published and old records must be purged, same-topic
-republication is prohibited: the connector is fenced, consumer access is revoked, and the
-affected binding generation is destructively retired with recorded broker or platform purge
-evidence. Compaction, tombstones, and corrective upserts are not purge evidence, and CDC
-remains unavailable until the deferred new-generation bootstrap is implemented. The full
-requirements are defined in
+the utility. Publication into an existing topic requires the lifecycle-aware utility's
+`Tracking` projection/publication mode with a clear cache-ahead latch. Each restamp then
+transactionally enqueues its fresh `ContentVersion` so ordinary projection and streaming
+can publish higher-version state eventually when prior Kafka records do not require
+purging. `Disabled` canonical-only execution creates no projection work and makes no Kafka
+publication claim; `Resetting`, `Rebuilding`, and a set recovery latch are rejected. Neither
+supported mode certifies another exact CDC baseline. If corrected bytes remove or mask
+sensitive data that should never have been published and old records must be purged,
+same-topic republication is prohibited: the connector is fenced, consumer access is
+revoked, and the affected binding generation is destructively retired with recorded broker
+or platform purge evidence. Compaction, tombstones, and corrective upserts are not purge
+evidence, and CDC remains unavailable until the deferred new-generation bootstrap is
+implemented. The full requirements are defined in
 [Relational CDC and Document Projection](../../../cdc-streaming.md#offline-byte-changing-representation-correction).
 
 Changing the partition count or `partitionerAlgorithm` token is not necessarily a
@@ -453,10 +461,14 @@ configurable mapping language.
 1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
    internal heartbeat singleton for source-position progress.
 2. Inspect the original Debezium source table and operation before discarding the
-   envelope. Retain `dms.CdcHeartbeat` table operations and Debezium heartbeat records as
-   internal progress records; accept cache create, update, and snapshot/read records as
-   public upserts; accept canonical document deletes as authoritative public deletes; and
-   intentionally drop every other captured operation.
+   envelope. Retain Debezium heartbeat records as internal progress. For relational
+   records, reject every unexpected source table, including
+   `dms.DocumentProjectionWork`, which provider capture and connector include lists must
+   already exclude. Among the three recognized relational sources, retain
+   `dms.CdcHeartbeat` operations as internal progress records; accept cache create,
+   update, and snapshot/read records as public upserts; accept canonical document deletes
+   as authoritative public deletes; and intentionally drop every other recognized source
+   operation.
 3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
    `D`-format text, and use it for both upserts and authoritative tombstones.
 4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
@@ -484,14 +496,15 @@ configurable mapping language.
 
 The transform consumes schema-backed raw Debezium records and emits only one of three
 classes of result: a final public upsert or tombstone, an internal progress record, or no
-record. Expected excluded operations are dropped; a malformed retained record, unexpected
-source shape, invalid `DocumentJson`, inconsistent embedded metadata, or unsupported
-temporal logical type fails transformation rather than publishing a partial or ambiguous
-record. Because the connector pins `errors.tolerance=none`, that failure stops the connector
-task instead of skipping the record. A failed task makes combined readiness false; offset
-or lag observations cannot reclassify it as caught up. Recovery requires correcting the
-cause and restarting or replacing the connector so the retained record is processed under
-the contract. Returning `null` for an explicitly excluded operation remains normal
+record. Expected excluded operations from a recognized source are dropped. An unexpected
+source table, malformed retained record, invalid `DocumentJson`, inconsistent embedded
+metadata, or unsupported temporal logical type fails transformation rather than
+publishing a partial or ambiguous record. Because the connector pins
+`errors.tolerance=none`, that failure stops the connector task instead of skipping the
+record. A failed task makes combined readiness false; offset or lag observations cannot
+reclassify it as caught up. Recovery requires correcting the cause and restarting or
+replacing the connector so the retained record is processed under the contract. Returning
+`null` for an explicitly excluded operation on a recognized source remains normal
 transform behavior and does not use the error-tolerance path; readiness never depends on
 such a record advancing the committed source offset.
 
@@ -558,6 +571,7 @@ The public topic never exposes:
 - JSON-quoted keys or escaped `DocumentJson`,
 - internal `DocumentId`, the source-only `StreamEtag` column name, or operational
   `ComputedAt`,
+- projection-work rows or fields, lifecycle state, or the cache-ahead recovery latch,
 - Avro, Protobuf, or Schema Registry subjects,
 - legacy `EdFiDoc` or `deleted=true` shapes.
 
@@ -603,11 +617,12 @@ The public topic never exposes:
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
 - Equal-`contentVersion` records are duplicates and do not replace retained state. An
-  offline byte-changing repair uses the restamp utility and publishes higher versions
-  eventually only when old Kafka records do not require purging; this does not claim
-  another exact baseline. An incompatible-contract cutover after first-write admission is
-  deferred. A sensitive-data disclosure instead requires verified destructive retirement
-  of the affected topic generation.
+  offline byte-changing repair intended for the existing topic uses the restamp utility's
+  `Tracking` projection/publication mode and publishes higher versions eventually only when
+  old Kafka records do not require purging; this does not claim another exact baseline. An
+  incompatible-contract cutover after first-write admission is deferred. A sensitive-data
+  disclosure instead requires verified destructive retirement of the affected topic
+  generation.
 - DMS-1232 KafkaMessaging coverage must replace the shared-topic,
   `deleted=false`/`deleted=true`, and `EdFiDoc` expectations.
 
@@ -628,8 +643,8 @@ The public topic never exposes:
 | Add a projection/stream generation to v1 | Rejected for v1: every byte-changing correction advances `contentVersion`, so another database column and public ordering field are unnecessary. |
 | Establish a universal maximum from one materializer fixture | Rejected: configurable schemas and extensions make that claim unprovable; representative fixtures instead test the enforced operational boundary. |
 | Rotate the topic when only `maxRecordBytes` increases | Rejected: record capacity does not change keying, partitioning, ordering, topic identity, or the public message contract. |
-| Require strictly newer `contentVersion` for every replacement | Accepted: equal versions are duplicates, while every byte-changing correction is restamped and publishes a higher version. |
+| Require strictly newer `contentVersion` for every replacement | Accepted: equal versions are duplicates, while every byte-changing replacement published to the topic is restamped in projection/publication mode and publishes a higher version. |
 | Republish corrected bytes at the same `contentVersion` in `documents.v1` | Rejected: it makes ordinary consumers retain per-document Kafka offsets for a rare repair and weakens `contentVersion` as the sole non-null ordering value. |
-| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store; every byte-changing correction uses it to advance existing content stamps and publish higher versions eventually without certifying another exact CDC baseline. It is not a Kafka purge mechanism; sensitive-data disclosure correction requires verified destructive retirement. |
+| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store. `Tracking` projection/publication mode advances existing content stamps and enqueues higher versions for eventual publication; `Disabled` canonical-only mode makes no Kafka publication claim. Neither mode certifies another exact CDC baseline. It is not a Kafka purge mechanism; sensitive-data disclosure correction requires verified destructive retirement. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
 | Require SQL Server `time.precision.mode=isostring` in the pinned Debezium 3.6 image | Accepted for v1: it preserves the source precision in an unambiguous UTC `IsoTimestamp` and removes signed-nanosecond parsing; the required Ed-Fi `DocumentState` SMT still validates and truncates it to the existing DMS whole-second representation. |

@@ -20,9 +20,11 @@ acceptance evidence for those contracts.
 
 ## Outcome
 
-Deliver the optional document-projection capability and its supporting schema, runtime,
-verification, administrative utility, and operator documentation through the story set
-below.
+Deliver optional document projection with transactionally recorded coalesced work,
+bounded fair queue processing, atomic cache-write/acknowledgement, durable lifecycle and
+rebuild administration, relational fallback, separate operational-health/caught-up
+signals, verification, and operator documentation. Projection backlog or failure never
+gates normal canonical API routing.
 
 ## Stories
 
@@ -49,6 +51,11 @@ implementation inputs.
   copying design requirements into epic or story text.
 - The evidence owned by the stories passes in the supported provider, concurrency,
   integration, performance, and operational test layers.
+- No startup, restart, steady-state, operational-health, or caught-up path scans the full
+  canonical/cache relationship. O(N) work is limited to explicit baseline, rebuild, or
+  scrub workflows.
+- Provider evidence proves canonical mutation and required work commit/rollback together,
+  while projector downtime allows work to accumulate.
 - Operator documentation is checked against the shipped commands and status surfaces and
   links back to the owning design sections for behavior.
 

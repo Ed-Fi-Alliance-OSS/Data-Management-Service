@@ -32,7 +32,11 @@ the v1 stream.
 - Add transform and serialized-record conformance suites, including the exact fixed UTF-8
   progress-key bytes produced by `StringConverter`.
 - Add provider key/routing/ordering and broker retry/failure scenarios.
+- Prove `DocumentProjectionWork` activity emits neither public nor progress records and
+  that an unexpected work-table transform input fails the fixture.
 - Add record-size and idle-source readiness fixtures against the real connector.
+- Add initial-admission fixtures that require projection caught-up, provider barrier, and
+  a second caught-up observation in order.
 - Add the reference consumer-continuity fixture assigned to this story by the design
   traceability table.
 

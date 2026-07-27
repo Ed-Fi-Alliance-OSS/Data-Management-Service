@@ -96,9 +96,6 @@ CREATE TABLE dms.Document (
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
-
-CREATE INDEX IX_Document_ContentVersion_DocumentId
-    ON dms.Document (ContentVersion, DocumentId);
 ```
 
 **SQL Server**
@@ -131,9 +128,6 @@ CREATE TABLE dms.Document (
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
-
-CREATE INDEX IX_Document_ContentVersion_DocumentId
-    ON dms.Document (ContentVersion, DocumentId);
 ```
 
 Notes:
@@ -141,6 +135,9 @@ Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` index: descriptor paging — the only query path that filtered documents by resource type — roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §3), and every other `ResourceKeyId` filter rides a `DocumentUuid` unique probe. `FK_Document_ResourceKey` needs no referencing-side index either, because `dms.ResourceKey` rows are seeded at provisioning and never deleted or updated at runtime.
+- `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
+  projection work is paged through `dms.DocumentProjectionWork`; explicit baseline,
+  rebuild, and scrub scans use the `DocumentId` primary-key order.
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
@@ -622,22 +619,129 @@ canonical document writes, or require a `DocumentCache.DocumentUuid` index. Proj
 writer behavior is owned by the projector/source ADR; this trigger is only its physical
 database backstop.
 
-##### 7) `dms.DocumentCacheState` (singleton invariant latch)
+##### 6a) `dms.DocumentProjectionWork` (always-provisioned durable projection work)
 
-Always-provisioned singleton physical state for the cache-ahead invariant. Its runtime
-meaning is owned by the projector/source ADR.
+This table is the coalesced completeness inventory for optional `DocumentCache`
+projection. Runtime enqueue, acknowledgement, fairness, rebuild, and scrub behavior is
+owned by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle).
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DocumentProjectionWork (
+    DocumentId bigint NOT NULL,
+    RequiredContentVersion bigint NOT NULL,
+    FirstEnqueuedAt timestamp with time zone NOT NULL,
+    LastEnqueuedAt timestamp with time zone NOT NULL,
+    CONSTRAINT PK_DocumentProjectionWork PRIMARY KEY (DocumentId),
+    CONSTRAINT FK_DocumentProjectionWork_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+
+CREATE INDEX IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId
+    ON dms.DocumentProjectionWork (FirstEnqueuedAt, DocumentId);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DocumentProjectionWork (
+    DocumentId bigint NOT NULL,
+    RequiredContentVersion bigint NOT NULL,
+    FirstEnqueuedAt datetime2(7) NOT NULL,
+    LastEnqueuedAt datetime2(7) NOT NULL,
+    CONSTRAINT PK_DocumentProjectionWork PRIMARY KEY CLUSTERED (DocumentId),
+    CONSTRAINT FK_DocumentProjectionWork_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+
+CREATE INDEX IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId
+    ON dms.DocumentProjectionWork (FirstEnqueuedAt, DocumentId);
+```
+
+V1 deliberately defines no claim, lease, worker-owner, attempt-count, dead-letter, epoch,
+or baseline-cursor columns.
+
+The stable PostgreSQL trigger/function inventory is:
+
+- `TR_Document_EnqueueProjectionInsert` using
+  `TF_Document_EnqueueProjectionInsert`, an `AFTER INSERT` statement trigger with a
+  `NEW TABLE` transition relation; and
+- `TR_Document_EnqueueProjectionUpdate` using
+  `TF_Document_EnqueueProjectionUpdate`, an `AFTER UPDATE` statement trigger with
+  `OLD TABLE` and `NEW TABLE` transition relations that selects only rows whose
+  `ContentVersion` changed.
+
+The stable SQL Server inventory is one set-based
+`TR_Document_EnqueueProjectionWork` `AFTER INSERT, UPDATE` trigger over `inserted` and
+`deleted`. It enqueues every inserted row and, for updates, only rows whose
+`inserted.ContentVersion` differs from `deleted.ContentVersion`; an update that leaves
+`ContentVersion` unchanged performs no work-table DML and does not change either enqueue
+timestamp. A SQL Server projection target requires server-level `nested triggers` with
+`value_in_use = 1` so indirect resource `*_Stamp` trigger updates to `dms.Document` reach
+this trigger.
+
+Each implementation reads exactly the `StateId = 1` lifecycle row once per statement. A
+missing row or unreadable/invalid lifecycle raises an enqueue error rather than being
+treated as `Disabled`. In `Tracking`, `Resetting`, or `Rebuilding`, it upserts every
+changed document, keeps the greater current or incoming `RequiredContentVersion`,
+preserves `FirstEnqueuedAt` while work remains, and advances `LastEnqueuedAt` only when the
+required version advances. In `Disabled`, it performs no work-table DML. Errors are not
+suppressed: any enqueue failure rolls back the complete canonical statement and
+transaction.
+
+Runtime target initialization and activation from `Disabled` validate the SQL Server
+nested-trigger prerequisite. Generated `*_Stamp` triggers do not read
+`sys.configurations`. Runtime validation and the unsupported-change boundary are owned by
+[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
+
+Trigger execution is least privilege:
+
+- PostgreSQL functions are hardened `SECURITY DEFINER` functions owned by a dedicated
+  non-login projection-enqueue owner. They set a fixed safe `search_path` containing only
+  `pg_catalog` and explicitly schema-qualify every DMS object. The owner receives only the
+  state read and work-table DML needed by the trigger. `PUBLIC` receives no function
+  execution or work-table mutation rights. Canonical writer roles can cause the trigger
+  to run only through their ordinary DML on `dms.Document`; they receive no direct
+  `INSERT`, `UPDATE`, or `DELETE` grant on `dms.DocumentProjectionWork`.
+- SQL Server uses the same-owner ownership chain or a narrowly scoped `EXECUTE AS` owner
+  with equivalent rights. Canonical writer principals cannot directly mutate work.
+- The runtime projector principal can select work and conditionally acknowledge it, and
+  can perform the owned cache/latch operations. A distinct projection-administration
+  execution context has the additional work insert/update/delete and lifecycle/cache
+  clearing rights required by baseline, scrub, activation, deactivation, rebuild, and
+  recovery. CDC reader principals receive no work-table capture or DML grant. Unsupported
+  principals receive no queue-mutation grant.
+
+Provider DB-apply tests and introspection must prove trigger counts/names, set-based
+multi-row behavior, lifecycle gating, complete-transaction rollback, direct-DML denial,
+missing-singleton failure, and delete cascade. Runtime and activation tests own the SQL
+Server nested-trigger prerequisite.
+
+##### 7) `dms.DocumentCacheState` (singleton projection state)
+
+Always-provisioned singleton physical state for the projection lifecycle and orthogonal
+cache-ahead invariant. Its runtime meaning and legal transitions are owned by the
+projector/source ADR.
 
 **PostgreSQL**
 
 ```sql
 CREATE TABLE dms.DocumentCacheState (
-    StateId smallint PRIMARY KEY,
+    StateId smallint NOT NULL,
+    ProjectionLifecycleState varchar(16) NOT NULL,
     CacheAheadRecoveryRequired boolean NOT NULL,
-    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1)
+    CONSTRAINT PK_DocumentCacheState PRIMARY KEY (StateId),
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1),
+    CONSTRAINT CK_DocumentCacheState_Lifecycle CHECK (
+        ProjectionLifecycleState IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')
+    )
 );
 
-INSERT INTO dms.DocumentCacheState (StateId, CacheAheadRecoveryRequired)
-VALUES (1, false)
+INSERT INTO dms.DocumentCacheState
+    (StateId, ProjectionLifecycleState, CacheAheadRecoveryRequired)
+VALUES (1, 'Disabled', false)
 ON CONFLICT (StateId) DO NOTHING;
 ```
 
@@ -646,19 +750,36 @@ ON CONFLICT (StateId) DO NOTHING;
 ```sql
 CREATE TABLE dms.DocumentCacheState (
     StateId smallint NOT NULL,
+    ProjectionLifecycleState varchar(16) COLLATE Latin1_General_100_BIN2 NOT NULL,
     CacheAheadRecoveryRequired bit NOT NULL,
     CONSTRAINT PK_DocumentCacheState PRIMARY KEY CLUSTERED (StateId),
-    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1)
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1),
+    CONSTRAINT CK_DocumentCacheState_Lifecycle CHECK (
+        (ProjectionLifecycleState = 'Disabled' AND DATALENGTH(ProjectionLifecycleState) = 8)
+        OR (ProjectionLifecycleState = 'Resetting' AND DATALENGTH(ProjectionLifecycleState) = 9)
+        OR (ProjectionLifecycleState = 'Rebuilding' AND DATALENGTH(ProjectionLifecycleState) = 10)
+        OR (ProjectionLifecycleState = 'Tracking' AND DATALENGTH(ProjectionLifecycleState) = 8)
+    )
 );
 
 IF NOT EXISTS (SELECT 1 FROM dms.DocumentCacheState WHERE StateId = 1)
-    INSERT INTO dms.DocumentCacheState (StateId, CacheAheadRecoveryRequired) VALUES (1, 0);
+    INSERT INTO dms.DocumentCacheState
+        (StateId, ProjectionLifecycleState, CacheAheadRecoveryRequired)
+    VALUES (1, 'Disabled', 0);
 ```
 
-Provisioning creates exactly the `StateId = 1` row with the latch clear, and ordinary
-provisioning reruns never reset it. The
-[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery)
-owns all runtime interpretation and recovery behavior for this physical state.
+Provisioning creates exactly the `StateId = 1` row in `Disabled` with the latch clear.
+Ordinary provisioning reruns never change lifecycle, latch, cache, or pending work. The
+binary SQL Server collation plus explicit byte lengths makes the four ASCII lifecycle
+tokens exact even when the database default collation is case-insensitive or a comparison
+would otherwise ignore trailing spaces. Provider constraint tests reject casing variants,
+leading/trailing whitespace, empty strings, and every other unknown value. The check
+constraint validates the stored token; it does not encode the transition graph, and no
+database trigger changes lifecycle state autonomously. Serialized administrative commands
+enforce and test the supported transition edges. The
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle)
+owns the supported transitions, shared/exclusive state-row locking, administrative mutex,
+and recovery behavior.
 
 ##### 8) `dms.CdcHeartbeat` (opt-in CDC integration object)
 

@@ -32,7 +32,11 @@ coverage.
 - Update DMS-1232 fixtures and assertions to consume the relational public contract.
 - Integrate E2E setup/teardown with the explicit bootstrap CDC workflow.
 - Add topic-consumer helpers and failure diagnostics.
-- Add the API mutation, cache lifecycle, ordering, restart, and source-history scenarios
+- Drive API mutations into durable projection work and verify conditional
+  acknowledgement, cache publication, and the unchanged public record.
+- Add projector stop/restart and long-backlog recovery scenarios that resume from durable
+  work without a startup canonical/cache scan on PostgreSQL and SQL Server.
+- Add the cache lifecycle, ordering, and source-history scenarios
   assigned to this story by the design traceability table.
 - Remove legacy ignore markers after the relational lanes are stable.
 

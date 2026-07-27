@@ -22,11 +22,14 @@ This story is only the work package for implementing them.
 ## Outcome
 
 Add deployment-owned CDC state and status services that combine DMS projection
-observations with provider, Kafka, and connector observations.
+operational-health and caught-up observations with provider, Kafka, and connector
+observations.
 
 ## Dependencies
 
 - Consumes target and projection observations from 18-01 and 18-06.
+- Integrated readiness scenarios consume the atomic projection path from 18-03 and durable
+  queue processing from 18-04.
 - Consumes provider artifacts from 19-01 and connector configuration/offset shapes from
   19-02.
 - Supplies state and status behavior to 19-04.
@@ -38,6 +41,13 @@ observations with provider, Kafka, and connector observations.
 - Add guarded binding lifecycle operations used by bootstrap and teardown.
 - Add provider source-position and source-history adapters.
 - Add per-target and aggregate status evaluation with sanitized diagnostics and telemetry.
+- Consume lifecycle/latch/process eligibility as projection operational health and indexed
+  queue absence as projection caught-up status. Do not consume scan recency, exact-zero
+  relationship counts, or process-local completeness cursors.
+- Compose initial CDC admission from caught-up status, the provider heartbeat barrier, and
+  a second caught-up observation for the same source while canonical write admission is
+  closed. After admission, queue growth does not revoke CDC admission or normal API
+  routing.
 
 ## Acceptance Evidence
 
@@ -46,6 +56,8 @@ observations with provider, Kafka, and connector observations.
 - PostgreSQL and SQL Server adapter tests cover position, continuity, and failure
   classifications.
 - Status tests cover the complete design-owned readiness input matrix and aggregation.
+- Status tests distinguish projection operational failure, projection backlog, enqueue
+  failure, connector failure, continuity failure, and ordinary canonical API health.
 - API integration tests preserve the separation between deployment status and DMS request
   routing.
 

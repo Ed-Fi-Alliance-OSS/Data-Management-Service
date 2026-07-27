@@ -20,18 +20,26 @@ story is only the work package for implementing them.
 
 ## Outcome
 
-Deliver the PostgreSQL and SQL Server schema foundation consumed by DocumentCache runtime
-and CDC work.
+Deliver provider-equivalent cache, durable projection-work, lifecycle/safety state, and
+transactional enqueue schema consumed by DocumentCache runtime and CDC work.
 
 ## Dependencies
 
 - Depends on E02's DDL/provisioning infrastructure and E10's representation stamps.
-- Unblocks E18 stories 18-02 through 18-07 and the E19 database-source work.
+- Unblocks integrated durable-state validation in 18-01, E18 stories 18-02 through 18-08,
+  and the E19 database-source work.
 
 ## Implementation Scope
 
 - Update the derived relational model and both provider DDL emitters for the owned data
   model sections.
+- Add `DocumentProjectionWork`, its oldest-work index, constrained
+  `Disabled`/`Resetting`/`Rebuilding`/`Tracking` lifecycle, and the orthogonal
+  `CacheAheadRecoveryRequired` latch.
+- Emit two PostgreSQL statement enqueue triggers/functions and one SQL Server set-based
+  enqueue trigger, with provider-equivalent least-privilege execution. SQL Server
+  `*_Stamp` triggers do not inspect the server-level nested-trigger setting.
+  Reassess/remove the source-scan index.
 - Integrate the objects with create-only provisioning, DB-apply manifests, and
   introspection.
 - Update unit, snapshot, and provider-apply fixtures.
@@ -43,6 +51,19 @@ and CDC work.
   assigned to this story.
 - PostgreSQL and SQL Server DB-apply tests cover provisioning, rerun, constraint, and
   trigger behavior from the design references.
+- Lifecycle constraint tests reject casing variants, leading/trailing whitespace, and
+  unknown values under representative SQL Server database collations as well as
+  PostgreSQL.
+- Multi-row insert/update/stamp/restamp fixtures cover every lifecycle state. Forced
+  enqueue errors roll back the complete canonical transaction; disabled lifecycle records
+  no work; enqueue-enabled states coalesce current requirements; and unchanged
+  `ContentVersion` updates leave the work row and both enqueue timestamps unchanged.
+- Missing-singleton fixtures prove the enqueue trigger fails the complete canonical
+  transaction rather than treating an absent `StateId = 1` row as `Disabled`.
+- Access tests prove canonical writers enqueue through triggers but cannot directly mutate
+  work, projector writers can acknowledge, the administrative context can perform only
+  the owned lifecycle/baseline/repair DML, CDC principals cannot capture work, and reruns
+  preserve lifecycle, latch, cache, and pending work.
 - The test and documentation changes identify the design sections they verify rather than
   reproducing their tables or rules here.
 

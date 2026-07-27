@@ -30,6 +30,16 @@ Publish verified operator guidance for the implemented relational CDC capability
   troubleshooting for both providers.
 - Document the shipped topic, connector, consumer, binding-state, security, retention,
   sizing, and telemetry operations.
+- Document queue backlog/oldest work, poison failure remediation, lifecycle/configuration
+  mismatch, activation/deactivation, `Resetting`, bounded rebuild, clear-latch `Tracking`
+  admission for the explicit O(N) scrub, enqueue-failure diagnosis, and provider-specific
+  per-write/queue-drain overhead.
+- Document that current or historical CDC binding/consumer state disqualifies the simple
+  read-acceleration activation/deactivation toggle in v1, and that stopping a connector or
+  removing a runtime target is not clearing authority.
+- State that projector downtime permits canonical writes to queue work, while enqueue
+  failure rejects the complete canonical transaction. Projection status never gates
+  ordinary API routing.
 - Document only the implemented restart, recovery, containment, source-replacement, and
   destructive-retirement commands.
 - Cross-link E18 projection/restamp guidance and the design-owned deferred workflows.
@@ -39,6 +49,12 @@ Publish verified operator guidance for the implemented relational CDC capability
 ## Acceptance Evidence
 
 - Runbook commands are exercised against the supported PostgreSQL and SQL Server workflows.
+- Provider exercises cover RCSI/nested-trigger target and activation validation, guidance
+  that post-validation changes to either setting are outside the supported v1 contract,
+  `Disabled`-only initialization correction-and-restart, unsupported-incident
+  classification without a renewed-readiness guarantee for any other lifecycle,
+  activation correction-and-retry, restart without source scan, reset/rebuild crash
+  recovery, and work-table capture exclusion.
 - Documentation tests detect drift from the shipped configuration, status, and lifecycle
   surfaces.
 - Every behavioral, security, recovery, or compatibility statement links to its owning
