@@ -73,12 +73,13 @@ public class Given_DocumentReferenceLookupPlanCompiler
         lookup.SourcesInOrder[0].FkColumn.Value.Should().Be("School_DocumentId");
     }
 
-    [TestCase(SqlDialect.Pgsql, "\"", "\"")]
-    [TestCase(SqlDialect.Mssql, "[", "]")]
-    public void It_should_dedup_two_bindings_on_the_same_child_table_with_distinct_fk_columns(
+    [TestCase(SqlDialect.Pgsql, "\"", "\"", "CROSS JOIN LATERAL")]
+    [TestCase(SqlDialect.Mssql, "[", "]", "CROSS APPLY")]
+    public void It_should_collapse_two_bindings_on_the_same_child_table_into_one_unpivoted_scan(
         SqlDialect dialect,
         string openQuote,
-        string closeQuote
+        string closeQuote,
+        string rowSetJoinKeyword
     )
     {
         var model = BuildModelWithTwoChildCollectionBindings();
@@ -87,19 +88,66 @@ public class Given_DocumentReferenceLookupPlanCompiler
         lookup.Should().NotBeNull();
         var sql = lookup!.SelectByKeysetSql;
 
-        // Two bindings → two UNION branches (no DISTINCT prefix), both joined via the same
-        // child-table root locator.
-        sql.Should().Contain("UNION");
-        sql.Should().NotContain("SELECT DISTINCT ");
+        // Two bindings on one table → one scan that expands both FK columns inline, so the
+        // keyset join is emitted once rather than once per reference column.
+        sql.Should().NotContain("UNION");
+        sql.Should().Contain("SELECT DISTINCT ");
+        sql.Should()
+            .Contain(
+                $"{rowSetJoinKeyword} (VALUES (t0.{openQuote}School_DocumentId{closeQuote}), "
+                    + $"(t0.{openQuote}Sponsor_DocumentId{closeQuote})) AS v0({openQuote}DocumentId{closeQuote})"
+            );
         sql.Should()
             .Contain($"t0.{openQuote}{StudentRootLocator}{closeQuote} = k.{openQuote}DocumentId{closeQuote}");
-        sql.Should()
-            .Contain($"t1.{openQuote}{StudentRootLocator}{closeQuote} = k.{openQuote}DocumentId{closeQuote}");
+        sql.Should().NotContain("t1.");
+
+        // The null predicate must apply to the expanded value, not to a single source column,
+        // so a row contributes only its non-null references instead of being dropped entirely.
+        sql.Should().Contain($"WHERE v0.{openQuote}DocumentId{closeQuote} IS NOT NULL");
 
         lookup
             .SourcesInOrder.Select(static source => source.FkColumn.Value)
             .Should()
             .Equal("School_DocumentId", "Sponsor_DocumentId");
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"", "\"", "CROSS JOIN LATERAL")]
+    [TestCase(SqlDialect.Mssql, "[", "]", "CROSS APPLY")]
+    public void It_should_emit_one_branch_per_source_table_and_unpivot_only_multi_column_tables(
+        SqlDialect dialect,
+        string openQuote,
+        string closeQuote,
+        string rowSetJoinKeyword
+    )
+    {
+        var model = BuildModelWithRootAndTwoChildCollectionBindings();
+        var lookup = CompileLookup(model, dialect);
+
+        lookup.Should().NotBeNull();
+        var sql = lookup!.SelectByKeysetSql;
+
+        // Two source tables → exactly one UNION. The root contributes a single FK column and
+        // keeps the plain projection; the child contributes two and is expanded inline.
+        sql.Split("UNION", StringSplitOptions.None).Should().HaveCount(2);
+        sql.Should()
+            .Contain(
+                $"SELECT t0.{openQuote}Sponsor_DocumentId{closeQuote} AS {openQuote}DocumentId{closeQuote}"
+            );
+        sql.Should()
+            .Contain(
+                $"{rowSetJoinKeyword} (VALUES (t1.{openQuote}School_DocumentId{closeQuote}), "
+                    + $"(t1.{openQuote}Sponsor_DocumentId{closeQuote})) AS v1({openQuote}DocumentId{closeQuote})"
+            );
+        sql.Should().NotContain("v0(");
+
+        lookup
+            .SourcesInOrder.Select(static source => (source.Table.Name, source.FkColumn.Value))
+            .Should()
+            .Equal(
+                ("Student", "Sponsor_DocumentId"),
+                ("StudentAddress", "School_DocumentId"),
+                ("StudentAddress", "Sponsor_DocumentId")
+            );
     }
 
     [Test]
@@ -298,6 +346,47 @@ public class Given_DocumentReferenceLookupPlanCompiler
         );
     }
 
+    private static RelationalResourceModel BuildModelWithRootAndTwoChildCollectionBindings()
+    {
+        var childBindingModel = BuildModelWithTwoChildCollectionBindings();
+        var addressTable = childBindingModel.TablesInDependencyOrder[1];
+        var rootSponsorPath = new JsonPathExpression(
+            "$.sponsorReference",
+            [new JsonPathSegment.Property("sponsorReference")]
+        );
+        var rootTable = BuildStudentRootTable(
+            extraDocumentFkColumns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Sponsor_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: rootSponsorPath,
+                    TargetResource: _schoolResource
+                ),
+            ]
+        );
+
+        return childBindingModel with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable, addressTable],
+            DocumentReferenceBindings =
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: rootSponsorPath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("Sponsor_DocumentId"),
+                    TargetResource: _schoolResource,
+                    IdentityBindings: []
+                ),
+                .. childBindingModel.DocumentReferenceBindings,
+            ],
+        };
+    }
+
     private static RelationalResourceModel BuildModelWithMissingFkColumnBinding()
     {
         var model = BuildModelWithCollectionTableBinding();
@@ -338,38 +427,45 @@ public class Given_DocumentReferenceLookupPlanCompiler
         };
     }
 
-    private static DbTableModel BuildStudentRootTable() =>
-        new(
+    private static DbTableModel BuildStudentRootTable() => BuildStudentRootTable([]);
+
+    private static DbTableModel BuildStudentRootTable(IReadOnlyList<DbColumnModel> extraDocumentFkColumns)
+    {
+        List<DbColumnModel> baseColumns =
+        [
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("StudentUniqueId"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.String),
+                IsNullable: false,
+                SourceJsonPath: new JsonPathExpression(
+                    "$.studentUniqueId",
+                    [new JsonPathSegment.Property("studentUniqueId")]
+                ),
+                TargetResource: null
+            ),
+        ];
+        baseColumns.AddRange(extraDocumentFkColumns);
+
+        return new DbTableModel(
             Table: new DbTableName(_edfiSchema, "Student"),
             JsonScope: _rootScope,
             Key: new TableKey(
                 ConstraintName: "PK_Student",
                 Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
             ),
-            Columns:
-            [
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("DocumentId"),
-                    Kind: ColumnKind.ParentKeyPart,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("StudentUniqueId"),
-                    Kind: ColumnKind.Scalar,
-                    ScalarType: new RelationalScalarType(ScalarKind.String),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression(
-                        "$.studentUniqueId",
-                        [new JsonPathSegment.Property("studentUniqueId")]
-                    ),
-                    TargetResource: null
-                ),
-            ],
+            Columns: baseColumns,
             Constraints: []
         );
+    }
 
     private static DbTableModel BuildStudentAddressTable(IReadOnlyList<DbColumnModel> extraDocumentFkColumns)
     {

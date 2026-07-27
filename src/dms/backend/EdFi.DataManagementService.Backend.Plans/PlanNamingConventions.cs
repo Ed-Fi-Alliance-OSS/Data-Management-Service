@@ -265,6 +265,7 @@ public static class PlanNamingConventions
             PlanSqlAliasRole.Table => "t",
             PlanSqlAliasRole.Document => "doc",
             PlanSqlAliasRole.Descriptor => "d",
+            PlanSqlAliasRole.RowSet => "v",
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown SQL alias role."),
         };
     }
@@ -325,7 +326,19 @@ public enum PlanSqlAliasRole
     /// Descriptor projection/join alias.
     /// </summary>
     Descriptor,
+
+    /// <summary>
+    /// Correlated inline row-set alias used to expand several source columns from one table scan.
+    /// </summary>
+    RowSet,
 }
+
+/// <summary>
+/// A source table alias paired with the correlated row-set alias that expands its columns.
+/// </summary>
+/// <param name="TableAlias">The source table alias (<c>t0</c>, <c>t1</c>, ...).</param>
+/// <param name="RowSetAlias">The matching inline row-set alias (<c>v0</c>, <c>v1</c>, ...).</param>
+public readonly record struct PlanSqlSourceAliases(string TableAlias, string RowSetAlias);
 
 /// <summary>
 /// Deterministic allocator for repeated table aliases.
@@ -339,9 +352,22 @@ public sealed class PlanSqlTableAliasAllocator
     /// </summary>
     public string AllocateNext()
     {
-        var alias = $"{PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table)}{_nextTableAliasOrdinal}";
+        return AllocateNextSourceAliases().TableAlias;
+    }
+
+    /// <summary>
+    /// Allocates the next table alias together with the correlated row-set alias that shares its
+    /// ordinal (<c>t0</c>/<c>v0</c>, <c>t1</c>/<c>v1</c>, ...), so an expanded source reads
+    /// unambiguously in the emitted SQL.
+    /// </summary>
+    public PlanSqlSourceAliases AllocateNextSourceAliases()
+    {
+        var ordinal = _nextTableAliasOrdinal;
         _nextTableAliasOrdinal++;
 
-        return alias;
+        return new PlanSqlSourceAliases(
+            $"{PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table)}{ordinal}",
+            $"{PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.RowSet)}{ordinal}"
+        );
     }
 }

@@ -9,60 +9,70 @@ using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
+/// <summary>
+/// Emits the page-scoping clauses shared by projection source branches. Scoping is split into a
+/// join phase and a where phase so a caller can place additional FROM-clause sources between them.
+/// </summary>
 internal static class ProjectionSourceFilterSql
 {
-    public static void Append(
-        SqlWriter writer,
-        DbTableModel tableModel,
-        string tableAlias,
-        DbColumnName nonNullColumn,
-        ProjectionSourceFilter sourceFilter,
-        string planDescription
-    )
-    {
-        var rootScopeLocatorColumn =
-            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
-                tableModel,
-                planDescription
-            );
-
-        Append(writer, tableAlias, rootScopeLocatorColumn, nonNullColumn, sourceFilter);
-    }
-
-    private static void Append(
+    /// <summary>
+    /// Appends the FROM-clause join that scopes a projection source to the page keyset. Emits
+    /// nothing for the single-document filter, which scopes through a WHERE predicate instead.
+    /// </summary>
+    public static void AppendSourceJoin(
         SqlWriter writer,
         string tableAlias,
         DbColumnName rootScopeLocatorColumn,
+        ProjectionSourceFilter sourceFilter
+    )
+    {
+        if (sourceFilter.KeysetTable is null)
+        {
+            return;
+        }
+
+        var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
+
+        writer
+            .Append("INNER JOIN ")
+            .AppendRelation(sourceFilter.KeysetTable.Table)
+            .Append($" {keysetAlias} ON ");
+        AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
+        writer.Append(" = ");
+        AppendQualifiedColumn(writer, keysetAlias, sourceFilter.KeysetTable.DocumentIdColumnName);
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Appends the WHERE clause for a projection source: the single-document root-scope predicate
+    /// when the filter is not keyset-based, followed by the non-null predicate on the projected
+    /// value.
+    /// </summary>
+    /// <param name="nonNullAlias">
+    /// Alias owning the projected value. This is the source table for a single-column branch and
+    /// the correlated row-set alias for a branch that expands several columns.
+    /// </param>
+    public static void AppendSourceWhere(
+        SqlWriter writer,
+        string tableAlias,
+        DbColumnName rootScopeLocatorColumn,
+        string nonNullAlias,
         DbColumnName nonNullColumn,
         ProjectionSourceFilter sourceFilter
     )
     {
-        if (sourceFilter.KeysetTable is not null)
-        {
-            var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
+        writer.Append("WHERE ");
 
-            writer
-                .Append("INNER JOIN ")
-                .AppendRelation(sourceFilter.KeysetTable.Table)
-                .Append($" {keysetAlias} ON ");
+        if (sourceFilter.KeysetTable is null)
+        {
             AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
             writer.Append(" = ");
-            AppendQualifiedColumn(writer, keysetAlias, sourceFilter.KeysetTable.DocumentIdColumnName);
+            writer.AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName);
             writer.AppendLine();
-            writer.Append("WHERE ");
-            AppendQualifiedColumn(writer, tableAlias, nonNullColumn);
-            writer.AppendLine(" IS NOT NULL");
-
-            return;
+            writer.Append("AND ");
         }
 
-        writer.Append("WHERE ");
-        AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
-        writer.Append(" = ");
-        writer.AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName);
-        writer.AppendLine();
-        writer.Append("AND ");
-        AppendQualifiedColumn(writer, tableAlias, nonNullColumn);
+        AppendQualifiedColumn(writer, nonNullAlias, nonNullColumn);
         writer.AppendLine(" IS NOT NULL");
     }
 

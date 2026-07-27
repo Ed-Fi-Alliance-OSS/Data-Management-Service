@@ -31,6 +31,12 @@ internal interface IPlanSqlDialect
     bool SupportsSingleDocumentHydration { get; }
 
     /// <summary>
+    /// Gets the dialect keyword that joins a correlated inline row set (a <c>VALUES</c> list
+    /// referencing columns of a preceding FROM-clause source) to that source.
+    /// </summary>
+    string CorrelatedRowSetJoinKeyword { get; }
+
+    /// <summary>
     /// Appends a dialect-specific paging clause.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>

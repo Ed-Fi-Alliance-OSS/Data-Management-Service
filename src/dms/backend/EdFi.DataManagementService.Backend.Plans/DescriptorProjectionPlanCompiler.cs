@@ -175,25 +175,15 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                 for (var index = 0; index < sqlSources.Count; index++)
                 {
                     var sqlSource = sqlSources[index];
-                    var tableModel = sqlSource.TableModel;
-                    var tableAlias = tableAliasAllocator.AllocateNext();
 
-                    writer.Append("SELECT ");
-
-                    if (sqlSources.Count == 1)
-                    {
-                        writer.Append("DISTINCT ");
-                    }
-
-                    AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
-                    writer.Append(" AS ").AppendQuoted(_descriptorIdProjectionColumn.Value).AppendLine();
-                    writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
-                    ProjectionSourceFilterSql.Append(
+                    ProjectionSourceBranchSql.Append(
                         writer,
-                        tableModel,
-                        tableAlias,
-                        sqlSource.StorageColumn,
+                        _planSqlDialect,
+                        new ProjectionSourceTableGroup(sqlSource.TableModel, [sqlSource.StorageColumn]),
+                        tableAliasAllocator.AllocateNextSourceAliases(),
+                        _descriptorIdProjectionColumn,
                         sourceFilter,
+                        emitDistinct: sqlSources.Count == 1,
                         "descriptor projection plan"
                     );
 
