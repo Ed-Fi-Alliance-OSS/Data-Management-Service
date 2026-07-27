@@ -7,7 +7,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1185
 
 ## Description
 
-The `tracked_changes_*` tables and the shared `tracked_changes_edfi.Descriptor` are emitted with only a clustered/primary key on `ChangeVersion`. `/deletes` and `/keyChanges` apply `ReadChanges` authorization predicates that filter these tables on identity-storage columns (e.g. `Old_<EdOrg>_Unified`, `Old_<Person>_DocumentId`) and, for descriptor namespace-based strategies, on `Old_Namespace` `LIKE` predicates. Without supporting indexes, those predicates fall back to full scans of tables that grow unboundedly with deletes and key-changes.
+The `tracked_changes_*` tables and the shared `tracked_changes_edfi.Descriptor` are emitted with only a clustered/primary key on `ChangeVersion`. `/deletes` and `/keyChanges` apply `ReadChanges` authorization predicates that filter these tables on identity-storage columns (e.g. `OldSchoolId_Unified`, `OldStudent_DocumentId`) and, for descriptor namespace-based strategies, on `OldNamespace` `LIKE` predicates. Without supporting indexes, those predicates fall back to full scans of tables that grow unboundedly with deletes and key-changes.
 
 ODS has the same gap — its `tracked_changes_*` tables also lack the indexes that would back the EdOrg/People auth joins (see [`change-queries.md`](../../design-docs/change-queries.md) "Authorization" section and the recreated-resource anti-join in `/deletes`). DMS preserved that shape in v1; this spike defines what to add and how to derive it.
 
@@ -29,7 +29,7 @@ The normative design landed in `change-queries.md` § "Indexes on the `tracked_c
 Summary of decisions against the acceptance criteria:
 
 **Catalog (AC 1-2).**
-Five scan surfaces were cataloged from the runtime SQL generators (`TrackedChangeQueryPlanner`, `TrackedChangeAuthorizationSqlEmitter`, `ReadChangesAuthorizationPlanner`, `AuthObjectDefinitions`): the `/deletes` outer query, the shared-descriptor `/deletes` (always `Discriminator IN (2 values)`), the `/keyChanges` CTE, the tracked-change arms of the four `*IncludingDeletes` views (equality probes of five `tracked_changes_edfi` association tables on every people-strategy request, the highest-frequency surface), and the `dms.Descriptor` identity probes.
+Five scan surfaces were cataloged from the runtime SQL generators (`TrackedChangeQueryPlanner`, `TrackedChangeAuthorizationSqlEmitter`, `ReadChangesAuthorizationPlanner`, `AuthObjectDefinitions`): the `/deletes` outer query, the shared-descriptor `/deletes` (always `Discriminator IN (2 values)`), the `/keyChanges` CTE, the tracked-change arms of the four `*IncludingDeletes` views (equality probes collectively spanning five `tracked_changes_edfi` association tables; every people-strategy request evaluates the views matching its person subject kinds, making this the highest-frequency surface), and the `dms.Descriptor` identity probes.
 Per-strategy shapes (subjects AND within a strategy, strategies OR across, `NamespaceBased` AND-ed with the relationship OR-group):
 
 | Strategy | Direction | Subjects | View probed by the predicate | Tracked `Old*` column probed | Index disposition |

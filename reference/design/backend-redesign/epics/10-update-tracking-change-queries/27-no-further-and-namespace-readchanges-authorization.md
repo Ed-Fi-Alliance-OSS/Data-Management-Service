@@ -32,7 +32,7 @@ The authorization composition rules from `auth.md` apply unchanged. `NamespaceBa
 - `NoFurtherAuthorizationRequired` remains a no-op when combined with relationship-based `ReadChanges` strategies.
 - `NamespaceBased` works for `/deletes` and `/keyChanges` when a resource or descriptor's `ReadChanges` action is configured with the strategy.
 - Namespace predicates use tracked-change old-value namespace columns, not live resource namespace values.
-- Descriptor `NamespaceBased` authorization uses `tracked_changes_edfi.Descriptor.Old_Namespace` and filters by the descriptor `Discriminator`.
+- Descriptor `NamespaceBased` authorization uses `tracked_changes_edfi.Descriptor.OldNamespace` and filters by the descriptor `Discriminator`.
 - The descriptor exceptions `CrisisTypeDescriptor` and `NonMedicalImmunizationExemptionDescriptor` use `NamespaceBased`; descriptors without those exceptions continue to work through `NoFurtherAuthorizationRequired`.
 - Resource `NamespaceBased` authorization resolves the namespace securable element from `ApiSchema.json` to the corresponding tracked-change old-value storage column.
 - Rows with null or empty tracked namespace values are unauthorized.

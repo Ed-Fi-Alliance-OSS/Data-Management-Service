@@ -12,7 +12,7 @@ retires the unified `dms.DocumentChangeEvent` journal in favor of three purpose-
 all of which are tracked by their own stories elsewhere in this epic:
 
 - **Per-resource `tracked_changes_<schema>.<resource>` tables** (and the shared
-  `tracked_changes_edfi.Descriptor`) carry their own `Id`, `ChangeVersion`, and `Old_*`/`New_*`
+  `tracked_changes_edfi.Descriptor`) carry their own `Id`, `ChangeVersion`, and `Old*`/`New*`
   identity values. They are populated by the existing `*_Stamp` triggers extended with
   `DocumentStamping.ChangeTracking` and back the `/deletes` and `/keyChanges` endpoints.
 - A **`ContentVersion` / `ContentLastModifiedAt` mirror** on every concrete
