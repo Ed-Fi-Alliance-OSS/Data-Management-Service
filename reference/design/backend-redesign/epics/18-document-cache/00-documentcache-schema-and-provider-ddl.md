@@ -71,3 +71,96 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
 
 - Runtime projection and reads are assigned to later E18 stories.
 - Provider capture objects, connectors, topics, and message shaping are assigned to E19.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+1. What is the production database-principal model for the canonical writer, projector,
+   projection administrator, CDC reader, and PostgreSQL non-login enqueue owner: separate
+   credentials, per-connection role switching, or another mechanism? Specify the stable
+   role/user names, whether `ddl emit`/`ddl provision` creates them or receives existing
+   names, and which later story wires each runtime context.
+2. Which SQL Server enqueue-trigger execution model is normative: same-owner ownership
+   chaining or a narrowly scoped `EXECUTE AS` principal? What exact owner/user and
+   ownership/grant inventory must deterministic snapshots, manifests, and introspection
+   assert?
+3. Should the final desired inventory remove the existing
+   `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` index and prohibit any
+   `dms.Document(ContentVersion, DocumentId)` projector-discovery index, leaving queue
+   discovery solely on
+   `IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId`?
+4. The general DDL design permits existence-check recovery from partial runs, while the
+   CDC integration design says legacy or missing E18 inventory is ineligible and must not
+   be repaired in place. For both standalone emitted SQL and `ddl provision`, which
+   missing or mismatched E18 states must fail before mutation, and which, if any, may be
+   completed as a recoverable initial partial apply?
+5. Does this story's requirement that CDC principals cannot capture work mean only that
+   ordinary E18 DDL emits no work-table access for such principals, with publication/CDC
+   capture exclusion owned and tested by 19-01, or must 18-00 add provider-capture
+   prevention and tests despite the stated E19 boundary?
+6. Do enqueue failures need stable provider-specific identifiers, such as a PostgreSQL
+   SQLSTATE and SQL Server error number, for missing/unreadable lifecycle state and other
+   enqueue failures, or is generic statement failure plus rollback sufficient until a
+   later diagnostics story?
+
+### Answers 1
+
+1. Use stable, DDL-created non-login authorization roles: `edfi_dms_writer`,
+   `edfi_dms_projector`, `edfi_dms_projection_admin`, `edfi_dms_cdc_reader`, and
+   PostgreSQL-only `edfi_dms_enqueue_owner`. `ddl emit` and `ddl provision` create these
+   roles and grants deterministically but never create login credentials or passwords;
+   deployment automation maps its login users to them.
+
+   The existing CMS connection remains the single DMS credential. DMS assumes the writer,
+   projector, or administration role for each physical connection/session—PostgreSQL using
+   non-inherited role membership and `SET ROLE`/`SET LOCAL ROLE`, and SQL Server using
+   equivalent no-login execution users with `EXECUTE AS USER`/`REVERT`. The base login must
+   not own the schema or hold `superuser`/`db_owner` privileges, and a pooled connection
+   must never be returned while impersonating a role.
+
+   The CDC connector uses a separate deployment-owned credential mapped only to
+   `edfi_dms_cdc_reader`. The PostgreSQL enqueue owner is never assumable by either runtime
+   credential and is reachable only through the hardened `SECURITY DEFINER` functions.
+
+   Story 18-00 creates and verifies the roles, ownership, and grants. The existing
+   relational path uses the writer context; 18-03/18-04 wire the projector context; 18-04
+   wires administration; 18-08 reuses it; and 19-01 maps the separate CDC credential.
+2. Requires human decision: `data-model.md` explicitly permits either same-owner ownership
+   chaining or a narrowly scoped `EXECUTE AS` owner and defines no stable SQL Server
+   owner/user name. Select one execution model and the exact schema, table, trigger, and
+   execution-principal ownership plus grant inventory. 18-00 must then emit that one model
+   deterministically and assert it in snapshots, manifests, introspection, and access
+   tests; it must not accept either model at runtime.
+3. Yes. Remove `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` from the desired
+   model, emitted DDL, snapshots, manifests, and introspection expectations. Do not emit a
+   `dms.Document(ContentVersion, DocumentId)` index. Ordinary discovery and oldest-work
+   observation use
+   `IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId`; baseline, rebuild, and scrub
+   scan `dms.Document` in primary-key `DocumentId` order.
+4. Standalone emitted SQL may complete an exact-compatible initial partial apply through
+   its existence checks, including inserting a missing `EffectiveSchema` singleton, and
+   must do so in the create-only transaction so failure leaves no durable mutation.
+   `ddl provision` is stricter: if `dms.EffectiveSchema` exists without its singleton, it
+   fails preflight and directs the operator to drop and recreate the database. It may
+   proceed when the table is absent for a new/empty initial apply, or when the singleton
+   exists with the expected hash for an exact rerun. Once that singleton exists, either
+   path must validate and preserve the complete current E18 inventory; a missing E18
+   object is drift, not a recoverable partial apply. A different hash, legacy `Etag`,
+   obsolete cache UUID constraint, mismatched object/constraint/grant/index shape, or
+   mismatched deterministic seed must fail without a durable mutation rather than be
+   altered or repaired. CDC admission remains limited to E19's proven new-physical-
+   database initial workflow even if a standalone script was technically able to complete
+   an earlier partial apply.
+5. Keep the provider-capture boundary in 19-01. Ordinary 18-00 DDL must grant CDC
+   principals no `DocumentProjectionWork` access and must not create a publication or SQL
+   Server capture instance for the work table. 18-00 access tests assert the absence of
+   work-table grants; 19-01 owns publication/capture exclusion, provider-metadata
+   validation, and proof that work DML produces no captured record.
+6. Requires human decision: the designs require target-specific enqueue diagnostics but
+   define neither a PostgreSQL SQLSTATE nor a SQL Server error number or failure-to-code
+   mapping. Decide whether stable database error identifiers are part of the v1 contract
+   and, if they are, specify the exact provider codes and covered failure classes. Until
+   that decision is recorded, 18-00 must not invent codes; its current enforceable
+   contract is statement/transaction failure with complete rollback, while 18-06 owns
+   higher-level enqueue-failure telemetry distinct from projector-processing failures.
