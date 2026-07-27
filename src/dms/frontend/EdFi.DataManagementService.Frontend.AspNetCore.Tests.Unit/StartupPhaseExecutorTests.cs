@@ -26,6 +26,22 @@ public class StartupStatusTests
         }
     }
 
+    /// <summary>
+    /// Captures the status file exactly as it stands when the process exit is requested, which is
+    /// what proves the failure was written before the exit rather than merely alongside it.
+    /// </summary>
+    private sealed class StatusCapturingStartupProcessExit(string statusFilePath) : IStartupProcessExit
+    {
+        public int ExitCallCount { get; private set; }
+        public string? StatusFileContentsAtExit { get; private set; }
+
+        public void Exit(int exitCode)
+        {
+            ExitCallCount++;
+            StatusFileContentsAtExit = File.Exists(statusFilePath) ? File.ReadAllText(statusFilePath) : null;
+        }
+    }
+
     [TestFixture]
     public class Given_Backend_Mapping_Initialization_Fails : StartupStatusTests
     {
@@ -313,5 +329,190 @@ public class StartupStatusTests
 
         private StartupStatusDocument ReadStartupStatus() =>
             JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
+    }
+
+    [TestFixture]
+    public class Given_Auth_Metadata_Initialization_Fails : StartupStatusTests
+    {
+        private StartupPhaseExecutor _startupPhaseExecutor = null!;
+        private RecordingStartupProcessExit _startupProcessExit = null!;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+            _startupProcessExit = new RecordingStartupProcessExit();
+
+            _startupPhaseExecutor = new StartupPhaseExecutor(
+                new FileStartupStatusSignal(_statusFilePath),
+                _startupProcessExit,
+                NullLogger<StartupPhaseExecutor>.Instance
+            );
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task It_requests_the_phase_specific_exit_code_rather_than_the_default()
+        {
+            // Act
+            // Authentication metadata is the one phase that overrides the default exit code, so
+            // this is the only coverage that the exitCode argument is honored at all.
+            Func<Task> act = async () =>
+                await _startupPhaseExecutor.RunFatalAsync(
+                    DmsStartupPhases.InitializeAuthMetadata,
+                    "Initializing authentication metadata caches (OIDC warm-up and claim sets).",
+                    "Authentication metadata initialization completed successfully.",
+                    "Authentication metadata initialization failed. JWT authentication will not function correctly.",
+                    () => throw new InvalidOperationException("OIDC metadata endpoint unreachable."),
+                    exitCode: 1
+                );
+
+            // Assert
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("OIDC metadata endpoint unreachable.");
+            _startupProcessExit.ExitCallCount.Should().Be(1);
+            _startupProcessExit.ExitCode.Should().Be(1);
+
+            var startupStatus = ReadStartupStatus();
+            startupStatus.State.Should().Be("Failed");
+            startupStatus.Phase.Should().Be(DmsStartupPhases.InitializeAuthMetadata);
+            startupStatus.ErrorType.Should().Be(nameof(InvalidOperationException));
+        }
+
+        private StartupStatusDocument ReadStartupStatus() =>
+            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
+    }
+
+    [TestFixture]
+    public class Given_A_Phase_Is_Canceled_With_No_Preceding_Status_File : StartupStatusTests
+    {
+        private StartupPhaseExecutor _startupPhaseExecutor = null!;
+        private RecordingStartupProcessExit _startupProcessExit = null!;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+            _startupProcessExit = new RecordingStartupProcessExit();
+
+            // Deliberately no status write here: the snapshot must capture a non-existent file so
+            // the restore path exercises removal rather than rewrite.
+            _startupPhaseExecutor = new StartupPhaseExecutor(
+                new FileStartupStatusSignal(_statusFilePath),
+                _startupProcessExit,
+                NullLogger<StartupPhaseExecutor>.Instance
+            );
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task It_removes_the_status_file_it_created_and_does_not_request_exit()
+        {
+            // Act
+            Func<Task> act = async () =>
+                await _startupPhaseExecutor.RunFatalAsync(
+                    DmsStartupPhases.LoadDataStores,
+                    "Loading data stores from Configuration Service.",
+                    "Loaded data stores from Configuration Service.",
+                    "Unable to load data stores from Configuration Service.",
+                    () => throw new OperationCanceledException("Startup canceled.")
+                );
+
+            // Assert
+            await act.Should().ThrowAsync<OperationCanceledException>().WithMessage("Startup canceled.");
+            _startupProcessExit.ExitCallCount.Should().Be(0);
+
+            // Cancellation must leave no trace: a stranded Starting document would be read as a
+            // hung phase by anyone collecting the file.
+            File.Exists(_statusFilePath).Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Fatal_Phase_Failure_Is_Handled : StartupStatusTests
+    {
+        private StartupPhaseExecutor _startupPhaseExecutor = null!;
+        private StatusCapturingStartupProcessExit _startupProcessExit = null!;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+            _startupProcessExit = new StatusCapturingStartupProcessExit(_statusFilePath);
+
+            _startupPhaseExecutor = new StartupPhaseExecutor(
+                new FileStartupStatusSignal(_statusFilePath),
+                _startupProcessExit,
+                NullLogger<StartupPhaseExecutor>.Instance
+            );
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task It_writes_the_failure_before_requesting_exit()
+        {
+            // Act
+            Func<Task> act = async () =>
+                await _startupPhaseExecutor.RunFatalAsync(
+                    DmsStartupPhases.InitializeApiSchemas,
+                    "Loading API schemas and initializing effective schema metadata.",
+                    "API schema loading and effective-schema initialization completed successfully.",
+                    "API schema initialization failed. DMS cannot start with invalid schemas.",
+                    () => throw new InvalidOperationException("Broken schema input.")
+                );
+
+            // Assert
+            await act.Should().ThrowAsync<InvalidOperationException>();
+            _startupProcessExit.ExitCallCount.Should().Be(1);
+
+            // In production the exit terminates the process, so anything written after it would
+            // never reach disk. Asserting on the snapshot taken during Exit proves the ordering.
+            _startupProcessExit.StatusFileContentsAtExit.Should().NotBeNull();
+
+            var startupStatusAtExit = JsonSerializer.Deserialize<StartupStatusDocument>(
+                _startupProcessExit.StatusFileContentsAtExit!
+            )!;
+            startupStatusAtExit.State.Should().Be("Failed");
+            startupStatusAtExit.Phase.Should().Be(DmsStartupPhases.InitializeApiSchemas);
+            startupStatusAtExit
+                .Summary.Should()
+                .Be("API schema initialization failed. DMS cannot start with invalid schemas.");
+            startupStatusAtExit.ErrorType.Should().Be(nameof(InvalidOperationException));
+            startupStatusAtExit.ErrorMessage.Should().Be("Broken schema input.");
+        }
     }
 }

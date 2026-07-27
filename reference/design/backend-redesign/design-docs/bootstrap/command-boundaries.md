@@ -229,9 +229,10 @@ re-runnable without hidden disk artifacts.
 | **Failure conditions** | Zero matching instances found; multiple matching instances found without an explicit `-DataStoreId` or `-SchoolYear` selector; SchemaTools/runtime provisioning exits non-zero, including when target stored schema state is incompatible with the staged schema set; connection to target database fails; CMS data store connection string matches neither engine's dialect markers; a target's resolved dialect contradicts the effective environment's `DMS_DATASTORE` |
 | **Must NOT do** | Accept user-facing schema-selection parameters; repair or work around a failed SchemaTools path; run inside DMS startup via `AppSettings__DeployDatabaseOnStartup`, `NEED_DATABASE_SETUP`, `EdFi.DataManagementService.Backend.Installer.dll`, or any container entrypoint/pre-launch hook; silently reuse a database provisioned for a different schema selection; resolve schema files; create or mutate instance records in CMS |
 
-**Boundary note:** `AppSettings__DeployDatabaseOnStartup=false` is always set, and the legacy
-`NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup path is disabled or
-removed for the DMS-916 bootstrap flow. Schema provisioning is entirely owned by this phase; DMS startup
+**Boundary note:** The legacy `NEED_DATABASE_SETUP` /
+`EdFi.DataManagementService.Backend.Installer.dll` startup path is disabled or removed for the
+DMS-916 bootstrap flow, and DMS no longer exposes a `DeployDatabaseOnStartup` setting at all
+(removed by DMS-1239). Schema provisioning is entirely owned by this phase; DMS startup
 never performs it. Selector resolution rule: when exactly one DMS instance exists in CMS and no selector is
 supplied, auto-select it; when multiple instances exist and no explicit `-DataStoreId` or `-SchoolYear` is
 provided, fail fast with guidance to supply an explicit selector. CMS lookup and database target resolution

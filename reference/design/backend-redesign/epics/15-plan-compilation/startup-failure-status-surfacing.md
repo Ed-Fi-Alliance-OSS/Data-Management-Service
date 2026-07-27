@@ -14,7 +14,7 @@ Use a file-backed startup status signal that is written before HTTP route bindin
 Contract:
 
 - `State`: `Starting`, `Completed`, `Failed`, or `Ready`
-- `Phase`: one of `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeDatabase`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, or `Ready`
+- `Phase`: one of `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, or `Ready`
 - `Summary`: short human-readable phase summary
 - `ErrorType` / `ErrorMessage`: populated only for failures
 - `UpdatedAtUtc`: last write timestamp
@@ -36,9 +36,11 @@ This keeps fatal startup semantics unchanged: fatal phases still terminate the p
 3. On success, overwrite the file with `Completed`.
 4. On failure, overwrite the file with `Failed`, then invoke the existing process-exit behavior.
 
-The current startup sequence writes these phase names in order: `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeDatabase`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, and `Ready`.
+The current startup sequence writes these phase names in order: `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, and `Ready`.
 
-Bootstrap phases before the app host exists (`ConfigureServices`, `BuildApplication`) use the same status contract, but rethrow after writing the failure because the process has not yet built the DI graph used by the runtime exit hook. After the host exists, `ConfigureEndpoints` is written immediately before routing and endpoint registration, and `Ready` is written after middleware and endpoint mapping complete successfully.
+There is no database-provisioning phase in this list. Schema provisioning is owned by the bootstrap provisioning phase (`provision-dms-schema.ps1`) and never runs inside DMS startup — see `reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md`, which lists running inside DMS startup under that phase's "Must NOT do" and states that "Schema provisioning is entirely owned by this phase; DMS startup never performs it."
+
+Bootstrap phases before the app host exists (`ConfigureServices`, `BuildApplication`) use the same status contract, but rethrow after writing the failure because the process has not yet built the DI graph used by the runtime exit hook. After the host exists, `ConfigureEndpoints` is written immediately before routing and endpoint registration, and `Ready` is written after middleware and endpoint mapping complete successfully. `ConfigureEndpoints` bypasses `RunFatalAsync` and transitions `Starting` -> `Ready` on success, or `Starting` -> `Failed` on exception; it writes no `Completed` state, because `Ready` is the success signal for endpoint configuration and would immediately overwrite it.
 
 ## CI and local usage
 

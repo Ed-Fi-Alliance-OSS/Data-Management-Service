@@ -192,38 +192,52 @@ if (invalidConfigurationException is null)
         "Configuring DMS middleware and endpoints."
     );
 
-    app.UseRouting();
-
-    if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+    try
     {
-        app.UseRateLimiter();
+        app.UseRouting();
+
+        if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+        {
+            app.UseRateLimiter();
+        }
+
+        app.UseCors("AllowSwaggerUI");
+
+        app.MapRouteEndpoints();
+
+        app.MapHealthChecks("/health");
+
+        // Catch-all fallback for unmatched routes
+        app.MapFallback(context =>
+        {
+            context.Response.StatusCode = 404;
+            context.Response.ContentType = "application/problem+json";
+
+            var traceId = context.Request.Headers.TryGetValue(
+                app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
+                out var correlationId
+            )
+                ? correlationId.ToString()
+                : context.TraceIdentifier;
+
+            var response = FailureResponse.ForNotFound(
+                "The specified data could not be found.",
+                new TraceId(traceId)
+            );
+            return context.Response.WriteAsJsonAsync(response);
+        });
     }
-
-    app.UseCors("AllowSwaggerUI");
-
-    app.MapRouteEndpoints();
-
-    app.MapHealthChecks("/health");
-
-    // Catch-all fallback for unmatched routes
-    app.MapFallback(context =>
+    catch (Exception ex)
     {
-        context.Response.StatusCode = 404;
-        context.Response.ContentType = "application/problem+json";
-
-        var traceId = context.Request.Headers.TryGetValue(
-            app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
-            out var correlationId
-        )
-            ? correlationId.ToString()
-            : context.TraceIdentifier;
-
-        var response = FailureResponse.ForNotFound(
-            "The specified data could not be found.",
-            new TraceId(traceId)
+        // Endpoint configuration is fatal, and the throw below preserves that. Without this the
+        // status file would be stranded at Starting, losing ErrorType and ErrorMessage.
+        startupPhaseExecutor.WriteFailed(
+            DmsStartupPhases.ConfigureEndpoints,
+            "Middleware and endpoint configuration failed. DMS cannot serve requests without mapped HTTP endpoints.",
+            ex
         );
-        return context.Response.WriteAsJsonAsync(response);
-    });
+        throw;
+    }
 
     startupPhaseExecutor.WriteReady("DMS startup completed successfully and HTTP endpoints are configured.");
 }

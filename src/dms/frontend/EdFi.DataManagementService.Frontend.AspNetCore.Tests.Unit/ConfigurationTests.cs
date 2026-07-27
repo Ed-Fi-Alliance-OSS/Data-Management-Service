@@ -11,6 +11,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -268,6 +269,84 @@ public class ConfigurationTests
 
             var validator = new AppSettingsValidator();
             validator.Validate(null, appSettings).Succeeded.Should().BeTrue();
+        }
+    }
+
+    /// <summary>
+    /// Regression coverage for the ConfigureEndpoints failure catch. Duplicate route qualifier
+    /// segments survive AppSettingsValidator and reach CoreEndpointModule.BuildRoutePattern
+    /// un-deduplicated, producing "/{districtId}/{districtId}/data/{**dmsPath}", which makes
+    /// endpoint mapping throw. Before the catch existed the status file was stranded at Starting
+    /// with no ErrorType or ErrorMessage.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_A_Configuration_With_Duplicate_Route_Qualifier_Segments
+    {
+        private WebApplicationFactory<Program>? _factory;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:RouteQualifierSegments"] = "districtId,districtId",
+                                ["AppSettings:StartupStatusFilePath"] = _statusFilePath,
+                            }
+                        );
+                    }
+                );
+                builder.ConfigureServices(collection => TestMockHelper.AddEssentialMocks(collection));
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            _factory!.Dispose();
+
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_writes_failed_startup_status_and_does_not_start_the_host()
+        {
+            // Act
+            Action act = () => _factory!.CreateClient();
+
+            // Assert
+            // Fail-fast is preserved: the catch writes the failure and rethrows rather than
+            // letting a half-configured host serve traffic.
+            act.Should().Throw<RoutePatternException>();
+
+            File.Exists(_statusFilePath).Should().BeTrue();
+            var startupStatus = JsonNode.Parse(File.ReadAllText(_statusFilePath))!.AsObject();
+
+            startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
+            startupStatus["Phase"]!.GetValue<string>().Should().Be(DmsStartupPhases.ConfigureEndpoints);
+            startupStatus["Summary"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "Middleware and endpoint configuration failed. DMS cannot serve requests without mapped HTTP endpoints."
+                );
+            startupStatus["ErrorType"]!.GetValue<string>().Should().Be(nameof(RoutePatternException));
+            startupStatus["ErrorMessage"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
         }
     }
 
