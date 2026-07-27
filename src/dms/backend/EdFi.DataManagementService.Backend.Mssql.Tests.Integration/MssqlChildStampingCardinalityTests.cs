@@ -602,7 +602,12 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     {
         // Server-side delay so a post-write ContentLastModifiedAt is strictly greater than the seed
         // stamp, letting assertions use BeAfter instead of the weaker BeOnOrAfter.
-        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.020';");
+        //
+        // 50 ms rather than the PostgreSQL twin's 20 ms: WAITFOR DELAY is quantized to the scheduler
+        // tick, so a 20 ms request can realize as little as ~16 ms, which is too thin to guarantee
+        // sysutcdatetime() advances between the seed and the post-write stamp. Every other SQL Server
+        // test that needs a distinct stamp uses 50 ms; keep this in step with them.
+        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
     }
 
     private sealed record StampPair(StampValues Document, StampValues Mirror);
