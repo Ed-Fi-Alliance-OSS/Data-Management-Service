@@ -141,9 +141,6 @@ $isSmoke = [bool]$environmentContract.IsSmoke
 if ($WorkflowKind -eq "Minimal" -and $isSmoke) {
     throw "The Minimal template workflow cannot use smoke environment_file '$EnvironmentFile'."
 }
-if ($isSmoke -and $DatabaseEngine -eq "mssql") {
-    throw "environment_file '$EnvironmentFile' is PostgreSQL-only and cannot be combined with database_engine 'mssql'."
-}
 if ($isSmoke -and $PublishPackage) {
     throw "environment_file '$EnvironmentFile' is smoke-only and must not be published; set publish_package to false."
 }
@@ -151,9 +148,10 @@ if ($RequirePopulatedData -and -not $VerifyRestore) {
     throw "require_populated_data requires verify_restore."
 }
 
-# The tracked product env is shared by Minimal and Populated builds and therefore carries the
-# Populated PostgreSQL restore identity. The MSSQL engine overlay rewrites only its engine token at
-# runtime; the requested output artifact kind/engine is validated independently below.
+# The tracked env files (Minimal/Populated templates and smoke) are shared across engines and
+# therefore always carry the PostgreSQL restore identity, whether or not the artifact is smoke.
+# The MSSQL engine overlay rewrites only its engine token at runtime; the requested output
+# artifact kind/engine is validated independently below.
 $environmentTemplateKind = if ($isSmoke) { "Smoke" } else { "Populated" }
 $expectedEnvironmentTemplatePackage = "EdFi.Api.$environmentTemplateKind.Template.PostgreSql.$StandardVersion"
 $configuredEnvironmentTemplatePackage = [string]$environmentValues["DATABASE_TEMPLATE_PACKAGE"]

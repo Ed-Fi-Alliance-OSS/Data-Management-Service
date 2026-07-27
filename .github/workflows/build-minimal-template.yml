@@ -323,7 +323,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Bulkload-logs
+          name: Bulkload-logs-${{ inputs.package_name }}
           path: ${{ github.workspace }}/eng/DatabaseTemplates/.packages/**/logfile.txt
           retention-days: 10
 
@@ -344,7 +344,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Docker-Logs
+          name: Docker-Logs-${{ inputs.package_name }}
           path: ${{ github.workspace }}/logs
           retention-days: 10
 

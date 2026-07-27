@@ -190,7 +190,11 @@ jobs:
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
+          # The SQL Server container was started from the composed engine env file (base +
+          # .env.mssql overlay), so credentials must be read from that same composed file,
+          # not the base file.
+          $effectiveEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "${{ inputs.database_engine }}" -BaseEnvironmentFile "${{ inputs.environment_file }}" -DockerComposeRoot (Resolve-Path ".").Path
+          $envValues = ReadValuesFromEnvFile $effectiveEnvironmentFile
           $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
           $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
 
@@ -343,7 +347,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Bulkload-logs
+          name: Bulkload-logs-${{ inputs.package_name }}
           path: ${{ github.workspace }}/eng/DatabaseTemplates/.packages/**/logfile.txt
           retention-days: 10
 
@@ -364,7 +368,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Docker-Logs
+          name: Docker-Logs-${{ inputs.package_name }}
           path: ${{ github.workspace }}/logs
           retention-days: 10
 
@@ -601,7 +605,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ Scheduled Populated Template build failed\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Workflow:* ${{ github.workflow }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ Scheduled Populated Template build failed\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Package:* ${{ inputs.package_name }}\n*Workflow:* ${{ github.workflow }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
