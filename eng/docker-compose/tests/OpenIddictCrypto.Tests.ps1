@@ -106,6 +106,17 @@ Describe "OpenIddict MSSQL guarded database creation (DMS-1270 Phase 1b)" {
         Mock Invoke-MssqlParameterizedQuery { }
     }
 
+    # Real sqlcmd emits result rows as separate output objects, and a bare SELECT is followed by a
+    # blank line and a "(1 rows affected)" row-count message: -h -1 suppresses column headers, not
+    # row counts. These mocks therefore return that multi-line shape rather than a bare scalar, so a
+    # postcondition that compares the whole captured output against "1" fails here as it would in
+    # production. The code both sends SET NOCOUNT ON (asserted below) and reads the first non-blank
+    # line, so it is correct even against this un-suppressed shape.
+    BeforeAll {
+        $script:MssqlExistsOutput = { param([string]$Value) return @($Value, "", "(1 rows affected)") }
+        $script:Msg1801Output = "Msg 1801, Level 16, State 3, Server dms-mssql-test, Line 1`nDatabase 'edfi_configurationservice' already exists. Choose a different database name."
+    }
+
     It "tolerates the benign concurrent-creation race (SQL Server error 1801) and does not swallow the postcondition check" {
         # Round: DMS-1270 Phase 1b. The IF DB_ID(...) IS NULL CREATE DATABASE guard is a
         # check-then-act statement, not truly atomic: this simulates the losing side of a genuine
@@ -116,17 +127,39 @@ Describe "OpenIddict MSSQL guarded database creation (DMS-1270 Phase 1b)" {
             $sql = $args[-1]
             if ($sql -match "CREATE DATABASE") {
                 $global:LASTEXITCODE = 1
-                return "Msg 1801, Level 16, State 3, Server dms-mssql-test, Line 1`nDatabase 'edfi_configurationservice' already exists. Choose a different database name."
+                return $script:Msg1801Output
             }
             if ($sql -match "SELECT CASE WHEN DB_ID") {
                 $global:LASTEXITCODE = 0
-                return "1"
+                return (& $script:MssqlExistsOutput "1")
             }
             $global:LASTEXITCODE = 0
             return ""
         }
 
         { Invoke-InitDbScripts } | Should -Not -Throw
+    }
+
+    It "suppresses row-count messages on the postcondition query so its result is parseable" {
+        # Without SET NOCOUNT ON the query's output carries a trailing "(1 rows affected)" line and
+        # no comparison against "1" can ever succeed, failing every MSSQL initialization even though
+        # the database exists. Pinned here so the prefix cannot be dropped again.
+        $script:capturedPostconditionSql = $null
+        Mock docker {
+            $sql = $args[-1]
+            if ($sql -match "SELECT CASE WHEN DB_ID") {
+                $script:capturedPostconditionSql = $sql
+                $global:LASTEXITCODE = 0
+                return (& $script:MssqlExistsOutput "1")
+            }
+            $global:LASTEXITCODE = 0
+            return ""
+        }
+
+        Invoke-InitDbScripts
+
+        $script:capturedPostconditionSql | Should -Not -BeNullOrEmpty
+        $script:capturedPostconditionSql | Should -BeLike "SET NOCOUNT ON;*"
     }
 
     It "does not tolerate a non-1801 sqlcmd failure even with the tolerance flag set" {
@@ -148,11 +181,11 @@ Describe "OpenIddict MSSQL guarded database creation (DMS-1270 Phase 1b)" {
             $sql = $args[-1]
             if ($sql -match "CREATE DATABASE") {
                 $global:LASTEXITCODE = 1
-                return "Msg 1801, Level 16, State 3, Server dms-mssql-test, Line 1`nDatabase 'edfi_configurationservice' already exists. Choose a different database name."
+                return $script:Msg1801Output
             }
             if ($sql -match "SELECT CASE WHEN DB_ID") {
                 $global:LASTEXITCODE = 0
-                return "0"
+                return (& $script:MssqlExistsOutput "0")
             }
             $global:LASTEXITCODE = 0
             return ""

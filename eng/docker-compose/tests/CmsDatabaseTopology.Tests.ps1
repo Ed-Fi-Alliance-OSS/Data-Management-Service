@@ -1097,40 +1097,117 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
 
-        # Runs $ScriptBlock with "docker" hidden from PATH, so the start script's own wiring code
-        # (pure PowerShell/file-resolution, which always runs before any docker invocation) executes
-        # fully, then fails fast and harmlessly at the first real docker call instead of actually
-        # starting a container - no live Docker or bash-based stub needed. Captures and restores
-        # $env:PATH even if $ScriptBlock throws.
-        function script:Invoke-WithDockerHidden {
+        # A "docker" stand-in placed first on PATH. It records every invocation's arguments and
+        # succeeds for the `network` subcommands the start scripts issue before any compose call,
+        # then fails for the first `compose` subcommand. That first compose invocation already
+        # carries the complete -f file set, so the recorded arguments are the real compose file set
+        # the script built, and the immediately-following exit-code check turns the failure into a
+        # specific, assertable error rather than an ambient "docker is missing" one. The start
+        # scripts' own topology wiring is pure PowerShell that runs to completion before any of
+        # this, so its derived-file side effects are observable too.
+        $script:shimDir = Join-Path ([System.IO.Path]::GetTempPath()) "dms-docker-shim-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:shimDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $script:shimDir "docker.cmd") -Encoding ascii -Value @(
+            '@echo off',
+            'echo %*>>"%DMS_DOCKER_SHIM_LOG%"',
+            'echo %*| findstr /C:"compose" >nul',
+            'if %ERRORLEVEL%==0 exit /b 1',
+            'exit /b 0'
+        )
+
+        # Runs a start script with the shim ahead of any real docker on PATH and reports everything
+        # the run is asserted on: the recorded docker invocations, the terminating error, and the
+        # files the run added under eng/docker-compose/.derived/.
+        #
+        # Deliberately a single function rather than composed helpers: `& $ScriptBlock` executes in a
+        # child scope, so a nested helper cannot assign a result back into the caller's scope, and a
+        # nested arrangement silently reported $null instead.
+        #
+        # The start scripts always resolve their compose root to their own directory, so the real
+        # .derived/ is the only place they will write. Every fixture therefore uses a GUID-bearing
+        # env-file leaf name, so derived files (named <leaf>.<token>) cannot collide between tests or
+        # overwrite a developer's existing .derived/.env.mssql.
+        function script:Invoke-StartScript {
             param([scriptblock]$ScriptBlock)
 
+            $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
+            $before = @{}
+            if (Test-Path $derivedDir) {
+                foreach ($name in (Get-ChildItem $derivedDir -Name)) { $before[$name] = $true }
+            }
+
+            $logPath = Join-Path $script:shimDir "invocations-$([Guid]::NewGuid().ToString('N')).log"
             $originalPath = $env:PATH
+            $hadLog = Test-Path Env:\DMS_DOCKER_SHIM_LOG
+            $originalLog = $env:DMS_DOCKER_SHIM_LOG
+            $caught = $null
             try {
-                $env:PATH = ($env:PATH -split [System.IO.Path]::PathSeparator | Where-Object {
-                    -not (Test-Path (Join-Path $_ "docker.exe") -ErrorAction SilentlyContinue)
-                }) -join [System.IO.Path]::PathSeparator
+                $env:DMS_DOCKER_SHIM_LOG = $logPath
+                $env:PATH = $script:shimDir + [System.IO.Path]::PathSeparator + $originalPath
                 & $ScriptBlock
+            }
+            catch {
+                $caught = $_
             }
             finally {
                 $env:PATH = $originalPath
+                if ($hadLog) { $env:DMS_DOCKER_SHIM_LOG = $originalLog }
+                else { Remove-Item Env:\DMS_DOCKER_SHIM_LOG -ErrorAction SilentlyContinue }
+            }
+
+            $after = if (Test-Path $derivedDir) { @(Get-ChildItem $derivedDir -Name) } else { @() }
+            $newDerived = @($after | Where-Object { -not $before.ContainsKey($_) })
+            $invocations = if (Test-Path -LiteralPath $logPath) { @(Get-Content -LiteralPath $logPath) } else { @() }
+
+            return [PSCustomObject]@{
+                Invocations     = $invocations
+                ComposeCommand  = ($invocations | Where-Object { $_ -like "compose *" } | Select-Object -First 1)
+                Error           = $caught
+                ErrorMessage    = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
+                NewDerivedFiles = $newDerived
+                TopologyFile    = ($newDerived | Where-Object { $_ -like "*.topology" } | Select-Object -First 1)
             }
         }
 
-        # New files this run adds under eng/docker-compose/.derived/ (start-local-dms.ps1 and
-        # start-published-dms.ps1 always resolve DockerComposeRoot to their own directory, so these
-        # tests write there rather than an isolated sandbox - each uses a unique env-file basename
-        # and cleans up afterward).
-        function script:Get-NewDerivedFiles {
-            param(
-                [hashtable]$Before,
-                [scriptblock]$Action
-            )
+        # Reads a derived file produced by a run under test.
+        function script:ReadDerivedTopologyFile {
+            param([string]$Name)
+            return ReadValuesFromEnvFile (Join-Path (Join-Path $script:dockerComposeRoot ".derived") $Name)
+        }
 
-            & $Action
-            $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
-            $after = if (Test-Path $derivedDir) { @(Get-ChildItem $derivedDir -Name) } else { @() }
-            return @($after | Where-Object { -not $Before.ContainsKey($_) })
+        # Writes a base env file under a unique leaf name and returns its path. Extra lines are
+        # appended after the shared minimum.
+        function script:New-WiringEnvFile {
+            param([string[]]$AdditionalLines = @())
+
+            $path = Join-Path $script:work ".env.wiring-$([Guid]::NewGuid().ToString('N'))"
+            $lines = @(
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
+            ) + $AdditionalLines
+            Set-Content -LiteralPath $path -NoNewline -Value ($lines -join "`n")
+            return $path
+        }
+
+        # A base env file already declaring the MSSQL engine, so the engine overlay is recognized as
+        # composed and the CMS connection string under test is the one that gets validated.
+        function script:New-MssqlWiringEnvFile {
+            param([string]$CmsConnectionString)
+
+            return New-WiringEnvFile -AdditionalLines @(
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'DMS_DATASTORE=mssql',
+                'DMS_CONFIG_DATASTORE=mssql',
+                "DMS_CONFIG_DATABASE_CONNECTION_STRING=$CmsConnectionString"
+            )
+        }
+    }
+
+    AfterAll {
+        if ($script:shimDir -and (Test-Path -LiteralPath $script:shimDir)) {
+            Remove-Item -LiteralPath $script:shimDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -1164,221 +1241,217 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
     Context "start-local-dms.ps1" {
         It "fails fast for -SeparateConfigDatabase with -DatabaseEngine postgresql, before touching Docker" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            { & "$script:dockerComposeRoot/start-local-dms.ps1" -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly } |
-                Should -Throw "*Phase 2*"
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*Phase 2*"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the guard must reject the combination before any docker invocation"
         }
 
         It "shared mode (switch omitted): does not migrate DMS_CONFIG_DATABASE_NAME away from its .env.mssql alias" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $newFiles = @(Get-NewDerivedFiles -Before $script:derivedBefore -Action {
-                try {
-                    Invoke-WithDockerHidden {
-                        & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
-                    }
-                }
-                catch {
-                    $_ | Out-Null
-                }
-            })
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
+            }
 
-            # Only the engine-overlay composition (.env.<name>.mssql) is expected: the checked-in
+            # Only the engine-overlay composition (<leaf>.mssql) is expected: the checked-in
             # .env.mssql already aliases DMS_CONFIG_DATABASE_NAME to MSSQL_DB_NAME, so the topology
             # function correctly recognizes shared mode as already-correct and writes nothing
             # further - no additional ".topology" derived file.
-            $newFiles | Should -HaveCount 1
-            $newFiles[0] | Should -Match '\.mssql$'
+            $run.NewDerivedFiles | Should -HaveCount 1
+            $run.NewDerivedFiles[0] | Should -BeLike "*.mssql"
+            $run.TopologyFile | Should -BeNullOrEmpty
+
+            # The run must have reached the docker boundary and stopped exactly there, not failed
+            # earlier for an unrelated reason that would make the assertions above vacuous.
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "wiring must complete and reach the compose invocation"
+            $run.ErrorMessage | Should -BeLike "*Failed to start SQL Server. Exit code 1*"
         }
 
         It "separate mode (-SeparateConfigDatabase): migrates DMS_CONFIG_DATABASE_NAME to edfi_configurationservice" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $newFiles = @(Get-NewDerivedFiles -Before $script:derivedBefore -Action {
-                try {
-                    Invoke-WithDockerHidden {
-                        & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
-                    }
-                }
-                catch {
-                    $_ | Out-Null
-                }
-            })
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+            }
 
-            $topologyFile = $newFiles | Where-Object { $_ -match '\.topology$' }
-            $topologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a further-derived file on top of the engine overlay"
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a further-derived file on top of the engine overlay"
 
-            $values = ReadValuesFromEnvFile (Join-Path (Join-Path $script:dockerComposeRoot ".derived") $topologyFile)
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
             $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
+
+            # The derived topology file must be the one actually handed to Compose, not merely
+            # written and then dropped on the floor.
+            $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
+            $run.ErrorMessage | Should -BeLike "*Failed to start SQL Server. Exit code 1*"
         }
 
         It "-DmsOnly: cmsParticipates is false, so the Phase 2 postgresql guard never fires (today's -DmsOnly shape is preserved)" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $caughtMessage = $null
-            try {
-                Invoke-WithDockerHidden {
-                    & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile *>$null
-                }
-            }
-            catch {
-                $caughtMessage = $_.Exception.Message
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile *>$null
             }
 
-            $caughtMessage | Should -Not -Match "Phase 2" -Because "-DmsOnly is excluded from cmsParticipates, so the whole gate (including the postgresql guard) must be skipped, not just bypassed with a different error"
+            $run.ErrorMessage | Should -Not -BeLike "*Phase 2*" -Because "-DmsOnly is excluded from cmsParticipates, so the whole gate (including the postgresql guard) must be skipped, not just bypassed with a different error"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed past the gate to the docker boundary"
         }
 
         It "-DmsOnly: does not write a CMS topology-derived file even with -SeparateConfigDatabase (cmsParticipates is false, so the topology functions never run)" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $newFiles = @(Get-NewDerivedFiles -Before $script:derivedBefore -Action {
-                try {
-                    Invoke-WithDockerHidden {
-                        & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
-                    }
-                }
-                catch {
-                    $_ | Out-Null
-                }
-            })
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+            }
 
-            ($newFiles | Where-Object { $_ -match '\.topology$' }) |
-                Should -BeNullOrEmpty -Because "Resolve-CmsDatabaseTopologyEnvironmentFile must not run when cmsParticipates is false"
+            $run.TopologyFile | Should -BeNullOrEmpty -Because "Resolve-CmsDatabaseTopologyEnvironmentFile must not run when cmsParticipates is false"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
         }
     }
 
     Context "start-published-dms.ps1" {
         It "fails fast for -SeparateConfigDatabase with -DatabaseEngine postgresql, before touching Docker" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            { & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly } |
-                Should -Throw "*Phase 2*"
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*Phase 2*"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the guard must reject the combination before any docker invocation"
         }
 
         It "shared mode (switch omitted): does not migrate DMS_CONFIG_DATABASE_NAME away from its .env.mssql alias" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $newFiles = @(Get-NewDerivedFiles -Before $script:derivedBefore -Action {
-                try {
-                    Invoke-WithDockerHidden {
-                        & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
-                    }
-                }
-                catch {
-                    $_ | Out-Null
-                }
-            })
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -EnvironmentFile $envFile -InfraOnly *>$null
+            }
 
-            $newFiles | Should -HaveCount 1
-            $newFiles[0] | Should -Match '\.mssql$'
+            $run.NewDerivedFiles | Should -HaveCount 1
+            $run.NewDerivedFiles[0] | Should -BeLike "*.mssql"
+            $run.TopologyFile | Should -BeNullOrEmpty
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "wiring must complete and reach the compose invocation"
+            $run.ErrorMessage | Should -BeLike "*Failed to start SQL Server. Exit code 1*"
         }
 
         It "separate mode (-SeparateConfigDatabase): migrates DMS_CONFIG_DATABASE_NAME to edfi_configurationservice" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $newFiles = @(Get-NewDerivedFiles -Before $script:derivedBefore -Action {
-                try {
-                    Invoke-WithDockerHidden {
-                        & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
-                    }
-                }
-                catch {
-                    $_ | Out-Null
-                }
-            })
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile -InfraOnly *>$null
+            }
 
-            $topologyFile = $newFiles | Where-Object { $_ -match '\.topology$' }
-            $topologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a further-derived file on top of the engine overlay"
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a further-derived file on top of the engine overlay"
 
-            $values = ReadValuesFromEnvFile (Join-Path (Join-Path $script:dockerComposeRoot ".derived") $topologyFile)
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
             $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
+
+            $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
+            $run.ErrorMessage | Should -BeLike "*Failed to start SQL Server. Exit code 1*"
         }
 
         It "-DmsOnly: cmsParticipates is false, so the Phase 2 postgresql guard never fires (today's -DmsOnly shape is preserved)" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $caughtMessage = $null
-            try {
-                Invoke-WithDockerHidden {
-                    & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile *>$null
-                }
-            }
-            catch {
-                $caughtMessage = $_.Exception.Message
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile *>$null
             }
 
-            $caughtMessage | Should -Not -Match "Phase 2" -Because "-DmsOnly is excluded from cmsParticipates, so the whole gate (including the postgresql guard) must be skipped, not just bypassed with a different error"
+            $run.ErrorMessage | Should -Not -BeLike "*Phase 2*" -Because "-DmsOnly is excluded from cmsParticipates, so the whole gate (including the postgresql guard) must be skipped, not just bypassed with a different error"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed past the gate to the docker boundary"
         }
 
         It "-DmsOnly: does not write a CMS topology-derived file even with -SeparateConfigDatabase (cmsParticipates is false, so the topology functions never run)" {
-            $envFile = Join-Path $script:work ".env"
-            Set-Content -LiteralPath $envFile -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
-            ) -join "`n") -NoNewline
+            $envFile = New-WiringEnvFile
 
-            $newFiles = @(Get-NewDerivedFiles -Before $script:derivedBefore -Action {
-                try {
-                    Invoke-WithDockerHidden {
-                        & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
-                    }
-                }
-                catch {
-                    $_ | Out-Null
-                }
-            })
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+            }
 
-            ($newFiles | Where-Object { $_ -match '\.topology$' }) |
-                Should -BeNullOrEmpty -Because "Resolve-CmsDatabaseTopologyEnvironmentFile must not run when cmsParticipates is false"
+            $run.TopologyFile | Should -BeNullOrEmpty -Because "Resolve-CmsDatabaseTopologyEnvironmentFile must not run when cmsParticipates is false"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
+        }
+    }
+
+    # The published script's CMS-participation gate is narrower than the local script's: CMS must
+    # also actually be in the compose set. A bare published Keycloak start (no -EnableConfig, no
+    # -InfraOnly, not bootstrap mode, no -SeparateConfigDatabase) omits published-config.yml
+    # entirely, so CMS never runs and this story's topology validator must not pass judgment on its
+    # endpoint. These cover both halves behaviorally: the compose file set as actually built, and
+    # the gate that follows from it.
+    Context "start-published-dms.ps1 Configuration Service participation" {
+        It "omits published-config.yml for a bare Keycloak start (CMS opt-in preserved)" {
+            $envFile = New-WiringEnvFile
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+        }
+
+        It "includes published-config.yml for -SeparateConfigDatabase under Keycloak, which would otherwise omit it" {
+            $envFile = New-WiringEnvFile
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ComposeCommand | Should -BeLike "*published-config.yml*" -Because "CMS must actually run to create the dedicated database"
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "CMS participates in this shape, so the topology sequence must run"
+        }
+
+        It "includes published-config.yml for -EnableConfig and for self-contained identity" {
+            $enableConfigRun = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -EnableConfig -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+            $enableConfigRun.ComposeCommand | Should -BeLike "*published-config.yml*"
+
+            $selfContainedRun = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider self-contained -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+            $selfContainedRun.ComposeCommand | Should -BeLike "*published-config.yml*"
+        }
+
+        It "does not run this story's topology validator for a bare Keycloak start that omits CMS" {
+            # CMS is absent from the compose set, so Confirm-CmsDatabaseTopologyAgreement must not
+            # run and no topology-derived file may be written. A consistent (shared) CMS connection
+            # string keeps the legacy shared-database check satisfied, isolating the gate itself as
+            # the behavior under test.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the docker boundary rather than being rejected by a validator that should not have run"
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.TopologyFile | Should -BeNullOrEmpty -Because "the topology sequence is gated on CMS participation"
+            $run.ErrorMessage | Should -Not -BeLike "*topology*"
+        }
+
+        It "keeps today's legacy shared-database rejection for a bare Keycloak start whose CMS endpoint disagrees" {
+            # Non-participating shapes must keep running Assert-MssqlCmsDatabaseIsShared exactly as
+            # they do today (the spec's own requirement), so a mismatched CMS database name is still
+            # rejected here - by the legacy DMS-1255 check, not by this story's topology validator.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=some-other-host,1433;Database=a_totally_different_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*"
+            $run.ErrorMessage | Should -Not -BeLike "*CMS database topology mismatch*" -Because "the legacy check owns this non-participating shape, not this story's validator"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the legacy check rejects the invocation before any docker call, exactly as it does today"
         }
     }
 }

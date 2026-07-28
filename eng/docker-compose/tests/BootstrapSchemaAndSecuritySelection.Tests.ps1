@@ -1484,7 +1484,11 @@ exit $ExitCode
             }
 
             $publishedStartScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
-            $publishedStartScript | Should -Match 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode -or \$SeparateConfigDatabase\)\s*\{[^}]*?published-config\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
+            # The inclusion condition is computed once into $cmsIncludedInComposeSet (shared with the
+            # CMS-participation gate so the two cannot drift); assert the inclusion is gated on that
+            # variable and that its definition still carries $bootstrapMode.
+            $publishedStartScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?published-config\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
+            $publishedStartScript | Should -Match '\$cmsIncludedInComposeSet = [^\r\n]*\$bootstrapMode' -Because "bootstrap mode must remain one of the conditions that includes CMS"
         }
 
         It "retains AddExtensionSecurityMetadata as a transitional non-bootstrap hybrid claims path" {

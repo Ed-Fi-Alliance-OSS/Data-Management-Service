@@ -64,7 +64,10 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
                 # import the shared Compose-equivalent resolver from this module.
                 "database-safety.psm1",
                 ".env.bootstrap.ds52",
-                ".env.bootstrap.ds61"
+                ".env.bootstrap.ds61",
+                # A -DatabaseEngine mssql wrapper run composes this engine overlay onto the base
+                # env before any phase command, so the fixture needs it to reach the phase scripts.
+                ".env.mssql"
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
             }
@@ -199,17 +202,30 @@ Add-Content -LiteralPath '$CallLogPath' -Value "configure smoke=`$AddSmokeTestCr
                 [string]$Directory,
 
                 [Parameter(Mandatory)]
-                [string]$CallLogPath
+                [string]$CallLogPath,
+
+                # When supplied, the bound -DatabaseEngine is recorded to this separate file.
+                # Deliberately not the shared call log: several tests assert that log's exact line
+                # count and ordering, so adding a line there would break them.
+                [string]$EngineLogPath
             )
 
             $scriptPath = Join-Path $Directory "provision-dms-schema.ps1"
+            $engineRecording = if ([string]::IsNullOrWhiteSpace($EngineLogPath)) {
+                ""
+            }
+            else {
+                "Add-Content -LiteralPath '$EngineLogPath' -Value `"provision-engine=`$DatabaseEngine`""
+            }
             @"
 param(
     [string] `$EnvironmentFile,
     [long[]] `$DataStoreId,
+    [string] `$DatabaseEngine,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 Add-Content -LiteralPath '$CallLogPath' -Value "provision"
+$engineRecording
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
@@ -569,6 +585,43 @@ $failureStatement
             $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore" -Because "the continuation hint must reuse the data store the terminal run created, not duplicate it"
         }
 
+        It "forwards -DatabaseEngine to the provision phase (DMS-1270 Phase 1b)" {
+            # Invoke-BootstrapWrapper builds $provisionArgs by hand rather than splatting
+            # $PSBoundParameters, and originally omitted DatabaseEngine - so an mssql wrapper run
+            # provisioned the DMS relational schema with the provision script's postgresql default.
+            # Asserted through the recording stub's own parameter binding, so the value has to
+            # survive the whole wrapper -> phase-script boundary rather than merely appear in a
+            # hashtable.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-engine.txt"
+            $engineLog = Join-Path $script:repo.RepoRoot "engine-log.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -EngineLogPath $engineLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine mssql `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $callLog) | Should -Contain "provision"
+            @(Get-Content -LiteralPath $engineLog) | Should -Contain "provision-engine=mssql" -Because "the provision phase must receive the engine the wrapper was invoked with, not its own default"
+        }
+
+        It "forwards the default -DatabaseEngine to the provision phase" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-engine-default.txt"
+            $engineLog = Join-Path $script:repo.RepoRoot "engine-log-default.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -EngineLogPath $engineLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $engineLog) | Should -Contain "provision-engine=postgresql"
+        }
+
         It "start-local-dms.ps1 terminal guidance block does not print a second start run as a resume mechanism" {
             # Static companion to the wrapper output assertion above: the start script's own
             # -InfraOnly terminal guidance (Write-Output lines) must not suggest re-running
@@ -796,8 +849,13 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $publishedConfigGuardPattern = 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode -or \$SeparateConfigDatabase\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
-            $startScript | Should -Match $publishedConfigGuardPattern -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+            # The condition is computed once into $cmsIncludedInComposeSet and shared with the
+            # CMS-participation gate, so the two cannot drift; assert the inclusion is gated on that
+            # single source and that the source's definition still carries $bootstrapMode. Behavioral
+            # coverage of each disjunct lives in CmsDatabaseTopology.Tests.ps1, which runs the script
+            # and inspects the compose file set it actually builds.
+            $startScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)' -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+            $startScript | Should -Match '\$cmsIncludedInComposeSet = [^\r\n]*\$bootstrapMode'
         }
 
         It "start-published-dms.ps1 keeps non-bootstrap keycloak published-config.yml opt-in behavior" {
@@ -805,13 +863,13 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $guardMatch = [regex]::Match(
+            $definitionMatch = [regex]::Match(
                 $startScript,
-                'if \((?<condition>[^\r\n]+)\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+                '\$cmsIncludedInComposeSet = (?<condition>[^\r\n]+)'
             )
-            $guardMatch.Success | Should -BeTrue
+            $definitionMatch.Success | Should -BeTrue
 
-            $condition = $guardMatch.Groups["condition"].Value
+            $condition = $definitionMatch.Groups["condition"].Value
             $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase'
             $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
         }
