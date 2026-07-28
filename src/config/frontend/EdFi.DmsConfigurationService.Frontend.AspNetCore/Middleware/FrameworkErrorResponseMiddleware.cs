@@ -6,11 +6,12 @@
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 
 /// <summary>
-/// Shapes framework-generated, bodiless error responses (401/403/404/405/415) into the Ed-Fi error
+/// Shapes framework-generated, bodiless error responses (401/403/404/405/413/415) into the Ed-Fi error
 /// contract, independent of route and authentication scheme (DMS-1218 INV-25…29).
 ///
 /// Registered immediately after <c>UseRouting</c> and before CORS/authentication/authorization, so it
@@ -64,6 +65,12 @@ public class FrameworkErrorResponseMiddleware(RequestDelegate next)
                 context.TraceIdentifier
             ),
             StatusCodes.Status415UnsupportedMediaType => FailureResponse.ForUnsupportedMediaType(
+                context.TraceIdentifier
+            ),
+            // Kestrel emits oversized-body responses without entering exception handling.
+            StatusCodes.Status413PayloadTooLarge => FailureResponse.ForUnclassifiedStatus(
+                StatusCodes.Status413PayloadTooLarge,
+                ReasonPhrases.GetReasonPhrase(StatusCodes.Status413PayloadTooLarge),
                 context.TraceIdentifier
             ),
             _ => null,

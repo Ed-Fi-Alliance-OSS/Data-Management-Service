@@ -7,6 +7,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -451,5 +452,80 @@ public class FrameworkErrorResponseTests
 
         [Test]
         public void It_has_an_empty_body() => _content.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_request_body_exceeding_the_kestrel_limit
+    {
+        private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (ctx, collection) =>
+                    {
+                        collection.AddTestAuthentication();
+
+                        var identitySettings = ctx
+                            .Configuration.GetSection("IdentitySettings")
+                            .Get<IdentitySettings>()!;
+                        collection.AddAuthorization(options =>
+                        {
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy =>
+                                    policy.RequireClaim(
+                                        identitySettings.RoleClaimType,
+                                        identitySettings.ConfigServiceRole
+                                    )
+                            );
+                            AuthorizationScopePolicies.Add(options);
+                        });
+
+                        collection.AddTransient(_ => _profileRepository);
+                    }
+                );
+            });
+            _factory.UseKestrel(0);
+            _factory.UseKestrel(options => options.Limits.MaxRequestBodySize = 100);
+
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            using var content = new StringContent(new string('a', 500), Encoding.UTF8, "application/json");
+            _response = await _client.PostAsync("/v3/profiles/", content);
+            _content = await _response.Content.ReadAsStringAsync();
+            _body = JsonNode.Parse(_content)!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_shaped_payload_too_large_contract() =>
+            AssertShapedContract(
+                _response,
+                _body,
+                HttpStatusCode.RequestEntityTooLarge,
+                "about:blank",
+                "Payload Too Large",
+                ""
+            );
+
+        [Test]
+        public void It_has_a_nonempty_response_body() => _content.Should().NotBeEmpty();
     }
 }
