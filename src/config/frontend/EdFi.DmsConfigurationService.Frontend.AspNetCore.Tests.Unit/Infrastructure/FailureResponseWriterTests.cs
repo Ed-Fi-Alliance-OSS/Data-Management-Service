@@ -16,7 +16,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 
 public class FailureResponseWriterTests
 {
-    private static async Task<(int StatusCode, string? ContentType, JsonNode Body)> WriteAndReadAsync(
+    private static async Task<(int StatusCode, string ContentType, JsonNode Body)> WriteAndReadAsync(
         HttpContext context,
         JsonNode node
     )
@@ -27,14 +27,14 @@ public class FailureResponseWriterTests
         context.Response.Body.Seek(0, SeekOrigin.Begin);
         string bodyText = await new StreamReader(context.Response.Body).ReadToEndAsync();
         JsonNode body = JsonNode.Parse(bodyText)!;
-        return (context.Response.StatusCode, context.Response.ContentType, body);
+        return (context.Response.StatusCode, context.Response.ContentType!, body);
     }
 
     [TestFixture]
     public class Given_a_not_found_node
     {
         private int _status;
-        private string? _contentType;
+        private string _contentType = null!;
         private JsonNode _body = null!;
 
         [SetUp]

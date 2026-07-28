@@ -235,27 +235,50 @@ public class FailureResponseTests
         result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
     }
 
-    [Test]
-    public void ForParameterValidation_ShouldReturnCorrectJsonNode()
+    [TestFixture]
+    public class Given_a_parameter_validation_failure
     {
-        // Arrange
-        string[] errors = ["'limit' must be greater than 0."];
+        private static readonly string[] _errors = ["'limit' must be greater than 0."];
+        private JsonNode _result = null!;
 
-        // Act
-        var result = FailureResponse.ForParameterValidation(errors, CorrelationId);
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForParameterValidation(_errors, CorrelationId);
 
-        // Assert
-        result.Should().BeOfType<JsonObject>();
-        result["detail"]
-            ?.GetValue<string>()
-            .Should()
-            .Be("Parameter validation failed. See 'errors' for details.");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
-        result["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
-        result["status"]?.GetValue<int>().Should().Be(400);
-        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
-        result["validationErrors"]?.AsObject().Count.Should().Be(0);
-        result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
+        [Test]
+        public void It_returns_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_parameter_validation_detail() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("Parameter validation failed. See 'errors' for details.");
+
+        [Test]
+        public void It_has_the_parameter_validation_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+
+        [Test]
+        public void It_has_the_parameter_validation_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+
+        [Test]
+        public void It_has_a_status_of_400() => _result["status"]?.GetValue<int>().Should().Be(400);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_validation_errors() =>
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+
+        [Test]
+        public void It_lists_the_single_parameter_error() =>
+            _result["errors"]
+                ?.AsArray()
+                .Should()
+                .ContainSingle(error => error!.GetValue<string>() == _errors[0]);
     }
 
     [Test]

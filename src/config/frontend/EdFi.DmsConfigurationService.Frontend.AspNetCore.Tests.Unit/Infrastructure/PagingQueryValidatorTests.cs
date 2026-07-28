@@ -105,16 +105,26 @@ public class Given_PagingQueryValidators
         result.IsValid.Should().BeTrue();
     }
 
-    [Test]
-    public void Invalid_orderBy_does_not_reflect_the_raw_client_supplied_value()
+    [TestFixture]
+    public class Given_an_invalid_orderBy_value
     {
-        const string injectionSentinel = "<script>SENTINEL_ORDERBY_INJECTION_9f2c</script>";
-        var validator = new ClaimSetPagingQueryValidator();
+        private const string InjectionSentinel = "<script>SENTINEL_ORDERBY_INJECTION_9f2c</script>";
+        private ValidationResult _result = null!;
 
-        var result = validator.Validate(new FrontendClaimSetQuery { OrderBy = injectionSentinel });
+        [SetUp]
+        public void Setup() =>
+            _result = new ClaimSetPagingQueryValidator().Validate(
+                new FrontendClaimSetQuery { OrderBy = InjectionSentinel }
+            );
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().NotBeEmpty();
-        result.Errors.Should().OnlyContain(e => !e.ErrorMessage.Contains(injectionSentinel));
+        [Test]
+        public void It_rejects_the_query() => _result.IsValid.Should().BeFalse();
+
+        [Test]
+        public void It_reports_at_least_one_error() => _result.Errors.Should().NotBeEmpty();
+
+        [Test]
+        public void It_does_not_reflect_the_raw_client_supplied_value() =>
+            _result.Errors.Should().OnlyContain(e => !e.ErrorMessage.Contains(InjectionSentinel));
     }
 }

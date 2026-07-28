@@ -14,7 +14,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 
 public class FailureResultsTests
 {
-    private sealed record ExecutedResult(int StatusCode, string? ContentType, JsonNode Body);
+    private sealed record ExecutedResult(int StatusCode, string ContentType, JsonNode Body);
 
     private static async Task<ExecutedResult> ExecuteAsync(IResult result)
     {
@@ -32,7 +32,7 @@ public class FailureResultsTests
         context.Response.Body.Seek(0, SeekOrigin.Begin);
         string bodyText = await new StreamReader(context.Response.Body).ReadToEndAsync();
         JsonNode body = JsonNode.Parse(bodyText)!;
-        return new ExecutedResult(context.Response.StatusCode, context.Response.ContentType, body);
+        return new ExecutedResult(context.Response.StatusCode, context.Response.ContentType!, body);
     }
 
     [TestFixture]
