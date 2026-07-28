@@ -279,11 +279,16 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         // startup. A value that cannot be converted to its target type - a non-numeric
         // AppSettings__MaxRequestBodySizeMegabytes, say - surfaces here as InvalidOperationException
         // rather than OptionsValidationException, and carries no Failures collection for the
-        // short-circuit middleware to report. Recording it matters because this call sits in the
-        // only unguarded window in startup, between the BuildApplication phase and the first
+        // short-circuit middleware to report. Recording it matters because this call is the last
+        // statement in the unguarded window between the BuildApplication phase and the first
         // RunFatalAsync: without this the status file would be left reading Completed/BuildApplication
         // on a process that is about to die, which is worse than a stranded Starting because
-        // Completed reads as success.
+        // Completed reads as success. The statements ahead of it in that window - resolving
+        // StartupPhaseExecutor, the startup log line, the path-base call, and the middleware
+        // registrations - are unguarded too, deliberately: they fail on a missing DI registration or
+        // a malformed middleware type, which breaks in every environment rather than on one
+        // deployment's configuration. Anything added there that a configuration value can break
+        // needs its own guard; bootstrapStartupStatusSignal is still in scope for that.
         startupPhaseExecutor.WriteFatalFailure(
             DmsStartupPhases.ConfigureEndpoints,
             "Configuration could not be read or bound. DMS cannot start without valid configuration values.",

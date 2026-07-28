@@ -20,6 +20,20 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
+/// <summary>
+/// Several fixtures here isolate the startup status file by overriding
+/// <c>AppSettings:StartupStatusFilePath</c> through <c>ConfigureAppConfiguration</c>. That override
+/// reaches only the writes issued after <c>builder.Build()</c>, by the DI-resolved
+/// StartupPhaseExecutor. It cannot reach the ConfigureServices or BuildApplication phases:
+/// Program.cs constructs its bootstrap signal from <c>builder.Configuration</c> before the host
+/// exists, so that signal has already resolved its path - to the machine-shared
+/// <c>Path.Combine(Path.GetTempPath(), "dms-startup-status.json")</c> default - by the time this
+/// callback runs, and both pre-host phases still write there. Harmless for the assertions here,
+/// which all target post-Build writes, but it means "this fixture isolates the status file" is only
+/// true from Build onward. Asserting on a pre-host write needs process-level environment variables
+/// instead; see
+/// <see cref="ConfigurationTests.Given_A_Process_Level_Configuration_Failure_Before_The_Host_Is_Built"/>.
+/// </summary>
 [TestFixture]
 [NonParallelizable]
 public class ConfigurationTests
@@ -285,9 +299,11 @@ public class ConfigurationTests
     /// eager bind in startup; a non-numeric value for the <c>int</c>
     /// <c>MaxRequestBodySizeMegabytes</c> fails conversion and surfaces as
     /// <see cref="InvalidOperationException"/>, not <see cref="OptionsValidationException"/>. That
-    /// call sits in the only unguarded window in startup, so before the catch existed it escaped
-    /// every status guard and left the file reading Completed/BuildApplication on a dead process -
-    /// worse than a stranded Starting, because Completed reads as success.
+    /// call is the last statement in the unguarded window between the BuildApplication phase and
+    /// the first fatal phase, so before the catch existed it escaped every status guard and left the
+    /// file reading Completed/BuildApplication on a dead process - worse than a stranded Starting,
+    /// because Completed reads as success. The statements ahead of it in that window are still
+    /// unguarded by design; the comment on that catch in <c>Program.cs</c> records why.
     /// Contrast <see cref="Given_A_Configuration_With_Invalid_Max_Request_Body_Size"/>, which uses
     /// "0": a value that binds and then fails the validator, taking the
     /// <see cref="OptionsValidationException"/> route to a host that stays up serving 500s.
@@ -402,6 +418,18 @@ public class ConfigurationTests
     /// un-deduplicated, producing "/{districtId}/{districtId}/data/{**dmsPath}", which makes
     /// endpoint mapping throw. Before the catch existed the status file was stranded at Starting
     /// with no ErrorType or ErrorMessage.
+    /// The trigger works only because <c>AppSettingsValidator</c> does not validate
+    /// <c>RouteQualifierSegments</c> at all - it checks AuthenticationService, Datastore, and
+    /// MaxRequestBodySizeMegabytes and nothing else. Adding a duplicate or format check there
+    /// would intercept "districtId,districtId" as an <see cref="OptionsValidationException"/>
+    /// before endpoint mapping runs, and this test would start failing for a reason that has
+    /// nothing to do with the catch it guards. If that happens, replace the trigger rather than
+    /// deleting or weakening the assertions: this fixture is the only coverage for the
+    /// endpoint-mapping catch in <c>Program.cs</c>, so a dropped assertion takes that route to
+    /// zero. A verified replacement is the single segment "dmsPath", which yields
+    /// "/{dmsPath}/data/{**dmsPath}" - it collides with the catch-all parameter name hardcoded in
+    /// BuildRoutePattern rather than with another configured segment, so a within-list duplicate
+    /// or format check does not intercept it.
     /// </summary>
     [TestFixture]
     public class Given_A_Configuration_With_Duplicate_Route_Qualifier_Segments
