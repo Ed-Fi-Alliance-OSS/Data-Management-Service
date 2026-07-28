@@ -21,6 +21,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// document so both providers are held to the same expectations.
 /// </summary>
 [TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Page_With_Multi_Column_And_Child_Document_References
 {
@@ -251,6 +253,8 @@ public class Given_A_Mssql_Page_With_Multi_Column_And_Child_Document_References
 /// failing or leaking references belonging to documents outside the page.
 /// </summary>
 [TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Empty_Page_With_Document_References
 {
@@ -325,6 +329,8 @@ public class Given_A_Mssql_Empty_Page_With_Document_References
 /// result set and no lookup result set at all.
 /// </summary>
 [TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Descriptor_Only_Resource_Page
 {

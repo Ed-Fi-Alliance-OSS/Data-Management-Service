@@ -23,6 +23,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// </summary>
 [TestFixture]
 [NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Page_With_Multi_Column_And_Child_Document_References
 {
     private const string TestSchema = "refpage";
@@ -244,6 +246,8 @@ public class Given_A_Postgresql_Page_With_Multi_Column_And_Child_Document_Refere
 /// </summary>
 [TestFixture]
 [NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Empty_Page_With_Document_References
 {
     private const string TestSchema = "refpageempty";
@@ -310,6 +314,8 @@ public class Given_A_Postgresql_Empty_Page_With_Document_References
 /// </summary>
 [TestFixture]
 [NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Descriptor_Only_Resource_Page
 {
     private const string TestSchema = "refpagedesc";
