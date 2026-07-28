@@ -89,6 +89,20 @@ internal static class FailureResults
         );
     }
 
+    public static IResult Authentication(string error, string errorDescription, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForUnauthorized(
+                "Authentication Failed",
+                _errorDetail,
+                correlationId,
+                [$"{error}. {errorDescription}"]
+            ),
+            contentType: _errorContentType,
+            statusCode: 401
+        );
+    }
+
     // invalid_client and unauthorized_client both map to the same 401 contract.
     public static IResult InvalidClient(string detail, string correlationId) =>
         Unauthorized(detail, correlationId);

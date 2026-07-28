@@ -92,8 +92,10 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_GetAccessTokenAsync_WhenApiClientIsNotApproved : OpenIddictTokenManagerTests
     {
+        private TokenResult _result = null!;
+
         [SetUp]
-        public void Arrange()
+        public async Task Act()
         {
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("disabled-client"))
                 .Returns(
@@ -106,23 +108,99 @@ public class OpenIddictTokenManagerTests
                 );
 
             A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
-        }
 
-        [Test]
-        public async Task It_should_return_failure_identity_provider_invalid_client_when_application_is_not_approved()
-        {
             var credentials = new List<KeyValuePair<string, string>>
             {
                 new("client_id", "disabled-client"),
                 new("client_secret", "plain-secret"),
             };
 
-            var result = await _tokenManager.GetAccessTokenAsync(credentials);
-
-            result.Should().BeOfType<TokenResult.FailureIdentityProvider>();
-            var failure = (TokenResult.FailureIdentityProvider)result;
-            failure.IdentityProviderError.Should().BeOfType<IdentityProviderError.InvalidClient>();
+            _result = await _tokenManager.GetAccessTokenAsync(credentials);
         }
+
+        [Test]
+        public void It_returns_an_invalid_client_authentication_failure() =>
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenClientIsUnknown : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("unknown-client"))
+                .Returns((ApplicationInfo?)null);
+
+            var credentials = new List<KeyValuePair<string, string>>
+            {
+                new("client_id", "unknown-client"),
+                new("client_secret", "plain-secret"),
+            };
+
+            _result = await _tokenManager.GetAccessTokenAsync(credentials);
+        }
+
+        [Test]
+        public void It_returns_an_invalid_client_authentication_failure() =>
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenClientSecretIsInvalid : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "known-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+
+            A.CallTo(() => _secretHasher.VerifySecretAsync("wrong-secret", "hashed-secret")).Returns(false);
+
+            var credentials = new List<KeyValuePair<string, string>>
+            {
+                new("client_id", "known-client"),
+                new("client_secret", "wrong-secret"),
+            };
+
+            _result = await _tokenManager.GetAccessTokenAsync(credentials);
+        }
+
+        [Test]
+        public void It_returns_an_unauthorized_client_authentication_failure() =>
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "unauthorized_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
     }
 
     // The self-contained provider re-checks token status by jti on every request after

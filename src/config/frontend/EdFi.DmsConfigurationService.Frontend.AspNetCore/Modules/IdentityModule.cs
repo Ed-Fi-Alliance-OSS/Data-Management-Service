@@ -239,6 +239,11 @@ public class IdentityModule : IEndpointModule
             TokenResult.Success tokenSuccess => Results.Ok(
                 JsonSerializer.Deserialize<TokenResponse>(tokenSuccess.Token)
             ),
+            TokenResult.FailureAuthentication authenticationFailure => FailureResults.Authentication(
+                authenticationFailure.Error,
+                authenticationFailure.ErrorDescription,
+                httpContext.TraceIdentifier
+            ),
             TokenResult.FailureIdentityProvider failureIdentityProvider =>
                 failureIdentityProvider.IdentityProviderError switch
                 {

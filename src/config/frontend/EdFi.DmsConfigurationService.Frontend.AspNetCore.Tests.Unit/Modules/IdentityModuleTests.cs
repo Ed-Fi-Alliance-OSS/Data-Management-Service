@@ -869,6 +869,89 @@ public class TokenEndpointTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
+
+    [TestFixture]
+    public class Given_a_service_owned_authentication_failure
+    {
+        private ITokenManager _serviceTokenManager = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _serviceTokenManager = A.Fake<ITokenManager>();
+            A.CallTo(() =>
+                    _serviceTokenManager.GetAccessTokenAsync(
+                        A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                    )
+                )
+                .Returns(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTransient(_ => new TokenRequest.Validator());
+                    collection.AddTransient(_ => _serviceTokenManager);
+                });
+            });
+            _client = _factory.CreateClient();
+
+            var requestContent = new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+            ]);
+            _response = await _client.PostAsync("/connect/token", requestContent);
+            _content = await _response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        [Test]
+        public void It_returns_the_authentication_contract_with_the_composed_error()
+        {
+            JsonNode actualResponse = JsonNode.Parse(_content)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The request could not be processed. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:security:authentication",
+                  "title": "Authentication Failed",
+                  "status": 401,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "invalid_client. Invalid client or Invalid client credentials"
+                  ]
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+    }
 }
 
 /// <summary>
