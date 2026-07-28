@@ -167,18 +167,14 @@ public enum TrackedChangeTableKind
     // Per-resource tracked-change table in `tracked_changes_{ProjectEndpointName}`.
     Resource,
 
-    // Per-resource tracked-change table for a concrete subclass of an abstract resource
-    // (e.g. `School`); carries the abstract identity plus any securable-element overrides.
-    ConcreteAbstract,
-
     // Shared descriptor tracked-change table, conventionally `tracked_changes_edfi.Descriptor`.
     SharedDescriptor
 }
 
 public enum TrackedChangeColumnRole
 {
-    // Plain scalar value mirrored from a live identity or securable-element storage column.
-    Scalar,
+    // Value comes from an identityJsonPaths binding or a securableElements scalar binding.
+    SourceValue,
 
     // Value is projected from `dms.Descriptor.Namespace` for a descriptor reference binding.
     DescriptorNamespace,
@@ -190,86 +186,63 @@ public enum TrackedChangeColumnRole
     PersonDocumentId
 }
 
-// The authorization purpose(s) a tracked value column serves. Combinable because a single path can
-// be both an identity component and a securable element; lets Change Query and authorization
-// planners read a column's purpose without re-deriving it from `SourceJsonPath`.
-[Flags]
-public enum TrackedChangeColumnOrigin
+public enum PersonSecurableElementKind
 {
-    None = 0,
-
-    // The column tracks a resource identity path (`identityJsonPaths`).
-    Identity = 1,
-
-    // The column tracks a securable-element path (`securableElements`).
-    SecurableElement = 2
+    Student,
+    Contact,
+    Staff
 }
 
 public sealed record TrackedChangeDescriptorJoinInfo(
-    // The stable join name referenced by descriptor value columns via `DescriptorJoinName`.
-    string DescriptorJoinName,
-    // The descriptor FK column on the live source table (e.g. `*_DescriptorId`).
-    DbColumnName SourceColumn,
-    QualifiedResourceName DescriptorResource
+    string JoinName,
+    QualifiedResourceName DescriptorResource,
+    DbColumnName SourceDescriptorIdColumn,
+    DbColumnName NamespaceOutputColumn,
+    DbColumnName CodeValueOutputColumn
+);
+
+public sealed record TrackedChangeJoinStep(
+    DbTableName FromTable,
+    DbColumnName FromDocumentIdColumn,
+    DbTableName ToTable,
+    DbColumnName ToDocumentIdColumn
 );
 
 public sealed record TrackedChangePersonJoinInfo(
-    // The stable join name referenced by the person `DocumentId` value column via `PersonJoinName`.
-    string PersonJoinName,
-    // Uses the shared `SecurableElementKind` from the auth securable-element contracts in
-    // `Backend.External`; person joins only use the Student/Contact/Staff members.
-    SecurableElementKind PersonKind,
-    // Resource-table join chain to the person resource root, expressed as the shared
-    // `ColumnPathStep(SourceTable, SourceColumnName, TargetTable, TargetColumnName)` steps.
-    IReadOnlyList<ColumnPathStep> JoinPath
+    string JoinName,
+    PersonSecurableElementKind PersonKind,
+    JsonPathExpression SourceJsonPath,
+    IReadOnlyList<TrackedChangeJoinStep> JoinStepsInOrder,
+    DbColumnName PersonDocumentIdOutputColumn
 );
 
 public sealed record TrackedChangeColumnInfo(
+    DbColumnName BaseColumnName,
     DbColumnName OldColumnName,
     DbColumnName NewColumnName,
-    string SourceJsonPath,
-    // The canonical storage column when the source participates in key unification, or DocumentId
-    // when the column is a zero-hop self-person projection (PersonJoinName = null); null otherwise.
-    DbColumnName? CanonicalStorageColumn,
+    RelationalScalarType ScalarType,
     bool IsOldColumnNullable,
     bool IsNewColumnNullable,
-    RelationalScalarType ScalarType,
     TrackedChangeColumnRole Role,
-    TrackedChangeColumnOrigin Origin,
+    JsonPathExpression? SourceJsonPath,
+    DbColumnName? SourceStorageColumn = null,
     string? DescriptorJoinName = null,
     string? PersonJoinName = null
 );
 
-public enum TrackedChangeSystemColumnRole
-{
-    Id,
-    ChangeVersion,
-    CreatedAt,
-    Discriminator
-}
-
-public sealed record TrackedChangeSystemColumnInfo(
-    TrackedChangeSystemColumnRole Role,
-    DbColumnName ColumnName,
-    // Null when the SQL type is determined entirely by the role (the `Id` role: PostgreSQL `uuid`,
-    // SQL Server `uniqueidentifier`); dialect emitters render it by role.
-    RelationalScalarType? ScalarType,
-    bool IsNullable,
-    bool IsPrimaryKey
-);
-
 public sealed record TrackedChangeTableInfo(
-    DbTableName Table,
+    DbTableName TableName,
     TrackedChangeTableKind Kind,
+    ResourceKeyEntry? ResourceKey,
     DbTableName SourceTable,
+    // System columns use fixed role-based SQL type mappings documented below; they are not value columns.
+    DbColumnName IdColumn,
+    DbColumnName ChangeVersionColumn,
+    DbColumnName CreatedAtColumn,
+    DbColumnName? DiscriminatorColumn,
     IReadOnlyList<TrackedChangeColumnInfo> ValueColumnsInTableOrder,
-    // Fixed-by-role system columns (`Id`, `ChangeVersion`, `CreatedAt`, and `Discriminator` on the
-    // shared descriptor table); role-based SQL type mappings are documented below.
-    IReadOnlyList<TrackedChangeSystemColumnInfo> SystemColumns,
-    // `[ChangeVersion]` in the current design; carried here so renderers do not hardcode it.
-    IReadOnlyList<DbColumnName> PrimaryKeyColumns,
-    IReadOnlyList<TrackedChangeDescriptorJoinInfo> DescriptorJoins,
-    IReadOnlyList<TrackedChangePersonJoinInfo> PersonJoins
+    IReadOnlyList<TrackedChangeDescriptorJoinInfo> DescriptorJoinsInNameOrder,
+    IReadOnlyList<TrackedChangePersonJoinInfo> PersonJoinsInNameOrder
 );
 
 // The four ReadChanges authorization views (see `change-queries.md` §"Authorization views")
@@ -408,24 +381,21 @@ Notes:
 - `TrackedChangeTablesInNameOrder` is stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, manifests, and tests must consume this inventory rather than re-deriving table columns, descriptor joins, or person joins from emitted SQL strings.
 - The ReadChanges authorization view inventory is not part of `DerivedRelationalModelSet`: it is the static `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` list in `Backend.External` (see the `ReadChangesAuthViewKind` note above). Emission of these views is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables in `TrackedChangeTablesInNameOrder`; the DDL emitter and the manifest emitter apply the same guard so the manifest never advertises views the DDL does not create.
 - `TrackedChangeTableInfo` separates system columns from `ValueColumnsInTableOrder`:
-  - When `Kind = Resource` or `Kind = ConcreteAbstract`, the table tracks a single concrete resource, identified by its `Table`/`SourceTable` pair.
-  - When `Kind = SharedDescriptor`, the table covers every `ConcreteResourceModel` whose `StorageKind = SharedDescriptorTable` in the same `DerivedRelationalModelSet`. Consumers must not duplicate descriptor coverage lists inside `TrackedChangeTableInfo`.
+  - When `Kind = Resource`, `ResourceKey` is required and identifies the single resource represented by the tracked-change table.
+  - When `Kind = SharedDescriptor`, `ResourceKey` is `null`; the table covers every `ConcreteResourceModel` whose `StorageKind = SharedDescriptorTable` in the same `DerivedRelationalModelSet`. Consumers must not duplicate descriptor coverage lists inside `TrackedChangeTableInfo`.
   - `ValueColumnsInTableOrder` entries carry `RelationalScalarType` because they are schema-derived old/new values.
   - `IsOldColumnNullable` and `IsNewColumnNullable` describe the physical old/new tracked-change columns separately. They are required booleans, never tri-state values.
   - `IsOldColumnNullable` follows the nullability of the tracked source value. Required identity and required securable-element values are `false`; optional securable-element values, such as override-driven nullable paths, are `true`.
   - `IsNewColumnNullable` is normally `true` because delete tombstones leave `NewX` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
-  - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoins` and `PersonJoins`; join definitions are owned once at the table level and are not duplicated per value column.
+  - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoinsInNameOrder` and `PersonJoinsInNameOrder`; join definitions are owned once at the table level and are not duplicated per value column.
   - `TrackedChangeColumnRole.DescriptorNamespace` and `TrackedChangeColumnRole.DescriptorCodeValue` require `DescriptorJoinName` and require `PersonJoinName = null`.
-  - `TrackedChangeColumnRole.PersonDocumentId` requires `DescriptorJoinName = null` and has exactly one of two source representations:
-    - a joined-person projection has a non-null `PersonJoinName` referencing `PersonJoins`;
-    - a zero-hop self-person projection has `PersonJoinName = null`, `CanonicalStorageColumn = DocumentId`, and a `SourceJsonPath` recognized as that resource's own Student, Contact, or Staff identity path.
-  - `TrackedChangeColumnRole.Scalar` requires both join-name fields to be `null`.
-  - `Origin` classifies why the column is tracked (`Identity`, `SecurableElement`, or both); EdOrg and namespace securable columns share `Origin = SecurableElement` with `Role = Scalar` and are distinguished by a dual check: `SourceJsonPath` match against the resource's `SecurableElements.Namespace` paths, or `CanonicalStorageColumn` match against the live column those paths resolve to. Path matching alone is unsafe: value-column deduplication merges `Origin` flags but keeps the first contributing `SourceJsonPath`, so a unified namespace column can survive with an identity path (see [change-queries.md](change-queries.md) § "Per-resource securable-element indexes are deferred").
-  - `SystemColumns` entries are fixed by `TrackedChangeSystemColumnRole`; SQL types are inferred from the role, following the same convention used by non-scalar `DbColumnModel` roles (`DocumentFk`, `CollectionKey`, `Ordinal`, etc.).
-  - `Id` role: `NOT NULL`, copied from `dms.Document.DocumentUuid`; PostgreSQL `uuid`, SQL Server `uniqueidentifier` (`ScalarType` is `null`; the type is fully role-determined).
-  - `ChangeVersion` role: `NOT NULL`, copied from the bumped `dms.Document.ContentVersion`; PostgreSQL/SQL Server `bigint`; primary tracked-change window/sort column and the sole `PrimaryKeyColumns` entry in the current design.
-  - `CreatedAt` role: `NOT NULL`, tracked row insert timestamp; PostgreSQL `timestamp with time zone DEFAULT now()`, SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
-  - `Discriminator` role: present only when `Kind = SharedDescriptor`; `NOT NULL`; PostgreSQL `varchar(128)`, SQL Server `nvarchar(128)`; the entry is absent for per-resource tracked-change tables.
+  - `TrackedChangeColumnRole.PersonDocumentId` requires `PersonJoinName` and requires `DescriptorJoinName = null`.
+  - `TrackedChangeColumnRole.SourceValue` requires both join-name fields to be `null`.
+  - `IdColumn`, `ChangeVersionColumn`, `CreatedAtColumn`, and `DiscriminatorColumn` are fixed tracked-change system columns whose SQL types are inferred from their roles, following the same convention used by non-scalar `DbColumnModel` roles (`DocumentFk`, `CollectionKey`, `Ordinal`, etc.).
+  - `IdColumn`: `NOT NULL`, copied from `dms.Document.DocumentUuid`; PostgreSQL `uuid`, SQL Server `uniqueidentifier`.
+  - `ChangeVersionColumn`: `NOT NULL`, copied from the bumped `dms.Document.ContentVersion`; PostgreSQL/SQL Server `bigint`; primary tracked-change window/sort column.
+  - `CreatedAtColumn`: `NOT NULL`, tracked row insert timestamp; PostgreSQL `timestamp with time zone DEFAULT now()`, SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
+  - `DiscriminatorColumn`: present only when `Kind = SharedDescriptor`; `NOT NULL`; PostgreSQL `varchar(128)`, SQL Server `nvarchar(128)`; omitted (`null`) for per-resource tracked-change tables.
 
 ### 2.3 Mapping set (dialect-specific)
 
@@ -640,7 +610,7 @@ Authorization is applied using token-derived authorization context and ODS-style
 Mapping-set integration points:
 - **Physical column resolution**: authorization checks need to reference the correct physical columns for `Namespace`, EdOrg ids, and person/document relationships. These column names come from the same derived relational model used for reads/writes.
 - **Join-path precomputation**: some securable elements (e.g., `Student` for `CourseTranscript`) may only be reachable transitively via references. A schema-derived “securable element column path” resolver can be built once per `(EffectiveSchemaHash, resource, securableElement)` and cached, using the `RelationalResourceModel` tables/columns plus ApiSchema `securableElements`.
-- **Authorization-required index inventory**: the derived index inventory includes `DbIndexKind.Authorization` entries, or records equivalent provider-compatible coverage, for:
+- **Authorization-required index inventory**: the derived index inventory includes `DbIndexKind.Authorization` entries for:
   - per-resource `Namespace` indexes (for namespace-based checks),
   - per-resource EdOrg-id indexes (for relationship-based checks), and
   - join-column indexes used to reach person `DocumentId`s (for people-related relationship checks).

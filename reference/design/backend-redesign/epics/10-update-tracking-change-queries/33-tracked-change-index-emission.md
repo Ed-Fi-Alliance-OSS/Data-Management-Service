@@ -7,12 +7,12 @@ jira_url: TBD
 
 ## Description
 
-Evaluate the two Tier-1 candidate categories proposed by spike DMS-1185 and specified in `change-queries.md` § "Indexes on the `tracked_changes*` tables", then implement only categories that pass their independent gates: the five tracked PrimaryAssociation covering indexes and the shared-descriptor `(Discriminator, ChangeVersion)` index.
+Evaluate the two Tier-1 candidate categories proposed by spike DMS-1185 and specified in `22-spike-findings.md` § "Indexes on the `tracked_changes*` tables", then implement only categories that pass their independent gates: the five tracked PrimaryAssociation covering indexes and the shared-descriptor `(Discriminator, ChangeVersion)` index.
 Any adopted category is derived by the tracked-change extension to the existing `DeriveIndexInventoryPass`.
 
 The PA candidates back the tracked-change arms of the four `*IncludingDeletes` authorization views (every people-strategy `/deletes` and `/keyChanges` request evaluates the views matching its person subject kinds, so at least one tracked arm runs per such request); the shared-descriptor candidate backs the `Discriminator` filter every descriptor `/deletes` applies to the shared tracked-change table.
 Measured improvements on PostgreSQL at 10M tombstones: 3.5-10x on view evaluation, 1.5-10x on descriptor `/deletes`, 3x on `/keyChanges` and single-school `/deletes`, at ~1 µs/row bulk-insert overhead.
-One blocking PostgreSQL regression is known and recorded in `change-queries.md` § "Indexes on the `tracked_changes*` tables" (the narrow-window `/deletes` anti-join flip on the PA resources); no regression exception is granted.
+One blocking PostgreSQL regression is known and recorded in `22-spike-findings.md` § "Indexes on the `tracked_changes*` tables" (the narrow-window `/deletes` anti-join flip on the PA resources); no regression exception is granted.
 
 Per-resource securable-element indexes are explicitly out of scope (deferred pending the runtime query-shape change; see the follow-on subject-cardinality story).
 This story has candidate-evaluation, gated-implementation, and exact-DDL verification phases.
@@ -30,7 +30,7 @@ Any other provider failure records the result and returns the design for review 
 
 ## Evidence Protocol and Gates
 
-Environment pinning, workload floors, measurement and noise controls, seek-use requirements, write and storage ceilings, provider-blocking semantics, independence rules, and post-emission verification follow `change-queries.md` § "Tracked-index evidence protocol".
+Environment pinning, workload floors, measurement and noise controls, seek-use requirements, write and storage ceilings, provider-blocking semantics, independence rules, and post-emission verification follow `22-spike-findings.md` § "Tracked-index evidence protocol".
 The harness may extend the cross-provider workflow from `../12-ops-guardrails/04-performance-benchmarks.md`, and its artifact must additionally pin the story-specific data shape:
 
 - schema and row cardinalities, at or above the protocol's workload floors;
@@ -53,7 +53,7 @@ The mandatory read matrix covers:
 - shared-descriptor `/deletes` at full and narrow `ChangeVersion` windows;
 - a functional assertion that shared-descriptor `/keyChanges` remains empty by contract.
 
-The cost matrix covers bulk tombstone and key-change inserts separately for each of the five PA tracked tables plus the resulting combined PA-index storage, and bulk shared-descriptor tombstone inserts plus resulting shared-descriptor-index storage.
+The cost matrix covers bulk tombstone and key-change inserts separately for each of the five PA tracked tables plus each table's resulting PA-index storage, and bulk shared-descriptor tombstone inserts plus resulting shared-descriptor-index storage.
 
 Category-specific gates on top of the protocol:
 
@@ -77,9 +77,9 @@ The ceiling values and their rationale live in the protocol section and are not 
 - A failed or non-selected category remains absent from `IndexesInCreateOrder`, generated DDL, and manifests. If neither category is selected, close the index-emission portion with the reviewed evidence and no index or golden changes.
 - As the common structural change, reposition the existing `DeriveIndexInventoryPass` immediately after `DeriveTrackedChangeInventoryPass` and before `DeriveAuthHierarchyPass`, while preserving its existing PK/UK/FK-support and content-version output. Add tracked-change index derivation only for categories in the final Phase 1 selection.
 - Pass-order tests pin both strict/default pipelines and prove that repositioning alone leaves the shared index inventory byte-for-byte unchanged.
-- Selected categories are emitted exactly as specified in `change-queries.md` § "Indexes on the `tracked_changes*` tables": the five PA covering indexes with per-table gating for the PA category, the `[Discriminator, ChangeVersion]` index for the shared-descriptor category, the strict/default missing-column behavior, and the existing naming conventions. Design decisions live in that section; this ticket implements them without re-deciding.
+- Selected categories are emitted exactly as specified in `22-spike-findings.md` § "Indexes on the `tracked_changes*` tables": the five PA covering indexes with per-table gating for the PA category, the `[Discriminator, ChangeVersion]` index for the shared-descriptor category, the strict/default missing-column behavior, and the existing naming conventions. Design decisions live in that section; this ticket implements them without re-deciding.
 - Emits nothing else: no per-resource securable, person, or namespace indexes, and no entries for `Resource`/`ConcreteAbstract` tables beyond the five PA tables.
 - If either category is emitted, the physical schema change requires a `RelationalMappingVersion` bump; the bump and its locked-hash bless procedure are deferred to a dedicated mapping-version ticket filed with the follow-on tickets after spike approval, and that ticket must land no later than the first story that ships a physical index change.
 - Unit, golden, and integration coverage matches the recorded category dispositions on both providers: adopted categories present and rejected categories absent across inventory, generated DDL, and manifests, including strict/default behavior, deterministic ordering, identifier shortening, and regenerated goldens. The concrete test and fixture inventory is owned by this ticket's tasking.
-- When a category is adopted, this ticket also updates the owning design docs: the tracked-index assertions in `change-queries.md`'s test-assertion contract and the `DbIndexInfo` contract notes in `compiled-mapping-set.md`.
+- When a category is adopted, this ticket merges the adopted design from `22-spike-findings.md` § "Indexes on the `tracked_changes*` tables" into the normative docs: the index specification and test assertions into `change-queries.md`, and the `DbIndexInfo` contract notes into `compiled-mapping-set.md`.
 - After emitting a category, verify that its exact generated DDL is semantically identical to the pinned candidate overlay, then rerun the complete applicable matrix against that generated DDL. A mismatch or failed post-implementation gate blocks acceptance rather than being described as run-to-run noise.
