@@ -1912,25 +1912,25 @@ schema set. It MUST run late enough that all candidate endpoint columns exist (i
 columns), and early enough that all downstream consumers (constraint derivation, index/trigger inventory, plan
 compilation, manifests, and DDL generation) see a unified model.
 
-### Recommended placement in `RelationalModelSetPasses` order
+### Required relative placement in `RelationalModelSetPasses`
 
-Recommended set-level pass order (relative to the current default implementation in
-`src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`):
+The executable pass list remains the source of truth for the currently implemented order.
+This section defines the stable dependency constraints and the target inventory tail after Change Query Story 33; it does not duplicate the entire pass list.
 
-1. `BaseTraversalAndDescriptorBindingPass`
-2. `DescriptorResourceMappingPass`
-3. `ExtensionTableDerivationPass`
-4. `ReferenceBindingPass`
-5. **`KeyUnificationPass` (new)** ← applies canonical columns + presence-gated aliases + `KeyUnificationClasses`
-6. `AbstractIdentityTableAndUnionViewDerivationPass`
-7. `RootIdentityConstraintPass`
-8. `ReferenceConstraintPass`
-9. `ArrayUniquenessConstraintPass`
-10. `ApplyConstraintDialectHashingPass`
-11. *(When implemented in E01)* `DeriveIndexInventoryPass` (DMS-945)
-12. *(When implemented in E01)* `DeriveTriggerInventoryPass` (DMS-945)
-13. `ApplyDialectIdentifierShorteningPass`
-14. `CanonicalizeOrderingPass`
+`KeyUnificationPass` runs after `ExtensionTableDerivationPass` and `ReferenceBindingPass`, and before every constraint, inventory, query-plan, manifest, and DDL consumer that must see canonical storage.
+After constraint derivation, dialect hashing, and storage-invariant validation, the target inventory tail is:
+
+1. `DeriveContentVersionMirrorPass`
+2. `DeriveTriggerInventoryPass`
+3. `DeriveTrackedChangeInventoryPass`
+4. `DeriveIndexInventoryPass`
+5. `DeriveAuthHierarchyPass`
+6. `DeriveAuthorizationIndexInventoryPass`
+7. `ApplyDialectIdentifierShorteningPass`
+8. `CanonicalizeOrderingPass`
+
+Until Story 33 is implemented, the executable source retains its current order.
+Story 33 owns the target repositioning and tests that prove repositioning alone leaves the existing index inventory unchanged.
 
 Notes:
 
@@ -1942,9 +1942,14 @@ Notes:
 - `KeyUnificationPass` MUST run **before** any constraint derivation pass that needs to target canonical storage
   columns (notably reference composite FKs), and before any pass that builds SourceJsonPath-based lookups that must see
   the post-unification table/column inventory.
-- If E01 derives index/trigger inventories (DMS-945), `DeriveIndexInventoryPass` and `DeriveTriggerInventoryPass`
-  SHOULD run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names
-  reflect the final hashed constraint identifiers.
+- The inventory tail MUST run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror
+  constraint names reflect the final hashed constraint identifiers.
+- `DeriveTriggerInventoryPass` MUST precede `DeriveTrackedChangeInventoryPass`, because tracked-change inventory reads
+  trigger inventory to attach change-tracking behavior.
+- `DeriveTrackedChangeInventoryPass` MUST precede `DeriveIndexInventoryPass`, because tracked-change index derivation
+  consumes the tracked table and column inventory.
+- `DeriveAuthorizationIndexInventoryPass` MUST follow `DeriveAuthHierarchyPass`, and all index-producing passes MUST
+  precede identifier shortening and canonical ordering.
 
 ### Required postconditions for downstream passes
 

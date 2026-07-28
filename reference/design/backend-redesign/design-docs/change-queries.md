@@ -1568,21 +1568,23 @@ SQL Server may inline or otherwise transform the CTE, but the design does not re
 It does not serve the `ReadChanges` authorization predicates, and it does not serve the tracked-change arms of the `*IncludingDeletes` authorization views, which collectively probe five `tracked_changes_edfi` association tables by old-value columns; every people-strategy request for any resource evaluates the views matching its person subject kinds, so at least one of these arms runs per such request (see the Authorization section below).
 
 DMS-1185 therefore proposes a bounded set of secondary indexes on tracked-change tables, derived by extending the existing index-inventory pass.
-The spike records bounded two-provider research evidence; exact implemented-DDL validation remains a completion gate for the provider-neutral design.
+The spike records bounded two-provider research evidence.
+Story 33 must first evaluate each category with a pinned SQL overlay against the current generated baseline.
+An isolated pass makes a category eligible; if both are eligible, a combined interaction gate determines whether both may be selected together, and only the final selection is implemented and rerun against exact generated DDL.
 
 ##### Tracked-change extension to `DeriveIndexInventoryPass`
 
 Extend the existing set-level `DeriveIndexInventoryPass` and reposition it immediately after `DeriveTrackedChangeInventoryPass`.
 This ordering is mechanically safe: `DeriveTriggerInventoryPass` does not read index inventory, `DeriveTrackedChangeInventoryPass` reads trigger inventory rather than index inventory, and the first pass that needs the already-derived PK/UK entries is the later `DeriveAuthorizationIndexInventoryPass`.
 The required sequence is therefore `DeriveTriggerInventoryPass`, `DeriveTrackedChangeInventoryPass`, `DeriveIndexInventoryPass`, `DeriveAuthHierarchyPass`, `DeriveAuthorizationIndexInventoryPass`, `ApplyDialectIdentifierShorteningPass`, then canonical ordering.
-The existing PK/UK/FK-support and content-version work remains unchanged; after that work, the pass appends tracked-change `DbIndexInfo` entries to the same shared inventory.
+The existing PK/UK/FK-support and content-version work remains unchanged; after that work, the pass appends tracked-change `DbIndexInfo` entries to the same shared inventory only for categories in Story 33's final selection.
 DDL emission, manifest emission, identifier shortening, and index-name uniqueness validation therefore continue to apply unchanged.
-The pass gains the strict/default missing-PrimaryAssociation-literal flag used by `DeriveAuthorizationIndexInventoryPass`: the strict pipeline throws when an expected literal column is missing, and the default pipeline skips so synthetic test fixtures continue to build.
+When at least one category is selected, the pass gains a tracked-index-column strictness flag wired from the same strict/default pipeline choice as `DeriveAuthorizationIndexInventoryPass`: the strict pipeline throws when a required column for a selected category is missing, and the default pipeline skips that category's affected table so synthetic test fixtures continue to build.
 
-The pass emits two categories.
+The pass defines two independently gated candidate categories.
 
 **1. Tracked PrimaryAssociation covering indexes.**
-For each of the five PrimaryAssociation resources, one `DbIndexKind.Authorization` covering index on the resource's tracked-change table, mapping the live PA `(key, INCLUDE)` pair through the `Old` value-column naming convention:
+If Story 33 selects the PA category, emit one `DbIndexKind.Authorization` covering index on each of the five PrimaryAssociation tracked-change tables, mapping the live PA `(key, INCLUDE)` pair through the `Old` value-column naming convention:
 
 | Table (in `tracked_changes_edfi`) | Key | INCLUDE |
 |---|---|---|
@@ -1594,17 +1596,18 @@ For each of the five PrimaryAssociation resources, one `DbIndexKind.Authorizatio
 
 These are the tracked-side mirror of the five live PrimaryAssociation covering indexes and make the tracked-change arms of every `*IncludingDeletes` view servable from the index alone (index-only capable on PostgreSQL, subject to visibility-map coverage; a covering seek without lookups on SQL Server).
 Names follow the standard `_Auth` authorization-index convention.
-Gating is per table (the tracked table must be present in the inventory and carry both mapped columns), deliberately not the all-five gating the `*IncludingDeletes` views use: an index without its view is harmless, and the views degrade gracefully without indexes.
+After category selection, gating is per table (the tracked table must be present in the inventory and carry both mapped columns), deliberately not the all-five gating the `*IncludingDeletes` views use: an index without its view is harmless, and the views degrade gracefully without indexes.
 
 **2. Shared-descriptor Discriminator index.**
-The `SharedDescriptor` tracked-change table gets one `DbIndexKind.Explicit` index with key order `[Discriminator, ChangeVersion]`.
+If Story 33 selects the shared-descriptor category, the `SharedDescriptor` tracked-change table gets one `DbIndexKind.Explicit` index with key order `[Discriminator, ChangeVersion]`.
 Every descriptor `/deletes` filters the shared table by `Discriminator IN (<bare>, <qualified>)` plus a `ChangeVersion` window with `ORDER BY ChangeVersion`, for all descriptor kinds sharing the table, so `Discriminator` leads and `ChangeVersion` completes the seek and ordered scan.
 This mirrors the `IX_Descriptor_Discriminator_ContentVersion` rationale on the live shared table.
-Gating: emitted only when the model set contains the `SharedDescriptor` tracked-change table; a shared table present without its `Discriminator` system column raises in the strict pipeline and skips in the default pipeline, mirroring category 1's missing-literal contract.
+After category selection, emit only when the model set contains the `SharedDescriptor` tracked-change table; a shared table present without its `Discriminator` system column raises in the strict pipeline and skips in the default pipeline, mirroring category 1's missing-column contract.
 A `(Discriminator, OldNamespace)` variant was measured and rejected: after the `Discriminator` seek, the residual namespace `LIKE` filters a single kind's tombstones, and only two descriptors use `NamespaceBased` `ReadChanges` authorization.
 
 Write cost is bounded by design: tracked-change rows are inserted only on delete and key-change.
-Measured on PostgreSQL (DMS-1185), the candidate indexes add roughly one microsecond per row to bulk tombstone inserts (+69% relative on an index-light table, trivial absolute), with covering-index storage around 30% of table size.
+Measured on PostgreSQL (DMS-1185), the historical combined candidate added roughly one microsecond per row to bulk tombstone inserts (+69% relative on an index-light table, trivial absolute), with covering-index storage around 30% of table size.
+Those combined observations motivate the ceilings but do not satisfy either category's independent cost gate.
 Workloads dominated by bulk deletes or cascading key changes (year-end purges, delete-and-reload resyncs) are the only ones that see meaningful overhead.
 
 One PostgreSQL read-side regression is known and blocking: with the tracked PA covering index present, narrow-`ChangeVersion`-window `/deletes` against the five PrimaryAssociation resources can flip from a hash anti-join to a join-filter nested loop (measured 0.5s to 2.5s at 10M tombstones, reproducible under forward and reverse controls).
@@ -1627,7 +1630,7 @@ PostgreSQL's contact multi-subject view produced a `1.5532` median paired elapse
 The SQL Server live descriptor candidate did pass its isolated checkpoint: after the one protocol-required rerun of an initially noisy Grade comparison (16.6% median absolute deviation), the Grade probe recorded `0.0206` elapsed and `0.1044` logical-read ratios, while the shared-descriptor probe recorded `0.0405` and `0.0357`; counts matched and neither shape exceeded the `1.20` regression ceiling.
 
 These results are directional research, not implementation acceptance evidence: the profile is bounded and synthetic, SQL Server ran under x64 emulation, and the tracked-index comparisons did not cover exact generated DDL, implementation-scale write amplification, storage, all endpoint/window combinations, or district-scale subject cardinalities.
-Story 33 therefore owns the complete exact-DDL two-provider gate before any tracked-index category can be emitted, while Story 35 owns exact-DDL verification and future implementation of the selected SQL Server-only live descriptor index.
+Story 33 therefore owns the deterministic pre-implementation candidate-overlay gate and the post-implementation exact-generated-DDL gate, while Story 35 owns exact-DDL verification and future implementation of the selected SQL Server-only live descriptor index.
 
 ##### Per-resource securable-element indexes are deferred
 
@@ -1650,17 +1653,21 @@ A dedicated tracked-namespace story consumes the live Authorization story's sele
 
 ##### DMS-1185 disposition
 
-The spike concludes with a candidate design, not an adopted index set:
+The spike concludes with the following category dispositions:
 
-- PostgreSQL Tier-1 candidates: historical 2M/10M measurements established the design, while a bounded follow-up probe reinforced the adoption risk by producing a `1.5532` median paired regression on the contact multi-subject view.
-- SQL Server Tier-1 candidates: a bounded follow-up probe produced a `1.7945` median paired regression on the staff multi-subject view, and the shared tracked-descriptor candidate showed no material benefit.
-- No provider-neutral index set is approved by this spike; each Tier-1 category is adopted only when both providers pass the emission story's gates for that category.
-- The five-PA covering category remains blocked pending the subject-cardinality story's query-shape fix and the implementation story's full exact-DDL rerun; the shared tracked-descriptor category also remains unapproved pending that rerun.
-- Live descriptor identity index: deferred on PostgreSQL from its provider-specific evidence; selected for future SQL Server adoption by the spike's isolated comparison (see § "`*_RefKey` index ordering for `/deletes`").
-- Per-resource EdOrg/person and namespace tracked indexes: deferred to their dedicated stories as described above.
+| Category | DMS-1185 disposition | Future acceptance state |
+|---|---|---|
+| Five tracked PrimaryAssociation covering indexes | Not adopted. Historical PostgreSQL results showed benefit, but the narrow-window anti-join flip remains blocking; the bounded follow-up produced a `1.5532` contact multi-subject regression on PostgreSQL and a `1.7945` staff multi-subject regression on SQL Server. | Story 33 evaluates the PA-only overlay on both providers. Independent read, write, storage, and plan-shape gates determine eligibility; emit all five only when the final disposition selects the category, otherwise assert that all five remain absent. |
+| Shared tracked-descriptor `(Discriminator, ChangeVersion)` index | Not adopted. The bounded follow-up did not meet the 20% minimum-benefit gate on either provider. | Story 33 evaluates the shared-descriptor-only overlay on both providers. Independent gates determine eligibility; emit the index only when the final disposition selects the category, otherwise assert its absence. |
+| Live descriptor identity `(Discriminator, Namespace, CodeValue)` index | Deferred on PostgreSQL; selected for future SQL Server adoption by the isolated comparison. | Story 35 owns SQL Server-only emission, required seek shape, total-cost gates, and exact-DDL verification. PostgreSQL remains unchanged. |
+| Per-resource tracked EdOrg/person indexes | Deferred until the subject-cardinality query shape is selected. | Stories 34 and 36 own the query-shape prerequisite and provider-neutral evidence/emission gate. |
+| Per-resource tracked Namespace indexes | Deferred until the live Namespace predicate/index mechanism is selected. | Authorization Story 22 and Change Query Story 37 own the prerequisite and tracked implementation gate. |
 
 The bounded follow-up probes are research inputs, not implementation acceptance evidence.
-Story 33 owns the reproducible, implementation-scale, exact-generated-DDL package and blocks each tracked-index category unless both providers pass its gates.
+For each Story 33 category, the pre-implementation decision uses a pinned category-specific overlay against the current generated baseline.
+An isolated pass makes a category eligible; if both are eligible, simultaneous selection also requires the combined interaction gate, and a combined failure requires reviewed selection of at most one.
+Only the final selection is derived through the model, and its exact generated DDL must pass the same gates before acceptance.
+No category may borrow benefit or low cost from another category.
 
 ### Authorization
 
@@ -2148,10 +2155,10 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
 - Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
 - `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), and `IX_Descriptor_Discriminator_ContentVersion` composite index on `dms.Descriptor` with key columns in order `[Discriminator, ContentVersion]`.
-- The five tracked PrimaryAssociation covering indexes in `IndexesInCreateOrder` (Authorization kind, `Old*` key column, `Old*` INCLUDE column per § "Indexes on the `tracked_changes*` tables"), present only when the tracked table and both mapped columns exist; strict pipeline throws on a missing literal column, default pipeline skips.
-- The shared descriptor tracked-change index (Explicit kind) with key columns in order `[Discriminator, ChangeVersion]`.
+- Conditional PA-category verification: when Story 33 adopts the PA category, require all five covering indexes in `IndexesInCreateOrder` (Authorization kind, `Old*` key column, `Old*` INCLUDE column per § "Indexes on the `tracked_changes*` tables"), present only when the tracked table and both mapped columns exist; strict pipeline throws on a missing literal column, default pipeline skips. When Story 33 rejects the category, assert that all five indexes are absent from inventory, DDL, and manifests.
+- Conditional shared-descriptor verification: when Story 33 adopts the category, require the Explicit index with key columns in order `[Discriminator, ChangeVersion]`. When Story 33 rejects the category, assert that the index is absent from inventory, DDL, and manifests.
 - No other secondary indexes on tracked-change tables (per-resource securable-element indexes are deferred; see § "Per-resource securable-element indexes are deferred").
-- Emitted-DDL and manifest coverage for tracked-change indexes on PostgreSQL and SQL Server, including dialect identifier shortening of index names against long tracked-change table names.
+- PostgreSQL and SQL Server emitted-DDL and manifest coverage for every adopted tracked-index category, including dialect identifier shortening against long tracked-change table names; explicit absence coverage for every rejected category. If both categories are adopted, also verify their combined inventory, DDL, and manifest output.
 - Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
 - DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.
