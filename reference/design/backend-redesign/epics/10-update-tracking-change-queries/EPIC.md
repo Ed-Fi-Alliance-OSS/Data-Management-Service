@@ -73,6 +73,14 @@ Release disposition: none of the follow-ons is must-have for 8.1. Stories 33 and
 - `DMS-1360` - `36-per-resource-edorg-person-index-emission.md` - After Stories 33 and 34, emit per-resource EdOrg/person tracked-change indexes (post-8.1)
 - `DMS-1361` - `37-tracked-namespace-index-emission.md` - After Story 33 and Authorization Story 22, adapt tracked Namespace predicates and emit tracked namespace indexes (post-8.1)
 
+## Follow-on Stories (spawned by DMS-1190)
+
+- `TBD` — `38-cms-data-store-derivative-invariants.md` — Enforce CMS data-store derivative cardinality and type invariants
+- `TBD` — `39-snapshot-read-replica-runtime-routing.md` — Route eligible DMS reads to snapshots and read replicas
+- `TBD` — `40-snapshot-problem-details.md` — Implement snapshot ProblemDetails and connection-unavailable translation
+- `TBD` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents
+- `TBD` — `42-api-publisher-snapshot-interoperability.md` — Validate API Publisher snapshot interoperability and document operator workflow
+
 ## Cross-Epic Prerequisite
 
 - Authorization epic `DMS-1362` - `../14-authorization/22-namespace-auth-index-prefix-like.md` - Select and implement the live PostgreSQL Namespace predicate/index mechanism before Story 37 adapts tracked Namespace authorization (post-8.1)

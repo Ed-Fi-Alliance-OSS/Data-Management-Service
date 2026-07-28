@@ -357,15 +357,15 @@ Reviewed and resolved during this spike:
 
 ## Follow-on Ticket Plan
 
-Create and link the following implementation tickets only after this proposal is approved:
+Create and link the following implementation tickets only after this proposal is approved. The story files are created with Jira placeholders so the ticket keys can be inserted after Jira creation:
 
-| Area | Scope |
-| --- | --- |
-| CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and the explicitly case-sensitive `DerivativeType` check constraint for PostgreSQL and SQL Server, add the preflight for duplicate rows and invalid derivative types with its diagnostics, add insert and update conflict result variants and frontend mappings, and cover upgrade behavior and CMS tests. |
-| DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the bounded derivative validation caches and pooled-data-source eviction, and cover both relational backends. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
-| Snapshot ProblemDetails | Add the snapshot `405` factory and `Allow: GET`, emit the missing-snapshot `404` from the existing not-found factory, add the backend-neutral connection-unavailable exception at all seven enumerated read-path connection-open seams including both document hydrators, keep provisioning and query defects on their existing contracts, and log safely. |
-| OpenAPI surface | Re-add MetaEd/ApiSchema snapshot components and apply them to resource, descriptor, profile, and Change Query operations, defining the referenced components in every independently served document including the standalone Change Queries document; add DMS document-assembly and reference-resolution tests. Does not touch the backend authoritative fixture inputs. |
-| API Publisher interoperability | Add an environment and automated or repeatable validation for Publisher isolation behavior against DMS, and document the operator workflow. |
+| Story | Area | Scope |
+| --- | --- | --- |
+| `38-cms-data-store-derivative-invariants.md` | CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and the explicitly case-sensitive `DerivativeType` check constraint for PostgreSQL and SQL Server, add the preflight for duplicate rows and invalid derivative types with its diagnostics, add insert and update conflict result variants and frontend mappings, and cover upgrade behavior and CMS tests. |
+| `39-snapshot-read-replica-runtime-routing.md` | DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the bounded derivative validation caches and pooled-data-source eviction, and cover both relational backends. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
+| `40-snapshot-problem-details.md` | Snapshot ProblemDetails | Add the snapshot `405` factory and `Allow: GET`, emit the missing-snapshot `404` from the existing not-found factory, add the backend-neutral connection-unavailable exception at all seven enumerated read-path connection-open seams including both document hydrators, keep provisioning and query defects on their existing contracts, and log safely. |
+| `41-snapshot-openapi-surface.md` | OpenAPI surface | Re-add MetaEd/ApiSchema snapshot components and apply them to resource, descriptor, profile, and Change Query operations, defining the referenced components in every independently served document including the standalone Change Queries document; add DMS document-assembly and reference-resolution tests. Does not touch the backend authoritative fixture inputs. |
+| `42-api-publisher-snapshot-interoperability.md` | API Publisher interoperability | Add an environment and automated or repeatable validation for Publisher isolation behavior against DMS, and document the operator workflow. |
 
 ## Acceptance Criteria Coverage
 
