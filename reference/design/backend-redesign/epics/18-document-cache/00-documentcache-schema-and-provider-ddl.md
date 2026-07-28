@@ -269,4 +269,42 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
 
 ### Answers 3
 
+1. Yes. Treat an `EffectiveSchema` singleton containing the expected hash as the
+   completion marker. The focused phase-zero E18 preflight must then require both
+   singleton rows and fail before mutation with the existing drop-and-recreate guidance
+   when either is absent. It must never generate a replacement `SourceIdentity` or reset
+   projection lifecycle or latch state on a completed database. Insert-if-absent
+   initialization remains available only after the database has been classified as an
+   eligible initial or partial apply under the existing rules, before the expected hash
+   is recorded.
+2. Yes. Keep emitted SQL free of a built-in transaction wrapper. Put the read-only,
+   completed-schema E18 inventory checks in phase zero before any schema, role, function,
+   table, trigger, grant, or seed mutation. `ddl provision` continues to execute the
+   generated artifact in its existing single transaction; a standalone `psql` or
+   `sqlcmd` caller owns any desired all-or-nothing wrapper. Do not broaden 18-00 into a
+   generic script transaction-policy change.
+3. Yes. Capture the statement timestamp exactly once—PostgreSQL
+   `statement_timestamp()` in a local `timestamp with time zone` value and SQL Server
+   `SYSUTCDATETIME()` in a local `datetime2(7)` value. Every new work row from that
+   statement uses it for both `FirstEnqueuedAt` and `LastEnqueuedAt`; every existing work
+   row whose required version advances preserves `FirstEnqueuedAt` and uses it for
+   `LastEnqueuedAt`. A row whose requirement does not advance receives no timestamp DML.
+   Thus all new or advanced requirements from one triggering statement share one
+   provider-generated UTC instant, while a no-op statement preserves both timestamps.
 
+### Questions 4
+
+1. To avoid requiring PostgreSQL superuser provisioning, should the provisioning principal
+   alone receive `SET TRUE, INHERIT FALSE` membership in
+   `edfi_dms_enqueue_owner`, while runtime principals receive none, with provisioning
+   failing before schema mutation when that capability is unavailable?
+2. Keeping the existing distinction that `ddl provision` rejects an `EffectiveSchema`
+   table without its singleton while standalone SQL may resume an eligible partial apply,
+   should phase zero require existing `Document`, `DocumentCache`, and
+   `DocumentProjectionWork` tables to be empty, state to be absent or `Disabled` with a
+   clear latch, and an existing valid `DataStoreIdentity` to be preserved? This
+   classification does not establish CDC eligibility.
+3. On a completed same-hash rerun, may only the definitions of already-present generated
+   programmable objects be refreshed, without comparing body text, while object identity,
+   attachment/events, enabled state, and each object's explicitly defined security
+   metadata must already match?
