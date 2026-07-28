@@ -110,7 +110,7 @@ This redesign is split into focused docs in this directory:
 - Update tracking (stored stamps for `_lastModifiedDate` / `ChangeVersion`, composed `_etag`): [update-tracking.md](update-tracking.md)
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, `ContentVersion` mirror, `tracked_changes_*` tables): [change-queries.md](change-queries.md)
 - DocumentCache projection and relational CDC (authoritative integration/deployment design):
-  [Relational CDC and Document Projection](../../cdc-streaming.md). Completeness is
+  [Relational CDC and Document Projection](cdc/cdc-streaming.md). Completeness is
   transactionally tracked in always-provisioned `dms.DocumentProjectionWork`; startup,
   restart, operational health, and caught-up status do not scan the full canonical/cache
   relationship.

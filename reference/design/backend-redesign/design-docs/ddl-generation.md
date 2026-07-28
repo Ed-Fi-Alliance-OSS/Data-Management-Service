@@ -54,7 +54,7 @@ The DDL generation utility is responsible for database objects derived from the 
   - the opt-in physical `dms.CdcHeartbeat` object defined by
     [data-model.md](data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object)
   - provider-specific enablement and validation defined by
-    [Relational CDC and Document Projection](../../cdc-streaming.md#schema-and-query-integration)
+    [Relational CDC and Document Projection](cdc/cdc-streaming.md#schema-and-query-integration)
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
   - `auth` schema
   - `auth.EducationOrganizationIdToEducationOrganizationId` (table) and its maintenance triggers/functions

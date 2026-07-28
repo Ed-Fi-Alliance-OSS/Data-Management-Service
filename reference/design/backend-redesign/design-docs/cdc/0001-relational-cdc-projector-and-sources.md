@@ -53,7 +53,7 @@ Cache deletion has no domain meaning.
 This record owns projection behavior and source selection. Physical objects are owned by
 [data-model.md](../data-model.md). Configuration, deployment, health, CDC admission, and
 operations are specified in
-[Relational CDC and Document Projection](../../../cdc-streaming.md). The public Kafka
+[Relational CDC and Document Projection](cdc-streaming.md). The public Kafka
 contract is specified in
 [0002-kafka-topic-and-message-contract.md](0002-kafka-topic-and-message-contract.md).
 

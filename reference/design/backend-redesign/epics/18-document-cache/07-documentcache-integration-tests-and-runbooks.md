@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- **Configuration, integration, readiness, and operations**: reference/design/cdc-streaming.md
+- **Configuration, integration, readiness, and operations**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md
 - **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
 The referenced design documents define behavior and operator constraints. This story adds

@@ -186,7 +186,7 @@ execution context and before activation from `Disabled`; generated stamping trig
 not recheck it. Changing the setting after successful validation while lifecycle is
 enqueue-enabled is unsupported in v1 and can allow an indirect stamp to commit without its
 required work. Validation and the unsupported-change boundary are owned by
-[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
+[`cdc-streaming.md`](cdc/cdc-streaming.md#configuration-and-projection-target-selection).
 
 Projection work is current-state materialization inventory. It is not Change Query
 history, does not change `ChangeVersion` semantics, and is not returned by any Change

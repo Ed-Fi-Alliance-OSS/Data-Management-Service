@@ -12,7 +12,7 @@ related:
 
 - **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
-- **Pinned connector runtime**: reference/design/cdc-streaming.md#pinned-connector-runtime
+- **Pinned connector runtime**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#pinned-connector-runtime
 - **Completed generic expand-JSON transform**: reference/design/backend-redesign/design-docs/expandjsonsmt-replacement.md
 
 The referenced design sections define source classification, record transformation, public

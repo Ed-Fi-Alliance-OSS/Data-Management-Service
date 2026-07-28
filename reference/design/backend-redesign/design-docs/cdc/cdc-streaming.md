@@ -23,9 +23,9 @@ Normative ownership is intentionally exclusive:
 
 | Owner | Normative subject |
 | --- | --- |
-| [`data-model.md`](backend-redesign/design-docs/data-model.md) | Physical tables, columns, constraints, indexes, and triggers |
-| [Relational CDC projector and sources](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md) | Projection/source choice, cached projection semantics, freshness, reconciliation, and cache/domain lifecycle |
-| [Kafka topic and message contract](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md) | Public topic, key, value, tombstone, consumer behavior, transform behavior, and compatibility contract |
+| [`data-model.md`](../data-model.md) | Physical tables, columns, constraints, indexes, and triggers |
+| [Relational CDC projector and sources](0001-relational-cdc-projector-and-sources.md) | Projection/source choice, cached projection semantics, freshness, reconciliation, and cache/domain lifecycle |
+| [Kafka topic and message contract](0002-kafka-topic-and-message-contract.md) | Public topic, key, value, tombstone, consumer behavior, transform behavior, and compatibility contract |
 | This document | Configuration, integration, deployment, readiness, and operations |
 | Epics and stories | Implementation scope and acceptance evidence |
 
@@ -52,15 +52,15 @@ DocumentCache or CDC/Kafka content, not to unrelated material in the same artifa
 | Existing material | Classification | Disposition |
 | --- | --- | --- |
 | This `cdc-streaming.md` document | Current | Normative for configuration, integration, deployment, readiness, and operations only. |
-| [`0001-relational-cdc-projector-and-sources.md`](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md) and [`0002-kafka-topic-and-message-contract.md`](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md) | Current | Normative for their focused projector/source and public streaming subjects; this document supplies integration and deployment context. |
-| [`data-model.md`](backend-redesign/design-docs/data-model.md) | Current | Normative for physical relational objects only; runtime projection and streaming behavior links to its owning ADR or this document. |
-| [`transactions-and-concurrency.md`](backend-redesign/design-docs/transactions-and-concurrency.md), [`link-injection.md`](backend-redesign/design-docs/link-injection.md), and [`update-tracking.md`](backend-redesign/design-docs/update-tracking.md) | Current | Supporting descriptions of local transaction, representation, and ETag facts. They defer to the owning ADR for projection and streaming behavior. |
-| [`ddl-generation.md`](backend-redesign/design-docs/ddl-generation.md) and [`flattening-reconstitution.md`](backend-redesign/design-docs/flattening-reconstitution.md) | Current | Supporting DDL and API materialization context. JSON response streaming in reconstitution is not CDC/Kafka streaming. |
-| [`expandjsonsmt-replacement.md`](backend-redesign/design-docs/expandjsonsmt-replacement.md) | Current | Owns the implemented generic expand-JSON transform only. Legacy DMS record-shape discussion is context; the relational source contract is owned by ADR 0001 and the `DocumentState` transform/topic/message contract by ADR 0002. |
-| [`multitenancy-analysis.md`](multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
+| [`0001-relational-cdc-projector-and-sources.md`](0001-relational-cdc-projector-and-sources.md) and [`0002-kafka-topic-and-message-contract.md`](0002-kafka-topic-and-message-contract.md) | Current | Normative for their focused projector/source and public streaming subjects; this document supplies integration and deployment context. |
+| [`data-model.md`](../data-model.md) | Current | Normative for physical relational objects only; runtime projection and streaming behavior links to its owning ADR or this document. |
+| [`transactions-and-concurrency.md`](../transactions-and-concurrency.md), [`link-injection.md`](../link-injection.md), and [`update-tracking.md`](../update-tracking.md) | Current | Supporting descriptions of local transaction, representation, and ETag facts. They defer to the owning ADR for projection and streaming behavior. |
+| [`ddl-generation.md`](../ddl-generation.md) and [`flattening-reconstitution.md`](../flattening-reconstitution.md) | Current | Supporting DDL and API materialization context. JSON response streaming in reconstitution is not CDC/Kafka streaming. |
+| [`expandjsonsmt-replacement.md`](../expandjsonsmt-replacement.md) | Current | Owns the implemented generic expand-JSON transform only. Legacy DMS record-shape discussion is context; the relational source contract is owned by ADR 0001 and the `DocumentState` transform/topic/message contract by ADR 0002. |
+| [`multitenancy-analysis.md`](../../../multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
 | Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
 | Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
-| [`eng/docker-compose/README.md`](../../eng/docker-compose/README.md), [`local-development-setup.http`](../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Describe present implementation state: Kafka infrastructure may be started, but relational connector registration has not landed. Their future opt-in must implement this design. |
+| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Describe present implementation state: Kafka infrastructure may be started, but relational connector registration has not landed. Their future opt-in must implement this design. |
 
 ## Scope and Architecture
 
@@ -74,7 +74,7 @@ that mutation.
 
 One connector captures two complementary relational sources. The exact source-operation
 mapping and lifecycle rationale are defined in the
-[projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md).
+[projector/source ADR](0001-relational-cdc-projector-and-sources.md).
 In summary, projected cache state supplies document upserts and canonical document
 lifecycle supplies deletes.
 
@@ -273,15 +273,15 @@ DMS health polling does not activate or release a runtime gate.
 ## Cached Document Contract
 
 The physical row shape, constraints, indexes, and validation triggers are owned by
-[data-model.md](backend-redesign/design-docs/data-model.md#6-dmsdocumentcache-always-provisioned-optional-projection).
+[data-model.md](../data-model.md#6-dmsdocumentcache-always-provisioned-optional-projection).
 The cached projection semantics and materialization invariants are owned by the
-[projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract).
+[projector/source ADR](0001-relational-cdc-projector-and-sources.md#cached-document-contract).
 The public Kafka representation derived from that projection is owned by the
-[topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value).
+[topic/message ADR](0002-kafka-topic-and-message-contract.md#upsert-value).
 
 ## Freshness and Reconciliation
 
-The [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
+The [projector/source ADR](0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
 owns the freshness predicate, transactional work inventory, fair queue processing,
 monotonic cache write/conditional acknowledgement, failure policy, bounded execution,
 lifecycle, cache-ahead handling, baseline, rebuild, and scrub rules.
@@ -290,7 +290,7 @@ readiness and operations; it does not define another reconciliation contract.
 
 ## Cache-Backed Reads and Domain Lifecycle
 
-The [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle)
+The [projector/source ADR](0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle)
 owns cache-read eligibility, relational fallback, direct fill, and the distinction between
 cache maintenance and canonical document deletion. Deployment procedures in this document
 treat that lifecycle contract as an input.
@@ -443,7 +443,7 @@ connector's committed Debezium source offset and prove publication through that 
 boundary.
 
 Both adapters use the opt-in singleton `dms.CdcHeartbeat` table defined by
-[`data-model.md`](backend-redesign/design-docs/data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object).
+[`data-model.md`](../data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object).
 It contains no document or tenant data. Connector setup includes this table in the
 PostgreSQL publication or SQL Server CDC capture and configures a positive
 `heartbeat.interval.ms`. Its fixed provider `heartbeat.action.query` atomically
@@ -457,7 +457,7 @@ records and Debezium heartbeat records are routed by the `DocumentState` transfo
 binding-scoped CDC progress topic before public-record validation; they are never routed to
 the instance document topic. Before routing, the transform replaces every source key,
 whether structured, scalar, or null, with the fixed non-null
-[internal progress key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#internal-progress-key)
+[internal progress key](0002-kafka-topic-and-message-contract.md#internal-progress-key)
 required by the shared `StringConverter` and compacted progress topic. The progress topic
 is a transport acknowledgement boundary, not a status store: deployment automation does
 not consume it and continues to read the connector's committed source offsets through the
@@ -736,7 +736,7 @@ CDC progress topic whose name is derived exactly as `topicName + ".cdc-progress"
 derived name is not another binding field or operator input; template generation emits it,
 and bootstrap and live-configuration validation reject any different value. The progress
 topic has one partition and `cleanup.policy=compact`. Every progress record uses the fixed
-non-null [internal progress key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#internal-progress-key),
+non-null [internal progress key](0002-kafka-topic-and-message-contract.md#internal-progress-key),
 so compaction can retain the latest published progress record without accepting a null or
 provider-specific structured key. It contains no public document state, and its retained
 contents are not part of the public bootstrap contract.
@@ -1081,7 +1081,7 @@ when CDC is not selected.
 ## Connector Transform Integration
 
 Connector templates invoke the required Ed-Fi `DocumentState` SMT defined by the
-[topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation).
+[topic/message ADR](0002-kafka-topic-and-message-contract.md#connector-transformation).
 That ADR owns source and operation classification, transform configuration, public
 key/value/tombstone shaping, progress routing, malformed-record behavior, and compatibility.
 Templates and live registration use those fixed values with the pinned connector runtime;
@@ -1090,7 +1090,7 @@ treating generated connector JSON alone as evidence.
 
 ## Contract Change and Repair Operations
 
-The [topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
+The [topic/message ADR](0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
 owns the compatibility boundary, ordering rules, and conditions that require a new topic
 contract or binding generation. The procedures below implement those decisions for
 offline representation correction, sensitive-data containment, record-capacity changes,
@@ -1404,13 +1404,13 @@ store is offline. Runtime DMS only validates it and never attempts `ALTER DATABA
 
 The physical cache, projection-work, constrained lifecycle, source-identity, heartbeat,
 enqueue/validation trigger, grant, constraint, and access-path inventory is owned by
-[`data-model.md`](backend-redesign/design-docs/data-model.md). Deployment validation checks
+[`data-model.md`](../data-model.md). Deployment validation checks
 that inventory rather than redefining it here. Provider CDC setup provisions and captures
 the opt-in heartbeat only when CDC is selected; ordinary relational provisioning does not.
 The generated provider action query and capture configuration implement the
 [source-position barrier](#provider-source-position-barrier).
 
-The [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
+The [projector/source ADR](0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
 owns transactionally maintained durable work, queue paging, conditional acknowledgement,
 baseline/rebuild, and explicit scrub. `dms.DocumentProjectionWork` is excluded from
 PostgreSQL publications, SQL Server CDC capture instances, connector include lists, and
@@ -1551,21 +1551,21 @@ where evidence belongs without prescribing duplicate test cases here.
 
 | Contract ID | Design owner | Evidence-owning stories | Test layers |
 | --- | --- | --- | --- |
-| `CDC-INV-01` | [Configuration and target selection](#configuration-and-projection-target-selection), [durable lifecycle](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle), and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S01](backend-redesign/epics/18-document-cache/01-documentcache-configuration-and-target-selection.md), [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md) | Configuration/unit and preflight-contract tests; guarded activation and lifecycle provider integration; mixed-target isolation |
-| `CDC-INV-02` | [Cached document contract](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract) and [upsert value](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value) | [E18-S00](backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md), [E18-S02](backend-redesign/epics/18-document-cache/02-document-materializer-service.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | DDL snapshot/DB-apply; materializer unit/provider integration; serialized-record contract |
-| `CDC-INV-03` | [Transactional enqueue](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue) and [freshness/acknowledgement](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation) | [E18-S00](backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md), [E18-S03](backend-redesign/epics/18-document-cache/03-monotonic-cache-upsert-and-delete-fencing.md), [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Set-based trigger/rollback; provider concurrency and crash integration; performance qualification; API-driven Kafka E2E |
-| `CDC-INV-04` | [Bounded in-process execution policy](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#bounded-in-process-execution-policy), [baseline/rebuild](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub), and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | Fair paging/backpressure; restart without source scan; administrative serialization; no-scan status at scale |
-| `CDC-INV-05` | [Cache-backed reads and domain lifecycle](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle) | [E18-S05](backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | API/provider integration; authorization; fallback and concurrency integration |
-| `CDC-INV-06` | [Connector topology and provider setup](#connector-topology-and-provider-setup) and [schema integration](#schema-and-query-integration) | [E19-S01](backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md), [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | DDL/DB-apply; provider integration; pinned-image connector integration; API-driven Kafka E2E |
-| `CDC-INV-07` | [Topic](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic), [record size](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [public and internal keys](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#key), [upsert](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value), and [delete](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#delete) | [E19-S03](backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Transform unit; serialized-record contract; broker-backed integration; consumer conformance; API-driven Kafka E2E |
-| `CDC-INV-08` | [Connector transformation](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation) | [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S03](backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Rendering/unit; provider-record fixtures; plugin-loading/pinned-image; serialized-record contract |
-| `CDC-INV-09` | [Pinned connector runtime](#pinned-connector-runtime) and [connector topology](#connector-topology-and-provider-setup) | [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Template validation; pinned-image integration; Connect REST integration; broker-backed fault injection |
-| `CDC-INV-10` | [Projection caught-up and initial CDC admission](#projection-health-and-deployment-owned-cdc-readiness), [provider source-position barrier](#provider-source-position-barrier), [internal progress key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#internal-progress-key), and [enablement sequence](#enablement-and-initial-readiness-sequence) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Queue-empty observation; position-adapter/provider integration; controller sequencing; broker-backed heartbeat/readiness |
-| `CDC-INV-11` | [Source-history continuity](#source-history-continuity) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Adapter/unit; real-provider integration; pinned-image lifecycle; API-driven failure E2E |
-| `CDC-INV-12` | [Deployment-owned binding](#deployment-owned-cdc-target-and-physical-source-binding), [local bootstrap](#local-bootstrap-and-ci), and [security](#security-telemetry-and-operations) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md) | State-store/CAS unit; controller/script integration; broker-backed topic and ACL integration; destructive-lifecycle integration |
-| `CDC-INV-13` | [Public consumer bootstrap](#public-consumer-bootstrap) and [topic retention](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) | [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Consumer conformance; controllable-clock/partition-barrier; broker-backed bootstrap |
-| `CDC-INV-14` | [Contract change and repair](#contract-change-and-repair-operations), [baseline/rebuild/scrub](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub), [v1 compatibility](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes), and [cache-ahead recovery](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery) | [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E18-S08](backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md), [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S07](backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md) | Serialized administrative lifecycle; bounded clear/rebuild; admitted explicit O(N) scrub; provider qualification and exercised runbooks; contract/consumer conformance |
-| `CDC-INV-15` | [Security, telemetry, and operations](#security-telemetry-and-operations) and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S07](backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md) | No-scan status; enqueue-vs-processing failure telemetry; bounded diagnostics; exercised runbooks |
+| `CDC-INV-01` | [Configuration and target selection](#configuration-and-projection-target-selection), [durable lifecycle](0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle), and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S01](../../epics/18-document-cache/01-documentcache-configuration-and-target-selection.md), [E18-S04](../../epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](../../epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md) | Configuration/unit and preflight-contract tests; guarded activation and lifecycle provider integration; mixed-target isolation |
+| `CDC-INV-02` | [Cached document contract](0001-relational-cdc-projector-and-sources.md#cached-document-contract) and [upsert value](0002-kafka-topic-and-message-contract.md#upsert-value) | [E18-S00](../../epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md), [E18-S02](../../epics/18-document-cache/02-document-materializer-service.md), [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md) | DDL snapshot/DB-apply; materializer unit/provider integration; serialized-record contract |
+| `CDC-INV-03` | [Transactional enqueue](0001-relational-cdc-projector-and-sources.md#transactional-enqueue) and [freshness/acknowledgement](0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation) | [E18-S00](../../epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md), [E18-S03](../../epics/18-document-cache/03-monotonic-cache-upsert-and-delete-fencing.md), [E18-S04](../../epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](../../epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S06](../../epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Set-based trigger/rollback; provider concurrency and crash integration; performance qualification; API-driven Kafka E2E |
+| `CDC-INV-04` | [Bounded in-process execution policy](0001-relational-cdc-projector-and-sources.md#bounded-in-process-execution-policy), [baseline/rebuild](0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub), and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S04](../../epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](../../epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](../../epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | Fair paging/backpressure; restart without source scan; administrative serialization; no-scan status at scale |
+| `CDC-INV-05` | [Cache-backed reads and domain lifecycle](0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle) | [E18-S05](../../epics/18-document-cache/05-cache-backed-read-path.md), [E18-S07](../../epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | API/provider integration; authorization; fallback and concurrency integration |
+| `CDC-INV-06` | [Connector topology and provider setup](#connector-topology-and-provider-setup) and [schema integration](#schema-and-query-integration) | [E19-S01](../../epics/19-cdc-kafka/01-cdc-ddl-support.md), [E19-S02](../../epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](../../epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | DDL/DB-apply; provider integration; pinned-image connector integration; API-driven Kafka E2E |
+| `CDC-INV-07` | [Topic](0002-kafka-topic-and-message-contract.md#topic), [record size](0002-kafka-topic-and-message-contract.md#record-size), [public and internal keys](0002-kafka-topic-and-message-contract.md#key), [upsert](0002-kafka-topic-and-message-contract.md#upsert-value), and [delete](0002-kafka-topic-and-message-contract.md#delete) | [E19-S03](../../epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](../../epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Transform unit; serialized-record contract; broker-backed integration; consumer conformance; API-driven Kafka E2E |
+| `CDC-INV-08` | [Connector transformation](0002-kafka-topic-and-message-contract.md#connector-transformation) | [E19-S02](../../epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S03](../../epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md) | Rendering/unit; provider-record fixtures; plugin-loading/pinned-image; serialized-record contract |
+| `CDC-INV-09` | [Pinned connector runtime](#pinned-connector-runtime) and [connector topology](#connector-topology-and-provider-setup) | [E19-S02](../../epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](../../epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md) | Template validation; pinned-image integration; Connect REST integration; broker-backed fault injection |
+| `CDC-INV-10` | [Projection caught-up and initial CDC admission](#projection-health-and-deployment-owned-cdc-readiness), [provider source-position barrier](#provider-source-position-barrier), [internal progress key](0002-kafka-topic-and-message-contract.md#internal-progress-key), and [enablement sequence](#enablement-and-initial-readiness-sequence) | [E19-S00](../../epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](../../epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md) | Queue-empty observation; position-adapter/provider integration; controller sequencing; broker-backed heartbeat/readiness |
+| `CDC-INV-11` | [Source-history continuity](#source-history-continuity) | [E19-S00](../../epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S02](../../epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](../../epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S06](../../epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Adapter/unit; real-provider integration; pinned-image lifecycle; API-driven failure E2E |
+| `CDC-INV-12` | [Deployment-owned binding](#deployment-owned-cdc-target-and-physical-source-binding), [local bootstrap](#local-bootstrap-and-ci), and [security](#security-telemetry-and-operations) | [E19-S00](../../epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](../../epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md) | State-store/CAS unit; controller/script integration; broker-backed topic and ACL integration; destructive-lifecycle integration |
+| `CDC-INV-13` | [Public consumer bootstrap](#public-consumer-bootstrap) and [topic retention](0002-kafka-topic-and-message-contract.md#topic) | [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md) | Consumer conformance; controllable-clock/partition-barrier; broker-backed bootstrap |
+| `CDC-INV-14` | [Contract change and repair](#contract-change-and-repair-operations), [baseline/rebuild/scrub](0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub), [v1 compatibility](0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes), and [cache-ahead recovery](0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery) | [E18-S04](../../epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](../../epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E18-S08](../../epics/18-document-cache/08-representation-restamp-utility.md), [E19-S00](../../epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](../../epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](../../epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S07](../../epics/19-cdc-kafka/07-ops-docs-runbooks.md) | Serialized administrative lifecycle; bounded clear/rebuild; admitted explicit O(N) scrub; provider qualification and exercised runbooks; contract/consumer conformance |
+| `CDC-INV-15` | [Security, telemetry, and operations](#security-telemetry-and-operations) and [projection status](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S06](../../epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](../../epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S00](../../epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S07](../../epics/19-cdc-kafka/07-ops-docs-runbooks.md) | No-scan status; enqueue-vs-processing failure telemetry; bounded diagnostics; exercised runbooks |
 
 ## Historical and Deferred Material
 

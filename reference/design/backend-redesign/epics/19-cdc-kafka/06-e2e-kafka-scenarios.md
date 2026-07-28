@@ -11,9 +11,9 @@ related:
 ## Design References
 
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
-- **Local bootstrap and CI**: reference/design/cdc-streaming.md#local-bootstrap-and-ci
-- **Contract-to-evidence traceability**: reference/design/cdc-streaming.md#contract-to-evidence-traceability
-- **Source-history continuity**: reference/design/cdc-streaming.md#source-history-continuity
+- **Local bootstrap and CI**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci
+- **Contract-to-evidence traceability**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability
+- **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
 
 The referenced design sections define the supported E2E workflow and observable stream. This
 story is only the work package for implementing the scenarios.

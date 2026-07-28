@@ -11,10 +11,10 @@ related:
 ## Design References
 
 - **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
-- **Connector topology and provider setup**: reference/design/cdc-streaming.md#connector-topology-and-provider-setup
-- **Provider source-position barrier**: reference/design/cdc-streaming.md#provider-source-position-barrier
-- **Source-history continuity**: reference/design/cdc-streaming.md#source-history-continuity
-- **Pinned connector runtime**: reference/design/cdc-streaming.md#pinned-connector-runtime
+- **Connector topology and provider setup**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup
+- **Provider source-position barrier**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#provider-source-position-barrier
+- **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
+- **Pinned connector runtime**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#pinned-connector-runtime
 
 The referenced design sections define connector inputs, generated configuration, image
 qualification, and lifecycle constraints. This story is only the work package for

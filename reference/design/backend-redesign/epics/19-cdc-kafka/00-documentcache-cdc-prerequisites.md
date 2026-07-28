@@ -10,11 +10,11 @@ related:
 
 ## Design References
 
-- **Projection health and deployment-owned CDC readiness**: reference/design/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
-- **V1 readiness scope**: reference/design/cdc-streaming.md#v1-readiness-scope
-- **Provider source-position barrier**: reference/design/cdc-streaming.md#provider-source-position-barrier
-- **Source-history continuity**: reference/design/cdc-streaming.md#source-history-continuity
-- **Deployment-owned physical source binding**: reference/design/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
+- **Projection health and deployment-owned CDC readiness**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
+- **V1 readiness scope**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-readiness-scope
+- **Provider source-position barrier**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#provider-source-position-barrier
+- **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
+- **Deployment-owned physical source binding**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
 
 The referenced design sections define binding, readiness, continuity, and lifecycle behavior.
 This story is only the work package for implementing them.

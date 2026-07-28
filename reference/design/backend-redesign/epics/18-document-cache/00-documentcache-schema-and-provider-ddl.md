@@ -13,7 +13,7 @@ related:
 - **Cached document contract**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract
 - **Relational data model**: reference/design/backend-redesign/design-docs/data-model.md
 - **DDL generation**: reference/design/backend-redesign/design-docs/ddl-generation.md
-- **Schema and query integration**: reference/design/cdc-streaming.md#schema-and-query-integration
+- **Schema and query integration**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration
 
 The referenced design sections define the physical contract and provisioning behavior. This
 story is only the work package for implementing them.

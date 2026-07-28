@@ -10,8 +10,8 @@ related:
 
 ## Design References
 
-- **Projection health and deployment-owned CDC readiness**: reference/design/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
-- **Security, telemetry, and operations**: reference/design/cdc-streaming.md#security-telemetry-and-operations
+- **Projection health and deployment-owned CDC readiness**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
+- **Security, telemetry, and operations**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations
 
 The referenced design sections define the projection status model, observations, and privacy
 rules. This story is only the work package for implementing them.

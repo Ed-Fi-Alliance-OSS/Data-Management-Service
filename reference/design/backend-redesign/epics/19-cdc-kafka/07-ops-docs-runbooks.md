@@ -8,7 +8,7 @@ epic: DMS-1309
 
 ## Design References
 
-- **Configuration, integration, readiness, and operations**: reference/design/cdc-streaming.md
+- **Configuration, integration, readiness, and operations**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
 - **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 

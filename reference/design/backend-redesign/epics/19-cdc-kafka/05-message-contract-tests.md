@@ -10,7 +10,7 @@ epic: DMS-1309
 
 - **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
 - **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
-- **Contract-to-evidence traceability**: reference/design/cdc-streaming.md#contract-to-evidence-traceability
+- **Contract-to-evidence traceability**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability
 
 The referenced design sections own the normative contracts. This story owns the executable
 conformance scenarios and pass evidence without duplicating the contract text.

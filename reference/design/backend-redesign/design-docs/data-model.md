@@ -314,7 +314,7 @@ Always-provisioned singleton physical identity for the logical database source.
 Provisioning inserts one random UUID only when the singleton row is absent; ordinary
 provisioning reruns do not update it. CDC binding, replacement, and recovery semantics are
 owned by
-[`cdc-streaming.md`](../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+[`cdc-streaming.md`](cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
 
 **PostgreSQL**
 
@@ -530,7 +530,7 @@ constraints, indexes, and triggers. It does not define projection or streaming b
 The [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
 owns cached-document semantics, freshness, reconciliation, and lifecycle. The
 [topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md) owns public stream
-mapping and compatibility. [`cdc-streaming.md`](../../cdc-streaming.md) owns configuration,
+mapping and compatibility. [`cdc-streaming.md`](cdc/cdc-streaming.md) owns configuration,
 deployment, readiness, and operations.
 
 Denormalized resource naming:
@@ -694,7 +694,7 @@ transaction.
 Runtime target initialization and activation from `Disabled` validate the SQL Server
 nested-trigger prerequisite. Generated `*_Stamp` triggers do not read
 `sys.configurations`. Runtime validation and the unsupported-change boundary are owned by
-[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
+[`cdc-streaming.md`](cdc/cdc-streaming.md#configuration-and-projection-target-selection).
 
 Trigger execution has a narrow encapsulation boundary without creating separate runtime
 DMS database identities:
@@ -823,7 +823,7 @@ IF NOT EXISTS (SELECT 1 FROM dms.CdcHeartbeat WHERE HeartbeatId = 1)
 
 The integration design owns the provider action query, capture enablement, source-position
 barrier, and operational use of this physical row; see
-[`cdc-streaming.md`](../../cdc-streaming.md#provider-source-position-barrier).
+[`cdc-streaming.md`](cdc/cdc-streaming.md#provider-source-position-barrier).
 
 ### Authorization companion objects (schema: `auth`)
 
