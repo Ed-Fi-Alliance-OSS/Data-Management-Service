@@ -6,6 +6,7 @@
 using System.Text.Json;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -42,6 +43,34 @@ public class StartupStatusTests
         }
     }
 
+    /// <summary>
+    /// Captures log entries so the phase-labelled Critical event can be asserted. Hand-rolled rather
+    /// than faked because <see cref="ILogger.Log"/> is generic over its state and the assertions need
+    /// the rendered message, which means running the supplied formatter.
+    /// </summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        internal sealed record Entry(LogLevel Level, string Message, Exception? Exception);
+
+        private readonly List<Entry> _entries = [];
+
+        public IReadOnlyList<Entry> CriticalEntries =>
+            _entries.Where(entry => entry.Level == LogLevel.Critical).ToList();
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => _entries.Add(new Entry(logLevel, formatter(state, exception), exception));
+    }
+
     protected string StatusDirectory = null!;
     protected string StatusFilePath = null!;
 
@@ -76,11 +105,14 @@ public class StartupStatusTests
     // production assembly and reach this project through InternalsVisibleTo. A protected member of
     // a public class cannot expose an internal type — CS0050/CS0051 — so widening these to
     // protected breaks the build. The derived fixtures are in this assembly, so internal is enough.
-    internal StartupPhaseExecutor CreateStartupPhaseExecutor(IStartupProcessExit startupProcessExit) =>
+    internal StartupPhaseExecutor CreateStartupPhaseExecutor(
+        IStartupProcessExit startupProcessExit,
+        ILogger<StartupPhaseExecutor>? logger = null
+    ) =>
         new(
             new FileStartupStatusSignal(StatusFilePath),
             startupProcessExit,
-            NullLogger<StartupPhaseExecutor>.Instance
+            logger ?? NullLogger<StartupPhaseExecutor>.Instance
         );
 
     internal StartupStatusDocument ReadStartupStatus() =>
@@ -378,12 +410,14 @@ public class StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
         private StatusCapturingStartupProcessExit _startupProcessExit = null!;
+        private RecordingLogger<StartupPhaseExecutor> _logger = null!;
 
         [SetUp]
         public void Setup()
         {
             _startupProcessExit = new StatusCapturingStartupProcessExit(StatusFilePath);
-            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
+            _logger = new RecordingLogger<StartupPhaseExecutor>();
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit, _logger);
         }
 
         [Test]
@@ -418,6 +452,38 @@ public class StartupStatusTests
             startupStatusAtExit.ErrorType.Should().Be(nameof(InvalidOperationException));
             startupStatusAtExit.ErrorMessage.Should().Be("Broken schema input.");
         }
+
+        [Test]
+        public async Task It_emits_a_phase_labelled_critical_log_event()
+        {
+            // Act
+            Func<Task> act = async () =>
+                await _startupPhaseExecutor.RunFatalAsync(
+                    DmsStartupPhases.InitializeApiSchemas,
+                    "Loading API schemas and initializing effective schema metadata.",
+                    "API schema loading and effective-schema initialization completed successfully.",
+                    "API schema initialization failed. DMS cannot start with invalid schemas.",
+                    () => throw new InvalidOperationException("Broken schema input.")
+                );
+
+            // Assert
+            await act.Should().ThrowAsync<InvalidOperationException>();
+
+            // startup-failure-status-surfacing.md promises that every fatal failure from
+            // LoadDataStores onward is findable by a log search on the failing phase name. Pinning
+            // the phase name in the rendered message is what keeps that promise honest: dropping the
+            // LogCritical call, or dropping {StartupPhase} from its template, leaves every other
+            // assertion in this file green. This route reaches the log through HandleFatalFailure,
+            // so it also covers the delegation to WriteFatalFailure.
+            _logger.CriticalEntries.Should().HaveCount(1);
+            _logger.CriticalEntries[0].Message.Should().Contain(DmsStartupPhases.InitializeApiSchemas);
+            _logger
+                .CriticalEntries[0]
+                .Exception.Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Be("Broken schema input.");
+        }
     }
 
     [TestFixture]
@@ -425,12 +491,14 @@ public class StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
         private RecordingStartupProcessExit _startupProcessExit = null!;
+        private RecordingLogger<StartupPhaseExecutor> _logger = null!;
 
         [SetUp]
         public void Setup()
         {
             _startupProcessExit = new RecordingStartupProcessExit();
-            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
+            _logger = new RecordingLogger<StartupPhaseExecutor>();
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit, _logger);
         }
 
         [Test]
@@ -466,6 +534,32 @@ public class StartupStatusTests
                 .Be(
                     "The route parameter name 'districtId' appears more than one time in the route template."
                 );
+        }
+
+        [Test]
+        public void It_emits_a_phase_labelled_critical_log_event()
+        {
+            // Act
+            _startupPhaseExecutor.WriteFatalFailure(
+                DmsStartupPhases.ConfigureEndpoints,
+                "Middleware and endpoint configuration failed. DMS cannot serve requests without mapped HTTP endpoints.",
+                new InvalidOperationException("The route parameter name 'districtId' appears twice.")
+            );
+
+            // Assert
+            // Emitting this event is the entire reason WriteFatalFailure exists as a separate member
+            // rather than an inline status write, and the sibling assertion in
+            // Given_A_Fatal_Phase_Failure_Is_Handled cannot stand in for it: moving the LogCritical
+            // call up into HandleFatalFailure would keep that one green while silently stripping the
+            // event from both rethrowing routes in Program.cs.
+            _logger.CriticalEntries.Should().HaveCount(1);
+            _logger.CriticalEntries[0].Message.Should().Contain(DmsStartupPhases.ConfigureEndpoints);
+            _logger
+                .CriticalEntries[0]
+                .Exception.Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Be("The route parameter name 'districtId' appears twice.");
         }
     }
 }

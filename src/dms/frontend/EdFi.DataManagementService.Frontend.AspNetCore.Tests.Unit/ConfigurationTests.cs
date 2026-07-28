@@ -279,6 +279,89 @@ public class ConfigurationTests
         }
     }
 
+    /// <summary>
+    /// Regression coverage for the configuration-binding catch in <c>ReportInvalidConfiguration</c>.
+    /// Options binding is lazy, so forcing <c>IOptions&lt;AppSettings&gt;.Value</c> is the first
+    /// eager bind in startup; a non-numeric value for the <c>int</c>
+    /// <c>MaxRequestBodySizeMegabytes</c> fails conversion and surfaces as
+    /// <see cref="InvalidOperationException"/>, not <see cref="OptionsValidationException"/>. That
+    /// call sits in the only unguarded window in startup, so before the catch existed it escaped
+    /// every status guard and left the file reading Completed/BuildApplication on a dead process -
+    /// worse than a stranded Starting, because Completed reads as success.
+    /// Contrast <see cref="Given_A_Configuration_With_Invalid_Max_Request_Body_Size"/>, which uses
+    /// "0": a value that binds and then fails the validator, taking the
+    /// <see cref="OptionsValidationException"/> route to a host that stays up serving 500s.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Configuration_With_A_Non_Numeric_Max_Request_Body_Size
+    {
+        private WebApplicationFactory<Program>? _factory;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:MaxRequestBodySizeMegabytes"] = "ten",
+                                ["AppSettings:StartupStatusFilePath"] = _statusFilePath,
+                            }
+                        );
+                    }
+                );
+                builder.ConfigureServices(collection => TestMockHelper.AddEssentialMocks(collection));
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            _factory!.Dispose();
+
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_writes_failed_startup_status_when_configuration_cannot_be_bound()
+        {
+            // Act
+            Action act = () => _factory!.CreateClient();
+
+            // Assert
+            // Fail-fast is preserved: a value that cannot be bound is not recoverable by the
+            // short-circuit middleware, so the catch rethrows rather than letting the host serve.
+            act.Should().Throw<InvalidOperationException>();
+
+            File.Exists(_statusFilePath).Should().BeTrue();
+            var startupStatus = JsonNode.Parse(File.ReadAllText(_statusFilePath))!.AsObject();
+
+            startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
+            startupStatus["Phase"]!.GetValue<string>().Should().Be(DmsStartupPhases.ConfigureEndpoints);
+            startupStatus["Summary"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "Configuration could not be read or bound. DMS cannot start without valid configuration values."
+                );
+            startupStatus["ErrorType"]!.GetValue<string>().Should().Be(nameof(InvalidOperationException));
+            startupStatus["ErrorMessage"]!.GetValue<string>().Should().Contain("MaxRequestBodySizeMegabytes");
+        }
+    }
+
     [TestFixture]
     public class Given_A_Bound_App_Settings_Without_Max_Request_Body_Size
     {
@@ -321,7 +404,6 @@ public class ConfigurationTests
     /// with no ErrorType or ErrorMessage.
     /// </summary>
     [TestFixture]
-    [NonParallelizable]
     public class Given_A_Configuration_With_Duplicate_Route_Qualifier_Segments
     {
         private WebApplicationFactory<Program>? _factory;
@@ -388,6 +470,97 @@ public class ConfigurationTests
                 );
             startupStatus["ErrorType"]!.GetValue<string>().Should().Be(nameof(RoutePatternException));
             startupStatus["ErrorMessage"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
+    /// <summary>
+    /// Coverage for the two phases that run before the application host exists
+    /// (<c>ConfigureServices</c>, <c>BuildApplication</c>), which are written by
+    /// <c>RunBootstrapPhase</c> through the bootstrap signal constructed at the very top of
+    /// <c>Program</c>.
+    /// <para>
+    /// These phases are unreachable by the <c>ConfigureAppConfiguration</c> +
+    /// <c>AddInMemoryCollection</c> pattern every other fixture here uses: those callbacks are
+    /// applied during <c>builder.Build()</c>, by which point the <c>ConfigureServices</c> phase has
+    /// already run and the bootstrap signal has already resolved its path. Process environment
+    /// variables are the only injection point early enough, because <c>WebApplication.CreateBuilder</c>
+    /// has read them before the first phase starts. Both the status path and the failure trigger
+    /// therefore have to be set that way.
+    /// </para>
+    /// <para>
+    /// Setting process-global state is safe here because every fixture that boots
+    /// <c>WebApplicationFactory&lt;Program&gt;</c> is non-parallelizable, so no other host can be
+    /// starting while these variables are set, and no other fixture reads them. The
+    /// <c>NonParallelizable</c> below is redundant with the containing class today, and deliberately
+    /// kept: this is the only fixture here whose correctness depends on serialization rather than
+    /// merely benefiting from it, so it carries its own guard should the class-level attribute ever
+    /// be relaxed.
+    /// </para>
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_A_Process_Level_Configuration_Failure_Before_The_Host_Is_Built
+    {
+        private const string StatusFilePathVariable = "AppSettings__StartupStatusFilePath";
+        private const string ForwardedHeadersVariable = "AppSettings__ReverseProxy__UseForwardedHeaders";
+
+        private WebApplicationFactory<Program>? _factory;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+
+            Environment.SetEnvironmentVariable(StatusFilePathVariable, _statusFilePath);
+
+            // Read inside the ConfigureServices phase body, at the Get<ReverseProxySettings>() call.
+            // A non-boolean here fails conversion while the phase is still running.
+            Environment.SetEnvironmentVariable(ForwardedHeadersVariable, "maybe");
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection => TestMockHelper.AddEssentialMocks(collection));
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            Environment.SetEnvironmentVariable(StatusFilePathVariable, null);
+            Environment.SetEnvironmentVariable(ForwardedHeadersVariable, null);
+
+            _factory!.Dispose();
+
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_writes_failed_startup_status_for_the_configure_services_phase()
+        {
+            // Act
+            Action act = () => _factory!.CreateClient();
+
+            // Assert
+            act.Should().Throw<InvalidOperationException>();
+
+            File.Exists(_statusFilePath).Should().BeTrue();
+            var startupStatus = JsonNode.Parse(File.ReadAllText(_statusFilePath))!.AsObject();
+
+            startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
+            startupStatus["Phase"]!.GetValue<string>().Should().Be(DmsStartupPhases.ConfigureServices);
+            startupStatus["Summary"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Configuring DMS services failed before the application host was built.");
+            startupStatus["ErrorType"]!.GetValue<string>().Should().Be(nameof(InvalidOperationException));
+            startupStatus["ErrorMessage"]!.GetValue<string>().Should().Contain("UseForwardedHeaders");
         }
     }
 

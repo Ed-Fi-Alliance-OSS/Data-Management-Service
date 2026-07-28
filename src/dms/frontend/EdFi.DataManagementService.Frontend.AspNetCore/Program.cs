@@ -273,6 +273,24 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         app.UseMiddleware<ReportInvalidConfigurationMiddleware>(ex.Failures);
         return ex;
     }
+    catch (Exception ex)
+    {
+        // Options binding is lazy, so the accesses above are the first eager IOptions<T>.Value in
+        // startup. A value that cannot be converted to its target type - a non-numeric
+        // AppSettings__MaxRequestBodySizeMegabytes, say - surfaces here as InvalidOperationException
+        // rather than OptionsValidationException, and carries no Failures collection for the
+        // short-circuit middleware to report. Recording it matters because this call sits in the
+        // only unguarded window in startup, between the BuildApplication phase and the first
+        // RunFatalAsync: without this the status file would be left reading Completed/BuildApplication
+        // on a process that is about to die, which is worse than a stranded Starting because
+        // Completed reads as success.
+        startupPhaseExecutor.WriteFatalFailure(
+            DmsStartupPhases.ConfigureEndpoints,
+            "Configuration could not be read or bound. DMS cannot start without valid configuration values.",
+            ex
+        );
+        throw;
+    }
     return null;
 }
 
