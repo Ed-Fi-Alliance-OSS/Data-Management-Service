@@ -1653,6 +1653,40 @@ On PostgreSQL, namespace indexes are not worth adding until the predicate shape 
 SQL Server already seeks parameterized prefix `LIKE`.
 A dedicated tracked-namespace story consumes the live Authorization story's selected mechanism, adapts the tracked predicate where needed, and validates tracked namespace indexes independently of the subject-cardinality and EdOrg/person work.
 
+##### Tracked-index evidence protocol
+
+Every follow-on index story (Change Query Stories 33, 35, 36, and 37) measures against this shared protocol.
+Each story defines only what it evaluates, the shapes that matter, and its category- or predicate-specific expectations; the rules below are not restated per story.
+
+Environment and workload:
+
+- Pin the database image/version, statistics preparation, cache-preparation policy, deterministic generator implementation/version, and integer seed.
+- SQL Server gates run at both supported database compatibility levels: 170 for newly created databases and 160 for databases restored from SQL Server 2022-built templates, per the SQL Server 2025 deployment contract. A story that narrows support to one level must record that narrowing explicitly.
+- Workload floors: tracked-change tables probed by a category or predicate hold at least ten million rows, district-scale authorization subject sets hold at least fifty thousand subjects (the subject-cardinality story's definition), and qualifying-row counts and window selectivities are pinned in the artifact. A run below these floors cannot establish eligibility.
+
+Measurement, for every read and write A/B shape in every phase (isolated overlays, combined overlays, and post-emission reruns):
+
+1. Use the same provisioned data and statistics for baseline and candidate.
+2. Run five unmeasured warm-ups per variant.
+3. Record twenty measured pairs, alternating `A → B` and `B → A` order.
+4. Record raw elapsed time, the provider execution plan, PostgreSQL buffer counts (the shared hit-plus-read totals reported by `EXPLAIN (ANALYZE, BUFFERS)`) or SQL Server logical reads, and the returned/qualifying row counts.
+5. Gate regressions on the median of the twenty paired `candidate / baseline` elapsed-time ratios; wherever a gate accepts a read improvement, use the median of the twenty paired buffer-read or logical-read ratios.
+6. Treat a run as noisy when either variant's elapsed-time median absolute deviation divided by its median exceeds 15%; rerun the full comparison once, and leave the decision blocked if the second run is also noisy. A read-based benefit claim is valid only from a run that passed this noise check.
+
+Uniform gates:
+
+- Read regression: every measured shape's median elapsed-time ratio is at or below `1.20`, and no shape acquires a story-prohibited plan form.
+- Benefit: at least a 20% improvement in median elapsed time or reads on the story-designated shapes.
+- Seek use: every adopted index is exercised as a seek by at least one applicable shape. On PostgreSQL the index appears in an Index Scan or Index Only Scan with its leading column in the index condition rather than a filter; on SQL Server an Index Seek carries seek predicates on the key columns, with no scan of that index and no key lookup where the design claims covering. A candidate that is unused or scan-only fails its category or predicate even when other shapes improved.
+- Write: each measured table's bulk-write median elapsed-time ratio is at or below `1.85` on PostgreSQL and `2.00` on SQL Server.
+- Storage, measured per table with baseline denominators, never aggregated across tables and never against candidate-state sizes: PostgreSQL compares `pg_relation_size` of each added index against `pg_table_size` of its table captured on the baseline before candidate DDL; SQL Server compares the added index's used pages from `sys.dm_db_partition_stats` against the table's baseline used pages. Each table's added index storage is at or below 40% (PostgreSQL) or 50% (SQL Server) of that table's baseline size.
+- Provider blocking: one provider's failure blocks the category or predicate on both providers pending reviewed redesign; failures are not waived as run-to-run noise.
+- Independence: no category or predicate may borrow benefit or low cost from another. Isolated overlays establish eligibility; combined overlays gate co-emission, covering reads always and writes on every table carrying indexes from more than one adopted category or predicate; a reviewed subset reruns its own restricted combined overlay.
+- Post-emission: the exact generated DDL must be semantically identical to the pinned overlay over the benchmark deployment's tables, and the applicable matrix reruns against that DDL; a mismatch or failed gate blocks acceptance.
+
+Rationale: the `1.20` ceiling and 20% minimum benefit require a material improvement while allowing bounded unrelated-plan variation; PostgreSQL's `1.85`/40% cost ceilings bound the measured 1.69x write ratio and approximately 30% storage with explicit margin; SQL Server uses the more conservative `2.00`/50% ceilings because the spike contains no implementation-scale write-amplification measurement against exact generated DDL.
+Absolute times are evidence, not gates, because they vary across hosts and CPU architectures.
+
 ##### DMS-1185 disposition
 
 The spike concludes with the following category dispositions:
@@ -1666,6 +1700,7 @@ The spike concludes with the following category dispositions:
 | Per-resource tracked Namespace indexes | Deferred until the live Namespace predicate/index mechanism is selected. | Authorization Story 22 and Change Query Story 37 own the prerequisite and tracked implementation gate. |
 
 The bounded follow-up probes are research inputs, not implementation acceptance evidence.
+The spike's charter ends at identifying candidates and quantifying research-level benefit and cost; implementation-scale evidence is deliberately owned by each follow-on ticket's gates, so approving this spike schedules those tickets rather than pre-certifying their outcomes.
 For each Story 33 category, the pre-implementation decision uses a pinned category-specific overlay against the current generated baseline.
 An isolated pass makes a category eligible; if both are eligible, simultaneous selection also requires the combined interaction gate, and a combined failure requires reviewed selection of at most one.
 Only the final selection is derived through the model, and its exact generated DDL must pass the same gates before acceptance.
