@@ -1071,6 +1071,41 @@ function Resolve-DatabaseEngineEnvironmentFile {
     return $composedPath
 }
 
+function ConvertTo-DotenvSafeEnvValue {
+    <#
+    .SYNOPSIS
+        Returns a dotenv/Compose-safe serialization of a single concrete value: bare when the value
+        needs no protection, single-quoted (with the embedded-apostrophe form backslash-escaped, not
+        doubled) when it contains a space, a '#', or opens with a quote character that would
+        otherwise be misread as delimiting the value.
+
+    .DESCRIPTION
+        Only for concrete, already-resolved values this design writes itself (the internal topology
+        marker and DMS_CONFIG_DATABASE_NAME) - never for a caller-authored connection string, whose
+        existing quoting this design always preserves exactly as authored. Single-quoting is safe
+        here specifically because these two values are never themselves a ${VAR} reference this
+        design introduces (the marker is always "true"/"false"; DMS_CONFIG_DATABASE_NAME's shared-
+        mode value is the ambient-aware-resolved concrete database name, not an alias) - unlike the
+        connection string's ${DMS_CONFIG_DATABASE_NAME} reference, which single-quoting would freeze.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ($Value.Length -eq 0) {
+        return $Value
+    }
+
+    $needsQuoting = $Value.Contains(" ") -or $Value.Contains("#") -or $Value[0] -in @("'", '"')
+    if (-not $needsQuoting) {
+        return $Value
+    }
+
+    return "'" + $Value.Replace("'", "\'") + "'"
+}
+
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
     <#
     .SYNOPSIS
@@ -1095,27 +1130,36 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
           - DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE: an internal bookkeeping marker, never consumed
             by any Compose YAML. Always read back via a raw (non-Compose-precedence) lookup so it
             cannot itself be affected by an ambient override of the same name.
-          - DMS_CONFIG_DATABASE_NAME: the Compose-facing seam. Shared mode resolves it to the
-            selected DMS datastore's current name (POSTGRES_DB_NAME / MSSQL_DB_NAME, following any
-            ${VAR} indirection within the base file); separate mode sets the fixed literal
-            "edfi_configurationservice".
+          - DMS_CONFIG_DATABASE_NAME: the Compose-facing seam. Shared mode resolves it through the
+            same Compose-precedence resolver (Get-ComposeResolvedEnvValue) the validator uses, so an
+            ambient POSTGRES_DB_NAME / MSSQL_DB_NAME override - which genuinely moves the running
+            database container - is reflected here too, not just at validation time; separate mode
+            sets the fixed literal "edfi_configurationservice".
 
-        When switching to separate mode, if the current DMS_CONFIG_DATABASE_CONNECTION_STRING's raw
-        (unresolved) text contains the exact legacy template token ("${POSTGRES_DB_NAME}" or
-        "${MSSQL_DB_NAME}", matching this story's own prior default template, before
-        DMS_CONFIG_DATABASE_NAME existed), that exact token is rewritten to
+        Both values are serialized dotenv-safely (ConvertTo-DotenvSafeEnvValue): quoted only when the
+        concrete value actually needs it (a space, '#', or a leading quote character), matching the
+        approved design - never single-quoted for reasons that would suppress interpolation, since
+        neither value is itself a ${VAR} reference this design writes.
+
+        When switching to separate mode, if the connection string's database-segment value specifically
+        - the value of a recognized database-name key (Database / Initial Catalog), not any other part
+        of the string - is, in its raw (unresolved) form, exactly the legacy template token
+        ("${POSTGRES_DB_NAME}" or "${MSSQL_DB_NAME}", matching this story's own prior default template,
+        before DMS_CONFIG_DATABASE_NAME existed), that exact segment is rewritten to
         "${DMS_CONFIG_DATABASE_NAME}" so a pre-existing developer .env file reaches separate mode
-        without hand-editing. The rewrite is a targeted text substitution on the raw value - never
+        without hand-editing. Matching is anchored to the database-segment's key=value boundary (not a
+        blind substring search across the whole string), so the same literal text appearing in an
+        unrelated segment - a password, a custom property - is never touched. The rewrite is also never
         a match on what the reference currently resolves to, which could coincide with a value a
         genuinely different, custom reference also happens to produce. Any connection string not
-        carrying that exact token is left completely untouched, so it either already agrees with
-        the separate-mode target or fails validation clearly, per the caller-authored-string
-        contract.
+        carrying that exact token in that exact position is left completely untouched, so it either
+        already agrees with the separate-mode target or fails validation clearly, per the
+        caller-authored-string contract.
 
-        Nothing this function writes is ever wrapped in single quotes: a single-quoted value is a
-        Docker Compose literal with no ${VAR} interpolation at all (see database-safety.psm1's
-        Resolve-ComposeEnvRawValue), which would freeze the very reference this function exists to
-        introduce or preserve.
+        The rewritten connection string itself is never wrapped in single quotes: a single-quoted
+        value is a Docker Compose literal with no ${VAR} interpolation at all (see
+        database-safety.psm1's Resolve-ComposeEnvRawValue), which would freeze the very reference this
+        function exists to introduce or preserve.
 
     .PARAMETER BaseEnvironmentFile
         Absolute path to the base env file. Should already be the output of
@@ -1154,14 +1198,16 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
 
     $intendedMarker = if ($SeparateConfigDatabase) { "true" } else { "false" }
 
+    # Ambient-aware: an ambient POSTGRES_DB_NAME / MSSQL_DB_NAME override genuinely moves the running
+    # database container, so the CMS seam this function materializes must follow it too - matching
+    # Confirm-CmsDatabaseTopologyAgreement's own resolution of the same key, not a file-only lookup
+    # that would silently disagree with what Compose actually starts.
     $intendedDatabaseName =
         if ($SeparateConfigDatabase) {
             "edfi_configurationservice"
         }
         else {
-            Resolve-MssqlDatabaseNameReference `
-                -Value (Get-EnvValue -EnvValues $baseValues -Name $datastoreNameKey) `
-                -EnvValues $baseValues
+            Get-ComposeResolvedEnvValue -EnvironmentValues $baseValues -Name $datastoreNameKey
         }
     if ([string]::IsNullOrWhiteSpace($intendedDatabaseName)) {
         throw "Resolve-CmsDatabaseTopologyEnvironmentFile: could not resolve a non-blank database name for '$datastoreNameKey'."
@@ -1169,26 +1215,30 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
 
     $currentConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
     $intendedConnectionString = $currentConnectionString
-    if ($SeparateConfigDatabase -and $currentConnectionString.Contains($legacyToken)) {
-        $intendedConnectionString = $currentConnectionString.Replace($legacyToken, '${DMS_CONFIG_DATABASE_NAME}')
+    if ($SeparateConfigDatabase) {
+        # Anchored to the database-segment's own key=value boundary (Database / Initial Catalog),
+        # never a blind substring search: the same literal token text appearing in an unrelated
+        # segment (a password, a custom property) must never be rewritten.
+        $legacyTokenPattern = [regex]::Escape($legacyToken)
+        $databaseSegmentRegex = [regex]::new(
+            '(?i)(?<=(?:^|;)\s*(?:database|initial\s*catalog)\s*=\s*)' + $legacyTokenPattern + '(?=\s*(?:;|$))'
+        )
+        $legacyTokenMatch = $databaseSegmentRegex.Match($currentConnectionString)
+        if ($legacyTokenMatch.Success) {
+            $intendedConnectionString =
+                $currentConnectionString.Substring(0, $legacyTokenMatch.Index) +
+                '${DMS_CONFIG_DATABASE_NAME}' +
+                $currentConnectionString.Substring($legacyTokenMatch.Index + $legacyTokenMatch.Length)
+        }
     }
 
     $currentMarker = Get-EnvValue -EnvValues $baseValues -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -DefaultValue "false"
 
-    # Compare the CURRENT DMS_CONFIG_DATABASE_NAME resolved (following any ${VAR} reference, e.g. the
-    # static profile-template alias "${POSTGRES_DB_NAME}"), not its raw text, against the intended
-    # concrete value. Comparing raw-vs-resolved would make every ordinary shared-mode invocation
-    # against an alias-shaped template file appear to "need an update" on every single call, since
-    # this function always writes the resolved concrete value rather than the alias text - defeating
-    # the unchanged-return idempotency path for the normal, expected case.
-    $rawCurrentDatabaseName = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_NAME"
-    $currentDatabaseName =
-        if ([string]::IsNullOrWhiteSpace($rawCurrentDatabaseName)) {
-            ""
-        }
-        else {
-            Resolve-MssqlDatabaseNameReference -Value $rawCurrentDatabaseName -EnvValues $baseValues
-        }
+    # Resolve the CURRENT DMS_CONFIG_DATABASE_NAME the same Compose-precedence-aware way the intended
+    # value above was computed (ambient wins; ${VAR} indirection followed), so an already-correct
+    # alias-shaped file is recognized as needing no update even while an ambient datastore-name
+    # override is active - Compose would resolve that same alias to the same ambient value too.
+    $currentDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $baseValues -Name "DMS_CONFIG_DATABASE_NAME"
 
     $markerChanged = -not [string]::Equals($currentMarker, $intendedMarker, [System.StringComparison]::Ordinal)
     $nameChanged = -not [string]::Equals($currentDatabaseName, $intendedDatabaseName, [System.StringComparison]::Ordinal)
@@ -1208,9 +1258,12 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     $derivedName = if ($baseFileName.EndsWith(".topology")) { $baseFileName } else { "$baseFileName.topology" }
     $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
 
+    # Dotenv-safe serialization for the two concrete values this function writes itself - never for
+    # the connection string, whose existing quoting (or lack of it) is always preserved exactly as
+    # authored.
     $keyOverrides = @{
-        DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $intendedMarker
-        DMS_CONFIG_DATABASE_NAME               = $intendedDatabaseName
+        DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = ConvertTo-DotenvSafeEnvValue -Value $intendedMarker
+        DMS_CONFIG_DATABASE_NAME               = ConvertTo-DotenvSafeEnvValue -Value $intendedDatabaseName
     }
     if ($connectionStringChanged) {
         $keyOverrides["DMS_CONFIG_DATABASE_CONNECTION_STRING"] = $intendedConnectionString
@@ -1243,18 +1296,27 @@ function Confirm-CmsDatabaseTopologyAgreement {
         marker cannot influence which branch applies.
 
         The actual connection string is resolved with full Docker Compose precedence (ambient wins
-        over the file; ${VAR} references followed) using an engine-appropriate concrete fallback
-        for the case where the key is absent from both the ambient environment and the file - never
-        a template string, because Get-ComposeResolvedEnvValue returns its own DefaultValue
-        argument verbatim without expanding any ${...} inside it.
+        over the file; ${VAR} references followed). For PostgreSQL, an entirely absent connection
+        string (both ambient and file) falls back to a concrete default constructed by
+        Get-CmsDatabaseTopologyDefaultConnectionString - never a template string, because
+        Get-ComposeResolvedEnvValue returns its own DefaultValue argument verbatim without expanding
+        any ${...} inside it. For MSSQL, Phase 1 fails clearly instead of constructing a default: no
+        Compose YAML has an engine-aware inline fallback for MSSQL yet (both files' inline fallback
+        is still PostgreSQL-shaped), so a guessed default here could accept a connection Compose
+        itself would never render; Phase 2 introduces the MSSQL counterpart once both YAML files gain
+        an engine-aware fallback together.
 
         Every recognized database-name key present (Database, Initial Catalog) must individually
         agree with the expected name - the same all-candidates-must-agree pattern
         Assert-MssqlCmsDatabaseIsShared already uses, not a "pick one" or "reject if more than one
         is present" rule; a connection string carrying two agreeing aliases is accepted. The same
-        rule applies to every recognized host-key alias present. A connection string presenting no
-        recognized host key at all fails closed. A present host key with no explicit port defaults
-        to the engine's documented internal port (1433 MSSQL, 5432 PostgreSQL).
+        rule applies to every recognized host-key alias present, and host-key recognition is
+        engine-specific (Get-EndpointFromResolvedConnectionString): an MSSQL-only alias is not
+        recognized for a PostgreSQL validation and vice versa, so a connection string authored for
+        the wrong engine cannot pass by accident. A connection string presenting no recognized host
+        key for the given engine at all fails closed. A present host key with no explicit port
+        (neither a host,port compound nor, for PostgreSQL, a standalone "port" key) defaults to the
+        engine's documented internal port (1433 MSSQL, 5432 PostgreSQL).
 
         Finally, if the ambient process/shell environment sets DMS_CONFIG_DATABASE_NAME directly
         (read raw, not through Get-ComposeResolvedEnvValue, which would trivially equal itself), it
@@ -1292,17 +1354,25 @@ function Confirm-CmsDatabaseTopologyAgreement {
         throw "Confirm-CmsDatabaseTopologyAgreement: could not resolve a non-blank expected database name for '$datastoreNameKey'."
     }
 
-    $defaultConnectionString =
+    $actualConnectionString =
         if ($DatabaseEngine -eq "mssql") {
-            $mssqlPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
-            "Server=$expectedHost,$expectedPort;Database=$expectedDatabaseName;User Id=sa;Password=$mssqlPassword;TrustServerCertificate=true;"
+            # Phase 1 (MSSQL wiring): fail clearly for an entirely absent connection string rather
+            # than construct an untested default - see the .DESCRIPTION note above.
+            $explicitConnectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+            if ([string]::IsNullOrWhiteSpace($explicitConnectionString)) {
+                throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING is required for MSSQL and cannot be entirely absent. This design does not construct an MSSQL default until Phase 2 introduces an engine-aware Compose fallback; check for a corrupted or manually-edited environment file."
+            }
+            $explicitConnectionString
         }
         else {
             $postgresPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_PASSWORD"
-            "host=$expectedHost;port=$expectedPort;username=postgres;password=$postgresPassword;database=$expectedDatabaseName;"
+            $defaultConnectionString = Get-CmsDatabaseTopologyDefaultConnectionString `
+                -ExpectedHost $expectedHost `
+                -ExpectedPort $expectedPort `
+                -ExpectedDatabaseName $expectedDatabaseName `
+                -PostgresPassword $postgresPassword
+            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING" -DefaultValue $defaultConnectionString
         }
-
-    $actualConnectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING" -DefaultValue $defaultConnectionString
 
     $actualDatabaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $actualConnectionString)
     if ($actualDatabaseNames.Count -eq 0) {
@@ -1314,9 +1384,9 @@ function Confirm-CmsDatabaseTopologyAgreement {
         }
     }
 
-    $actualEndpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $actualConnectionString)
+    $actualEndpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $actualConnectionString -DatabaseEngine $DatabaseEngine)
     if ($actualEndpoints.Count -eq 0) {
-        throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING must include a recognized host key (Server, Data Source, Host, ...) so the CMS database endpoint can be verified."
+        throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING must include a host key recognized for '$DatabaseEngine' so the CMS database endpoint can be verified."
     }
     foreach ($actualEndpoint in $actualEndpoints) {
         if (-not [string]::Equals($actualEndpoint.Host, $expectedHost, [System.StringComparison]::OrdinalIgnoreCase)) {

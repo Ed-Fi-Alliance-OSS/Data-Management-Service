@@ -296,35 +296,69 @@ function Get-EndpointFromResolvedConnectionString {
         splitting a "host,port" compound (the MSSQL Server=host,port shape) into separate Host/Port
         fields. No further ${VAR} resolution is performed, matching
         Get-DatabaseNameFromResolvedConnectionString's contract. Returns an empty array when the
-        string is blank or carries no recognized host keyword.
+        string is blank or carries no recognized host keyword for the given engine.
+
+    .DESCRIPTION
+        Host-key recognition is engine-specific, not a single union applied to both: MSSQL recognizes
+        Server / Data Source / Addr / Address / Network Address; PostgreSQL recognizes Host / Server.
+        An engine-only alias (e.g. Address= for PostgreSQL, or Host= for MSSQL) is not recognized for
+        the other engine, so a connection string authored for one engine cannot be mistaken for a
+        valid endpoint under the other engine's rules - the runtime ADO.NET provider would reject it
+        too.
+
+        PostgreSQL's own connection-string shape (see local-config.yml / published-config.yml's
+        checked-in nested fallback) carries port as a standalone "port" key, not a host,port compound
+        - unlike MSSQL's Server=host,port shape. When no comma-compound is present on the matched host
+        value, a standalone "port" key (present for either engine) fills in Port; only when neither
+        form carries a port does Port come back $null.
 
     .PARAMETER ConnectionString
         An already Compose-precedence-resolved connection string.
 
+    .PARAMETER DatabaseEngine
+        "postgresql" or "mssql". Selects which host-key aliases are recognized.
+
     .OUTPUTS
         An array of [pscustomobject] with Host and Port (Port is $null when the value carried no
-        comma-separated port segment).
+        comma-separated port segment and no standalone "port" key was present).
     #>
     param(
-        [string]$ConnectionString
+        [string]$ConnectionString,
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
     )
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         return @()
     }
 
+    $hostKeyPattern = if ($DatabaseEngine -eq "mssql") {
+        '^(server|data\s+source|addr|address|network\s+address)$'
+    }
+    else {
+        '^(host|server)$'
+    }
+
     try {
         $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
         $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
 
+        $standalonePort = $null
+        foreach ($key in $connectionStringBuilder.PSBase.Keys) {
+            if ([string]$key -ieq "port") {
+                $standalonePort = [string]$connectionStringBuilder.PSBase.get_Item($key)
+            }
+        }
+
         return @(
             foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-                if ([string]$key -imatch '^(server|data\s+source|addr|address|network\s+address|host)$') {
+                if ([string]$key -imatch $hostKeyPattern) {
                     $value = [string]$connectionStringBuilder.PSBase.get_Item($key)
                     $parts = $value.Split(',', 2)
                     [pscustomobject]@{
                         Host = $parts[0].Trim()
-                        Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $null }
+                        Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $standalonePort }
                     }
                 }
             }
@@ -333,6 +367,37 @@ function Get-EndpointFromResolvedConnectionString {
     catch {
         throw "Could not parse the resolved connection string to extract the endpoint: $($_.Exception.Message)"
     }
+}
+
+function Get-CmsDatabaseTopologyDefaultConnectionString {
+    <#
+    .SYNOPSIS
+        Constructs the concrete PostgreSQL connection-string default
+        Confirm-CmsDatabaseTopologyAgreement validates against when
+        DMS_CONFIG_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
+        local-config.yml / published-config.yml nested Compose fallback renders (confirmed against a
+        real `docker compose config` invocation - see CmsDatabaseTopology.Tests.ps1's Compose-rendering
+        oracle).
+
+    .DESCRIPTION
+        PostgreSQL-only: Phase 1 (MSSQL wiring) fails clearly instead of constructing an MSSQL default
+        for this case, since neither .yml file has an engine-aware inline fallback yet (an untested
+        guess could disagree with Compose's still-PostgreSQL-shaped fallback). Phase 2 introduces the
+        MSSQL counterpart here once both .yml files gain an engine-aware fallback together.
+
+        Extracted into its own function specifically so it can be asserted, in isolation, against a
+        real Compose-rendered oracle string byte-for-byte - not merely indirectly by observing that
+        Confirm-CmsDatabaseTopologyAgreement does not throw when validating its own construction
+        against itself.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$ExpectedHost,
+        [Parameter(Mandatory)] [string]$ExpectedPort,
+        [Parameter(Mandatory)] [string]$ExpectedDatabaseName,
+        [Parameter(Mandatory)] [string]$PostgresPassword
+    )
+
+    return "host=$ExpectedHost;port=$ExpectedPort;username=postgres;password=$PostgresPassword;database=$ExpectedDatabaseName;"
 }
 
 function Test-PostgresDuplicateDatabaseError {
@@ -384,6 +449,10 @@ function Test-MssqlDuplicateDatabaseError {
         SQL Server's single documented code is lower-risk to take on documentation alone, but
         should still be confirmed against a live instance before Phase 1b relies on it).
 
+        Matches only the structured sqlcmd error-number position ("Msg 1801,"), not a bare "1801"
+        anywhere in the output - unrelated text that happens to contain that number (a row count, a
+        line number, a timestamp) must not be misclassified as the benign race.
+
         Returning true here is not proof of success by itself - the caller must still verify the
         postcondition before declaring the guarded-create operation successful.
 
@@ -398,7 +467,7 @@ function Test-MssqlDuplicateDatabaseError {
         return $false
     }
 
-    return [regex]::IsMatch($CapturedOutput, '\b1801\b')
+    return [regex]::IsMatch($CapturedOutput, '(?i)Msg\s+1801,')
 }
 
 function Get-DatabaseNameFromConnectionString {
@@ -546,6 +615,7 @@ Export-ModuleMember -Function `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    Get-CmsDatabaseTopologyDefaultConnectionString, `
     Test-PostgresDuplicateDatabaseError, `
     Test-MssqlDuplicateDatabaseError, `
     Assert-E2EDatabaseIsDedicated
