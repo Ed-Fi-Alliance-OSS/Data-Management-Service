@@ -1574,7 +1574,10 @@ The PostgreSQL candidates have been measured; SQL Server validation remains a co
 
 A set-level derivation pass ordered immediately after `DeriveAuthorizationIndexInventoryPass` and before `ApplyDialectIdentifierShorteningPass`.
 It must run in that window because it reads the tracked-change inventory produced by `DeriveTrackedChangeInventoryPass`, and its output identifiers must participate in dialect shortening and canonical ordering.
-`DeriveIndexInventoryPass` cannot own these entries: it runs before the tracked-change inventory exists, and its position ahead of trigger inventory derivation is load-bearing.
+`DeriveIndexInventoryPass` was evaluated as the home for these entries and rejected.
+Repositioning it after `DeriveTrackedChangeInventoryPass` is mechanically possible (no pass between them reads the index inventory), but that pass derives constraint-implied indexes (PK, UK, FK-support) from schema-derived tables, while tracked-change indexes are driven by the tracked-change inventory, the PrimaryAssociation literals, and the strict/default missing-literal contract.
+The pipeline's precedent for a new index family is a dedicated sibling pass appending to the shared inventory, exactly as `DeriveAuthorizationIndexInventoryPass` does for live authorization indexes.
+This satisfies the spike's derived-model-emission intent while diverging from the acceptance criterion that named `DeriveIndexInventoryPass`; the divergence is deliberate and recorded here.
 The pass appends plain `DbIndexInfo` entries to the shared index inventory, so DDL emission, manifest emission, identifier shortening, and index-name uniqueness validation apply unchanged.
 It takes the same strictness flag as `DeriveAuthorizationIndexInventoryPass` (`throwOnMissingPaLiteral` semantics): the strict pipeline throws when an expected literal column is missing, and the default pipeline skips so synthetic test fixtures continue to build.
 
@@ -1606,10 +1609,10 @@ Write cost is bounded by design: tracked-change rows are inserted only on delete
 Measured on PostgreSQL (DMS-1185), the candidate indexes add roughly one microsecond per row to bulk tombstone inserts (+69% relative on an index-light table, trivial absolute), with covering-index storage around 30% of table size.
 Workloads dominated by bulk deletes or cascading key changes (year-end purges, delete-and-reload resyncs) are the only ones that see meaningful overhead.
 
-One bounded PostgreSQL read-side regression is a candidate exception: with the tracked PA covering index present, the exact narrow-`ChangeVersion`-window `/deletes` benchmark against the five PrimaryAssociation resources can flip from a hash anti-join to a join-filter nested loop (measured 0.5s to 2.5s at 10M tombstones, reproducible under forward and reverse controls).
+One PostgreSQL read-side regression is known and blocking: with the tracked PA covering index present, narrow-`ChangeVersion`-window `/deletes` against the five PrimaryAssociation resources can flip from a hash anti-join to a join-filter nested loop (measured 0.5s to 2.5s at 10M tombstones, reproducible under forward and reverse controls).
 The root cause is the same `UNION`-view cardinality misestimate that defers the per-resource person and EdOrg indexes below.
-The exception is permitted only if the checked-in DMS-1185 protocol passes; the later subject-cardinality work is expected to remove it.
-That exception is not granted to SQL Server: it requires its own evidence and provider-specific limit.
+No regression exception is granted: the emission story's gates hold every measured shape on both providers to the general regression ceiling and reject the flipped plan shape, so the five-PA covering category is expected to remain blocked on PostgreSQL until the subject-cardinality story's query-shape fix removes the misestimate and a rerun with the candidate DDL shows the flip gone on all five resources.
+The shared-descriptor category is not implicated in the flip mechanism (descriptor authorization probes no `UNION` view), so the emission story gates and adopts the two categories independently.
 Implementation verification uses the reproducible protocol and numeric gates in the new Tier-1 emission story rather than absolute timings tied to the original arm64 macOS Docker host.
 
 ##### Per-resource securable-element indexes are deferred
@@ -1630,6 +1633,17 @@ Related PostgreSQL caveat, tracked separately: the production namespace predicat
 On PostgreSQL, namespace indexes are not worth adding until the predicate shape and the index operator class are addressed together.
 SQL Server already seeks parameterized prefix `LIKE`.
 A dedicated tracked-namespace story consumes the live Authorization story's selected mechanism, adapts the tracked predicate where needed, and validates tracked namespace indexes independently of the subject-cardinality and EdOrg/person work.
+
+##### DMS-1185 disposition
+
+The spike concludes with a candidate design, not an adopted index set:
+
+- PostgreSQL Tier-1 candidates: measured (PostgreSQL 16.8, 2M/10M tombstones), supported by evidence, not yet adopted.
+- SQL Server Tier-1 candidates: unmeasured; validation is owned by the emission story's evidence phase.
+- No provider-neutral index set is approved by this spike; each Tier-1 category is adopted only when both providers pass the emission story's gates for that category.
+- The five-PA covering category is expected to be blocked on PostgreSQL by the narrow-window anti-join flip until the subject-cardinality story's shape fix removes it.
+- Live descriptor identity index: deferred on PostgreSQL from measured evidence; deferred on SQL Server until the dedicated descriptor-index story consumes the emission story's recorded comparison (see § "`*_RefKey` index ordering for `/deletes`").
+- Per-resource EdOrg/person and namespace tracked indexes: deferred to their dedicated stories as described above.
 
 ### Authorization
 
@@ -1652,13 +1666,30 @@ Meaning that the next strategies have to be implemented for the `/deletes` and `
 `RelationshipsWithStudentsOnlyIncludingDeletes`                       
 `RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes`  
 
+DMS-1185 cataloged the scan surfaces these strategies touch, from the runtime SQL generators (`TrackedChangeQueryPlanner`, `TrackedChangeAuthorizationSqlEmitter`, `ReadChangesAuthorizationPlanner`, `AuthObjectDefinitions`): the `/deletes` outer query, the shared-descriptor `/deletes` (always `Discriminator IN (2 values)`), the `/keyChanges` CTE, the tracked-change arms of the four `*IncludingDeletes` views (equality probes collectively spanning five `tracked_changes_edfi` association tables; every people-strategy request evaluates the views matching its person subject kinds, making this the highest-frequency surface), and the `dms.Descriptor` identity probes.
+Per-strategy shapes for both `/deletes` and `/keyChanges` (subjects AND within a strategy, strategies OR across, `NamespaceBased` AND-ed with the relationship OR-group):
+
+| Strategy | Direction | Subjects | View probed by the predicate | Tracked `Old*` column probed | Seek index (derivation source) | Disposition |
+|---|---|---|---|---|---|---|
+| `NoFurtherAuthorizationRequired` | n/a | none | none | none (window + tombstone filters only) | PK on `ChangeVersion` (constraint-implied inventory) | covered today |
+| `RelationshipsWithEdOrgsOnly` | Normal | one per EdOrg securable | `auth.EducationOrganizationIdToEducationOrganizationId` (subject `TargetEducationOrganizationId`, claim `SourceEducationOrganizationId`), OR-ed with a direct `= ANY(claims)` arm | `Old<EdOrg canonical column>`, e.g. `OldSchoolId_Unified` | single-key index on the tracked EdOrg column (securable-element dual check) | deferred to the per-resource EdOrg/person story; Tier-1 candidate where the column leads a PA covering index |
+| `RelationshipsWithEdOrgsOnlyInverted` | Inverted | one per EdOrg securable | same view with subject/claim columns swapped | same | same | same |
+| `RelationshipsWithEdOrgsAndPeopleIncludingDeletes` | Normal | EdOrg AND Student AND Contact AND Staff securables | hierarchy view plus `...StudentDocumentIdIncludingDeletes`, `...ContactDocumentIdIncludingDeletes`, `...StaffDocumentIdIncludingDeletes` | EdOrg column plus one `Old<person>_DocumentId` per person path | view arms: the five tracked PA covering indexes (PA literals through the `Old` value-column mapping); outer columns: single-key indexes (`Role = PersonDocumentId`, EdOrg dual check) | view arms are Tier-1 candidates; outer columns deferred |
+| `RelationshipsWithStudentsOnlyIncludingDeletes` | Normal | Student securables | `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes` | `Old<path>_Student_DocumentId` (self-identity `OldStudent_DocumentId` on Student) | same pattern | same |
+| `RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes` | Normal | Student securables | `auth.EducationOrganizationIdToStudentDocumentIdDeletedResponsibility` | same shape | same pattern | same |
+| `NamespaceBased` | n/a | resolved namespace column | none (prefix `LIKE` against token prefixes; `LIKE ANY(@array)` on PostgreSQL, OR-chain on SQL Server) | `OldNamespace` (per-resource), or shared-descriptor `OldNamespace` behind the `Discriminator` filter | shared table: `(Discriminator, ChangeVersion)` (shared-descriptor system columns); per-resource: pattern-capable namespace index (dual check) | shared table: Tier-1 candidate; per-resource deferred pending predicate-shape + operator-class work |
+
+All probes are equality except the namespace prefix `LIKE`; on the shared descriptor table every shape is preceded by the `Discriminator IN (2 values)` filter, which is why `Discriminator` leads the Tier-1 candidate there.
+Securable coverage in tracked-change tables is root-scoped: array-nested (`[*]`) EdOrg and namespace securable paths have no tracked columns by design and fail closed under the corresponding `ReadChanges` strategies (see § "Per-resource securable-element indexes are deferred" above).
+Because strategies OR-combine and subjects AND-combine, single-column indexes are the right granularity; the candidate set and its derivation live in § "Indexes on the `tracked_changes*` tables" above.
+
 The combinator semantics — AND/OR mixing across strategy categories and execution order — defined in [auth.md](auth.md) apply unchanged for `ReadChanges`.
 
 ##### Differences when compared to live resource endpoint auth logic
 
 Strategies that share a name across `Read` and `ReadChanges` (`NoFurtherAuthorizationRequired`, `NamespaceBased`, `RelationshipsWithEdOrgsOnly`, `RelationshipsWithEdOrgsOnlyInverted`) reuse the original authorization views. Strategies whose name carries the `*IncludingDeletes` suffix swap their backing view to the corresponding `*IncludingDeletes` view.
 
-Contrary to the live resources logic which computes the people auth subjects joining intermediate resources (to reach the person's DocumentId), the tracked-change tables denomalize people DocumentIds (initialized in in the `*_Stamp` triggers), meaning no entermediate joins are needed for people auth subjects.
+Contrary to the live resources logic which computes the people auth subjects joining intermediate resources (to reach the person's DocumentId), the tracked-change tables denormalize people DocumentIds (initialized in the `*_Stamp` triggers), meaning no intermediate joins are needed for people auth subjects.
 
 Additionally, the tracked-changes table value-column names include `Old` and `New` prefixes without an underscore separator.
 
@@ -1842,8 +1873,7 @@ Descriptor `/deletes` uses the same conceptual anti-join, but it probes `dms.Des
 The durable reason is not that descriptor deletes are rare: the same probe shape also runs per tombstone row for every resource `/deletes` whose identity includes a descriptor reference.
 It is that `dms.Descriptor` is small and every probe leads with `Discriminator`, so the existing `Discriminator`-leading index `IX_Descriptor_Discriminator_ContentVersion` already bounds the probe cost (`UX_Descriptor_Uri_Discriminator` leads on `Uri` and does not serve this probe).
 On PostgreSQL, DMS-1185 measured this at 10M tracked rows and found no observable improvement from a dedicated `(Discriminator, Namespace, CodeValue)` index, so the index is deferred for that provider.
-The SQL Server disposition remains pending an equivalent comparison that holds the tracked Tier-1 set fixed and toggles only the live descriptor identity candidate.
-The provider-neutral design may re-defer the index only after that evidence is recorded; the dedicated SQL Server descriptor-index story owns either recording that deferral or emitting it through the dialect-aware inventory.
+On SQL Server the index is likewise deferred, not pending adoption: the Tier-1 emission story's evidence phase records an equivalent comparison that holds the tracked Tier-1 candidates fixed and toggles only the live descriptor identity candidate, and the dedicated SQL Server descriptor-index story owns the final disposition - recording continued deferral or emitting the index through the dialect-aware inventory.
 
 An example generated SQL query used to fulfill the `GET crisisTypeDescriptors/deletes` request is:
 
