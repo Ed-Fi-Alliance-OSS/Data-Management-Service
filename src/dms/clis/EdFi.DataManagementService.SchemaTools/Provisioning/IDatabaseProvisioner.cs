@@ -57,13 +57,18 @@ public interface IDatabaseProvisioner
 
     /// <summary>
     /// Validates that the contents of dms.ResourceKey and dms.SchemaComponent match
-    /// the expected seed data from <paramref name="expectedSchema"/>. If dms.EffectiveSchema
-    /// does not exist (new database), returns immediately.
+    /// the expected seed data from <paramref name="expectedSchema"/>, and runs the bounded
+    /// create-only E18 provisioning guards. If dms.EffectiveSchema does not exist (new database),
+    /// seed validation returns immediately after checking legacy cache artifacts and provider
+    /// prerequisites that would otherwise fail later in the DDL transaction.
     /// </summary>
     /// <remarks>
     /// Throws <see cref="InvalidOperationException"/> in any of these cases:
     /// <list type="bullet">
     ///   <item>The dms.EffectiveSchema table exists but the singleton row is missing (partial/corrupt state).</item>
+    ///   <item>A known legacy dms.DocumentCache artifact is present.</item>
+    ///   <item>A completed same-hash database is missing the DataStoreIdentity or DocumentCacheState singleton state.</item>
+    ///   <item>A provider-specific provisioning prerequisite is not satisfied.</item>
     ///   <item>Required seed tables (dms.ResourceKey or dms.SchemaComponent) are missing.</item>
     ///   <item>Seed table contents do not match expected data (row-level diff report included in message).</item>
     /// </list>

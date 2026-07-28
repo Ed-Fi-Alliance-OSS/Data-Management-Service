@@ -962,9 +962,52 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_emit_completed_schema_singleton_safety_guards()
+    {
+        _sql.Should().Contain("Preflight: protect completed DocumentCache mutable singleton state");
+        _sql.Should().Contain("\"dms\".\"DataStoreIdentity\"");
+        _sql.Should().Contain("\"dms\".\"DocumentCacheState\"");
+        _sql.Should().Contain("SourceIdentity");
+        _sql.Should().Contain("00000000-0000-0000-0000-000000000000");
+        _sql.Should().Contain("ProjectionLifecycleState");
+        _sql.Should().Contain("CacheAheadRecoveryRequired");
+        _sql.Should().Contain("Drop and recreate the database before re-provisioning");
+    }
+
+    [Test]
+    public void It_should_emit_known_legacy_cache_artifact_guards()
+    {
+        _sql.Should().Contain("Preflight: reject known legacy DocumentCache artifacts");
+        _sql.Should().Contain("column_name = 'Etag'");
+        _sql.Should().Contain("UX_DocumentCache_DocumentUuid");
+        _sql.Should().Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        _sql.Should().Contain("Drop and recreate the database before provisioning E18 DocumentCache schema");
+    }
+
+    [Test]
+    public void It_should_emit_pgsql_enqueue_owner_prerequisite_guards()
+    {
+        _sql.Should().Contain("Preflight: validate PostgreSQL enqueue-owner prerequisites");
+        _sql.Should().Contain("pg_catalog.to_regrole('edfi_dms_enqueue_owner')");
+        _sql.Should().Contain("pg_catalog.pg_auth_members membership");
+        _sql.Should()
+            .Contain("membership.admin_option OR membership.inherit_option OR membership.set_option");
+        _sql.Should().Contain("SET TRUE, INHERIT FALSE, ADMIN FALSE");
+        _sql.Should()
+            .Contain("pg_catalog.pg_has_role(SESSION_USER, _owner_role, 'MEMBER WITH ADMIN OPTION')");
+    }
+
+    [Test]
     public void It_should_not_contain_phase_7_header()
     {
         _sql.Should().NotContain("Phase 7");
+    }
+
+    [Test]
+    public void It_should_not_emit_a_transaction_wrapper()
+    {
+        _sql.Should().NotContain("BEGIN TRANSACTION");
+        _sql.Should().NotContain("COMMIT");
     }
 
     [Test]
@@ -1003,9 +1046,47 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_emit_completed_schema_singleton_safety_guards()
+    {
+        _sql.Should().Contain("Preflight: protect completed DocumentCache mutable singleton state");
+        _sql.Should().Contain("[dms].[DataStoreIdentity]");
+        _sql.Should().Contain("[dms].[DocumentCacheState]");
+        _sql.Should().Contain("sys.sp_executesql");
+        _sql.Should().Contain("SourceIdentity");
+        _sql.Should().Contain("00000000-0000-0000-0000-000000000000");
+        _sql.Should().Contain("ProjectionLifecycleState");
+        _sql.Should().Contain("CacheAheadRecoveryRequired");
+        _sql.Should().Contain("DATALENGTH(@preflight_lifecycle_state)");
+    }
+
+    [Test]
+    public void It_should_emit_known_legacy_cache_artifact_guards()
+    {
+        _sql.Should().Contain("Preflight: reject known legacy DocumentCache artifacts");
+        _sql.Should().Contain("name = N'Etag'");
+        _sql.Should().Contain("UX_DocumentCache_DocumentUuid");
+        _sql.Should().Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        _sql.Should().Contain("Drop and recreate the database before provisioning E18 DocumentCache schema");
+    }
+
+    [Test]
+    public void It_should_not_emit_pgsql_enqueue_owner_prerequisites()
+    {
+        _sql.Should().NotContain("edfi_dms_enqueue_owner");
+        _sql.Should().NotContain("pg_catalog");
+    }
+
+    [Test]
     public void It_should_not_contain_phase_7_header()
     {
         _sql.Should().NotContain("Phase 7");
+    }
+
+    [Test]
+    public void It_should_not_emit_a_transaction_wrapper()
+    {
+        _sql.Should().NotContain("BEGIN TRANSACTION");
+        _sql.Should().NotContain("COMMIT TRANSACTION");
     }
 
     [Test]

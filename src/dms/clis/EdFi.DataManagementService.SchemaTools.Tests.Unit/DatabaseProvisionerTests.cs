@@ -289,4 +289,102 @@ public class DatabaseProvisionerTests
             _batches.Should().HaveCount(2);
         }
     }
+
+    private sealed class ExposedPgsqlDatabaseProvisioner : PgsqlDatabaseProvisioner
+    {
+        public ExposedPgsqlDatabaseProvisioner()
+            : base(A.Fake<ILogger>()) { }
+
+        public DialectSql ExposedDialect => Dialect;
+    }
+
+    private sealed class ExposedMssqlDatabaseProvisioner : MssqlDatabaseProvisioner
+    {
+        public ExposedMssqlDatabaseProvisioner()
+            : base(A.Fake<ILogger>()) { }
+
+        public DialectSql ExposedDialect => Dialect;
+    }
+
+    [TestFixture]
+    public class Given_PgsqlDatabaseProvisioner_Bounded_Preflight_Sql
+    {
+        private DialectSql _dialect = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _dialect = new ExposedPgsqlDatabaseProvisioner().ExposedDialect;
+        }
+
+        [Test]
+        public void It_checks_completed_schema_singleton_tables_and_rows()
+        {
+            _dialect.DataStoreIdentityTableExistsSql.Should().Contain("DataStoreIdentity");
+            _dialect.DataStoreIdentitySourceIdentitySql.Should().Contain("\"SourceIdentity\"");
+            _dialect.DocumentCacheStateTableExistsSql.Should().Contain("DocumentCacheState");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("\"ProjectionLifecycleState\"");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("\"CacheAheadRecoveryRequired\"");
+        }
+
+        [Test]
+        public void It_checks_known_legacy_document_cache_artifacts()
+        {
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("column_name = 'Etag'");
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("UX_DocumentCache_DocumentUuid");
+            _dialect
+                .KnownLegacyDocumentCacheArtifactSql.Should()
+                .Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        }
+
+        [Test]
+        public void It_checks_enqueue_owner_prerequisites_without_dms_mutation()
+        {
+            _dialect.ProviderPrerequisiteSql.Should().Contain("edfi_dms_enqueue_owner");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("pg_catalog.pg_auth_members");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("SET TRUE, INHERIT FALSE, ADMIN FALSE");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("MEMBER WITH ADMIN OPTION");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("CREATE ROLE");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("ALTER ROLE");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("GRANT");
+        }
+    }
+
+    [TestFixture]
+    public class Given_MssqlDatabaseProvisioner_Bounded_Preflight_Sql
+    {
+        private DialectSql _dialect = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _dialect = new ExposedMssqlDatabaseProvisioner().ExposedDialect;
+        }
+
+        [Test]
+        public void It_checks_completed_schema_singleton_tables_and_rows()
+        {
+            _dialect.DataStoreIdentityTableExistsSql.Should().Contain("DataStoreIdentity");
+            _dialect.DataStoreIdentitySourceIdentitySql.Should().Contain("[SourceIdentity]");
+            _dialect.DocumentCacheStateTableExistsSql.Should().Contain("DocumentCacheState");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("[ProjectionLifecycleState]");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("[CacheAheadRecoveryRequired]");
+        }
+
+        [Test]
+        public void It_checks_known_legacy_document_cache_artifacts()
+        {
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("name = N'Etag'");
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("UX_DocumentCache_DocumentUuid");
+            _dialect
+                .KnownLegacyDocumentCacheArtifactSql.Should()
+                .Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        }
+
+        [Test]
+        public void It_has_no_provider_specific_prerequisite_query()
+        {
+            _dialect.ProviderPrerequisiteSql.Should().BeEmpty();
+        }
+    }
 }
