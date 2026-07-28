@@ -15,7 +15,7 @@ It depends on Story 33 and Authorization Story 22, but not on the unrelated rela
 
 - Apply the live story's selected PostgreSQL prefix semantics, escaping behavior, generic-plan contract, and operator class to tracked `NamespaceBased` `/deletes` and `/keyChanges` authorization.
 - Preserve SQL Server's existing parameterized prefix-`LIKE` behavior unless its isolated checkpoint selects a measured change.
-- Extend `DeriveTrackedChangeIndexInventoryPass` with one namespace index per representable root tracked namespace column, excluding `SharedDescriptor`, using the selected provider mechanism.
+- Extend the tracked-change portion of `DeriveIndexInventoryPass` with one namespace index per representable root tracked namespace column, excluding `SharedDescriptor`, using the selected provider mechanism.
 - Classify namespace columns by either `SourceJsonPath` matching a declared namespace path or `CanonicalStorageColumn` matching the root live column to which that path resolves.
 - Require a key-unification fixture whose surviving `SourceJsonPath` is an identity path and whose `CanonicalStorageColumn` is the only namespace match.
 - Coverage is predicate- and operator-class-aware. On PostgreSQL, an ordinary equality PK/UK or B-tree must not suppress the required pattern-capable index; a genuinely compatible operator-class index may deduplicate it. SQL Server retains leading-column coverage.

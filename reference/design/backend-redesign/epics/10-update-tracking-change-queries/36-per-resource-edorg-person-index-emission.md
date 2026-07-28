@@ -13,7 +13,7 @@ It depends on Stories 33 and 34.
 
 ## Acceptance Criteria
 
-- Extend `DeriveTrackedChangeIndexInventoryPass` with one single-key `DbIndexKind.Authorization` candidate for each root-scoped non-namespace EdOrg securable scalar column and each `TrackedChangeColumnRole.PersonDocumentId` column, excluding `SharedDescriptor`.
+- Extend the tracked-change portion of `DeriveIndexInventoryPass` with one single-key `DbIndexKind.Authorization` candidate for each root-scoped non-namespace EdOrg securable scalar column and each `TrackedChangeColumnRole.PersonDocumentId` column, excluding `SharedDescriptor`.
 - Support both joined-person columns and zero-hop self-person columns (`PersonJoinName = null`, `CanonicalStorageColumn = DocumentId`, exact self identity path).
 - Equality coverage may deduplicate a candidate when a provider-compatible existing PK/UK or index has the same leading column.
 - Array-nested EdOrg securables remain outside tracked storage. Only-array-nested and mixed root/array configurations retain the security-configuration behavior specified by Story 34; index derivation does not reinterpret them as dynamic empty sets.
