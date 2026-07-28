@@ -177,7 +177,15 @@ param (
     # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
-    $DatabaseEngine = "postgresql"
+    $DatabaseEngine = "postgresql",
+
+    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Applies only when CMS actually
+    # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
+    # CMS does not start. MSSQL only in this phase (DMS-1270 Phase 1b) - PostgreSQL support lands
+    # in Phase 2; combining this with -DatabaseEngine postgresql fails fast.
+    [Switch]
+    $SeparateConfigDatabase
 )
 
 # Early fail-fast parameter validation — runs before any module import or Docker activity.
@@ -244,7 +252,32 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
-$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+#
+# CMS participates only in the default/-InfraOnly forward-starting shape - not -DmsOnly (CMS
+# doesn't start), -DbOnly, or teardown (-d). Today's existing Assert-MssqlCmsDatabaseIsShared check
+# (shared-mode-only) must keep running exactly as it does today for those non-participating shapes;
+# when CMS does participate, this story's own validator (which understands both shared and
+# separate mode) supersedes it, so the old check is skipped here.
+$cmsParticipates = -not ($databaseOnlyStartup -or $d -or $DmsOnly)
+
+if ($cmsParticipates) {
+    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:$true
+
+    if ($SeparateConfigDatabase -and $DatabaseEngine -eq "postgresql") {
+        throw "-SeparateConfigDatabase is not yet supported for -DatabaseEngine postgresql; PostgreSQL support lands in Phase 2 (DMS-1270)."
+    }
+
+    # The topology-write sequence is gated to MSSQL only in this phase: PostgreSQL-facing profile
+    # files and the .yml inline fallbacks are untouched until Phase 2, so nothing here should run
+    # for a plain PostgreSQL invocation (even without -SeparateConfigDatabase).
+    if ($DatabaseEngine -eq "mssql") {
+        $EnvironmentFile = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -DockerComposeRoot $PSScriptRoot
+        Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
+    }
+}
+else {
+    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+}
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
@@ -590,15 +623,16 @@ else {
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
     }
 
-    # Engine-aware database parameters for the setup-openiddict.ps1 calls below (mirrors
-    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the shared DMS
-    # datastore database (MSSQL_DB_NAME), which CMS also uses now that the two share one
-    # database; -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS
-    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared
-    # POSTGRES_DB_NAME database).
+    # Engine-aware database parameters for the setup-openiddict.ps1 calls below. On SQL Server the
+    # OpenIddict stores live in whichever database CMS itself targets - DMS_CONFIG_DATABASE_NAME,
+    # the CMS database topology seam (DMS-1270): the shared DMS datastore database by default, or
+    # the dedicated edfi_configurationservice database when -SeparateConfigDatabase redirects CMS
+    # there. -InitDb creates that database (and the dmscs schema) when missing, ahead of the CMS
+    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared POSTGRES_DB_NAME
+    # database - PostgreSQL support for -SeparateConfigDatabase lands in Phase 2).
     $identityDbParams =
         if ($DatabaseEngine -eq "mssql") {
-            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME" }
+            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME" }
         }
         else {
             @{}

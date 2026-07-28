@@ -540,6 +540,13 @@ function Invoke-BootstrapWrapper {
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
+        # Redirects the CMS (Configuration Service) database to a dedicated
+        # edfi_configurationservice database instead of sharing the DMS datastore database.
+        # Forwarded to the start-script invocations below; NOT forwarded to configure-local-data-store.ps1
+        # or provision-dms-schema.ps1, which are untouched by this seam (DMS-1270). MSSQL only in
+        # this phase (Phase 1b) - PostgreSQL support lands in Phase 2.
+        [Switch]$SeparateConfigDatabase,
+
         # Data standard version for the local-bootstrap package surface. For
         # start-local-dms.ps1 the .env.bootstrap.<token> overlay is always composed onto the
         # base env file (DS 5.2, the default: core + TPDM; DS 6.1: core only) before any phase
@@ -708,7 +715,22 @@ function Invoke-BootstrapWrapper {
             $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -BaseEnvironmentFile $baseEnvFile `
+                -DockerComposeRoot $PSScriptRoot `
+                -SkipMssqlCmsDatabaseValidation:$true
+
+            # The wrapper's own pre-resolution chain always represents a CMS-participating context
+            # (its initial infra-start invocation below always includes CMS), so this story's own
+            # topology-write sequence and validator - which supersede the shared-mode-only check
+            # just skipped above - run unconditionally here (DMS-1270 Phase 1b).
+            $baseEnvFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
+                -BaseEnvironmentFile $baseEnvFile `
+                -DatabaseEngine $DatabaseEngine `
+                -SeparateConfigDatabase:$SeparateConfigDatabase `
                 -DockerComposeRoot $PSScriptRoot
+            Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $baseEnvFile -DatabaseEngine $DatabaseEngine
+        }
+        elseif ($SeparateConfigDatabase -and $DatabaseEngine -eq "postgresql") {
+            throw "-SeparateConfigDatabase is not yet supported for -DatabaseEngine postgresql; PostgreSQL support lands in Phase 2 (DMS-1270)."
         }
 
         # Resolve identity provider once and forward the same value to both phases. This runs before
@@ -828,6 +850,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.DatabaseEngine = $DatabaseEngine
+        if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -889,6 +912,7 @@ function Invoke-BootstrapWrapper {
         $provisionArgs = @{
             EnvironmentFile = $effectiveEnvFile
             DataStoreId = $configuredDataStoreIds
+            DatabaseEngine = $DatabaseEngine
         }
 
         # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
@@ -946,6 +970,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
             $healthWaitArgs.DatabaseEngine = $DatabaseEngine
+            if ($SeparateConfigDatabase) { $healthWaitArgs.SeparateConfigDatabase = $true }
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -985,6 +1010,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
         $dmsStartArgs.DatabaseEngine = $DatabaseEngine
+        if ($SeparateConfigDatabase) { $dmsStartArgs.SeparateConfigDatabase = $true }
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

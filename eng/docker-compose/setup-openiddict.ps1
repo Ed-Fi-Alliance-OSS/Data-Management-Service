@@ -373,7 +373,15 @@ function Invoke-DbQuery {
     param(
         [string]$Sql,
         [switch]$Debug,
-        [switch]$UseMasterDatabase
+        [switch]$UseMasterDatabase,
+
+        # Tolerates SQL Server error 1801 ("database already exists") for the guarded MSSQL
+        # database-create statement only: the IF DB_ID(...) IS NULL CREATE DATABASE guard is a
+        # check-then-act statement, not truly atomic, so two concurrent invocations can both pass
+        # the DB_ID check before either creates the database, and the loser's CREATE DATABASE can
+        # still fail with 1801. Every other caller (schema/table DDL, key inserts) leaves this off
+        # and keeps today's hard-throw-on-any-failure behavior unchanged.
+        [switch]$TolerateMssqlDuplicateCreate
     )
 
     if ($Debug) {
@@ -433,6 +441,10 @@ function Invoke-DbQuery {
         # -I sets QUOTED_IDENTIFIER ON, required by XML data type methods.
         $output = docker exec -e "SQLCMDPASSWORD=$password" $MssqlContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U $user -d $db -C -b -I -h -1 -W -Q $Sql 2>&1
         if ($LASTEXITCODE -ne 0) {
+            if ($TolerateMssqlDuplicateCreate -and (Test-MssqlDuplicateDatabaseError -CapturedOutput ($output | Out-String))) {
+                Write-Host "Database already existed (created by a concurrent process racing the same check-then-act guard); continuing."
+                return $output
+            }
             throw "sqlcmd failed (exit $LASTEXITCODE): $output"
         }
         return $output
@@ -530,7 +542,17 @@ function Invoke-InitDbScripts {
     if ($DbType -eq "MSSQL") {
         Write-Host "Create database if not exists"
         $dbName = Resolve-EnvValue $DbName
-        Invoke-DbQuery -UseMasterDatabase (New-MssqlCreateDatabaseStatement -DatabaseName $dbName)
+        Invoke-DbQuery -UseMasterDatabase -TolerateMssqlDuplicateCreate (New-MssqlCreateDatabaseStatement -DatabaseName $dbName)
+
+        # Postcondition: a benign concurrent-creation race (SQL Server error 1801, tolerated above)
+        # is only actually benign if the database provably exists now - the error code alone is not
+        # proof of success. Checked unconditionally, not just on the racy path, so a create that
+        # silently no-ops for any other reason is also caught here rather than surfacing later as a
+        # confusing failure in the schema/table statements that follow.
+        $existsResult = Invoke-DbQuery -UseMasterDatabase "SELECT CASE WHEN DB_ID(N'$($dbName.Replace("'", "''"))') IS NOT NULL THEN 1 ELSE 0 END;"
+        if (($existsResult | Out-String).Trim() -ne "1") {
+            throw "Database '$dbName' does not exist after the guarded create-if-absent statement ran."
+        }
 
         Write-Host "Create schema if not exists: dmscs"
         Invoke-DbQuery "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'dmscs') EXEC('CREATE SCHEMA dmscs');"
