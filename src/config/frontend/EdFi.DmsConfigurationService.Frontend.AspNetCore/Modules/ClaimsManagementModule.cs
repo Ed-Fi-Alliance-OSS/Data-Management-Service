@@ -238,17 +238,23 @@ public class ClaimsManagementModule : IEndpointModule
     private const string MissingClaimSetsMessage = "Missing required 'claimSets' property";
     private const string MissingClaimsHierarchyMessage = "Missing required 'claimsHierarchy' property";
 
-    /// <summary>
-    /// Deny-by-default mapping of upload failures to the Ed-Fi contract (HTTP 400 preserved). Only
-    /// field-validation failures carrying a non-whitespace path, and the two fixed service-owned
-    /// structure literals, are proven safe to surface in <c>validationErrors</c>. If every failure is
-    /// proven safe, a data-validation response containing only those entries is returned; if any
-    /// failure is unsafe (including a mixed safe/unsafe set, or an empty set), a generic bad-request
-    /// response with empty extension members is returned so no internal message or exception text can
-    /// leak.
-    /// </summary>
+    private static readonly HashSet<string> ServerSideFailureTypes = new(StringComparer.Ordinal)
+    {
+        "OperationError",
+        "Database",
+        "Unexpected",
+        "Unknown",
+        "Configuration",
+    };
+
+    // Deny-by-default mapping of upload failures to the Ed-Fi contract.
     private static IResult ToUploadValidationFailureResult(List<ClaimsFailure> failures, string correlationId)
     {
+        if (failures.Exists(f => ServerSideFailureTypes.Contains(f.FailureType)))
+        {
+            return FailureResults.Unknown(correlationId);
+        }
+
         List<ValidationFailure> safeEntries = [];
         bool anyUnsafe = false;
 

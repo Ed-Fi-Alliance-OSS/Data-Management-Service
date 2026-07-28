@@ -32,14 +32,22 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
         RequireFormatValidation = true,
     };
 
-    private readonly Lazy<JsonSchema> _jsonSchemaForClaims = new(() =>
+    private readonly Lazy<JsonSchema> _jsonSchemaForClaims = new(() => LoadSchema(_logger));
+
+    internal ClaimsValidator(ILogger<ClaimsValidator> logger, Lazy<JsonSchema> jsonSchemaForClaims)
+        : this(logger)
     {
-        _logger.LogDebug("Loading JSON Schema for Claims validation from embedded resource");
+        _jsonSchemaForClaims = jsonSchemaForClaims;
+    }
+
+    private static JsonSchema LoadSchema(ILogger<ClaimsValidator> logger)
+    {
+        logger.LogDebug("Loading JSON Schema for Claims validation from embedded resource");
 
         Assembly assembly = Assembly.GetExecutingAssembly();
         string resourceName = "EdFi.DmsConfigurationService.Backend.Claims.JsonSchemaForClaims.json";
 
-        using Stream? stream =
+        using Stream stream =
             assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException(
                 $"Could not load embedded resource '{resourceName}' from assembly '{assembly.GetName().Name}'"
@@ -47,9 +55,9 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
 
         using StreamReader reader = new(stream);
         string schemaContent = reader.ReadToEnd();
-        _logger.LogDebug("Successfully loaded JSON Schema from embedded resource");
+        logger.LogDebug("Successfully loaded JSON Schema from embedded resource");
         return JsonSchema.FromText(schemaContent);
-    });
+    }
 
     /// <summary>
     /// Converts JSON Schema evaluation results into a list of validation failures with property paths and error messages
@@ -104,13 +112,6 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
         catch (ArgumentException ex)
         {
             const string Failure = "Invalid JSON format for claims validation";
-            _logger.LogError(ex, Failure);
-            return [new(new("$."), [Failure])];
-        }
-        catch (InvalidOperationException ex)
-        {
-            const string Failure =
-                "ClaimsValidator failed to validate, check server configuration for JsonSchemaForClaims.json";
             _logger.LogError(ex, Failure);
             return [new(new("$."), [Failure])];
         }

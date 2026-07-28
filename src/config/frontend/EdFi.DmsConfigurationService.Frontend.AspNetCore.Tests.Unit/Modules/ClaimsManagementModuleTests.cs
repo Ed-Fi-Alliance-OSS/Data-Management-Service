@@ -769,7 +769,6 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-12 (unsafe): a database failure is denied and returned as a generic bad-request.</summary>
     [TestFixture]
     public class Given_upload_returns_a_database_failure : ClaimsManagementModuleTests
     {
@@ -783,10 +782,10 @@ public abstract class ClaimsManagementModuleTests
         }
 
         [Test]
-        public async Task It_should_return_the_generic_bad_request_contract()
+        public async Task It_should_return_the_internal_server_error_contract()
         {
             var response = await Client.PostAsync(UploadClaimsRoute, NonEmptyUploadBody());
-            await AssertGenericBadRequestContract(response, Sentinel);
+            await AssertInternalServerErrorContract(response, Sentinel);
         }
     }
 
@@ -834,7 +833,6 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-12 (mixed): any unsafe failure forces a fully generic body; safe entries are dropped.</summary>
     [TestFixture]
     public class Given_upload_returns_a_mixed_safe_and_unsafe_set : ClaimsManagementModuleTests
     {
@@ -858,14 +856,52 @@ public abstract class ClaimsManagementModuleTests
         }
 
         [Test]
-        public async Task It_should_return_a_fully_generic_body_without_the_safe_entry()
+        public async Task It_should_return_a_fully_generic_500_without_the_safe_entry()
         {
             var response = await Client.PostAsync(UploadClaimsRoute, NonEmptyUploadBody());
-            await AssertGenericBadRequestContract(response, UnsafeSentinel);
+            await AssertInternalServerErrorContract(response, UnsafeSentinel);
 
             string content = await response.Content.ReadAsStringAsync();
             content.Should().NotContain(SafePath);
             content.Should().NotContain(SafeMessage);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_real_upload_service_whose_validator_throws : ClaimsManagementModuleTests
+    {
+        private const string Sentinel = "SENTINEL_VALIDATOR_THROW_4d5e_must_not_leak";
+
+        [SetUp]
+        public void Setup()
+        {
+            var throwingValidator = A.Fake<IClaimsValidator>();
+            A.CallTo(() => throwingValidator.Validate(A<JsonNode>._))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            var realUploadService = new ClaimsUploadService(
+                A.Fake<ILogger<ClaimsUploadService>>(),
+                A.Fake<IClaimsProvider>(),
+                A.Fake<IClaimsDataLoader>(),
+                throwingValidator
+            );
+            ArrangeAuthenticatedClient(
+                AuthorizationScopes.AdminScope.Name,
+                dangerousFlagEnabled: true,
+                uploadServiceOverride: realUploadService
+            );
+        }
+
+        [Test]
+        public async Task It_should_return_the_internal_server_error_contract()
+        {
+            using var content = new StringContent(
+                """{"claims":{"claimSets":[],"claimsHierarchy":[]}}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+            var response = await Client.PostAsync(UploadClaimsRoute, content);
+            await AssertInternalServerErrorContract(response, Sentinel);
         }
     }
 
