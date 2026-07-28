@@ -549,8 +549,15 @@ function Invoke-InitDbScripts {
         # proof of success. Checked unconditionally, not just on the racy path, so a create that
         # silently no-ops for any other reason is also caught here rather than surfacing later as a
         # confusing failure in the schema/table statements that follow.
-        $existsResult = Invoke-DbQuery -UseMasterDatabase "SELECT CASE WHEN DB_ID(N'$($dbName.Replace("'", "''"))') IS NOT NULL THEN 1 ELSE 0 END;"
-        if (($existsResult | Out-String).Trim() -ne "1") {
+        #
+        # SET NOCOUNT ON is required, not cosmetic: sqlcmd's -h -1 suppresses column headers but not
+        # row-count messages, so without it the output carries a trailing "(1 rows affected)" line
+        # and no whole-output comparison against "1" can ever match. Reading the first non-blank
+        # line rather than the whole output keeps the check robust against any further trailing
+        # server messages. Matches the same existence check in eng/DatabaseTemplates.
+        $existsResult = Invoke-DbQuery -UseMasterDatabase "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$($dbName.Replace("'", "''"))') IS NOT NULL THEN 1 ELSE 0 END;"
+        $existsFirstLine = @($existsResult | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+        if (($existsFirstLine | Out-String).Trim() -ne "1") {
             throw "Database '$dbName' does not exist after the guarded create-if-absent statement ran."
         }
 

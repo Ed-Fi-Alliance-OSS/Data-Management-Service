@@ -183,12 +183,24 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
 #
-# CMS participates only in the default/-InfraOnly forward-starting shape - not -DmsOnly (CMS
-# doesn't start), -DbOnly, or teardown (-d). Today's existing Assert-MssqlCmsDatabaseIsShared check
-# (shared-mode-only) must keep running exactly as it does today for those non-participating shapes;
-# when CMS does participate, this story's own validator (which understands both shared and
-# separate mode) supersedes it, so the old check is skipped here.
-$cmsParticipates = -not ($databaseOnlyStartup -or $d -or $DmsOnly)
+# Whether published-config.yml joins the managed compose set, i.e. whether the Configuration
+# Service actually runs. Unlike local-config.yml (unconditional in start-local-dms.ps1), the
+# published stack includes CMS only on an explicit request, for self-contained identity, for the
+# bootstrap claims mount, or - this story's own addition - for -SeparateConfigDatabase, since CMS
+# must run to create the dedicated database. Computed once here and consumed both by the
+# CMS-participation gate below and by the compose-file-set construction later, so the two can
+# never drift apart.
+$cmsIncludedInComposeSet = $EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase
+
+# CMS participates only when it is both a forward-starting non-DMS-only shape AND actually present
+# in the compose set - not -DmsOnly (CMS doesn't start), -DbOnly, or teardown (-d), and not a bare
+# published Keycloak start that omits published-config.yml entirely. Today's existing
+# Assert-MssqlCmsDatabaseIsShared check (shared-mode-only) must keep running exactly as it does
+# today for those non-participating shapes; when CMS does participate, this story's own validator
+# (which understands both shared and separate mode) supersedes it, so the old check is skipped
+# here. Validating a CMS endpoint for a CMS that never starts would reject an irrelevant
+# customized value, so the compose-set conjunct is load-bearing, not cosmetic.
+$cmsParticipates = (-not ($databaseOnlyStartup -or $d -or $DmsOnly)) -and $cmsIncludedInComposeSet
 
 if ($cmsParticipates) {
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:$true
@@ -327,8 +339,9 @@ if (-not $databaseOnlyStartup) {
     # Include Configuration Service when requested, when needed for self-contained identity, when
     # bootstrap mode activates the staged claims workspace mount, or when -SeparateConfigDatabase is
     # requested: CMS must actually run to create the dedicated database, regardless of identity
-    # provider (e.g. keycloak without -EnableConfig/-InfraOnly would otherwise omit it).
-    if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase) {
+    # provider (e.g. keycloak without -EnableConfig/-InfraOnly would otherwise omit it). The
+    # condition itself is computed once, well above, and shared with the CMS-participation gate.
+    if ($cmsIncludedInComposeSet) {
         $files += @("-f", "published-config.yml")
     }
 
