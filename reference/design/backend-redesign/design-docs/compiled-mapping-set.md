@@ -310,8 +310,7 @@ public enum DbIndexKind
     // Index required for authorization query performance (see `auth.md`).
     Authorization,
 
-    // Design-required indexes that are not implied by PK/UK/FK policy and do not use the
-    // schema-derived Authorization classification.
+    // Explicit non-query indexes called out in the design (rare outside core `dms.*` tables).
     Explicit
 }
 
@@ -325,10 +324,9 @@ public sealed record DbIndexInfo(
     DbIndexKind Kind,
     // Optional non-key columns to include in the index leaf pages (SQL `INCLUDE` clause).
     // Null and empty are treated identically by emitters: no `INCLUDE` clause.
-    // Non-null for the five live `PrimaryAssociation` authorization indexes (see `auth.md`), the
-    // five planned tracked-change `PrimaryAssociation` covering indexes (see `change-queries.md`),
-    // AND for person-join authorization indexes (DMS-1094), which always INCLUDE the source
-    // table's `DocumentId` so the runtime auth-filter join can be served by an index-only scan.
+    // Non-null for the five `PrimaryAssociation` authorization indexes (see `auth.md`) AND for
+    // person-join authorization indexes (DMS-1094), which always INCLUDE the source table's
+    // `DocumentId` so the runtime auth-filter join can be served by an index-only scan.
     // An emitted authorization index's `IncludeColumns` may be *widened* when a later step in
     // `DeriveAuthorizationIndexInventoryPass` collides on the same `(table, leading key column)` —
     // e.g. a person-join hop landing on `StudentContactAssociation.Student_DocumentId` (PA-covered,
@@ -646,7 +644,6 @@ Mapping-set integration points:
   - per-resource `Namespace` indexes (for namespace-based checks),
   - per-resource EdOrg-id indexes (for relationship-based checks), and
   - join-column indexes used to reach person `DocumentId`s (for people-related relationship checks).
-  PostgreSQL Namespace prefix coverage is operator-class-aware: an ordinary PK/UK on the same leading column is not equivalent to an index using the pattern operator class required under a non-C collation.
 
 Example (sketch): resolving the `Student` securable element for `CourseTranscript`
 - ApiSchema marks `$.studentAcademicRecordReference.studentUniqueId` as a `Student` securable element.
