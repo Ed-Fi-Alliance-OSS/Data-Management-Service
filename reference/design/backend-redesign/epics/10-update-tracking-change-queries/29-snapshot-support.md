@@ -70,14 +70,16 @@ Both CMS engines add:
 
 Both constraints must be named so repository exception handling can filter on the constraint name, matching how the existing foreign-key handling identifies `FK_DataStoreDerivative_DataStore`. The existing foreign key and cascade-delete behavior remain unchanged.
 
-The upgrade uses a hard-stop preflight rather than warn-and-defer, because deferring the constraint would leave runtime selection ambiguous:
+The two engines must agree on the case semantics of `DerivativeType`, which they will not do by default. The CMS SQL Server deploy scripts specify no collation and contain no existing check constraint, so the column inherits the case-insensitive server default, under which a naive `IN` check would accept `SNAPSHOT` or `readreplica`. PostgreSQL comparison is case-sensitive by default, so the same naive check would reject those values there while the unique constraint would also fail to treat `Snapshot` and `SNAPSHOT` as the same derivative type. The check constraint must therefore state its case semantics explicitly in both engines so that exactly the values `Snapshot` and `ReadReplica` are accepted and case variants are rejected identically. The CMS API validator is already ordinal and case-sensitive, so this aligns the database with the API rather than changing the accepted contract.
 
-- the preflight detects duplicate rows before the constraint is added and fails the upgrade;
-- its message reports the offending `(DataStoreId, DerivativeType, Id)` rows;
-- remediation is documented as deleting the unwanted derivative through `DELETE /v3/dataStoreDerivatives/{id}` and retrying the upgrade;
-- the migration never deletes a derivative or selects one by row order.
+The upgrade uses a hard-stop preflight rather than warn-and-defer, because deferring the constraints would leave runtime selection ambiguous. The preflight runs before either constraint is added and fails the upgrade if it finds a problem:
 
-Duplicates are reachable today because nothing has ever prevented them, so the preflight is not hypothetical.
+- duplicate `(DataStoreId, DerivativeType)` rows, reported as the offending `(DataStoreId, DerivativeType, Id)` tuples;
+- rows whose `DerivativeType` is not exactly `Snapshot` or `ReadReplica`, reported as the offending `(Id, DataStoreId, DerivativeType)` tuples, including case variants that a case-insensitive collation would otherwise hide.
+
+Remediation is documented for both: correct an invalid type through `PUT /v3/dataStoreDerivatives/{id}`, or remove the unwanted or unrecoverable row through `DELETE /v3/dataStoreDerivatives/{id}`, then retry the upgrade. The migration never deletes a derivative, rewrites a type, or selects a row by order.
+
+Both conditions are reachable today because the column has never had a unique constraint or a value constraint and rows can be written outside the API, so neither preflight check is hypothetical. Reporting invalid types is what keeps the promised actionable diagnostics: without it, a legacy value would surface only as a bare check-constraint failure during deployment.
 
 Conflict handling is new work in both backends, not a mapping adjustment: the insert and update result types have no duplicate case today, and the endpoint module maps anything other than success or a foreign-key violation to an unknown-error response. Explicit conflict result variants and their frontend mappings must be added for both insert and update, in both engines, and `DerivativeType` and `DataStoreId` remain updatable so the constraint is reachable from update as well as insert.
 
@@ -210,7 +212,21 @@ Connection acquisition must distinguish an unavailable database from a reachable
 - query, mapping, authorization, fingerprint-shape, and unexpected application failures retain their existing contracts;
 - read-replica connectivity failures retain the normal database-availability error and are never translated to Snapshot Not Found.
 
-The distinction is structural, not heuristic. The same provider exception types are raised by connection opens and by query failures, so classifying exceptions after the fact cannot separate them reliably. The implementation instead wraps only the connection-open call at each read-path seam — the fingerprint reader, the PostgreSQL and SQL Server resource-key row readers, and the PostgreSQL and SQL Server relational command executors — so a failure there raises a distinct backend-neutral `DatabaseConnectionUnavailableException` while anything raised after a successful open keeps its current contract. If command-time transport loss is also translated, it must use a narrowly defined provider-specific connectivity classification. Translating every `DbException` is not acceptable.
+The distinction is structural, not heuristic. The same provider exception types are raised by connection opens and by query failures, so classifying exceptions after the fact cannot separate them reliably. The implementation instead wraps only the connection-open call at each read-path seam, so a failure there raises a distinct backend-neutral `DatabaseConnectionUnavailableException` while anything raised after a successful open keeps its current contract.
+
+There are seven such read-path seams, and all seven must be covered:
+
+1. the database fingerprint reader;
+2. the PostgreSQL resource-key row reader;
+3. the SQL Server resource-key row reader;
+4. the PostgreSQL relational command executor;
+5. the SQL Server relational command executor;
+6. the PostgreSQL document hydrator;
+7. the SQL Server document hydrator.
+
+The two document hydrators are easy to miss and must not be treated as write-path components. Each opens its own connection inside its hydrate call, and both are reached from the GET-many and GET-by-id read paths in the relational document-store repository. A cached fingerprint result, a cached resource-key result, or an already-successful query-plan connection can therefore be followed by a hydrator connection-open failure. If the hydrator seams are omitted, that failure is not guaranteed to produce the required Snapshot Not Found `404`. The session-scoped hydrators used by write sessions receive an existing connection and transaction, open nothing, and are correctly out of scope.
+
+If command-time transport loss is also translated, it must use a narrowly defined provider-specific connectivity classification. Translating every `DbException` is not acceptable.
 
 The selected target kind is carried in request scope so translation applies only to a snapshot target. Every translated failure logs the underlying error and the target kind, and never the connection string.
 
@@ -251,12 +267,16 @@ The served DMS v1.0 OpenAPI surface intentionally contains no snapshot artifacts
 
 Snapshot metadata is re-added at the MetaEd/ApiSchema source, and the served documents then describe the runtime contract consistently:
 
-- define a reusable boolean `Use-Snapshot` header parameter with default `false` in the resource and descriptor base documents;
+- define a reusable boolean `Use-Snapshot` header parameter with default `false`;
 - reference it from resource, descriptor, and profile GET-many and GET-by-id operations;
 - reference it from `/deletes`, `/keyChanges`, and `/availableChangeVersions`;
 - document the Snapshot Not Found `404` on those GET operations;
 - document the snapshot `405`, its exact ProblemDetails contract, and its `Allow: GET` response header on resource and descriptor mutation operations;
 - use the exact ProblemDetails types, titles, status codes, and details above, served as `application/problem+json`.
+
+Every independently served OpenAPI document that contains a `$ref` must itself define the component that reference resolves to. A document cannot resolve `#/components/parameters/Use-Snapshot` from a sibling document. That means the `Use-Snapshot` parameter and the snapshot response components must be present in each of the resource, descriptor, profile, and standalone Change Queries documents that reference them — not only in the resource and descriptor base documents. The Change Queries document is the case most likely to be missed: DMS serves it independently from `projectSchema.openApiBaseDocuments.changeQueries`, and the shipped document today carries its own `components` block with empty `parameters` and `responses` collections and no `$ref` of any kind, so its components must be populated rather than assumed to be inherited.
+
+Tests must prove that every component reference resolves within its own document, for the resource, descriptor, profile, and Change Queries documents.
 
 GET-many support is required even though the older ODS-derived fixture shape advertises the header only on the by-id GET and documents the mutation `405` as a bare description with no ProblemDetails schema and no `Allow` header. DMS deliberately documents the header and the failure contract consistently across collection and by-id operations.
 
@@ -284,17 +304,17 @@ Validation records the API and Publisher versions used so future changes to Publ
 
 Implementation coverage should include:
 
-- CMS PostgreSQL and SQL Server integration tests for the unique and check constraints, the new insert and update conflict responses, duplicate-row preflight diagnostics, tenant isolation, and derivative inclusion in data-store responses.
+- CMS PostgreSQL and SQL Server integration tests for the unique and check constraints, the new insert and update conflict responses, preflight diagnostics for both duplicate rows and invalid derivative types, rejection of case variants such as `SNAPSHOT` in both engines, tenant isolation, and derivative inclusion in data-store responses.
 - DMS configuration-provider unit tests for derivative deserialization, decryption, unknown types, null and blank connection strings, tenant caches, and cache refresh.
 - Core routing unit tests for every row in both eligibility matrices, snapshot precedence over read replica, absence of fallback, header parsing, response precedence, and rejection of a second effective-target assignment within one request.
 - Frontend or E2E coverage for blank and multi-valued `Use-Snapshot` headers, which core cannot observe because the frontend normalizes them.
 - PostgreSQL and SQL Server integration tests using distinct primary, read-replica, and snapshot databases with distinguishable data. The SQL Server path requires the SQL Server 2025 integration environment described in `AGENTS.md`, and a three-database fixture is a meaningful fixture-cost increase for the runtime-routing ticket.
-- Snapshot-unavailable tests at fingerprint acquisition, resource-key validation, and normal repository connection acquisition.
+- Snapshot-unavailable tests at every read-path connection-open seam: fingerprint acquisition, resource-key validation, normal repository connection acquisition, and document-hydration connection acquisition. Hydration coverage must be explicit rather than folded into generic repository coverage, and must include the case where fingerprint and resource-key results are already cached so the hydrator open is the first failure in the request.
 - Tests proving a reachable but unprovisioned or fingerprint-incompatible snapshot returns the existing `503`, not Snapshot Not Found, and that an ordinary query failure against a snapshot is not translated either.
 - Tests proving a snapshot recreated at the same connection string recovers after the bounded cache interval without a service restart, and that a removed or replaced derivative eventually releases its pooled data source without disrupting in-flight requests.
 - Tests proving authorization and route-context selection are still based on the parent data store and that all authorization SQL for a request uses the selected target.
 - Tests proving an unknown resource path with `Use-Snapshot: true` returns its existing `404` rather than the snapshot `405`.
-- OpenAPI document-assembly tests for resource, descriptor, profile, and Change Query documents.
+- OpenAPI document-assembly tests for resource, descriptor, profile, and Change Query documents, including a check that every `$ref` resolves within its own served document.
 - DMS E2E coverage for GET-many, GET-by-id, `/deletes`, `/keyChanges`, `/availableChangeVersions`, `405` plus `Allow: GET`, missing snapshot, and snapshot precedence over read replica.
 - API Publisher interoperability coverage as described above.
 
@@ -329,7 +349,7 @@ Reviewed and resolved during this spike:
 
 1. **Read-replica routing follows ODS parity.** All resource and descriptor GET-many and GET-by-id requests, profile-shaped reads, `/deletes`, `/keyChanges`, and `/availableChangeVersions` are replica-eligible. The derivative row is the opt-in; no additional flag is added. Snapshot outranks replica; writes stay on the primary; token introspection and non-data-management surfaces stay on the primary.
 2. **Derivative validation and pool caches are time-bounded.** Primary behavior is unchanged; derivative results are never cached for the process lifetime, and recreating a snapshot at the same connection string recovers without a restart.
-3. **Snapshot-unavailable `404` is broad at the connection-open boundary.** Catalog absence, authentication failure, network failure, timeout, and firewall rejection all return Snapshot Not Found for a snapshot target, while ordinary SQL, mapping, authorization, fingerprint-shape, and application errors do not.
+3. **Snapshot-unavailable `404` is broad at the connection-open boundary.** Catalog absence, authentication failure, network failure, timeout, and firewall rejection all return Snapshot Not Found for a snapshot target, while ordinary SQL, mapping, authorization, fingerprint-shape, and application errors do not. Coverage is all seven read-path connection-open seams, including both document hydrators.
 4. **The snapshot `405` is scoped to resource and descriptor mutations,** and triggers only on a successfully parsed `true`. This intentionally narrows the acceptance criterion's "non-`GET`" wording to the data-management surface, and intentionally diverges from ODS's header-presence filter.
 5. **The CMS uniqueness migration hard-stops on duplicates,** reports the offending rows, and documents deletion through the derivative endpoint as remediation.
 6. **Path validation precedes snapshot policy,** so an unknown resource still returns its existing `400` or `404`; the mutation `405` is still emitted before any database connection is opened.
@@ -341,10 +361,10 @@ Create and link the following implementation tickets only after this proposal is
 
 | Area | Scope |
 | --- | --- |
-| CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and the `DerivativeType` check constraint for PostgreSQL and SQL Server, add the duplicate-row preflight and its diagnostics, add insert and update conflict result variants and frontend mappings, and cover upgrade behavior and CMS tests. |
-| DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the bounded derivative validation caches and pooled-data-source eviction, re-key the scoped PostgreSQL data-source provider off the parent id, and cover both relational backends. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
-| Snapshot ProblemDetails | Add the snapshot `405` factory and `Allow: GET`, emit the missing-snapshot `404` from the existing not-found factory, add the backend-neutral connection-unavailable exception at the five enumerated read-path connection-open seams, keep provisioning and query defects on their existing contracts, and log safely. |
-| OpenAPI surface | Re-add MetaEd/ApiSchema snapshot components and apply them to resource, descriptor, profile, and Change Query operations; add DMS document-assembly tests. Does not touch the backend authoritative fixture inputs. |
+| CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and the explicitly case-sensitive `DerivativeType` check constraint for PostgreSQL and SQL Server, add the preflight for duplicate rows and invalid derivative types with its diagnostics, add insert and update conflict result variants and frontend mappings, and cover upgrade behavior and CMS tests. |
+| DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the bounded derivative validation caches and pooled-data-source eviction, and cover both relational backends. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
+| Snapshot ProblemDetails | Add the snapshot `405` factory and `Allow: GET`, emit the missing-snapshot `404` from the existing not-found factory, add the backend-neutral connection-unavailable exception at all seven enumerated read-path connection-open seams including both document hydrators, keep provisioning and query defects on their existing contracts, and log safely. |
+| OpenAPI surface | Re-add MetaEd/ApiSchema snapshot components and apply them to resource, descriptor, profile, and Change Query operations, defining the referenced components in every independently served document including the standalone Change Queries document; add DMS document-assembly and reference-resolution tests. Does not touch the backend authoritative fixture inputs. |
 | API Publisher interoperability | Add an environment and automated or repeatable validation for Publisher isolation behavior against DMS, and document the operator workflow. |
 
 ## Acceptance Criteria Coverage
