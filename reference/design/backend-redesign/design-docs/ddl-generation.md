@@ -406,6 +406,11 @@ Even though the tool is create-only, the generated SQL uses existence-check patt
   - use `CREATE OR ALTER` forms where available for generated programmable objects (views and triggers).
 
 This is not a migration story; it is a guardrail to avoid brittle provisioning scripts.
+Existence checks do not imply an exhaustive catalog preflight or a supported schema-drift
+reconciler. Feature-specific phase-zero checks remain bounded to safety-critical
+fingerprints, singleton preservation, known incompatible legacy artifacts, and required
+provisioning security prerequisites. Other incompatible existing objects may fail through
+ordinary provider DDL execution inside the provisioning transaction.
 
 ### Seed data semantics
 

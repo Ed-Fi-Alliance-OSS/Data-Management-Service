@@ -1392,10 +1392,14 @@ implement a later baseline-replacing maintenance window.
 ## Schema and Query Integration
 
 Schema integration is create-only and applies to new physical databases. V1 emits
-no `ALTER`/migration path for an older `dms.DocumentCache`. Provisioning reruns may validate
-and preserve an already-current schema created by the same initial workflow, but encountering
-legacy `Etag`, the obsolete cache UUID constraint, or any missing required E18 object makes
-the database ineligible rather than triggering an in-place repair.
+no `ALTER`/migration path for an older `dms.DocumentCache`. Provisioning phase-zero guards
+are limited to the effective-schema hash and singleton safety, the known legacy `Etag` and
+cache UUID/index artifacts, and PostgreSQL enqueue-owner prerequisites. Reruns preserve
+source identity and mutable projection state and otherwise use the existing create-only
+existence-check and replaceable-programmable-object patterns; they do not perform an
+exhaustive E18 schema-drift comparison or promise to classify every partial database
+shape. Incompatible existing objects may fail through ordinary provider DDL execution,
+and legacy cache artifacts require drop-and-recreate rather than in-place repair.
 
 Supported SQL Server create-database provisioning enables `READ_COMMITTED_SNAPSHOT`; an
 externally created database must satisfy the same prerequisite before it is selected for
@@ -1404,8 +1408,9 @@ store is offline. Runtime DMS only validates it and never attempts `ALTER DATABA
 
 The physical cache, projection-work, constrained lifecycle, source-identity, heartbeat,
 enqueue/validation trigger, grant, constraint, and access-path inventory is owned by
-[`data-model.md`](../data-model.md). Deployment validation checks
-that inventory rather than redefining it here. Provider CDC setup provisions and captures
+[`data-model.md`](../data-model.md). Projection target initialization and deployment-owned
+CDC eligibility validate the complete inventory after provisioning rather than turning
+ordinary DDL phase zero into a drift validator. Provider CDC setup provisions and captures
 the opt-in heartbeat only when CDC is selected; ordinary relational provisioning does not.
 The generated provider action query and capture configuration implement the
 [source-position barrier](#provider-source-position-barrier).
