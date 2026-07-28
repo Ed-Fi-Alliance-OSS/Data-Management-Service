@@ -153,4 +153,74 @@ public class FailureResultsTests
         public void It_includes_an_empty_validation_errors_object() =>
             _result.Body["validationErrors"]!.AsObject().Count.Should().Be(0);
     }
+
+    [TestFixture]
+    public class Given_an_identity_provider_payload_with_both_fields_present
+    {
+        private ExecutedResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _result = await ExecuteAsync(
+                FailureResults.BadGateway(
+                    """{"error":"invalid_client","error_description":"Invalid client credentials"}""",
+                    "corr-4"
+                )
+            );
+        }
+
+        [Test]
+        public void It_passes_the_error_and_description_through_verbatim() =>
+            _result.Body["errors"]!
+                .AsArray()
+                .Select(e => e!.GetValue<string>())
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be("invalid_client. Invalid client credentials");
+    }
+
+    internal static IEnumerable<TestCaseData> InvalidIdentityProviderPayloads()
+    {
+        yield return new TestCaseData("").SetName("Empty string");
+        yield return new TestCaseData("   ").SetName("Whitespace only");
+        yield return new TestCaseData("{not-json").SetName("Malformed JSON");
+        yield return new TestCaseData("[1,2,3]").SetName("JSON array");
+        yield return new TestCaseData("\"just a string\"").SetName("JSON scalar");
+        yield return new TestCaseData("""{"error":"invalid_client"}""").SetName("Missing error_description");
+        yield return new TestCaseData("""{"error_description":"Invalid client credentials"}""").SetName(
+            "Missing error"
+        );
+        yield return new TestCaseData("""{"error":123,"error_description":"Invalid client"}""").SetName(
+            "Non-string error"
+        );
+        yield return new TestCaseData("""{"error":"invalid_client","error_description":123}""").SetName(
+            "Non-string error_description"
+        );
+        yield return new TestCaseData("""{"error":"  ","error_description":"Invalid client"}""").SetName(
+            "Blank error"
+        );
+        yield return new TestCaseData("""{"error":"invalid_client","error_description":"  "}""").SetName(
+            "Blank error_description"
+        );
+    }
+
+    [TestFixture]
+    public class Given_an_invalid_identity_provider_payload
+    {
+        [TestCaseSource(typeof(FailureResultsTests), nameof(InvalidIdentityProviderPayloads))]
+        public async Task It_returns_the_fixed_fallback_message(string rawPayload)
+        {
+            ExecutedResult result = await ExecuteAsync(FailureResults.BadGateway(rawPayload, "corr-5"));
+
+            result.Body["errors"]!
+                .AsArray()
+                .Select(e => e!.GetValue<string>())
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be("The identity provider returned an unexpected response.");
+        }
+    }
 }

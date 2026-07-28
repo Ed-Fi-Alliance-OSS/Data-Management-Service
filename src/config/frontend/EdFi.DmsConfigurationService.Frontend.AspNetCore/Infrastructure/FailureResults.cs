@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentValidation.Results;
@@ -88,19 +89,13 @@ internal static class FailureResults
         );
     }
 
-    public static IResult InvalidClient(string detail, string correlationId)
-    {
-        var errors = GetIdentityErrorDetails(detail, "invalid_client");
-        return Results.Json(
-            FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
-            contentType: _errorContentType,
-            statusCode: 401
-        );
-    }
+    // invalid_client and unauthorized_client both map to the same 401 contract.
+    public static IResult InvalidClient(string detail, string correlationId) =>
+        Unauthorized(detail, correlationId);
 
     public static IResult Unauthorized(string detail, string correlationId)
     {
-        var errors = GetIdentityErrorDetails(detail, "unauthorized_client");
+        var errors = GetIdentityErrorDetails(detail);
         return Results.Json(
             FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
             contentType: _errorContentType,
@@ -110,7 +105,7 @@ internal static class FailureResults
 
     public static IResult Forbidden(string detail, string correlationId)
     {
-        var errors = GetIdentityErrorDetails(detail, "Forbidden");
+        var errors = GetIdentityErrorDetails(detail);
         return Results.Json(
             FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
             contentType: _errorContentType,
@@ -118,31 +113,64 @@ internal static class FailureResults
         );
     }
 
-    // Attempts to read `{ "error": "...", "error_description": "..."}` from the response
-    // body, with sensible fallback mechanism if the response is in a different format.
-    private static string[]? GetIdentityErrorDetails(string detail, string title = "")
+    private const string UnexpectedProviderResponseMessage =
+        "The identity provider returned an unexpected response.";
+
+    // Only complete structured provider errors pass through; all other input uses a fixed fallback.
+    private static string[] GetIdentityErrorDetails(string detail)
     {
-        if (string.IsNullOrEmpty(detail))
+        if (string.IsNullOrWhiteSpace(detail))
         {
-            return null;
+            return [UnexpectedProviderResponseMessage];
         }
 
-        string error = title;
-        string errorDescription = detail;
+        if (!TryParseProviderError(detail, out string error, out string errorDescription))
+        {
+            return [UnexpectedProviderResponseMessage];
+        }
 
+        return [$"{error}. {errorDescription}"];
+    }
+
+    private static bool TryParseProviderError(string detail, out string error, out string errorDescription)
+    {
+        error = "";
+        errorDescription = "";
+
+        JsonObject obj;
         try
         {
-            if (JsonNode.Parse(detail) is JsonNode parsed && parsed is JsonObject obj)
+            if (JsonNode.Parse(detail) is not JsonObject parsedObject)
             {
-                error = obj["error"]?.ToString() ?? error;
-                errorDescription = obj["error_description"]?.ToString() ?? errorDescription;
+                return false;
             }
+            obj = parsedObject;
         }
-        catch
+        catch (JsonException)
         {
-            // Ignoring parsing errors, returning the default formatted message.
+            return false;
         }
-        error = !string.IsNullOrEmpty(error) ? $"{error}. " : "";
-        return [$"{error}{errorDescription}"];
+
+        if (
+            obj["error"] is not JsonValue errorValue
+            || obj["error_description"] is not JsonValue descriptionValue
+            || errorValue.GetValueKind() != JsonValueKind.String
+            || descriptionValue.GetValueKind() != JsonValueKind.String
+        )
+        {
+            return false;
+        }
+
+        string errorText = errorValue.GetValue<string>();
+        string errorDescriptionText = descriptionValue.GetValue<string>();
+
+        if (string.IsNullOrWhiteSpace(errorText) || string.IsNullOrWhiteSpace(errorDescriptionText))
+        {
+            return false;
+        }
+
+        error = errorText;
+        errorDescription = errorDescriptionText;
+        return true;
     }
 }

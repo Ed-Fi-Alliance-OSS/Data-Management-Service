@@ -198,7 +198,7 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Unauthorized");
+        content.Should().Contain("The identity provider returned an unexpected response.");
     }
 
     [Test]
@@ -236,7 +236,7 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Forbidden");
+        content.Should().Contain("The identity provider returned an unexpected response.");
     }
 
     [Test]
@@ -432,7 +432,7 @@ public class RegisterEndpointTests
               "correlationId": "{correlationId}",
               "validationErrors": {},
               "errors": [
-                "No connection could be made because the target machine actively refused it."
+                "The identity provider returned an unexpected response."
             ]
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
@@ -688,7 +688,7 @@ public class TokenEndpointTests
               "correlationId": "{correlationId}",
               "validationErrors": {},
               "errors": [
-                "No connection could be made because the target machine actively refused it."
+                "The identity provider returned an unexpected response."
             ]
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
@@ -1093,5 +1093,76 @@ public class OAuthEndpointErrorTests
 
         [Test]
         public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+}
+
+public class IdentityProviderErrorParsingTests
+{
+    [TestFixture]
+    public class Given_a_provider_payload_with_an_error_description_but_no_error_field
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+                )
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unreachable(
+                            """{ "error_description": "Realm does not exist." }"""
+                        )
+                    )
+                );
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTransient(_ => new TokenRequest.Validator());
+                    collection.AddTransient(_ => _tokenManager);
+                });
+            });
+            _client = _factory.CreateClient();
+
+            var requestContent = new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+            ]);
+            _response = await _client.PostAsync("/connect/token", requestContent);
+            _content = await _response.Content.ReadAsStringAsync();
+            _body = JsonNode.Parse(_content)!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_502() => _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+
+        [Test]
+        public void It_returns_the_fixed_fallback_message_instead_of_the_partial_payload() =>
+            _body["errors"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The identity provider returned an unexpected response.");
+
+        [Test]
+        public void It_does_not_leak_the_partial_error_description() =>
+            _content.Should().NotContain("Realm does not exist");
     }
 }
