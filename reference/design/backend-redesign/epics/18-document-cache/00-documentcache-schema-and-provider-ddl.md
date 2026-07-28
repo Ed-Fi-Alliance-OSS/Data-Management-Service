@@ -308,3 +308,39 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    programmable objects be refreshed, without comparing body text, while object identity,
    attachment/events, enabled state, and each object's explicitly defined security
    metadata must already match?
+
+### Answers 4
+
+1. Yes. Replace Answer 2.4's prohibition on `SET ROLE` access for the provisioning
+   membership with one direct grant to the authenticated provisioning principal using
+   `SET TRUE, INHERIT FALSE, ADMIN FALSE`. This supplies the narrow PostgreSQL capability
+   needed to assign and refresh functions owned by the `NOLOGIN` role without conferring
+   its privileges ambiently or allowing membership delegation. Generated DDL grants no
+   membership to the DMS or CDC runtime principals and adds no runtime role switching.
+   On a completed database, phase zero requires the owner role and provisioning
+   membership to exact-match before mutation. An eligible initial or partial apply may
+   establish them before database-local schema or data mutation. If the credential cannot
+   create or exact-match the role and membership, assign ownership, or apply the required
+   local grants, fail with a prerequisite diagnostic rather than requiring superuser or
+   silently broadening a conflicting role.
+2. Yes, for the initial/partial-apply classification only. Every already-present table
+   must first have the compatible E18-owned shape; any present `dms.Document`,
+   `dms.DocumentCache`, or `dms.DocumentProjectionWork` table must be empty. The
+   `DocumentCacheState` table or singleton may be absent, but any present singleton must
+   be exactly `StateId = 1`, `Disabled`, with a clear latch. `DataStoreIdentity` may be
+   absent; when present it must contain exactly one valid singleton and its
+   `SourceIdentity` must be preserved. Reject rather than clear nonempty tables, active or
+   transitional lifecycle state, a set latch, or malformed singleton state. This does
+   not change `ddl provision`'s rejection of an `EffectiveSchema` table without its
+   singleton, does not impose emptiness on a completed same-hash rerun, and supplies no
+   CDC new-database or binding evidence.
+3. Yes. For a completed same-hash database, phase zero requires the complete structural
+   inventory and every generated programmable object to exist with its expected logical
+   identity/signature, table attachment, timing/events, enabled state, owner/execution
+   mode, and explicitly defined security metadata. A missing object or metadata mismatch
+   fails before mutation. When those checks pass, refresh the deterministic generated
+   definition through the existing provider replace/alter pattern without comparing
+   provider-normalized body text. Do not use the rerun to create objects, repair
+   structure or security, or change singleton or table data. This avoids a general
+   programmable-object diff framework while retaining the existing idempotent definition
+   refresh.
