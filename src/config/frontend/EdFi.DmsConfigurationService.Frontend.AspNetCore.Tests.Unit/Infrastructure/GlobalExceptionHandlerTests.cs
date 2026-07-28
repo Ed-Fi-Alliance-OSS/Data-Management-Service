@@ -10,7 +10,9 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.WebUtilities;
 using NUnit.Framework;
 
@@ -34,10 +36,21 @@ public class GlobalExceptionHandlerTests
         DefaultHttpContext Context,
         string Content,
         JsonObject Body
-    )> HandleAsync(Exception exception, string traceId)
+    )> HandleAsync(Exception exception, string traceId, Endpoint? endpoint = null)
     {
         var context = new DefaultHttpContext { TraceIdentifier = traceId };
         context.Response.Body = new MemoryStream();
+        if (endpoint is not null)
+        {
+            context.Features.Set<IExceptionHandlerFeature>(
+                new ExceptionHandlerFeature
+                {
+                    Error = exception,
+                    Path = context.Request.Path,
+                    Endpoint = endpoint,
+                }
+            );
+        }
 
         bool handled = await new GlobalExceptionHandler().TryHandleAsync(
             context,
@@ -116,6 +129,60 @@ public class GlobalExceptionHandlerTests
                 .GetValue<string>()
                 .Should()
                 .Be("The request contains one or more invalid parameters.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_bad_http_request_with_status_400_on_a_body_accepting_endpoint
+    {
+        private const string Sentinel = "SENTINEL_BADREQ_BODY_2f7a_must_not_leak";
+
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        private sealed class FakeAcceptsMetadata : IAcceptsMetadata
+        {
+            public IReadOnlyList<string> ContentTypes => ["application/json"];
+            public Type? RequestType => null;
+            public bool IsOptional => false;
+        }
+
+        [SetUp]
+        public async Task Setup() =>
+            (_handled, _context, _content, _body) = await HandleAsync(
+                new BadHttpRequestException(Sentinel, StatusCodes.Status400BadRequest),
+                "trace-400-body",
+                new Endpoint(null, new EndpointMetadataCollection(new FakeAcceptsMetadata()), "test-endpoint")
+            );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_generic_bad_request_contract() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request could not be processed. See 'errors' for details."
+            );
+
+        [Test]
+        public void It_does_not_leak_the_exception_message() => _content.Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_has_the_kb_exact_missing_body_message_with_empty_validation_errors()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("A non-empty request body is required.");
         }
     }
 

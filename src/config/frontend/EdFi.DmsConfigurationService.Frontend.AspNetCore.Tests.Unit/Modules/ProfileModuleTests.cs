@@ -792,3 +792,162 @@ public class ProfileModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }
+
+public class ProfileMissingBodyTests
+{
+    private static void AssertGenericMissingBodyContract(HttpResponseMessage response, JsonObject body)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The request could not be processed. See 'errors' for details.");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!
+            .AsArray()
+            .Select(e => e!.GetValue<string>())
+            .Should()
+            .Equal("A non-empty request body is required.");
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        var profileRepository = A.Fake<IProfileRepository>();
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (ctx, collection) =>
+                {
+                    collection.AddTestAuthentication();
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
+                    collection.AddAuthorization(options =>
+                    {
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
+                    collection.AddTransient(_ => profileRepository);
+                }
+            );
+        });
+    }
+
+    [TestFixture]
+    public class Given_a_post_with_no_body
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            _response = await _client.PostAsync("/v3/profiles/", null);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_generic_missing_body_contract() =>
+            AssertGenericMissingBodyContract(_response, _body);
+    }
+
+    [TestFixture]
+    public class Given_a_post_with_a_json_null_body
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            using var content = new StringContent("null", Encoding.UTF8, "application/json");
+            _response = await _client.PostAsync("/v3/profiles/", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_generic_missing_body_contract() =>
+            AssertGenericMissingBodyContract(_response, _body);
+    }
+
+    [TestFixture]
+    public class Given_a_put_with_a_bad_route_id_and_a_valid_body
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            var validBody = new
+            {
+                id = 1,
+                name = "ValidProfile",
+                definition = "<Profile name=\"ValidProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+            };
+            using var content = new StringContent(
+                JsonSerializer.Serialize(validBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _response = await _client.PutAsync("/v3/profiles/abc", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_generic_missing_body_contract_despite_a_valid_body_being_sent() =>
+            AssertGenericMissingBodyContract(_response, _body);
+    }
+}

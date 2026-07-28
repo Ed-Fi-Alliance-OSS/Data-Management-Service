@@ -84,14 +84,14 @@ public static class FailureResponse
             errors: errors
         );
 
-    public static JsonNode ForBadRequest(string detail, string correlationId) =>
+    public static JsonNode ForBadRequest(string detail, string correlationId, string[]? errors = null) =>
         CreateBaseJsonObject(
             detail: detail,
             type: _badRequestTypePrefix,
             title: "Bad Request",
             status: 400,
             correlationId: correlationId,
-            []
+            errors: errors
         );
 
     public static JsonNode ForNotFound(string detail, string correlationId) =>
