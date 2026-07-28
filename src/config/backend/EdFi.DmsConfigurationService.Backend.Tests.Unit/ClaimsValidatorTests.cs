@@ -38,4 +38,23 @@ public class ClaimsValidatorTests
         public void It_propagates_the_invalid_operation_exception_instead_of_returning_a_failure() =>
             _act.Should().Throw<InvalidOperationException>().WithMessage(ResourceLoadFailureMessage);
     }
+
+    [TestFixture]
+    public class Given_the_embedded_schema_is_malformed
+    {
+        private Action _act = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _act = () => ClaimsValidator.ParseSchema("{ not valid json", "test-only");
+        }
+
+        [Test]
+        public void It_surfaces_an_invalid_operation_exception_with_the_json_cause() =>
+            _act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("Embedded claims schema 'test-only' is not valid JSON.")
+                .WithInnerException<System.Text.Json.JsonException>();
+    }
 }

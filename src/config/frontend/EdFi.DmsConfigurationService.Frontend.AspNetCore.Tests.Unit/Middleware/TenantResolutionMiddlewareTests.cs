@@ -391,10 +391,10 @@ internal class TenantResolutionMiddlewareTests
             );
 
             // Assert
-            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
             httpContext.Response.ContentType.Should().Be("application/problem+json");
             var (_, body) = await ReadResponseAsync(httpContext);
-            AssertBadRequestBody(body, "Failed to validate tenant", "trace-default");
+            AssertInternalServerErrorBody(body, "trace-default");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 

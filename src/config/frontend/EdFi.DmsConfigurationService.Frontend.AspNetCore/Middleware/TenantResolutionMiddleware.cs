@@ -118,11 +118,11 @@ public class TenantResolutionMiddleware(RequestDelegate next)
             return;
         }
 
-        // Handle unexpected result type
+        // An unrecognized repository result is a server-side contract failure, not caller input.
         logger.LogError("Unexpected tenant lookup result type: {ResultType}", tenantResult.GetType().Name);
         await FailureResponseWriter.WriteAsync(
             context,
-            FailureResponse.ForBadRequest("Failed to validate tenant", context.TraceIdentifier),
+            FailureResponse.ForUnknown(context.TraceIdentifier),
             context.RequestAborted
         );
     }

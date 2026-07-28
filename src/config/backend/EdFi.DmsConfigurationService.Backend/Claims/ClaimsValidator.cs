@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Schema;
 using Microsoft.Extensions.Logging;
@@ -56,7 +57,24 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
         using StreamReader reader = new(stream);
         string schemaContent = reader.ReadToEnd();
         logger.LogDebug("Successfully loaded JSON Schema from embedded resource");
-        return JsonSchema.FromText(schemaContent);
+        return ParseSchema(schemaContent, resourceName);
+    }
+
+    // A malformed embedded schema is a build/configuration fault, not caller input, so it surfaces
+    // as the operation failure the upload service already maps to a sanitized 500.
+    internal static JsonSchema ParseSchema(string schemaContent, string resourceName)
+    {
+        try
+        {
+            return JsonSchema.FromText(schemaContent);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Embedded claims schema '{resourceName}' is not valid JSON.",
+                ex
+            );
+        }
     }
 
     /// <summary>
