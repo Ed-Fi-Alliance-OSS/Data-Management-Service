@@ -151,11 +151,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
         var descriptorAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Descriptor);
         var tableAliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
-        var sourceGroups = ProjectionSourceBranchSql.GroupByTable(
-            sqlSources,
-            static source => source.TableModel,
-            static source => source.StorageColumn
-        );
+        var sourceGroups = BuildSourceGroups(sqlSources);
         var writer = new SqlWriter(_sqlDialect);
 
         writer.AppendLine("SELECT");
@@ -215,6 +211,41 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         writer.AppendLine(";");
 
         return writer.ToString();
+    }
+
+    /// <summary>
+    /// Determines the SQL-emission source grouping for descriptor projection.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server groups by owning table, so a table contributing several descriptor columns is
+    /// scanned once and its columns expanded inline. PostgreSQL deliberately keeps one branch per
+    /// column: its planner cannot estimate distinctness through the row-set expansion, and the
+    /// resulting estimate collapse switches the comparatively small <c>dms.Descriptor</c> join from a
+    /// hash join to per-row nested loops. The expansion's offsetting saving is planning time, which
+    /// the read path does not pay once statements are auto-prepared, leaving only the join
+    /// regression. The document-reference lookup is unaffected because <c>dms.Document</c> is large
+    /// enough that nested loops are already the appropriate join for it.
+    /// </remarks>
+    private IReadOnlyList<ProjectionSourceTableGroup> BuildSourceGroups(
+        IReadOnlyList<DescriptorProjectionSqlSource> sqlSources
+    )
+    {
+        if (_planSqlDialect.Dialect is SqlDialect.Mssql)
+        {
+            return ProjectionSourceBranchSql.GroupByTable(
+                sqlSources,
+                static source => source.TableModel,
+                static source => source.StorageColumn
+            );
+        }
+
+        return
+        [
+            .. sqlSources.Select(static source => new ProjectionSourceTableGroup(
+                source.TableModel,
+                [source.StorageColumn]
+            )),
+        ];
     }
 
     private static DbColumnName ResolveStorageColumnOrThrow(

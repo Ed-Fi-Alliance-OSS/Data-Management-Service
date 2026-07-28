@@ -1724,11 +1724,15 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     d."Uri"
                 FROM
                     (
-                        SELECT DISTINCT v0."DescriptorId"
+                        SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
                         FROM "edfi"."Student" t0
                         INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
-                        CROSS JOIN LATERAL (VALUES (t0."SchoolYearTypeDescriptorIdCanonical"), (t0."ProgramTypeDescriptorId")) AS v0("DescriptorId")
-                        WHERE v0."DescriptorId" IS NOT NULL
+                        WHERE t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
+                        UNION
+                        SELECT t1."ProgramTypeDescriptorId" AS "DescriptorId"
+                        FROM "edfi"."Student" t1
+                        INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
+                        WHERE t1."ProgramTypeDescriptorId" IS NOT NULL
                     ) p
                 INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
                 ORDER BY
@@ -1752,7 +1756,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_emit_exact_pgsql_DescriptorProjection_single_document_sql_for_multiple_sources_on_one_table_as_a_single_scan()
+    public void It_should_emit_exact_pgsql_DescriptorProjection_single_document_sql_for_multiple_sources_joined_with_UNION()
     {
         var model = CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource();
         var descriptorProjectionPlans = CompileDescriptorProjectionPlans(
@@ -1773,11 +1777,15 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     d."Uri"
                 FROM
                     (
-                        SELECT DISTINCT v0."DescriptorId"
+                        SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
                         FROM "edfi"."Student" t0
-                        CROSS JOIN LATERAL (VALUES (t0."SchoolYearTypeDescriptorIdCanonical"), (t0."ProgramTypeDescriptorId")) AS v0("DescriptorId")
                         WHERE t0."DocumentId" = @DocumentId
-                        AND v0."DescriptorId" IS NOT NULL
+                        AND t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
+                        UNION
+                        SELECT t1."ProgramTypeDescriptorId" AS "DescriptorId"
+                        FROM "edfi"."Student" t1
+                        WHERE t1."DocumentId" = @DocumentId
+                        AND t1."ProgramTypeDescriptorId" IS NOT NULL
                     ) p
                 INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
                 ORDER BY

@@ -592,8 +592,8 @@
             ],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "c5f3d0edffd6a454ac8ff5738f1286fa951a42d3f6c1ba0dc5e77c0a84db7e72",
-                "select_by_single_document_sql_sha256": "22c8e25d3ffc5e191ec79f0aa6246cd1c418a5990eb42314970dec0296062729",
+                "select_by_keyset_sql_sha256": "79508cb5b93b36d9e38ec41fc861516b25c88ed0317790f135e85d3cc5a95e3b",
+                "select_by_single_document_sql_sha256": "7c7b9b7a02c2324b1f1c2630a922b43c87fa72be649535d891b6e12d92c32801",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
