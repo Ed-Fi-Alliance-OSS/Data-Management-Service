@@ -1040,6 +1040,8 @@ $failureStatement
                     "bootstrap-wrapper.psm1",
                     $WrapperEntryScriptName,
                     "env-utility.psm1",
+                    # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                    "database-safety.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61"
                 )) {
@@ -1138,6 +1140,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                     "bootstrap-wrapper.psm1",
                     "bootstrap-local-dms.ps1",
                     "env-utility.psm1",
+                    # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                    "database-safety.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61",
                     ".env.mssql"
@@ -1541,6 +1545,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                     "bootstrap-wrapper.psm1",
                     $WrapperEntryScriptName,
                     "env-utility.psm1",
+                    # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                    "database-safety.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61",
                     ".env.mssql"

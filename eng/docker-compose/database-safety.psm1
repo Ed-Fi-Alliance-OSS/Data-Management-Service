@@ -244,6 +244,163 @@ function Test-ProtectedKeyConfigured {
     return $null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($Name)
 }
 
+function Get-DatabaseNameFromResolvedConnectionString {
+    <#
+    .SYNOPSIS
+        Parses every database / initial-catalog value out of an already-fully-resolved ADO.NET
+        connection string, with no further ${VAR} resolution on the extracted values.
+    .DESCRIPTION
+        Unlike Get-DatabaseNameFromConnectionString, this function performs no secondary reference
+        resolution: it assumes the caller already resolved the whole connection string with full
+        Docker Compose precedence (e.g. via Get-ComposeResolvedEnvValue) before calling this, so an
+        entirely-ambient connection string that happens to contain literal, un-interpolated
+        "${...}"-shaped text - which Compose itself never reinterpolates for a value it already
+        took verbatim from the shell - is returned as-is rather than incorrectly resolved a second
+        time. Database and Initial Catalog are provider synonyms; every candidate present is
+        returned so a caller can require all of them to agree rather than guessing which one wins
+        (DbConnectionStringBuilder does not preserve which alias appeared later in the source
+        text). Returns an empty array when the string is blank or carries no database keyword.
+
+    .PARAMETER ConnectionString
+        An already Compose-precedence-resolved connection string.
+    #>
+    param(
+        [string]$ConnectionString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return @()
+    }
+
+    try {
+        $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
+
+        return @(
+            foreach ($key in $connectionStringBuilder.PSBase.Keys) {
+                if ([string]$key -imatch '^(database|initial\s+catalog)$') {
+                    [string]$connectionStringBuilder.PSBase.get_Item($key)
+                }
+            }
+        )
+    }
+    catch {
+        throw "Could not parse the resolved connection string to extract the database name: $($_.Exception.Message)"
+    }
+}
+
+function Get-EndpointFromResolvedConnectionString {
+    <#
+    .SYNOPSIS
+        Parses every host/server value out of an already-fully-resolved ADO.NET connection string,
+        splitting a "host,port" compound (the MSSQL Server=host,port shape) into separate Host/Port
+        fields. No further ${VAR} resolution is performed, matching
+        Get-DatabaseNameFromResolvedConnectionString's contract. Returns an empty array when the
+        string is blank or carries no recognized host keyword.
+
+    .PARAMETER ConnectionString
+        An already Compose-precedence-resolved connection string.
+
+    .OUTPUTS
+        An array of [pscustomobject] with Host and Port (Port is $null when the value carried no
+        comma-separated port segment).
+    #>
+    param(
+        [string]$ConnectionString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return @()
+    }
+
+    try {
+        $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
+
+        return @(
+            foreach ($key in $connectionStringBuilder.PSBase.Keys) {
+                if ([string]$key -imatch '^(server|data\s+source|addr|address|network\s+address|host)$') {
+                    $value = [string]$connectionStringBuilder.PSBase.get_Item($key)
+                    $parts = $value.Split(',', 2)
+                    [pscustomobject]@{
+                        Host = $parts[0].Trim()
+                        Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $null }
+                    }
+                }
+            }
+        )
+    }
+    catch {
+        throw "Could not parse the resolved connection string to extract the endpoint: $($_.Exception.Message)"
+    }
+}
+
+function Test-PostgresDuplicateDatabaseError {
+    <#
+    .SYNOPSIS
+        Returns true when captured psql output (run with -v VERBOSITY=sqlstate) reports one of the
+        two benign concurrent-database-creation races: 42P04 (a direct duplicate CREATE DATABASE)
+        or 23505 (the narrower internal catalog-index race two \gexec-generated CREATE DATABASE
+        statements can hit).
+
+    .DESCRIPTION
+        Empirically captured against a real PostgreSQL 16 instance (DMS-1270 Phase 1a spike): a
+        direct duplicate CREATE DATABASE reports "ERROR:  42P04"; a genuine concurrent race between
+        two \gexec-driven sessions targeting a not-yet-existing database reported
+        "psql:<stdin>:2: ERROR:  23505" on the losing side. Matching on the bare SQLSTATE token
+        after "ERROR:" is indifferent to whichever prefix, if any, precedes it, and to locale,
+        since VERBOSITY=sqlstate suppresses all human-readable message text.
+
+        Returning true here is not proof of success by itself - the caller must still verify the
+        postcondition (the target database actually exists and is usable) before declaring the
+        guarded-create operation successful; a benign SQLSTATE with a failed postcondition must
+        still propagate as a real failure.
+
+    .PARAMETER CapturedOutput
+        The combined stdout+stderr text captured from the psql invocation.
+    #>
+    param(
+        [string]$CapturedOutput
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CapturedOutput)) {
+        return $false
+    }
+
+    return [regex]::IsMatch($CapturedOutput, 'ERROR:\s+(42P04|23505)\b')
+}
+
+function Test-MssqlDuplicateDatabaseError {
+    <#
+    .SYNOPSIS
+        Returns true when captured sqlcmd output reports SQL Server error 1801 ("database already
+        exists"), the benign concurrent-database-creation race for the guarded
+        IF DB_ID(...) IS NULL CREATE DATABASE ... check-then-act statement.
+
+    .DESCRIPTION
+        Per Microsoft's documented, stable error catalog. Not independently spiked against a live
+        SQL Server instance in this pass (the companion PostgreSQL predicate above required a live
+        spike because that engine's race can surface as either of two codes depending on timing;
+        SQL Server's single documented code is lower-risk to take on documentation alone, but
+        should still be confirmed against a live instance before Phase 1b relies on it).
+
+        Returning true here is not proof of success by itself - the caller must still verify the
+        postcondition before declaring the guarded-create operation successful.
+
+    .PARAMETER CapturedOutput
+        The combined stdout+stderr text captured from the sqlcmd invocation.
+    #>
+    param(
+        [string]$CapturedOutput
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CapturedOutput)) {
+        return $false
+    }
+
+    return [regex]::IsMatch($CapturedOutput, '\b1801\b')
+}
+
 function Get-DatabaseNameFromConnectionString {
     <#
     .SYNOPSIS
@@ -387,4 +544,8 @@ Export-ModuleMember -Function `
     Get-RequiredComposeResolvedEnvValue, `
     Assert-SafeDatabaseName, `
     Get-DatabaseNameFromConnectionString, `
+    Get-DatabaseNameFromResolvedConnectionString, `
+    Get-EndpointFromResolvedConnectionString, `
+    Test-PostgresDuplicateDatabaseError, `
+    Test-MssqlDuplicateDatabaseError, `
     Assert-E2EDatabaseIsDedicated

@@ -2927,6 +2927,8 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
                     $WrapperEntryScript,
                     "bootstrap-schema-catalog.psm1",
                     "env-utility.psm1",
+                    # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                    "database-safety.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61"
                 )) {

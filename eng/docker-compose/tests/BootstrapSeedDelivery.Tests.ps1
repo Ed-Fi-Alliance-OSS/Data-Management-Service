@@ -31,6 +31,8 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             # succeed.
             foreach ($fileName in @(
                 "env-utility.psm1",
+                # env-utility.psm1 imports this at module load, so any isolated copy needs it too.
+                "database-safety.psm1",
                 "bootstrap-schema-catalog.psm1",
                 ".env.bootstrap.ds52",
                 ".env.bootstrap.ds61"
@@ -114,7 +116,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
             New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
 
-            foreach ($fileName in @("bootstrap-manifest.psm1", "env-utility.psm1")) {
+            foreach ($fileName in @("bootstrap-manifest.psm1", "env-utility.psm1", "database-safety.psm1")) {
                 Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Destination $dockerComposeRoot
             }
 
