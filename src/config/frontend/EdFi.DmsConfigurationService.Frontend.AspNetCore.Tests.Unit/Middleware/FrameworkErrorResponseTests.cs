@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
@@ -17,6 +18,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -527,5 +529,189 @@ public class FrameworkErrorResponseTests
 
         [Test]
         public void It_has_a_nonempty_response_body() => _content.Should().NotBeEmpty();
+    }
+
+    private static WebApplicationFactory<Program> CreateKestrelProfileFactory(
+        IProfileRepository profileRepository
+    )
+    {
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (ctx, collection) =>
+                {
+                    collection.AddTestAuthentication();
+
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
+                    collection.AddAuthorization(options =>
+                    {
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
+
+                    collection.AddTransient(_ => profileRepository);
+                }
+            );
+        });
+        factory.UseKestrel(0);
+        return factory;
+    }
+
+    /// <summary>
+    /// Sends a raw HTTP/1.1 request over a plain socket, because HttpClient cannot send a malformed
+    /// or stalled request body, and parses the raw response. The send side stays open: Kestrel does
+    /// not support half-closed connections and aborts without a response if it closes mid-body.
+    /// </summary>
+    private static async Task<(int StatusCode, string Headers, JsonObject Body)> SendRawRequestAsync(
+        Uri baseAddress,
+        string head,
+        string partialBody
+    )
+    {
+        using var tcp = new TcpClient();
+        await tcp.ConnectAsync(baseAddress.Host, baseAddress.Port);
+        using NetworkStream stream = tcp.GetStream();
+
+        byte[] request = Encoding.ASCII.GetBytes(head + partialBody);
+        await stream.WriteAsync(request);
+
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        string raw = await reader.ReadToEndAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        int headerEnd = raw.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+        headerEnd.Should().BeGreaterThan(0, $"a full HTTP response is expected, but got:\n{raw}");
+        string headers = raw[..headerEnd];
+        string bodyText = raw[(headerEnd + 4)..];
+
+        string statusLine = headers.Split("\r\n")[0];
+        int statusCode = int.Parse(statusLine.Split(' ')[1]);
+        return (statusCode, headers, JsonNode.Parse(bodyText)!.AsObject());
+    }
+
+    private static string BuildRequestHead(Uri baseAddress, string framingHeader) =>
+        $"POST /v3/profiles/ HTTP/1.1\r\n"
+        + $"Host: {baseAddress.Host}:{baseAddress.Port}\r\n"
+        + "Content-Type: application/json\r\n"
+        + $"X-Test-Scope: {AuthorizationScopes.AdminScope.Name}\r\n"
+        + $"{framingHeader}\r\n"
+        + "Connection: close\r\n\r\n";
+
+    [TestFixture]
+    public class Given_a_request_body_with_malformed_chunked_framing
+    {
+        private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private int _statusCode;
+        private string _headers = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateKestrelProfileFactory(_profileRepository);
+            _client = _factory.CreateClient();
+
+            // An invalid chunk-size line makes the body read fail while the connection stays open.
+            (_statusCode, _headers, _body) = await SendRawRequestAsync(
+                _client.BaseAddress!,
+                BuildRequestHead(_client.BaseAddress!, "Transfer-Encoding: chunked"),
+                "ZZZ\r\n"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_400() => _statusCode.Should().Be(400);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _headers.Should().Contain("application/problem+json");
+
+        [Test]
+        public void It_returns_a_complete_bad_request_contract()
+        {
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            _body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            _body["detail"]!.GetValue<string>().Should().Be("The request could not be processed.");
+            _body["status"]!.GetValue<int>().Should().Be(400);
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_request_body_that_stalls_past_the_minimum_data_rate
+    {
+        private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private int _statusCode;
+        private string _headers = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateKestrelProfileFactory(_profileRepository);
+            _factory.UseKestrel(options =>
+                options.Limits.MinRequestBodyDataRate = new MinDataRate(
+                    bytesPerSecond: 240,
+                    gracePeriod: TimeSpan.FromSeconds(2)
+                )
+            );
+            _client = _factory.CreateClient();
+
+            // Declare a body but never send it, so the minimum-data-rate enforcement times out
+            // the body read.
+            (_statusCode, _headers, _body) = await SendRawRequestAsync(
+                _client.BaseAddress!,
+                BuildRequestHead(_client.BaseAddress!, "Content-Length: 100"),
+                partialBody: ""
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_408() => _statusCode.Should().Be(408);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _headers.Should().Contain("application/problem+json");
+
+        [Test]
+        public void It_returns_the_shaped_request_timeout_contract()
+        {
+            _body["type"]!.GetValue<string>().Should().Be("about:blank");
+            _body["title"]!.GetValue<string>().Should().Be("Request Timeout");
+            _body["detail"]!.GetValue<string>().Should().BeEmpty();
+            _body["status"]!.GetValue<int>().Should().Be(408);
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
     }
 }

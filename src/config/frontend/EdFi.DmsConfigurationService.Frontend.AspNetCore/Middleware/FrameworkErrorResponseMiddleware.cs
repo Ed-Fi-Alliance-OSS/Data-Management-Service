@@ -47,6 +47,17 @@ public class FrameworkErrorResponseMiddleware(RequestDelegate next)
 
         JsonNode? failure = context.Response.StatusCode switch
         {
+            // The minimal-API body reader assigns these statuses directly when the request body
+            // cannot be read, without entering the exception pipeline.
+            StatusCodes.Status400BadRequest => FailureResponse.ForBadRequest(
+                "The request could not be processed.",
+                context.TraceIdentifier
+            ),
+            StatusCodes.Status408RequestTimeout => FailureResponse.ForUnclassifiedStatus(
+                StatusCodes.Status408RequestTimeout,
+                ReasonPhrases.GetReasonPhrase(StatusCodes.Status408RequestTimeout),
+                context.TraceIdentifier
+            ),
             StatusCodes.Status401Unauthorized => FailureResponse.ForUnauthorized(
                 "Authentication Failed",
                 "Authentication is required to access this resource.",
