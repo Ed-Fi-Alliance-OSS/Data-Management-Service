@@ -4,6 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
 
@@ -64,6 +67,115 @@ public static class DocumentReferenceLookupPageFixture
         DualCreditEdOrg,
         Program,
     ];
+
+    /// <summary>
+    /// The complete page produced by the non-link reconstitution overload, in document order with
+    /// child collections in ordinal order.
+    /// </summary>
+    /// <remarks>
+    /// This is property-complete rather than a set of spot checks: it names every property each
+    /// document is expected to carry, so a comparison against it fails on an unexpected property, a
+    /// missing property, a partial reference object, or a reordered document or child element.
+    /// Document <c>603</c> is the empty object because every one of its references is null.
+    /// </remarks>
+    public const string ExpectedNonLinkPageJson = """
+        [
+          {
+            "attemptStatusDescriptor": "uri://ed-fi.org/AttemptStatusDescriptor#Active",
+            "dualCreditEducationOrganizationReference": { "educationOrganizationId": 255901 },
+            "programs": [
+              { "programReference": { "programName": "Program P" } },
+              { "programReference": { "programName": "Program Named Like Student" } }
+            ],
+            "sectionReference": { "sectionIdentifier": "SEC-X" },
+            "studentReference": { "studentUniqueId": "S-701" }
+          },
+          {
+            "sectionReference": { "sectionIdentifier": "SEC-X" },
+            "studentReference": { "studentUniqueId": "S-702" }
+          },
+          {},
+          {
+            "dualCreditEducationOrganizationReference": { "educationOrganizationId": 255902 },
+            "sectionReference": { "sectionIdentifier": "SEC-DUP" },
+            "studentReference": { "studentUniqueId": "S-730" }
+          }
+        ]
+        """;
+
+    /// <summary>
+    /// Asserts a reconstituted page equals <see cref="ExpectedNonLinkPageJson"/> exactly and carries
+    /// no <c>link</c> object anywhere, which is what the non-link reconstitution overload must produce.
+    /// </summary>
+    public static void AssertNonLinkPageMatchesExactly(IReadOnlyList<JsonNode> reconstitutedPage)
+    {
+        ArgumentNullException.ThrowIfNull(reconstitutedPage);
+
+        JsonArray actual = [];
+
+        foreach (var document in reconstitutedPage)
+        {
+            actual.Add(document.DeepClone());
+        }
+
+        var expected =
+            JsonNode.Parse(ExpectedNonLinkPageJson)
+            ?? throw new InvalidOperationException("Expected non-link page JSON did not parse.");
+
+        JsonNode
+            .DeepEquals(actual, expected)
+            .Should()
+            .BeTrue(
+                "the reconstituted page must match the expected non-link payload exactly."
+                    + $"{Environment.NewLine}Actual:{Environment.NewLine}{Serialize(actual)}"
+                    + $"{Environment.NewLine}Expected:{Environment.NewLine}{Serialize(expected)}"
+            );
+
+        CollectLinkPaths(actual)
+            .Should()
+            .BeEmpty("the non-link reconstitution overload must not emit link objects");
+    }
+
+    private static string Serialize(JsonNode node) =>
+        node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+
+    /// <summary>
+    /// Collects the JSON paths of every <c>link</c> property reachable in the supplied node.
+    /// </summary>
+    private static List<string> CollectLinkPaths(JsonNode node)
+    {
+        List<string> linkPaths = [];
+        Visit(node);
+
+        return linkPaths;
+
+        void Visit(JsonNode? current)
+        {
+            switch (current)
+            {
+                case JsonObject jsonObject:
+                    foreach (var property in jsonObject)
+                    {
+                        if (string.Equals(property.Key, "link", StringComparison.Ordinal))
+                        {
+                            linkPaths.Add(jsonObject.GetPath() + "." + property.Key);
+                        }
+
+                        Visit(property.Value);
+                    }
+
+                    break;
+
+                case JsonArray jsonArray:
+                    foreach (var element in jsonArray)
+                    {
+                        Visit(element);
+                    }
+
+                    break;
+            }
+        }
+    }
 
     /// <summary>
     /// Deterministic <c>DocumentUuid</c> for a seeded document id.

@@ -163,6 +163,12 @@ public class Given_A_Postgresql_Page_With_Multi_Column_And_Child_Document_Refere
     }
 
     [Test]
+    public void It_reconstitutes_the_whole_page_exactly_with_no_link_objects()
+    {
+        DocumentReferenceLookupPageFixture.AssertNonLinkPageMatchesExactly(_reconstitutedPage);
+    }
+
+    [Test]
     public void It_reconstitutes_a_fully_populated_document_with_every_reference_and_descriptor()
     {
         var document = _reconstitutedPage[0];
