@@ -230,6 +230,45 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be "'host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};'"
         }
 
+        It "migrates the token inside an outer double-quoted dotenv value carrying a trailing inline comment, preserving both" {
+            # Round 11 Blocker 2: Get-EnvValue returns the raw dotenv value verbatim, including a
+            # trailing inline comment after the closing quote. The prior "last character equals the
+            # opening quote" check mistook the comment's own trailing character for proof the value
+            # was not quoted at all, so the wrapper went undetected and the token stayed unmigrated.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING="host=dms-postgresql;database=${POSTGRES_DB_NAME};" # keep'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be '"host=dms-postgresql;database=${DMS_CONFIG_DATABASE_NAME};" # keep' -Because "the outer quotes and the trailing comment are both preserved byte-for-byte; only the inner token changes"
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $result -DatabaseEngine "postgresql" } | Should -Not -Throw -Because "the migrated file must validate cleanly end to end through the validator"
+        }
+
+        It "migrates the token when the connection string contains regex replacement-directive sequences elsewhere (`$&, `$0)" {
+            # Round 11 Blocker 1: Write-DerivedEnvFile's underlying Regex.Replace call previously
+            # treated the replacement string as a REPLACEMENT PATTERN, so a literal '$&' or '$0'
+            # anywhere in the caller-authored value (a password, for instance) was corrupted -
+            # duplicating the entire matched line into the middle of the value - rather than written
+            # verbatim.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;password=p$&q$0r;database=${POSTGRES_DB_NAME};'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;password=p$&q$0r;database=${DMS_CONFIG_DATABASE_NAME};' -Because "the password must survive verbatim; only the database segment's token changes"
+        }
+
         It "does NOT rewrite the legacy token when it appears outside the database segment" {
             # Round 8 Blocker 2: a blind Contains/Replace across the whole connection string could
             # rewrite the token inside an unrelated segment (here, the password) that merely happens
@@ -351,6 +390,38 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $revertedValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be "'tenant`$db'" -Because "the written value itself must be quoted"
             (Get-ComposeResolvedEnvValue -EnvironmentValues $revertedValues -Name "DMS_CONFIG_DATABASE_NAME") | Should -Be 'tenant$db' -Because "re-reading it must not lose the literal `$db suffix to interpolation"
         }
+    }
+}
+
+Describe "Get-DotenvClosingQuoteIndex" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    It "returns -1 for a value with no outer quote wrapper" {
+        Get-DotenvClosingQuoteIndex -RawValue "host=dms-postgresql;database=x;" | Should -Be -1
+    }
+
+    It "finds the closing quote for a simple double-quoted value" {
+        $value = '"host=dms-postgresql;database=x;"'
+        Get-DotenvClosingQuoteIndex -RawValue $value | Should -Be ($value.Length - 1)
+    }
+
+    It "finds the closing quote when a trailing inline comment follows it" {
+        # Round 11 Blocker 2.
+        $value = '"host=dms-postgresql;database=x;" # keep'
+        $expectedIndex = '"host=dms-postgresql;database=x;"'.Length - 1
+        Get-DotenvClosingQuoteIndex -RawValue $value | Should -Be $expectedIndex
+    }
+
+    It "returns -1 when trailing content after a candidate closing quote is neither empty nor a comment" {
+        Get-DotenvClosingQuoteIndex -RawValue '"host=dms-postgresql" ;database=x;' | Should -Be -1
+    }
+
+    It "does not treat a backslash-escaped quote as the closing quote" {
+        $value = '"host=dms-postgresql;pwd=\"escaped\";database=x;"'
+        Get-DotenvClosingQuoteIndex -RawValue $value | Should -Be ($value.Length - 1)
     }
 }
 

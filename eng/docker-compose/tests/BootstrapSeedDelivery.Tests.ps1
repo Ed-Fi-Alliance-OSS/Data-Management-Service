@@ -1424,6 +1424,27 @@ SAMPLING_DURATION_SECONDS=10
             }
         }
 
+        It "Write-DerivedEnvFile writes a value containing regex replacement-directive sequences (`$&, `$0, `$', `$``) verbatim" {
+            # DMS-1270 Round 11 Blocker 1: Regex.Replace's string-replacement overload treats its
+            # third argument as a REPLACEMENT PATTERN, not a literal string - sequences like $&, $0,
+            # $', and $` are substitution directives ($& re-inserts the entire matched text). A
+            # caller-authored override value containing one of those literal sequences (a password,
+            # for instance) was corrupted rather than written verbatim as this function documents.
+            $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
+            $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
+            "SOME_KEY=original" | Set-Content -LiteralPath $base -Encoding utf8
+            try {
+                Write-DerivedEnvFile -BaseEnvironmentFile $base -TargetPath $derived -KeyOverrides @{ SOME_KEY = 'p$&q$0r$''s$`t' }
+
+                $content = (Get-Content -LiteralPath $derived -Raw) -replace "`r`n", "`n"
+                $content | Should -Be "SOME_KEY=p`$&q`$0r`$'s`$``t`n"
+            }
+            finally {
+                Remove-Item -LiteralPath $base -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $derived -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It "Write-DerivedEnvFile appends a key when it doesn't exist in the base" {
             $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
             $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
