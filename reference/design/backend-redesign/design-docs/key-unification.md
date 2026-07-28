@@ -1915,22 +1915,10 @@ compilation, manifests, and DDL generation) see a unified model.
 ### Required relative placement in `RelationalModelSetPasses`
 
 The executable pass list remains the source of truth for the currently implemented order.
-This section defines the stable dependency constraints and the target inventory tail after Change Query Story 33; it does not duplicate the entire pass list.
+This section defines only the stable dependency constraints; it does not duplicate the pass list.
 
 `KeyUnificationPass` runs after `ExtensionTableDerivationPass` and `ReferenceBindingPass`, and before every constraint, inventory, query-plan, manifest, and DDL consumer that must see canonical storage.
-After constraint derivation, dialect hashing, and storage-invariant validation, the target inventory tail is:
-
-1. `DeriveContentVersionMirrorPass`
-2. `DeriveTriggerInventoryPass`
-3. `DeriveTrackedChangeInventoryPass`
-4. `DeriveIndexInventoryPass`
-5. `DeriveAuthHierarchyPass`
-6. `DeriveAuthorizationIndexInventoryPass`
-7. `ApplyDialectIdentifierShorteningPass`
-8. `CanonicalizeOrderingPass`
-
-Until Story 33 is implemented, the executable source retains its current order.
-Story 33 owns the target repositioning and tests that prove repositioning alone leaves the existing index inventory unchanged.
+Change Query Story 33 owns any repositioning of the inventory passes required for tracked-change index derivation, together with the tests proving that repositioning alone leaves the existing index inventory unchanged; see [change-queries.md](change-queries.md) § "Indexes on the `tracked_changes*` tables".
 
 Notes:
 
@@ -1942,12 +1930,10 @@ Notes:
 - `KeyUnificationPass` MUST run **before** any constraint derivation pass that needs to target canonical storage
   columns (notably reference composite FKs), and before any pass that builds SourceJsonPath-based lookups that must see
   the post-unification table/column inventory.
-- The inventory tail MUST run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror
+- Inventory passes MUST run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror
   constraint names reflect the final hashed constraint identifiers.
 - `DeriveTriggerInventoryPass` MUST precede `DeriveTrackedChangeInventoryPass`, because tracked-change inventory reads
   trigger inventory to attach change-tracking behavior.
-- `DeriveTrackedChangeInventoryPass` MUST precede `DeriveIndexInventoryPass`, because tracked-change index derivation
-  consumes the tracked table and column inventory.
 - `DeriveAuthorizationIndexInventoryPass` MUST follow `DeriveAuthHierarchyPass`, and all index-producing passes MUST
   precede identifier shortening and canonical ordering.
 
