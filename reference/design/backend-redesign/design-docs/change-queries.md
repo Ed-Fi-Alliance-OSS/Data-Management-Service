@@ -1295,7 +1295,7 @@ PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and a `timest
 
 The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing `dms.Document` content stamp initialized by document defaults; updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value.
 
-**`dms.Descriptor` index is composite.** Because every descriptor query is qualified by `Discriminator`, the descriptor index is `IX_Descriptor_Discriminator_ContentVersion (Discriminator, ContentVersion)` rather than a single-column `IX_Descriptor_ContentVersion`. Resource-root indexes stay single-column because each resource root has its own table and no analogous "type" filter precedes the change-version range.
+**`dms.Descriptor` index is composite.** The shared descriptor table gets `IX_Descriptor_Discriminator_ContentVersion (Discriminator, ContentVersion)` rather than a single-column `IX_Descriptor_ContentVersion` because the table serves every descriptor kind and its recurring probes lead with the `Discriminator` type qualifier (see § "`*_RefKey` index ordering for `/deletes`"). The implemented live change-version window does not use this index: `DescriptorQueryPageKeysetPlanner` pages on `dms.Descriptor` directly with a denormalized `ResourceKeyId` equality plus the `ContentVersion` range and no `Discriminator` predicate, which is an acceptable unindexed scan because the shared table stays small. Re-keying the index to `(ResourceKeyId, ContentVersion)` to serve the window directly is a possible follow-up, but it requires fresh A/B evidence because the DMS-1185 PostgreSQL descriptor-probe baseline (and the resulting decision to defer a dedicated PostgreSQL identity index) was measured with the `Discriminator`-keyed index in place. Resource-root indexes stay single-column because each resource root has its own table and no analogous type filter precedes the change-version range.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
@@ -1602,7 +1602,8 @@ After category selection, gating is per table (the tracked table must be present
 If Story 33 selects the shared-descriptor category, the `SharedDescriptor` tracked-change table gets one `DbIndexKind.Explicit` index with key order `[Discriminator, ChangeVersion]`.
 Every descriptor `/deletes` filters the shared table by `Discriminator IN (<bare>, <qualified>)` plus a `ChangeVersion` window with `ORDER BY ChangeVersion`, for all descriptor kinds sharing the table, so `Discriminator` leads and `ChangeVersion` completes the windowed seek.
 Because the two-value `IN` produces one seek range per discriminator, the index returns rows in `ChangeVersion` order only within each range; the global `ORDER BY ChangeVersion` still requires the engine to merge or sort the windowed rows, and implementations must not rely on the index alone for the final ordering.
-This mirrors the `Discriminator`-leading seek rationale of `IX_Descriptor_Discriminator_ContentVersion` on the live shared table, whose single-value `Discriminator` equality does allow a fully ordered range scan.
+The live shared table's `IX_Descriptor_Discriminator_ContentVersion` shares this `Discriminator`-leading shape, though its implemented consumers are the identity probes rather than the live change-version window, which predicates the denormalized `ResourceKeyId` instead (see § "Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror").
+The tracked table carries no `ResourceKeyId`, so `Discriminator` remains its only type qualifier.
 After category selection, emit only when the model set contains the `SharedDescriptor` tracked-change table; a shared table present without its `Discriminator` system column raises in the strict pipeline and skips in the default pipeline, mirroring category 1's missing-column contract.
 A `(Discriminator, OldNamespace)` variant was measured and rejected: after the `Discriminator` seek, the residual namespace `LIKE` filters a single kind's tombstones, and only two descriptors use `NamespaceBased` `ReadChanges` authorization.
 
@@ -2090,7 +2091,7 @@ FROM page_ids;
 -- The rest of the reconstitution queries are omitted for brevity.
 ```
 
-Descriptor endpoints need to join with `dms.Descriptor` in order to emit the range filter leveraging the `IX_Descriptor_Discriminator_ContentVersion`:
+Descriptor endpoints page directly on `dms.Descriptor`, which carries the denormalized `ResourceKeyId` type authority and the mirrored `ContentVersion`, so the page query filters and range-scans one table without a `dms.Document` join (`DescriptorQueryPageKeysetPlanner`):
 
 ```sql
 SELECT 
@@ -2109,14 +2110,10 @@ FROM
   (
     SELECT r."DocumentId" 
     FROM 
-      "dms"."Document" r 
-      INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = r."DocumentId" 
+      "dms"."Descriptor" r 
     WHERE 
-      d."Discriminator" = @discriminator -- Required for IX_Descriptor_Discriminator_ContentVersion to be used as a range seek
-      AND d.ContentVersion >= @MinChangeVersion AND d.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
-      AND (
-        r."ResourceKeyId" = @resourceKeyId
-      ) 
+      r."ResourceKeyId" = @resourceKeyId -- Denormalized type authority; no dms.Document join required
+      AND r."ContentVersion" >= @MinChangeVersion AND r."ContentVersion" <= @MaxChangeVersion -- Range filter on ContentVersion
     ORDER BY 
       r."DocumentId" ASC 
     LIMIT 
@@ -2127,6 +2124,8 @@ FROM
 ORDER BY 
   page_document_ids."DocumentId" ASC;
 ```
+
+The `ResourceKeyId` window predicate has no dedicated serving index; `IX_Descriptor_Discriminator_ContentVersion` serves the `Discriminator`-leading probes of § "`*_RefKey` index ordering for `/deletes`", not this window (see § "Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror" for the re-key follow-up condition).
 
 The planner uses this path for every resource with a `MirroredContentVersion` column in its `DbTableModel` — which is every `StorageKind = RelationalTables` resource. There is no fallback path; the mirror is universal for in-scope tables.
 
