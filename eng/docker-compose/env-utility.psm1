@@ -466,7 +466,12 @@ function Write-DerivedEnvFile {
         $linePattern = "(?m)^[ \t]*$([Regex]::Escape($key))=.*$"
         $newLine = "$key=$value"
         if ([Regex]::IsMatch($content, $linePattern)) {
-            $content = [Regex]::Replace($content, $linePattern, $newLine)
+            # A match evaluator returns $newLine literally. The string-replacement overload of
+            # Regex.Replace instead treats it as a REPLACEMENT PATTERN, where sequences like $&, $0,
+            # $', and $` are substitution directives (e.g. $& re-inserts the entire matched text) -
+            # a caller-authored value containing one of those literal sequences (a password, for
+            # instance) would otherwise be corrupted rather than written verbatim as documented.
+            $content = [Regex]::Replace($content, $linePattern, { param($matchInfo) $newLine })
         }
         else {
             if ($content.Length -gt 0 -and -not $content.EndsWith("`n")) { $content += "`n" }
@@ -1197,6 +1202,56 @@ function Find-ConnectionStringLegacyTokenSpan {
     return $null
 }
 
+function Get-DotenvClosingQuoteIndex {
+    <#
+    .SYNOPSIS
+        Returns the index of the closing dotenv-level quote character that wraps $RawValue's whole
+        value, or -1 when $RawValue is not dotenv-quoted at all (or its trailing content after the
+        closing quote is neither empty nor a "#"-led inline comment, meaning the leading quote
+        character is not actually a wrapper).
+
+    .DESCRIPTION
+        Get-EnvValue returns the raw dotenv value verbatim - including any outer quote wrapper AND
+        any trailing inline comment after it (ReadValuesFromEnvFile does not strip either). Mirrors
+        ConvertFrom-ComposeEnvironmentValue's own closing-quote-detection algorithm exactly (a
+        backslash-escape-aware scan for the matching quote character, then requiring the trailing
+        content after it to be empty or start with "#") so this migration's wrapper detection agrees
+        with how Compose itself would actually parse the same value - including a valid trailing
+        " # comment" after the closing quote (Round 11 Blocker 2), which a simpler
+        "last character equals the opening quote" check mistakes for proof the value is not quoted at
+        all, since the actual last character is part of the comment instead.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$RawValue
+    )
+
+    if ($RawValue.Length -lt 1 -or $RawValue[0] -notin @("'", '"')) {
+        return -1
+    }
+
+    $quoteChar = $RawValue[0]
+    $escaped = $false
+    for ($index = 1; $index -lt $RawValue.Length; $index++) {
+        $character = $RawValue[$index]
+        if ($character -eq "\" -and -not $escaped) {
+            $escaped = $true
+            continue
+        }
+        if ($character -eq $quoteChar -and -not $escaped) {
+            $trailingContent = $RawValue.Substring($index + 1).Trim()
+            if ([string]::IsNullOrEmpty($trailingContent) -or $trailingContent.StartsWith("#")) {
+                return $index
+            }
+            return -1
+        }
+        $escaped = $false
+    }
+
+    return -1
+}
+
 function Move-EnvFileKeyBeforeAnotherKey {
     <#
     .SYNOPSIS
@@ -1379,19 +1434,20 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     $intendedConnectionString = $currentConnectionString
     if ($SeparateConfigDatabase) {
         # Get-EnvValue returns the raw dotenv value verbatim, including any outer dotenv-level quote
-        # wrapper (e.g. "host=...;database=${TOKEN};" as a whole). That outer quote character must be
-        # stripped before the connection-string-level scanner runs, or its leading quote is mistaken
-        # for an ADO.NET value-quote, swallowing every real ';' inside as "quoted" and finding no
-        # segments at all (Round 10 Blocker 1). A connection-string value never legitimately starts
-        # with a quote character itself - an ADO.NET key always starts with an identifier - so a
-        # leading quote unambiguously signals a dotenv-level wrapper, not connection-string content.
-        # The wrapper is preserved exactly: only the inner span is scanned, and the replacement is
-        # spliced back into the original, still-wrapped string.
-        $dotenvWrapped =
-            $currentConnectionString.Length -ge 2 -and
-            $currentConnectionString[0] -in @("'", '"') -and
-            $currentConnectionString[-1] -eq $currentConnectionString[0]
-        $searchText = if ($dotenvWrapped) { $currentConnectionString.Substring(1, $currentConnectionString.Length - 2) } else { $currentConnectionString }
+        # wrapper (e.g. "host=...;database=${TOKEN};" as a whole) AND any trailing inline comment after
+        # it. That outer quote character must be stripped before the connection-string-level scanner
+        # runs, or its leading quote is mistaken for an ADO.NET value-quote, swallowing every real ';'
+        # inside as "quoted" and finding no segments at all (Round 10 Blocker 1). A connection-string
+        # value never legitimately starts with a quote character itself - an ADO.NET key always starts
+        # with an identifier - so a leading quote unambiguously signals a dotenv-level wrapper, not
+        # connection-string content. Get-DotenvClosingQuoteIndex locates the true closing quote the
+        # same escape/comment-aware way ConvertFrom-ComposeEnvironmentValue does, so a valid trailing
+        # " # comment" after the closing quote (Round 11 Blocker 2) does not defeat detection. The
+        # wrapper (and any trailing comment) is preserved exactly: only the inner span is scanned, and
+        # the replacement is spliced back into the original, still-wrapped string.
+        $closingQuoteIndex = Get-DotenvClosingQuoteIndex -RawValue $currentConnectionString
+        $dotenvWrapped = $closingQuoteIndex -ge 0
+        $searchText = if ($dotenvWrapped) { $currentConnectionString.Substring(1, $closingQuoteIndex - 1) } else { $currentConnectionString }
         $searchOffset = if ($dotenvWrapped) { 1 } else { 0 }
 
         # Quote-aware: a plain substring/regex search would mistake a ';' or '=' inside an unrelated
