@@ -944,9 +944,14 @@ function Resolve-DatabaseEngineEnvironmentFile {
         directory (eng/docker-compose).
 
     .PARAMETER SkipMssqlCmsDatabaseValidation
-        Skips the CMS/OpenIddict shared-database invariant only for a dedicated database-only
-        diagnostic startup or teardown, where neither CMS nor OpenIddict is initialized. Full-stack,
-        configure, provision, and wrapper startup flows must leave this off.
+        Skips the legacy CMS/OpenIddict shared-database invariant. Two caller classes pass $true:
+        the dedicated database-only diagnostic startup and teardown, where neither CMS nor
+        OpenIddict is initialized so there is nothing to validate; and the CMS-participating
+        start-script branches and the wrapper's pre-resolution chain, where the check is superseded
+        rather than absent - they run the stricter, topology-aware
+        Confirm-CmsDatabaseTopologyAgreement immediately afterwards (DMS-1270). Every other caller
+        (the configure, provision, and E2E environment resolutions) leaves it off, keeping the
+        legacy check in force for shared-mode files.
 
         The invariant is also skipped automatically, regardless of this switch, when the base env file
         declares the separate CMS database topology (DMS-1270). That check asserts a *shared-mode*
