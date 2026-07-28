@@ -1998,4 +1998,103 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             $buildScript | Should -Match '(?s)if \(\$DataStandardVersionSupplied\) \{\s*\$bootstrapArgs\.DataStandardVersion = \$DataStandardVersion\s*\}'
         }
     }
+
+    Context "public entry-point -SeparateConfigDatabase surface and published-wrapper forwarding (DMS-1270 Phase 3)" {
+        BeforeAll {
+            # Isolated published-wrapper fixture, modeled on New-CompositionProbeRepo: only the
+            # published entry script, the shared wrapper module, and the composition prerequisites
+            # are staged, so the wrapper's isolated-fixture degrade path returns right after the
+            # single start invocation. The stubbed start-published-dms.ps1 records the engine and
+            # -SeparateConfigDatabase state it was bound with, so these tests prove the switch
+            # survives the public-wrapper -> start-script boundary rather than merely appearing in
+            # a hashtable.
+            function script:New-PublishedForwardProbeRepo {
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    "bootstrap-published-dms.ps1",
+                    "env-utility.psm1",
+                    "database-safety.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61",
+                    # A -DatabaseEngine mssql wrapper run composes this engine overlay onto the base
+                    # env before any phase command, so the fixture needs it to reach the start stub.
+                    ".env.mssql"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+SCHEMA_PACKAGES='[{"name":"Custom.Base.Package","version":"9.9.9"}]'
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $forwardLogPath = Join-Path $repoRoot "forward.log"
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [string] `$IdentityProvider,
+    [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separate=`$(`$SeparateConfigDatabase.IsPresent)"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "start-published-dms.ps1") -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot       = $repoRoot
+                    WrapperScript  = Join-Path $dockerComposeRoot "bootstrap-published-dms.ps1"
+                    ForwardLogPath = $forwardLogPath
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -ne $script:publishedForwardRepo -and (Test-Path -LiteralPath $script:publishedForwardRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:publishedForwardRepo.RepoRoot -Recurse -Force
+            }
+            $script:publishedForwardRepo = $null
+        }
+
+        # The load-bearing surface check for all three public entry points: parses each script's
+        # top-level param block from the AST, so removing the public declaration fails here even if
+        # internal references to the variable remain (which the text-matching forwarding tests
+        # elsewhere would not notice).
+        It "declares -SeparateConfigDatabase on its public parameter surface: <_>" -ForEach @(
+            'eng/docker-compose/bootstrap-local-dms.ps1',
+            'eng/docker-compose/bootstrap-published-dms.ps1',
+            'build-dms.ps1'
+        ) {
+            $params = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceRepoRoot $_)
+            $params | Should -Contain "SeparateConfigDatabase" -Because "the switch is part of this entry point's public contract (DMS-1270 Phase 3)"
+        }
+
+        It "bootstrap-published-dms.ps1 forwards -SeparateConfigDatabase to the start script for <_>" -ForEach @('postgresql', 'mssql') {
+            $script:publishedForwardRepo = New-PublishedForwardProbeRepo
+
+            & $script:publishedForwardRepo.WrapperScript -DatabaseEngine $_ -SeparateConfigDatabase *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $script:publishedForwardRepo.ForwardLogPath) |
+                Should -Contain "engine=$_ separate=True" -Because "the start script must receive both the engine and the topology switch the public wrapper was invoked with"
+        }
+
+        It "bootstrap-published-dms.ps1 does not forward -SeparateConfigDatabase when it was not requested, for <_>" -ForEach @('postgresql', 'mssql') {
+            $script:publishedForwardRepo = New-PublishedForwardProbeRepo
+
+            & $script:publishedForwardRepo.WrapperScript -DatabaseEngine $_ *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $script:publishedForwardRepo.ForwardLogPath) |
+                Should -Contain "engine=$_ separate=False" -Because "shared mode must remain the default all the way through the public wrapper"
+        }
+    }
 }

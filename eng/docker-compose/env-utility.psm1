@@ -951,10 +951,20 @@ function Resolve-DatabaseEngineEnvironmentFile {
         The invariant is also skipped automatically, regardless of this switch, when the base env file
         declares the separate CMS database topology (DMS-1270). That check asserts a *shared-mode*
         invariant - CMS and OpenIddict must both target MSSQL_DB_NAME - which is by definition false
-        once a run has opted into a dedicated CMS database. Without this, the configure and provision
-        phases (which own the DMS datastore, take no part in the CMS seam, and so pass no switch here)
-        would reject the very configuration the preceding start phase established. Detected from the
-        internal topology marker, so only a file this design itself wrote can trigger it.
+        for a file declaring a dedicated CMS database, whatever the file's provenance. The marker
+        (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true) is a raw topology declaration read from the
+        file's own content, not an authenticity signal: a hand-authored or copied file carrying it is
+        exempted exactly like one this design's own migration wrote, and that is the intended
+        semantics - the file has declared itself outside the shared-mode contract, and the paths
+        that actually operate CMS validate it with the topology-aware
+        Confirm-CmsDatabaseTopologyAgreement instead.
+
+        This matters for every caller that passes no switch here - the configure and provision
+        phases, build-dms.ps1's E2E environment resolutions, and provision-e2e-database.ps1 - all of
+        which own the DMS datastore and take no part in the CMS seam. Without the exemption they
+        would reject the very configuration a preceding -SeparateConfigDatabase start phase
+        established. It is read raw (never through Compose precedence), so an ambient shell variable
+        cannot switch the invariant off for a file that does not itself carry the marker.
     #>
     param(
         [string]$DatabaseEngine = "postgresql",
