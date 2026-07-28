@@ -288,6 +288,15 @@ public class ApiClientModule : IEndpointModule
 
         // Get existing API client
         ApiClientGetResult existingResult = await apiClientRepository.GetApiClientById(id);
+        if (existingResult is ApiClientGetResult.FailureUnknown existingFailure)
+        {
+            logger.LogError(
+                "Error retrieving ApiClient {Id}: {Message}",
+                id,
+                SanitizeForLog(existingFailure.FailureMessage)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
         if (existingResult is not ApiClientGetResult.Success existingSuccess)
         {
             return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
@@ -404,10 +413,7 @@ public class ApiClientModule : IEndpointModule
                     "Client not found in identity provider: {Failure}",
                     SanitizeForLog(notFound.FailureMessage)
                 );
-                return FailureResults.NotFound(
-                    "ApiClient not found in identity provider",
-                    httpContext.TraceIdentifier
-                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientUpdateResult.Success updateSuccess:
                 // Persist the new UUID issued by the identity provider after delete-and-recreate
                 command.ClientUuid = updateSuccess.ClientUuid;
@@ -527,6 +533,15 @@ public class ApiClientModule : IEndpointModule
 
         // Get the API client to retrieve the ClientUuid for identity provider deletion
         ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
+        if (getResult is ApiClientGetResult.FailureUnknown getFailure)
+        {
+            logger.LogError(
+                "Error retrieving ApiClient {Id}: {Message}",
+                id,
+                SanitizeForLog(getFailure.FailureMessage)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
         if (getResult is not ApiClientGetResult.Success getSuccess)
         {
             return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
@@ -671,6 +686,15 @@ public class ApiClientModule : IEndpointModule
 
         // Get the API client to retrieve the ClientUuid and ClientId for identity provider reset
         ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
+        if (getResult is ApiClientGetResult.FailureUnknown getFailure)
+        {
+            logger.LogError(
+                "Error retrieving ApiClient {Id}: {Message}",
+                id,
+                SanitizeForLog(getFailure.FailureMessage)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
         if (getResult is not ApiClientGetResult.Success getSuccess)
         {
             return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
@@ -700,8 +724,9 @@ public class ApiClientModule : IEndpointModule
                         Secret = resetSuccess.ClientSecret,
                     }
                 ),
-                ClientResetResult.FailureClientNotFound => FailureResults.NotFound(
-                    "ApiClient not found in identity provider",
+                ClientResetResult.FailureClientNotFound notFound => HandleStoredClientMissingOnReset(
+                    notFound,
+                    logger,
                     httpContext.TraceIdentifier
                 ),
                 ClientResetResult.FailureIdentityProvider failureIdentityProvider =>
@@ -739,5 +764,19 @@ public class ApiClientModule : IEndpointModule
         );
 
         return FailureResults.BadGateway("Identity provider error during credential reset", traceIdentifier);
+    }
+
+    private static IResult HandleStoredClientMissingOnReset(
+        ClientResetResult.FailureClientNotFound notFound,
+        ILogger<ApiClientModule> logger,
+        string traceIdentifier
+    )
+    {
+        logger.LogError(
+            "Client not found in identity provider during credential reset: {Message}",
+            SanitizeForLog(notFound.FailureMessage)
+        );
+
+        return FailureResults.Unknown(traceIdentifier);
     }
 }

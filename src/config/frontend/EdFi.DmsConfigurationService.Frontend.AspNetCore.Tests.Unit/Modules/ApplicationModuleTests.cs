@@ -1860,6 +1860,33 @@ public class ApplicationModuleTests
             A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
                 .Returns(new ProfileGetResult.FailureNotFound());
 
+            // Local capture lists rather than MustNotHaveHappened: the shared fixture instance
+            // accumulates call history from sibling tests that legitimately update the client.
+            List<string> updatedClientUuids = [];
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => updatedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+
+            List<ApplicationUpdateCommand> applicationUpdates = [];
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Invokes(call => applicationUpdates.Add(call.GetArgument<ApplicationUpdateCommand>(0)!))
+                .Returns(new ApplicationUpdateResult.FailureProfileNotFound());
+
             using var client = SetUpClient();
 
             // Act
@@ -1887,25 +1914,8 @@ public class ApplicationModuleTests
 
             // Assert - the identity provider client was never mutated for an invalid
             // profile reference, so a rejected update cannot leave the client out of sync
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<long[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
+            updatedClientUuids.Should().BeEmpty();
+            applicationUpdates.Should().BeEmpty();
         }
     }
 
@@ -1961,15 +1971,34 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_not_found_when_application_client_is_missing_in_identity_provider()
+        public async Task Should_return_internal_server_error_when_application_client_is_missing_in_identity_provider()
         {
+            const string Sentinel = "SENTINEL_APPLICATION_RESET_CLIENT_MISSING_must_not_leak";
             using var client = SetUpClient();
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
-                .Returns(new ClientResetResult.FailureClientNotFound("Client not found"));
+                .Returns(new ClientResetResult.FailureClientNotFound(Sentinel));
 
             var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
-            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            resetResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await resetResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:internal-server-error",
+                  "title": "Internal Server Error",
+                  "status": 500,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
 
         [Test]

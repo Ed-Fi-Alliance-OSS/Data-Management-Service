@@ -692,6 +692,88 @@ public class ApiClientModuleTests
     }
 
     [TestFixture]
+    public class Given_ApiClient_Lookup_Failures : ApiClientModuleTests
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_LOOKUP_must_not_leak";
+
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(new ApiClientGetResult.FailureUnknown(Sentinel));
+        }
+
+        [Test]
+        public async Task It_returns_internal_server_error_when_lookup_fails_on_update()
+        {
+            using var client = SetUpClient();
+
+            var updateResponse = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(
+                    """
+                    {
+                      "id": 1,
+                      "applicationId": 1,
+                      "name": "Updated Client",
+                      "isApproved": true,
+                      "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await AssertContract(
+                updateResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await updateResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_internal_server_error_when_lookup_fails_on_delete()
+        {
+            using var client = SetUpClient();
+
+            var deleteResponse = await client.DeleteAsync("/v3/apiClients/1");
+
+            await AssertContract(
+                deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await deleteResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_internal_server_error_when_lookup_fails_on_reset_credential()
+        {
+            using var client = SetUpClient();
+
+            var resetResponse = await client.PutAsync(
+                "/v3/apiClients/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            await AssertContract(
+                resetResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await resetResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+    }
+
+    [TestFixture]
     public class Given_Repository_Failures : ApiClientModuleTests
     {
         [SetUp]
@@ -1702,6 +1784,52 @@ public class ApiClientModuleTests
             // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         }
+
+        [Test]
+        public async Task It_returns_internal_server_error_when_stored_client_is_missing_on_update()
+        {
+            const string Sentinel = "SENTINEL_IDP_CLIENT_MISSING_UPDATE_must_not_leak";
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound(Sentinel));
+
+            using var client = SetUpClient();
+
+            var updateResponse = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(
+                    """
+                    {
+                      "id": 1,
+                      "applicationId": 1,
+                      "name": "Updated Client",
+                      "isApproved": true,
+                      "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await AssertContract(
+                updateResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await updateResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
     }
 
     [TestFixture]
@@ -1755,11 +1883,12 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_not_found_when_client_not_found_in_identity_provider()
+        public async Task It_returns_internal_server_error_when_stored_client_is_missing_in_identity_provider()
         {
             // Arrange
+            const string Sentinel = "SENTINEL_RESET_CLIENT_MISSING_must_not_leak";
             A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>.Ignored))
-                .Returns(new ClientResetResult.FailureClientNotFound("Client not found"));
+                .Returns(new ClientResetResult.FailureClientNotFound(Sentinel));
 
             using var client = SetUpClient();
 
@@ -1770,7 +1899,14 @@ public class ApiClientModuleTests
             );
 
             // Assert
-            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await AssertContract(
+                resetResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await resetResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
         }
 
         [Test]
