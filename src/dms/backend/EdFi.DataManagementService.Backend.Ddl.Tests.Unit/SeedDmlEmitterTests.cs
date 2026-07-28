@@ -398,6 +398,53 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
+    public void It_should_emit_data_store_identity_singleton_insert_with_generated_uuid()
+    {
+        _ddl.Should().Contain("-- DataStoreIdentity singleton insert-if-missing");
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO \"dms\".\"DataStoreIdentity\" (\"DataStoreIdentitySingletonId\", \"SourceIdentity\")"
+            );
+        _ddl.Should().Contain("VALUES (1, gen_random_uuid())");
+        _ddl.Should().Contain("ON CONFLICT (\"DataStoreIdentitySingletonId\") DO NOTHING;");
+    }
+
+    [Test]
+    public void It_should_emit_document_cache_state_singleton_insert_as_disabled_with_clear_latch()
+    {
+        _ddl.Should().Contain("-- DocumentCacheState singleton insert-if-missing");
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO \"dms\".\"DocumentCacheState\" (\"StateId\", \"ProjectionLifecycleState\", \"CacheAheadRecoveryRequired\")"
+            );
+        _ddl.Should().Contain("VALUES (1, 'Disabled', false)");
+        _ddl.Should().Contain("ON CONFLICT (\"StateId\") DO NOTHING;");
+    }
+
+    [Test]
+    public void It_should_emit_singleton_initialization_before_schema_fingerprint_rows()
+    {
+        var dataStoreIdentity = _ddl.IndexOf(
+            "INSERT INTO \"dms\".\"DataStoreIdentity\"",
+            StringComparison.Ordinal
+        );
+        var documentCacheState = _ddl.IndexOf(
+            "INSERT INTO \"dms\".\"DocumentCacheState\"",
+            StringComparison.Ordinal
+        );
+        var resourceKey = _ddl.IndexOf("INSERT INTO \"dms\".\"ResourceKey\"", StringComparison.Ordinal);
+        var effectiveSchema = _ddl.IndexOf(
+            "INSERT INTO \"dms\".\"EffectiveSchema\"",
+            StringComparison.Ordinal
+        );
+
+        dataStoreIdentity.Should().BeGreaterOrEqualTo(0);
+        documentCacheState.Should().BeGreaterThan(dataStoreIdentity);
+        resourceKey.Should().BeGreaterThan(documentCacheState);
+        effectiveSchema.Should().BeGreaterThan(resourceKey);
+    }
+
+    [Test]
     public void It_should_emit_resource_key_inserts_with_on_conflict_do_nothing()
     {
         _ddl.Should().Contain("ON CONFLICT (\"ResourceKeyId\") DO NOTHING;");
@@ -540,6 +587,53 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     {
         _ddl.Should().NotContain("Preflight: fail fast");
         _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
+    }
+
+    [Test]
+    public void It_should_emit_data_store_identity_singleton_insert_with_generated_uuid()
+    {
+        _ddl.Should().Contain("-- DataStoreIdentity singleton insert-if-missing");
+        _ddl.Should()
+            .Contain(
+                "IF NOT EXISTS (SELECT 1 FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1)"
+            );
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])"
+            );
+        _ddl.Should().Contain("VALUES (1, NEWID());");
+    }
+
+    [Test]
+    public void It_should_emit_document_cache_state_singleton_insert_as_disabled_with_clear_latch()
+    {
+        _ddl.Should().Contain("-- DocumentCacheState singleton insert-if-missing");
+        _ddl.Should().Contain("IF NOT EXISTS (SELECT 1 FROM [dms].[DocumentCacheState] WHERE [StateId] = 1)");
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO [dms].[DocumentCacheState] ([StateId], [ProjectionLifecycleState], [CacheAheadRecoveryRequired])"
+            );
+        _ddl.Should().Contain("VALUES (1, N'Disabled', 0);");
+    }
+
+    [Test]
+    public void It_should_emit_singleton_initialization_before_schema_fingerprint_rows()
+    {
+        var dataStoreIdentity = _ddl.IndexOf(
+            "INSERT INTO [dms].[DataStoreIdentity]",
+            StringComparison.Ordinal
+        );
+        var documentCacheState = _ddl.IndexOf(
+            "INSERT INTO [dms].[DocumentCacheState]",
+            StringComparison.Ordinal
+        );
+        var resourceKey = _ddl.IndexOf("INSERT INTO [dms].[ResourceKey]", StringComparison.Ordinal);
+        var effectiveSchema = _ddl.IndexOf("INSERT INTO [dms].[EffectiveSchema]", StringComparison.Ordinal);
+
+        dataStoreIdentity.Should().BeGreaterOrEqualTo(0);
+        documentCacheState.Should().BeGreaterThan(dataStoreIdentity);
+        resourceKey.Should().BeGreaterThan(documentCacheState);
+        effectiveSchema.Should().BeGreaterThan(resourceKey);
     }
 
     [Test]

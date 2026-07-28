@@ -11,7 +11,8 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// Emits deterministic seed DML for the core <c>dms.*</c> tables.
 /// <para>
 /// This includes insert-if-missing statements and inline validation for
-/// <c>dms.ResourceKey</c>, <c>dms.EffectiveSchema</c>, and <c>dms.SchemaComponent</c>.
+/// <c>dms.DataStoreIdentity</c>, <c>dms.DocumentCacheState</c>, <c>dms.ResourceKey</c>,
+/// <c>dms.EffectiveSchema</c>, and <c>dms.SchemaComponent</c>.
 /// </para>
 /// </summary>
 /// <remarks>
@@ -41,6 +42,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     /// </summary>
     private const int MaxValuesRows = 999;
 
+    private static readonly DbTableName _dataStoreIdentityTable = DmsTableNames.DataStoreIdentity;
+    private static readonly DbTableName _documentCacheStateTable = DmsTableNames.DocumentCacheState;
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _effectiveSchemaTable = EffectiveSchemaTableDefinition.Table;
     private static readonly DbColumnName _effectiveSchemaSingletonIdColumn =
@@ -99,6 +102,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         writer.WritePhaseHeader(7, "Seed Data (insert-if-missing + validation)");
 
+        EmitDataStoreIdentityInsert(writer);
+        EmitDocumentCacheStateInsert(writer);
         EmitResourceKeySeeds(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitResourceKeyValidation(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitEffectiveSchemaInsert(writer, effectiveSchema);
@@ -188,6 +193,71 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine("END");
             }
             writer.AppendLine("END");
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits insert-if-missing initialization for the stable <c>dms.DataStoreIdentity</c> singleton.
+    /// </summary>
+    private void EmitDataStoreIdentityInsert(SqlWriter writer)
+    {
+        var table = _dialect.QualifyTable(_dataStoreIdentityTable);
+        var singletonColumn = Quote("DataStoreIdentitySingletonId");
+        var sourceIdentityColumn = Quote("SourceIdentity");
+
+        writer.AppendLine("-- DataStoreIdentity singleton insert-if-missing");
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"INSERT INTO {table} ({singletonColumn}, {sourceIdentityColumn})");
+            writer.AppendLine("VALUES (1, gen_random_uuid())");
+            writer.AppendLine($"ON CONFLICT ({singletonColumn}) DO NOTHING;");
+        }
+        else
+        {
+            writer.AppendLine($"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {singletonColumn} = 1)");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INSERT INTO {table} ({singletonColumn}, {sourceIdentityColumn})");
+                writer.AppendLine("VALUES (1, NEWID());");
+            }
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits insert-if-missing initialization for the <c>dms.DocumentCacheState</c> singleton.
+    /// </summary>
+    private void EmitDocumentCacheStateInsert(SqlWriter writer)
+    {
+        var table = _dialect.QualifyTable(_documentCacheStateTable);
+        var stateIdColumn = Quote("StateId");
+        var lifecycleColumn = Quote("ProjectionLifecycleState");
+        var recoveryRequiredColumn = Quote("CacheAheadRecoveryRequired");
+        var disabledLiteral = _dialect.RenderStringLiteral("Disabled");
+        var clearLatchLiteral = _dialect.RenderBooleanLiteral(false);
+
+        writer.AppendLine("-- DocumentCacheState singleton insert-if-missing");
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine(
+                $"INSERT INTO {table} ({stateIdColumn}, {lifecycleColumn}, {recoveryRequiredColumn})"
+            );
+            writer.AppendLine($"VALUES (1, {disabledLiteral}, {clearLatchLiteral})");
+            writer.AppendLine($"ON CONFLICT ({stateIdColumn}) DO NOTHING;");
+        }
+        else
+        {
+            writer.AppendLine($"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {stateIdColumn} = 1)");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    $"INSERT INTO {table} ({stateIdColumn}, {lifecycleColumn}, {recoveryRequiredColumn})"
+                );
+                writer.AppendLine($"VALUES (1, {disabledLiteral}, {clearLatchLiteral});");
+            }
         }
         writer.AppendLine();
     }

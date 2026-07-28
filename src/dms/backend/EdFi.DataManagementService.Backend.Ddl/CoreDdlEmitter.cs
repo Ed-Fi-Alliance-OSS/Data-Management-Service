@@ -71,10 +71,14 @@ public sealed class CoreDdlEmitter
     }
 
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
+    private const string DocumentCacheUuidValidationTriggerName = "TR_DocumentCache_ValidateDocumentUuid";
 
+    private static readonly DbTableName _dataStoreIdentityTable = DmsTableNames.DataStoreIdentity;
     private static readonly DbTableName _descriptorTable = DmsTableNames.Descriptor;
     private static readonly DbTableName _documentTable = DmsTableNames.Document;
     private static readonly DbTableName _documentCacheTable = DmsTableNames.DocumentCache;
+    private static readonly DbTableName _documentCacheStateTable = DmsTableNames.DocumentCacheState;
+    private static readonly DbTableName _documentProjectionWorkTable = DmsTableNames.DocumentProjectionWork;
     private static readonly DbTableName _effectiveSchemaTable = EffectiveSchemaTableDefinition.Table;
     private static readonly DbColumnName _effectiveSchemaSingletonIdColumn =
         EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId;
@@ -101,6 +105,15 @@ public sealed class CoreDdlEmitter
     /// </summary>
     private string StringType(int maxLength) =>
         $"{_dialect.Rules.ScalarTypeDefaults.StringType}({maxLength})";
+
+    /// <summary>
+    /// Gets the exact ASCII lifecycle-token type. SQL Server intentionally uses varchar plus
+    /// binary collation so DATALENGTH checks match the fixed token byte lengths.
+    /// </summary>
+    private string LifecycleStateType =>
+        _dialect.Rules.Dialect == SqlDialect.Mssql
+            ? "varchar(16) COLLATE Latin1_General_100_BIN2"
+            : StringType(16);
 
     /// <summary>
     /// Gets the dialect default date scalar type.
@@ -291,13 +304,51 @@ public sealed class CoreDdlEmitter
         writer.WritePhaseHeader(5, "Tables (PK/UNIQUE/CHECK only, no cross-table FKs)");
 
         // Alphabetical order by table name within the dms schema.
+        EmitDataStoreIdentityTable(writer);
         EmitDescriptorTable(writer);
         EmitDocumentTable(writer);
         EmitDocumentCacheTable(writer);
+        EmitDocumentCacheStateTable(writer);
+        EmitDocumentProjectionWorkTable(writer);
         EmitEffectiveSchemaTable(writer);
         EmitReferentialIdentityTable(writer);
         EmitResourceKeyTable(writer);
         EmitSchemaComponentTable(writer);
+    }
+
+    /// <summary>
+    /// Emits the <c>dms.DataStoreIdentity</c> singleton table definition.
+    /// </summary>
+    private void EmitDataStoreIdentityTable(SqlWriter writer)
+    {
+        writer.AppendLine(_dialect.CreateTableHeader(_dataStoreIdentityTable));
+        writer.AppendLine("(");
+        using (writer.Indent())
+        {
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("DataStoreIdentitySingletonId"), _dialect.SmallintColumnType, false)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("SourceIdentity"), _dialect.UuidColumnType, false)},"
+            );
+            writer.AppendLine(
+                _dialect.RenderNamedPrimaryKeyClause(
+                    "PK_DataStoreIdentity",
+                    [Col("DataStoreIdentitySingletonId")]
+                )
+            );
+        }
+        writer.AppendLine(");");
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _dataStoreIdentityTable,
+                "CK_DataStoreIdentity_Singleton",
+                $"{Quote("DataStoreIdentitySingletonId")} = 1"
+            )
+        );
+        writer.AppendLine();
     }
 
     /// <summary>
@@ -429,8 +480,10 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("ResourceVersion"), StringType(32), false)},"
             );
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Etag"), StringType(64), false)},");
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("ContentVersion"), "bigint", false)},");
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("StreamEtag"), StringType(64), false)},"
+            );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("LastModifiedAt"), DateTimeType, false)},"
             );
@@ -443,15 +496,6 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_DocumentCache", [Col("DocumentId")]));
         }
         writer.AppendLine(");");
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddUniqueConstraint(
-                _documentCacheTable,
-                "UX_DocumentCache_DocumentUuid",
-                [Col("DocumentUuid")]
-            )
-        );
         writer.AppendLine();
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
@@ -474,6 +518,84 @@ public sealed class CoreDdlEmitter
                 )
             );
         }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the <c>dms.DocumentCacheState</c> singleton lifecycle table definition.
+    /// </summary>
+    private void EmitDocumentCacheStateTable(SqlWriter writer)
+    {
+        writer.AppendLine(_dialect.CreateTableHeader(_documentCacheStateTable));
+        writer.AppendLine("(");
+        using (writer.Indent())
+        {
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("StateId"), _dialect.SmallintColumnType, false)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("ProjectionLifecycleState"), LifecycleStateType, false)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("CacheAheadRecoveryRequired"), BooleanType, false)},"
+            );
+            writer.AppendLine(
+                _dialect.RenderNamedPrimaryKeyClause("PK_DocumentCacheState", [Col("StateId")])
+            );
+        }
+        writer.AppendLine(");");
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _documentCacheStateTable,
+                "CK_DocumentCacheState_Singleton",
+                $"{Quote("StateId")} = 1"
+            )
+        );
+        writer.AppendLine();
+
+        var lifecycleCheck =
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"{Quote("ProjectionLifecycleState")} IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')"
+                : $"({Quote("ProjectionLifecycleState")} = 'Disabled' AND DATALENGTH({Quote("ProjectionLifecycleState")}) = 8) OR ({Quote("ProjectionLifecycleState")} = 'Resetting' AND DATALENGTH({Quote("ProjectionLifecycleState")}) = 9) OR ({Quote("ProjectionLifecycleState")} = 'Rebuilding' AND DATALENGTH({Quote("ProjectionLifecycleState")}) = 10) OR ({Quote("ProjectionLifecycleState")} = 'Tracking' AND DATALENGTH({Quote("ProjectionLifecycleState")}) = 8)";
+
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _documentCacheStateTable,
+                "CK_DocumentCacheState_Lifecycle",
+                lifecycleCheck
+            )
+        );
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the <c>dms.DocumentProjectionWork</c> durable work table definition.
+    /// </summary>
+    private void EmitDocumentProjectionWorkTable(SqlWriter writer)
+    {
+        writer.AppendLine(_dialect.CreateTableHeader(_documentProjectionWorkTable));
+        writer.AppendLine("(");
+        using (writer.Indent())
+        {
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("RequiredContentVersion"), "bigint", false)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("FirstEnqueuedAt"), DateTimeType, false)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("LastEnqueuedAt"), DateTimeType, false)},"
+            );
+            writer.AppendLine(
+                _dialect.RenderNamedPrimaryKeyClause("PK_DocumentProjectionWork", [Col("DocumentId")])
+            );
+        }
+        writer.AppendLine(");");
         writer.AppendLine();
     }
 
@@ -749,6 +871,18 @@ public sealed class CoreDdlEmitter
 
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
+                _documentProjectionWorkTable,
+                "FK_DocumentProjectionWork_Document",
+                [Col("DocumentId")],
+                _documentTable,
+                [Col("DocumentId")],
+                onDelete: ReferentialAction.Cascade
+            )
+        );
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.AddForeignKeyConstraint(
                 _referentialIdentityTable,
                 "FK_ReferentialIdentity_Document",
                 [Col("DocumentId")],
@@ -802,6 +936,9 @@ public sealed class CoreDdlEmitter
         //   query path filters dms.Document by ResourceKeyId. FK_Document_ResourceKey
         //   needs no referencing-side index because dms.ResourceKey rows are never
         //   deleted or updated at runtime.
+        // - dms.DocumentCache (DocumentUuid): DocumentUuid is trigger-validated against
+        //   the owning dms.Document row by DocumentId and remains deliberately non-indexed.
+        // - dms.DocumentProjectionWork (DocumentId): covered by PK_DocumentProjectionWork.
         // - dms.ReferentialIdentity (DocumentId): DocumentId-keyed access (FK cascade from
         //   dms.Document and the identity-maintenance triggers) is served by the leading
         //   column of UX_ReferentialIdentity_DocumentId_ResourceKeyId.
@@ -826,9 +963,9 @@ public sealed class CoreDdlEmitter
 
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
-                _documentCacheTable,
-                "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
-                [Col("ProjectName"), Col("ResourceName"), Col("LastModifiedAt"), Col("DocumentId")]
+                _documentProjectionWorkTable,
+                "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId",
+                [Col("FirstEnqueuedAt"), Col("DocumentId")]
             )
         );
         writer.AppendLine();
@@ -850,11 +987,120 @@ public sealed class CoreDdlEmitter
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             EmitPgsqlDescriptorStampingTrigger(writer);
+            EmitPgsqlDocumentCacheUuidValidationTrigger(writer);
         }
         else
         {
             EmitMssqlDescriptorStampingTrigger(writer);
+            EmitMssqlDocumentCacheUuidValidationTrigger(writer);
         }
+    }
+
+    // ── DocumentCache UUID validation trigger ────────────────────────────
+
+    /// <summary>
+    /// Emits the PostgreSQL <c>dms.DocumentCache</c> UUID-validation function and trigger.
+    /// </summary>
+    private void EmitPgsqlDocumentCacheUuidValidationTrigger(SqlWriter writer)
+    {
+        var documentCacheTable = _dialect.QualifyTable(_documentCacheTable);
+        var documentTable = _dialect.QualifyTable(_documentTable);
+        var funcName =
+            $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_DocumentCache_ValidateDocumentUuid")}";
+
+        writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
+        writer.AppendLine("RETURNS TRIGGER AS $func$");
+        writer.AppendLine("DECLARE");
+        using (writer.Indent())
+        {
+            writer.AppendLine("_canonical_document_uuid uuid;");
+        }
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"SELECT {Quote("DocumentUuid")} INTO _canonical_document_uuid");
+            writer.AppendLine($"FROM {documentTable}");
+            writer.AppendLine($"WHERE {Quote("DocumentId")} = NEW.{Quote("DocumentId")};");
+            writer.AppendLine();
+            writer.AppendLine(
+                $"IF _canonical_document_uuid IS NOT NULL AND NEW.{Quote("DocumentUuid")} <> _canonical_document_uuid THEN"
+            );
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "RAISE EXCEPTION 'dms.DocumentCache.DocumentUuid diverges from the owning "
+                        + $"dms.Document row for DocumentId %', NEW.{Quote("DocumentId")};"
+                );
+            }
+            writer.AppendLine("END IF;");
+            writer.AppendLine();
+            writer.AppendLine("RETURN NEW;");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("$func$ LANGUAGE plpgsql SECURITY INVOKER;");
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.DropTriggerIfExists(_documentCacheTable, DocumentCacheUuidValidationTriggerName)
+        );
+        writer.AppendLine($"CREATE TRIGGER {Quote(DocumentCacheUuidValidationTriggerName)}");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"BEFORE INSERT OR UPDATE ON {documentCacheTable}");
+            writer.AppendLine("FOR EACH ROW");
+            writer.AppendLine($"EXECUTE FUNCTION {funcName}();");
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the SQL Server <c>dms.DocumentCache</c> UUID-validation trigger.
+    /// </summary>
+    private void EmitMssqlDocumentCacheUuidValidationTrigger(SqlWriter writer)
+    {
+        var documentCacheTable = _dialect.QualifyTable(_documentCacheTable);
+        var documentTable = _dialect.QualifyTable(_documentTable);
+        var triggerName =
+            $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DocumentCacheUuidValidationTriggerName)}";
+
+        writer.AppendLine("GO");
+        writer.AppendLine($"CREATE OR ALTER TRIGGER {triggerName}");
+        writer.AppendLine($"ON {documentCacheTable}");
+        writer.AppendLine("AFTER INSERT, UPDATE");
+        writer.AppendLine("AS");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("SET NOCOUNT ON;");
+            writer.AppendLine("IF EXISTS (");
+            using (writer.Indent())
+            {
+                writer.AppendLine("SELECT 1");
+                writer.AppendLine("FROM inserted i");
+                writer.Append("INNER JOIN ");
+                writer.Append(documentTable);
+                writer.Append(" d ON d.");
+                writer.Append(Quote("DocumentId"));
+                writer.Append(" = i.");
+                writer.AppendLine(Quote("DocumentId"));
+                writer.Append("WHERE i.");
+                writer.Append(Quote("DocumentUuid"));
+                writer.Append(" <> d.");
+                writer.AppendLine(Quote("DocumentUuid"));
+            }
+            writer.AppendLine(")");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;"
+                );
+            }
+            writer.AppendLine("END");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("GO");
+        writer.AppendLine();
     }
 
     // ── Descriptor stamping trigger (dms.Descriptor → dms.Document) ────────
