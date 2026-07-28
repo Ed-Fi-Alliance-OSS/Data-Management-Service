@@ -233,7 +233,14 @@ re-runnable without hidden disk artifacts.
 `EdFi.DataManagementService.Backend.Installer.dll` startup path is disabled or removed for the
 DMS-916 bootstrap flow, and DMS no longer exposes a `DeployDatabaseOnStartup` setting at all
 (removed by DMS-1239). Schema provisioning is entirely owned by this phase; DMS startup
-never performs it. Selector resolution rule: when exactly one DMS instance exists in CMS and no selector is
+never performs it. (Ownership here means the DMS relational datastore DDL. It does not extend to the
+pre-existing OpenIddict identity bootstrap: in the self-contained flow, `setup-openiddict.ps1 -InitDb`
+runs during the start phase and creates the Configuration Service's database when absent — the shared
+DMS datastore database by default, or the dedicated `edfi_configurationservice` database when the stack
+was started with `-SeparateConfigDatabase` (DMS-1270) — along with its `dmscs` identity tables, before
+CMS deploys its own schema there. That identity bootstrap predates this phase contract and is a
+start-phase concern; this phase neither performs nor validates it.) Selector resolution rule: when
+exactly one DMS instance exists in CMS and no selector is
 supplied, auto-select it; when multiple instances exist and no explicit `-DataStoreId` or `-SchoolYear` is
 provided, fail fast with guidance to supply an explicit selector. CMS lookup and database target resolution
 use the shared `-EnvironmentFile` local-settings resolver, so direct phase invocation and wrapper

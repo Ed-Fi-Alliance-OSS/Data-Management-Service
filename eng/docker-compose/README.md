@@ -196,11 +196,13 @@ override those base settings, and the overlay still composes on top of it.
 > See [Microsoft's SQL Server container upgrade guidance](https://learn.microsoft.com/en-us/sql/linux/containers/deploy?view=sql-server-ver17#upgrade-sql-server-in-containers).
 
 > [!NOTE]
-> **Database topology.** Local deployments host the Configuration Service and DMS in one shared
-> physical database on both engines: the CMS `dmscs` schema, and the self-contained (OpenIddict)
-> identity stores, live inside the same database as the DMS datastore (`POSTGRES_DB_NAME` on
-> PostgreSQL, `MSSQL_DB_NAME` on MSSQL) rather than a separate Configuration Service database. An
-> opt-in separate-CMS-database mode is planned (DMS-1270).
+> **Database topology.** By default, local deployments host the Configuration Service and DMS in
+> one shared physical database on both engines: the CMS `dmscs` schema, and the self-contained
+> (OpenIddict) identity stores, live inside the same database as the DMS datastore
+> (`POSTGRES_DB_NAME` on PostgreSQL, `MSSQL_DB_NAME` on MSSQL). An opt-in
+> `-SeparateConfigDatabase` switch moves the Configuration Service (and the OpenIddict stores)
+> into a dedicated `edfi_configurationservice` database instead — see
+> "Configuration Service database topology" below.
 
 A few things are specific to the MSSQL path:
 
@@ -208,9 +210,11 @@ A few things are specific to the MSSQL path:
   Service (CMS SQL Server backend), and the self-contained (OpenIddict) identity stores.
   `mssql.yml` swaps in for `postgresql.yml` - both define the same `db` service that
   `local-config.yml` health-gates on - and no PostgreSQL container runs. In the default
-  self-contained flow, `setup-openiddict.ps1 -InitDb` creates the shared database during the
-  infrastructure phase; CMS then deploys its `dmscs` schema before the provision phase deploys
-  the DMS relational schema into that database (see "Database topology" above).
+  self-contained flow, `setup-openiddict.ps1 -InitDb` creates the Configuration Service's
+  database during the infrastructure phase (the shared datastore database by default; the
+  dedicated one under `-SeparateConfigDatabase`); CMS then deploys its `dmscs` schema before the
+  provision phase deploys the DMS relational schema into the datastore database (see
+  "Configuration Service database topology" below).
 * **Relational backend only.** MSSQL is supported through the relational backend
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
@@ -255,6 +259,66 @@ After the stack is up, run the smoke tests the same way as for PostgreSQL:
 ```pwsh
 ../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
+
+## Configuration Service database topology
+
+The Configuration Service (CMS) — its `dmscs` schema and, in the self-contained flow, the
+OpenIddict identity stores — can live in one of two places, on either database engine:
+
+* **Shared (default).** CMS lives inside the DMS datastore database (`POSTGRES_DB_NAME` on
+  PostgreSQL, `MSSQL_DB_NAME` on MSSQL). This is today's behavior, unchanged; omitting the switch
+  changes nothing.
+* **Separate (opt-in).** Pass `-SeparateConfigDatabase` and CMS lives in a dedicated
+  `edfi_configurationservice` database on the same server container. The database is created
+  during the infrastructure phase if absent (`setup-openiddict.ps1 -InitDb` in the self-contained
+  flow; CMS's own startup deploy otherwise), and the DMS datastore database is not touched.
+
+The switch exists on every public entry point and is forwarded unchanged:
+`start-local-dms.ps1`, `start-published-dms.ps1`, `bootstrap-local-dms.ps1`,
+`bootstrap-published-dms.ps1`, and `build-dms.ps1 StartEnvironment`.
+
+```pwsh
+# Turnkey local stack with a dedicated CMS database (either engine)
+./bootstrap-local-dms.ps1 -SeparateConfigDatabase
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -SeparateConfigDatabase
+
+# Same through the repo-root build script
+./build-dms.ps1 StartEnvironment -SeparateConfigDatabase -DatabaseEngine postgresql
+```
+
+### Predicting the effective CMS database
+
+| Invocation shape | Switch omitted | With `-SeparateConfigDatabase` |
+|---|---|---|
+| `start-local-dms.ps1` / `start-published-dms.ps1`, default or `-InfraOnly` | Datastore database (`POSTGRES_DB_NAME` / `MSSQL_DB_NAME`) | `edfi_configurationservice` |
+| `start-published-dms.ps1` with `-IdentityProvider keycloak` and no `-EnableConfig`/`-InfraOnly` | CMS does not run at all (`published-config.yml` is opt-in on the published flow) | `edfi_configurationservice` — the switch also adds `published-config.yml` to the compose set so CMS actually runs to create it |
+| `-DmsOnly`, `-DbOnly`, teardown (`-d [-v]`) | No effect either way: these shapes never start CMS. The switch is accepted so continuation invocations of a running stack don't have to drop it; the stack keeps the topology it was started with |
+| `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` / `build-dms.ps1 StartEnvironment` | Same as the start script they invoke | Same — forwarded unchanged |
+
+Either way, the DMS relational datastore itself, `DATABASE_CONNECTION_STRING_ADMIN`, and the
+configure/provision phases are unaffected — the seam moves only the Configuration Service.
+
+### How the selection travels
+
+The seam is the `DMS_CONFIG_DATABASE_NAME` environment variable, which
+`DMS_CONFIG_DATABASE_CONNECTION_STRING`'s `database=` segment references. The checked-in
+environment files alias it to the datastore name (shared mode); a `-SeparateConfigDatabase` start
+writes a derived environment file under `.derived/` that redirects it to
+`edfi_configurationservice` — your source `-EnvironmentFile` is never edited. The derived file
+also carries an internal `DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE` marker recording the selection.
+When the connection string is entirely absent, the Compose fallback in `local-config.yml` /
+`published-config.yml` resolves the same seam (`${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}}`).
+
+CMS-starting invocations validate the result before any container starts: the resolved connection
+string's database, host, and port must agree with the selected topology, and a hand-edited
+`DMS_CONFIG_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
+`CMS database topology mismatch` error rather than silently starting CMS against the wrong
+database. Shared-mode environment files on non-CMS shapes keep today's shared-database check
+unchanged.
+
+Switching an existing stack between modes re-points CMS but does not move data: `dmscs` content
+already written in one database stays there. For a clean switch, tear down with `-d -v` and start
+fresh, or migrate the CMS data yourself.
 
 ## Selecting a Data Standard version (bootstrap)
 
