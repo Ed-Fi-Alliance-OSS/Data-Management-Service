@@ -198,6 +198,38 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $nameIndex | Should -BeLessThan $connectionStringIndex
         }
 
+        It "migrates the token inside an outer double-quoted dotenv connection string, preserving the outer quotes" {
+            # Round 10 Blocker 1: Get-EnvValue returns the raw dotenv value verbatim, including any
+            # outer dotenv-level quote wrapper. Without stripping it first, the scanner mistook the
+            # wrapper's opening quote for an ADO.NET value-quote, swallowing every real ';' inside as
+            # "quoted" and finding no segments at all - the token was left unmigrated.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING="host=dms-postgresql;database=${POSTGRES_DB_NAME};"'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be '"host=dms-postgresql;database=${DMS_CONFIG_DATABASE_NAME};"' -Because "only the token changes; the outer double quotes are preserved exactly as authored"
+        }
+
+        It "migrates the token inside an outer single-quoted dotenv connection string, preserving the outer quotes" {
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                "DMS_CONFIG_DATABASE_CONNECTION_STRING='host=dms-postgresql;database=`${POSTGRES_DB_NAME};'"
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be "'host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};'"
+        }
+
         It "does NOT rewrite the legacy token when it appears outside the database segment" {
             # Round 8 Blocker 2: a blind Contains/Replace across the whole connection string could
             # rewrite the token inside an unrelated segment (here, the password) that merely happens
@@ -298,6 +330,27 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             (ReadValuesFromEnvFile $revertedToShared)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
             (ReadValuesFromEnvFile $revertedToShared)["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
         }
+
+        It "preserves a datastore name containing a literal '$' intact across a shared -> separate -> shared transition" {
+            # Round 10 Blocker 2: an unquoted written value like tenant$db, once re-read (by Compose or
+            # by Get-ComposeResolvedEnvValue), has $db misinterpreted as a reference to an unset "db"
+            # variable and silently collapses to just "tenant". ConvertTo-DotenvSafeEnvValue must quote
+            # any concrete value containing '$'.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                "POSTGRES_DB_NAME='tenant`$db'",
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+            ) -join "`n") -NoNewline
+
+            $separate = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+            $revertedToShared = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $separate -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $revertedValues = ReadValuesFromEnvFile $revertedToShared
+            $revertedValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be "'tenant`$db'" -Because "the written value itself must be quoted"
+            (Get-ComposeResolvedEnvValue -EnvironmentValues $revertedValues -Name "DMS_CONFIG_DATABASE_NAME") | Should -Be 'tenant$db' -Because "re-reading it must not lose the literal `$db suffix to interpolation"
+        }
     }
 }
 
@@ -322,6 +375,13 @@ Describe "ConvertTo-DotenvSafeEnvValue" {
 
     It "single-quotes a value containing a '#'" {
         ConvertTo-DotenvSafeEnvValue -Value "value#tag" | Should -Be "'value#tag'"
+    }
+
+    It "single-quotes a value containing a '`$'" {
+        # Round 10 Blocker 2: Resolve-ComposeEnvReference matches a bare `$NAME (no braces required),
+        # so an unquoted value like tenant`$db would have `$db misread as a reference and collapse to
+        # "tenant" once re-read. Single-quoting suppresses interpolation entirely.
+        ConvertTo-DotenvSafeEnvValue -Value 'tenant$db' | Should -Be "'tenant`$db'"
     }
 
     It "single-quotes a value opening with a quote character" {
