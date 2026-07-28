@@ -344,3 +344,39 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
    structure or security, or change singleton or table data. This avoids a general
    programmable-object diff framework while retaining the existing idempotent definition
    refresh.
+
+### Additional Clarifications
+
+1. The completed-schema phase-zero inventory check is limited to E18-owned fixed objects,
+   the named legacy cache artifacts, and the required `dms.Document` columns, keys, and
+   trigger attachment points consumed by E18. Unrelated core, resource-derived,
+   authorization, and Change Query objects retain their existing provisioning behavior.
+   This story does not add a database-wide drift validator.
+2. Within that boundary, phase zero positively validates every required E18 object and its
+   contract-relevant properties. A required object with an incompatible definition, an
+   object that collides with a required E18 name, legacy `Etag`, the obsolete cache UUID
+   constraint, or the obsolete source-scan index fails before mutation. Otherwise,
+   additional columns, constraints, triggers, functions, and differently named unique or
+   non-unique indexes are outside the E18 compatibility contract and are not classified
+   or rejected merely because they exist. This avoids an incomplete policy for arbitrary
+   operator customizations while preserving strict validation of the generated contract.
+3. PostgreSQL generated DDL identifies `SESSION_USER` as the authenticated provisioning
+   principal that receives the direct `edfi_dms_enqueue_owner` membership with
+   `SET TRUE, INHERIT FALSE, ADMIN FALSE`. It does not require
+   `CURRENT_USER = SESSION_USER`, so a deployment may use an ordinary role-switched
+   administration session. Phase zero exact-matches the authenticated principal's direct
+   membership on a completed database. E18 does not enumerate or reject other incoming
+   administrative memberships in the cluster-wide owner role; managing those memberships
+   is a deployment responsibility, and generated DDL grants no membership to DMS or CDC
+   runtime principals. This clarifies Answers 2.4 and 4.1 without adding a cluster-wide
+   role-graph auditor.
+4. PostgreSQL `TF_DocumentCache_ValidateDocumentUuid` remains an ordinary
+   `SECURITY INVOKER` function under the existing schema ownership. Only
+   `TF_Document_EnqueueProjectionInsert` and
+   `TF_Document_EnqueueProjectionUpdate` are hardened `SECURITY DEFINER` functions owned
+   by `edfi_dms_enqueue_owner`. Focused catalog assertions prove that distinction.
+5. A valid `dms.DataStoreIdentity.SourceIdentity` is nonzero; the all-zero UUID is invalid.
+   Fresh-apply tests prove that database-generated values are nonzero, and completed-schema
+   phase-zero validation rejects a zero stored value. This story adds no physical nonzero
+   check constraint because the data-model contract already generates the value and
+   permits only supported CDC rotation workflows to replace it.
