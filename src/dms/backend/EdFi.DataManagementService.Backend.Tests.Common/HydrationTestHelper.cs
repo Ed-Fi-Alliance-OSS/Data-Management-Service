@@ -361,4 +361,390 @@ public static class HydrationTestHelper
 
         return new ReadPlanCompiler(dialect).Compile(model);
     }
+
+    /// <summary>
+    /// Builds a <see cref="ResourceReadPlan"/> shaped like the Ed-Fi StudentSectionAssociation
+    /// resource: a root table carrying three document references (one of them nullable) plus a
+    /// descriptor edge, and a child collection table carrying a fourth document reference.
+    /// </summary>
+    /// <remarks>
+    /// This is the shape that exercises both document-reference lookup branch forms at once. The
+    /// root contributes several reference columns, so it is scanned once and expanded inline; the
+    /// child contributes one, so it keeps the plain projection. The child also verifies that the
+    /// lookup scopes through the child's root-scope locator rather than its own key, so references
+    /// held only by child rows of off-page documents are excluded.
+    /// </remarks>
+    public static ResourceReadPlan BuildStudentSectionAssociationReadPlan(
+        string schemaName,
+        SqlDialect dialect
+    )
+    {
+        var schema = new DbSchemaName(schemaName);
+
+        var studentReferencePath = new JsonPathExpression(
+            "$.studentReference",
+            [new JsonPathSegment.Property("studentReference")]
+        );
+        var studentUniqueIdPath = new JsonPathExpression(
+            "$.studentReference.studentUniqueId",
+            [
+                new JsonPathSegment.Property("studentReference"),
+                new JsonPathSegment.Property("studentUniqueId"),
+            ]
+        );
+        var sectionReferencePath = new JsonPathExpression(
+            "$.sectionReference",
+            [new JsonPathSegment.Property("sectionReference")]
+        );
+        var sectionIdentifierPath = new JsonPathExpression(
+            "$.sectionReference.sectionIdentifier",
+            [
+                new JsonPathSegment.Property("sectionReference"),
+                new JsonPathSegment.Property("sectionIdentifier"),
+            ]
+        );
+        var dualCreditReferencePath = new JsonPathExpression(
+            "$.dualCreditEducationOrganizationReference",
+            [new JsonPathSegment.Property("dualCreditEducationOrganizationReference")]
+        );
+        var dualCreditEducationOrganizationIdPath = new JsonPathExpression(
+            "$.dualCreditEducationOrganizationReference.educationOrganizationId",
+            [
+                new JsonPathSegment.Property("dualCreditEducationOrganizationReference"),
+                new JsonPathSegment.Property("educationOrganizationId"),
+            ]
+        );
+        var attemptStatusDescriptorPath = new JsonPathExpression(
+            "$.attemptStatusDescriptor",
+            [new JsonPathSegment.Property("attemptStatusDescriptor")]
+        );
+        var programReferencePath = new JsonPathExpression(
+            "$.programs[*].programReference",
+            [
+                new JsonPathSegment.Property("programs"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("programReference"),
+            ]
+        );
+        var programNamePath = new JsonPathExpression(
+            "$.programs[*].programReference.programName",
+            [
+                new JsonPathSegment.Property("programs"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("programReference"),
+                new JsonPathSegment.Property("programName"),
+            ]
+        );
+
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(schema, "StudentSectionAssociation"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentSectionAssociation",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DualCreditEducationOrganization_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: dualCreditReferencePath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "EducationOrganization")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DualCreditEducationOrganization_EducationOrganizationId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: dualCreditEducationOrganizationIdPath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Section_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: sectionReferencePath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Section")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Section_SectionIdentifier"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 255),
+                    IsNullable: true,
+                    SourceJsonPath: sectionIdentifierPath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Student_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: studentReferencePath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Student_StudentUniqueId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    IsNullable: true,
+                    SourceJsonPath: studentUniqueIdPath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("AttemptStatusDescriptor_DescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: attemptStatusDescriptorPath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "AttemptStatusDescriptor")
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var programTable = new DbTableModel(
+            Table: new DbTableName(schema, "StudentSectionAssociationProgram"),
+            JsonScope: new JsonPathExpression(
+                "$.programs[*]",
+                [new JsonPathSegment.Property("programs"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentSectionAssociationProgram",
+                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("CollectionItemId"),
+                    Kind: ColumnKind.CollectionKey,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("StudentSectionAssociation_DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Ordinal"),
+                    Kind: ColumnKind.Ordinal,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Program_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: programReferencePath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Program")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Program_ProgramName"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    IsNullable: true,
+                    SourceJsonPath: programNamePath,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("StudentSectionAssociation_DocumentId")],
+                ImmediateParentScopeLocatorColumns:
+                [
+                    new DbColumnName("StudentSectionAssociation_DocumentId"),
+                ],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var model = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentSectionAssociation"),
+            PhysicalSchema: schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, programTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: dualCreditReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("DualCreditEducationOrganization_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: dualCreditEducationOrganizationIdPath,
+                            ReferenceJsonPath: dualCreditEducationOrganizationIdPath,
+                            Column: new DbColumnName(
+                                "DualCreditEducationOrganization_EducationOrganizationId"
+                            )
+                        ),
+                    ]
+                ),
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: sectionReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("Section_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Section"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: sectionIdentifierPath,
+                            ReferenceJsonPath: sectionIdentifierPath,
+                            Column: new DbColumnName("Section_SectionIdentifier")
+                        ),
+                    ]
+                ),
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: studentReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("Student_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Student"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: studentUniqueIdPath,
+                            ReferenceJsonPath: studentUniqueIdPath,
+                            Column: new DbColumnName("Student_StudentUniqueId")
+                        ),
+                    ]
+                ),
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: programReferencePath,
+                    Table: programTable.Table,
+                    FkColumn: new DbColumnName("Program_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Program"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: programNamePath,
+                            ReferenceJsonPath: programNamePath,
+                            Column: new DbColumnName("Program_ProgramName")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources:
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: attemptStatusDescriptorPath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("AttemptStatusDescriptor_DescriptorId"),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "AttemptStatusDescriptor")
+                ),
+            ]
+        );
+
+        return new ReadPlanCompiler(dialect).Compile(model);
+    }
+
+    /// <summary>
+    /// Builds a <see cref="ResourceReadPlan"/> for a resource that carries a descriptor edge but no
+    /// document references, so the compiled plan has no document-reference lookup at all.
+    /// </summary>
+    public static ResourceReadPlan BuildDescriptorOnlyReadPlan(string schemaName, SqlDialect dialect)
+    {
+        var schema = new DbSchemaName(schemaName);
+        var gradeLevelDescriptorPath = new JsonPathExpression(
+            "$.gradeLevelDescriptor",
+            [new JsonPathSegment.Property("gradeLevelDescriptor")]
+        );
+
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(schema, "DescriptorOnly"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: "PK_DescriptorOnly",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("GradeLevelDescriptor_DescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: gradeLevelDescriptorPath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var model = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "DescriptorOnly"),
+            PhysicalSchema: schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources:
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: gradeLevelDescriptorPath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("GradeLevelDescriptor_DescriptorId"),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+                ),
+            ]
+        );
+
+        return new ReadPlanCompiler(dialect).Compile(model);
+    }
 }
