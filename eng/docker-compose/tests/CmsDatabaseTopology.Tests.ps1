@@ -5,7 +5,8 @@
 
 # DMS-1270 Phase 1a: isolated unit coverage for the CMS database topology contract's new
 # PowerShell functions (Resolve-CmsDatabaseTopologyEnvironmentFile, Confirm-CmsDatabaseTopologyAgreement,
-# Get-DatabaseNameFromResolvedConnectionString, Get-EndpointFromResolvedConnectionString,
+# ConvertTo-DotenvSafeEnvValue, Get-DatabaseNameFromResolvedConnectionString,
+# Get-EndpointFromResolvedConnectionString, Get-CmsDatabaseTopologyDefaultConnectionString,
 # Test-PostgresDuplicateDatabaseError, Test-MssqlDuplicateDatabaseError). No start script, wrapper,
 # profile file, .yml file, or database-creation code path is wired to these functions yet - that
 # wiring is Phase 1b/2/3, per reference/design/backend-redesign/fixes/DMS-1270.md.
@@ -17,16 +18,39 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
         Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
+
+        # Round 8 finding: after the ambient-aware fix below, this function reads ambient
+        # POSTGRES_DB_NAME/MSSQL_DB_NAME too, so a leftover value from the developer's own shell (or
+        # a prior test) can now change these tests' outcome. Snapshot/clear/restore every ambient
+        # variable either function under test consumes, not just the one a given test happens to set.
+        $script:ambientKeys = @(
+            "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_SA_PASSWORD",
+            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+        )
     }
 
     BeforeEach {
         $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-cms-topology-$([Guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $script:work -Force | Out-Null
+
+        $script:ambientSnapshot = @{}
+        foreach ($key in $script:ambientKeys) {
+            $script:ambientSnapshot[$key] = [System.Environment]::GetEnvironmentVariable($key)
+            Remove-Item "Env:\$key" -ErrorAction SilentlyContinue
+        }
     }
 
     AfterEach {
         if (Test-Path -LiteralPath $script:work) {
             Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($key in $script:ambientKeys) {
+            if ($null -eq $script:ambientSnapshot[$key]) {
+                Remove-Item "Env:\$key" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($key, $script:ambientSnapshot[$key])
+            }
         }
     }
 
@@ -61,6 +85,40 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $values = ReadValuesFromEnvFile $result
             $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
+        }
+
+        It "reflects an ambient POSTGRES_DB_NAME override in the materialized DMS_CONFIG_DATABASE_NAME" {
+            # Round 8 Blocker 1: the write side must resolve the datastore name the same
+            # Compose-precedence-aware way Confirm-CmsDatabaseTopologyAgreement does, since an
+            # ambient override genuinely moves the running database container.
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "ambient_override_db")
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=file_named_db',
+                'POSTGRES_PASSWORD=abcdefgh1!'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "ambient_override_db"
+        }
+
+        It "recognizes an already-aliased file as unchanged even while an ambient override is active" {
+            # The idempotency comparison must resolve the CURRENT DMS_CONFIG_DATABASE_NAME the same
+            # ambient-aware way, or an active override would make an already-correct alias look
+            # "changed" on every call, needlessly freezing a live alias into a derived file.
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "ambient_override_db")
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=file_named_db',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $result | Should -Be $basePath -Because "Compose would resolve the existing alias to the same ambient value, so no rewrite is needed"
         }
     }
 
@@ -106,6 +164,24 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $values = ReadValuesFromEnvFile $result
             $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+        }
+
+        It "does NOT rewrite the legacy token when it appears outside the database segment" {
+            # Round 8 Blocker 2: a blind Contains/Replace across the whole connection string could
+            # rewrite the token inside an unrelated segment (here, the password) that merely happens
+            # to carry the identical literal text. Only the database-segment's own value is a
+            # migration signature.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_DB_NAME};database=custom;'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_DB_NAME};database=custom;' -Because "the token is not in a recognized database-name key's value, so it must be left untouched"
         }
 
         It "does NOT rewrite a genuinely custom reference that currently resolves to the same value as the datastore name" {
@@ -176,27 +252,76 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
     }
 }
 
+Describe "ConvertTo-DotenvSafeEnvValue" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    It "leaves an ordinary alphanumeric value bare" {
+        ConvertTo-DotenvSafeEnvValue -Value "edfi_datamanagementservice" | Should -Be "edfi_datamanagementservice"
+    }
+
+    It "leaves the bare marker values 'true'/'false' unquoted" {
+        ConvertTo-DotenvSafeEnvValue -Value "true" | Should -Be "true"
+        ConvertTo-DotenvSafeEnvValue -Value "false" | Should -Be "false"
+    }
+
+    It "single-quotes a value containing a space" {
+        ConvertTo-DotenvSafeEnvValue -Value "has space" | Should -Be "'has space'"
+    }
+
+    It "single-quotes a value containing a '#'" {
+        ConvertTo-DotenvSafeEnvValue -Value "value#tag" | Should -Be "'value#tag'"
+    }
+
+    It "single-quotes a value opening with a quote character" {
+        ConvertTo-DotenvSafeEnvValue -Value "'already-quoted" | Should -Be "'\'already-quoted'"
+    }
+
+    It "backslash-escapes an embedded apostrophe, never doubling it" {
+        ConvertTo-DotenvSafeEnvValue -Value "value with a ' apostrophe" | Should -Be "'value with a \' apostrophe'"
+    }
+}
+
 Describe "Confirm-CmsDatabaseTopologyAgreement" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
         Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
+
+        # Round 8 Blocker 8: snapshot/clear/restore every ambient variable either function consumes,
+        # not just DMS_CONFIG_DATABASE_NAME - a leftover shell value for a datastore name, password,
+        # or the whole connection string can otherwise silently alter this suite's outcome.
+        $script:ambientKeys = @(
+            "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_SA_PASSWORD",
+            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+        )
     }
 
     BeforeEach {
         $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-cms-topology-confirm-$([Guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $script:work -Force | Out-Null
-        # [System.Environment]::SetEnvironmentVariable($name, $null) does not truly unset the
-        # variable on this runtime -- it leaves an empty string, which still trips ambient-override
-        # detection. Remove-Item on the Env: drive is the only mechanism confirmed to truly clear it.
-        Remove-Item Env:\DMS_CONFIG_DATABASE_NAME -ErrorAction SilentlyContinue
+
+        $script:ambientSnapshot = @{}
+        foreach ($key in $script:ambientKeys) {
+            $script:ambientSnapshot[$key] = [System.Environment]::GetEnvironmentVariable($key)
+            Remove-Item "Env:\$key" -ErrorAction SilentlyContinue
+        }
     }
 
     AfterEach {
         if (Test-Path -LiteralPath $script:work) {
             Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
         }
-        Remove-Item Env:\DMS_CONFIG_DATABASE_NAME -ErrorAction SilentlyContinue
+        foreach ($key in $script:ambientKeys) {
+            if ($null -eq $script:ambientSnapshot[$key]) {
+                Remove-Item "Env:\$key" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($key, $script:ambientSnapshot[$key])
+            }
+        }
     }
 
     Context "shared mode" {
@@ -222,6 +347,20 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*some_other_db*"
         }
 
+        It "rejects a connection string whose explicit port disagrees, even though the host matches" {
+            # Round 8 Blocker 4: PostgreSQL's own connection-string shape carries port as a standalone
+            # "port=" key. Before the fix, the endpoint extractor never looked at that key at all, so
+            # a wrong explicit port was silently defaulted to the expected port and accepted.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=9999;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*9999*"
+        }
+
         It "moves the expected name when an ambient POSTGRES_DB_NAME override is present, matching Compose's own precedence" {
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
@@ -230,13 +369,8 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=ambient_named_db;'
             ) -join "`n") -NoNewline
 
-            try {
-                [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "ambient_named_db")
-                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw -Because "the ambient override moves the expected value the same way Compose would resolve it"
-            }
-            finally {
-                Remove-Item Env:\POSTGRES_DB_NAME -ErrorAction SilentlyContinue
-            }
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "ambient_named_db")
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw -Because "the ambient override moves the expected value the same way Compose would resolve it"
         }
 
         It "constructs a concrete default and validates against it when the connection-string key is entirely absent" {
@@ -286,13 +420,8 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
-            try {
-                [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "edfi_configurationservice")
-                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
-            }
-            finally {
-                Remove-Item Env:\DMS_CONFIG_DATABASE_NAME -ErrorAction SilentlyContinue
-            }
+            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "edfi_configurationservice")
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
         }
 
         It "rejects an ambient DMS_CONFIG_DATABASE_NAME that disagrees with the effective contract" {
@@ -304,13 +433,8 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
-            try {
-                [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "some_conflicting_value")
-                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*some_conflicting_value*"
-            }
-            finally {
-                Remove-Item Env:\DMS_CONFIG_DATABASE_NAME -ErrorAction SilentlyContinue
-            }
+            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "some_conflicting_value")
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*some_conflicting_value*"
         }
     }
 
@@ -336,6 +460,42 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*9999*"
         }
+
+        It "fails clearly, without constructing a default, when the connection string is entirely absent" {
+            # Round 8 Blocker 5 / spec Phase 1 rule: neither .yml file has an engine-aware inline
+            # fallback for MSSQL yet, so guessing a default here could accept a connection Compose
+            # itself would never render. Must fail clearly instead.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*required for MSSQL*"
+        }
+
+        It "fails clearly, without constructing a default, when the connection string is ambient-blank" {
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_CONNECTION_STRING", "")
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*required for MSSQL*"
+        }
+
+        It "fails closed for a PostgreSQL-only host alias (Host=) that MSSQL does not recognize" {
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Host=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*host*"
+        }
     }
 
     Context "PostgreSQL-specific comparison rules" {
@@ -348,6 +508,19 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*EDFI_DATAMANAGEMENTSERVICE*"
+        }
+
+        It "fails closed for an MSSQL-only host alias (Address=) that PostgreSQL does not recognize" {
+            # Round 8 Blocker 4: host-key recognition must be engine-specific, not a single union
+            # applied to both engines.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Address=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*host*"
         }
     }
 
@@ -419,7 +592,7 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
 
     It "returns an empty array for a blank connection string" {
         @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString "").Count | Should -Be 0
-        @(Get-EndpointFromResolvedConnectionString -ConnectionString "").Count | Should -Be 0
+        @(Get-EndpointFromResolvedConnectionString -ConnectionString "" -DatabaseEngine "postgresql").Count | Should -Be 0
     }
 
     It "returns every present database-name candidate without picking a single winner" {
@@ -438,17 +611,50 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
         $names | Should -Contain '${SOME_LITERAL_TEXT}'
     }
 
-    It "splits a host,port compound into separate Host and Port fields" {
-        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=dms-mssql,1433;Database=x;")
+    It "splits an MSSQL host,port compound into separate Host and Port fields" {
+        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=dms-mssql,1433;Database=x;" -DatabaseEngine "mssql")
         $endpoints.Count | Should -Be 1
         $endpoints[0].Host | Should -Be "dms-mssql"
         $endpoints[0].Port | Should -Be "1433"
     }
 
-    It "returns a null Port when no comma-separated port segment is present" {
-        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "host=dms-postgresql;database=x;")
+    It "extracts a PostgreSQL standalone port key when the host value carries no comma compound" {
+        # Round 8 Blocker 4: PostgreSQL's own shape (host=...;port=...;) is not a host,port compound
+        # - the port must still be recognized from its own standalone key.
+        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "host=dms-postgresql;port=9999;database=x;" -DatabaseEngine "postgresql")
+        $endpoints[0].Host | Should -Be "dms-postgresql"
+        $endpoints[0].Port | Should -Be "9999"
+    }
+
+    It "returns a null Port when neither a comma compound nor a standalone port key is present" {
+        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "host=dms-postgresql;database=x;" -DatabaseEngine "postgresql")
         $endpoints[0].Host | Should -Be "dms-postgresql"
         $endpoints[0].Port | Should -BeNullOrEmpty
+    }
+
+    It "does not recognize an MSSQL-only alias (Address=) for PostgreSQL" {
+        @(Get-EndpointFromResolvedConnectionString -ConnectionString "Address=some-host;Database=x;" -DatabaseEngine "postgresql").Count | Should -Be 0
+    }
+
+    It "does not recognize a PostgreSQL-only alias (Host=) for MSSQL" {
+        @(Get-EndpointFromResolvedConnectionString -ConnectionString "Host=some-host;Database=x;" -DatabaseEngine "mssql").Count | Should -Be 0
+    }
+
+    It "recognizes Server= for both engines" {
+        @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=some-host;Database=x;" -DatabaseEngine "postgresql").Count | Should -Be 1
+        @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=some-host;Database=x;" -DatabaseEngine "mssql").Count | Should -Be 1
+    }
+}
+
+Describe "Get-CmsDatabaseTopologyDefaultConnectionString" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
+    }
+
+    It "constructs the exact shape local-config.yml / published-config.yml's nested fallback renders" {
+        $result = Get-CmsDatabaseTopologyDefaultConnectionString -ExpectedHost "dms-postgresql" -ExpectedPort "5432" -ExpectedDatabaseName "edfi_datamanagementservice" -PostgresPassword "abcdefgh1!"
+        $result | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
     }
 }
 
@@ -492,6 +698,14 @@ Describe "Test-MssqlDuplicateDatabaseError" {
 
     It "does not swallow a different error number" {
         Test-MssqlDuplicateDatabaseError -CapturedOutput "Msg 4060, Level 11, State 1" | Should -BeFalse
+    }
+
+    It "does not swallow a bare '1801' that is not in the structured error-number position" {
+        # Round 8 Blocker 7: the prior regex ('\b1801\b') matched a standalone "1801" anywhere in the
+        # output - a row count, a line number, or any other unrelated number could be misclassified
+        # as the benign race. Only the anchored "Msg 1801," form counts.
+        Test-MssqlDuplicateDatabaseError -CapturedOutput "Rows affected: 1801" | Should -BeFalse
+        Test-MssqlDuplicateDatabaseError -CapturedOutput "(1801 rows affected)" | Should -BeFalse
     }
 
     It "does not swallow malformed or empty output" {
@@ -542,6 +756,15 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         $publishedConfig | Should -Match ([regex]::Escape($expectedNestedSyntax))
     }
 
+    It "Get-CmsDatabaseTopologyDefaultConnectionString's construction matches the real Compose-rendered value byte-for-byte" {
+        # Round 8 Blocker 6: the prior oracle test only checked "does not throw" on the production
+        # validator, which proves internal self-consistency but not that the constructed default is
+        # textually identical to what Compose actually renders. Comparing the extracted, independently
+        # testable construction function directly against the captured oracle string closes that gap.
+        $constructed = Get-CmsDatabaseTopologyDefaultConnectionString -ExpectedHost "dms-postgresql" -ExpectedPort "5432" -ExpectedDatabaseName "edfi_datamanagementservice" -PostgresPassword "abcdefgh1!"
+        $constructed | Should -BeExactly $script:composeRenderedDefault
+    }
+
     It "Confirm-CmsDatabaseTopologyAgreement's absent-key default agrees with the real Compose-rendered value" {
         $work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-cms-topology-oracle-$([Guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $work -Force | Out-Null
@@ -565,12 +788,10 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         $names = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $script:composeRenderedDefault)
         $names | Should -Be @("edfi_datamanagementservice")
 
-        # PostgreSQL's own connection-string shape carries port as a standalone "port=" key, not a
-        # host,port compound, so the endpoint extractor (which only splits a comma inside the host
-        # alias's own value) reports no Port here -- Confirm-CmsDatabaseTopologyAgreement's caller
-        # defaults a null Port to the engine's expected port, which this same fixture exercises above.
-        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $script:composeRenderedDefault)
+        # PostgreSQL's own connection-string shape carries port as a standalone "port=" key - now
+        # correctly recognized (Round 8 Blocker 4 fix) rather than silently defaulted.
+        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $script:composeRenderedDefault -DatabaseEngine "postgresql")
         $endpoints[0].Host | Should -Be "dms-postgresql"
-        $endpoints[0].Port | Should -BeNullOrEmpty
+        $endpoints[0].Port | Should -Be "5432"
     }
 }
