@@ -65,8 +65,8 @@ These spikes investigate features explicitly deferred in `change-queries.md`. Ea
 
 ## Follow-on Stories (spawned by DMS-1185)
 
-- `TBD` - `33-tracked-change-index-emission.md` - Use the DMS-1185 research conclusions to build the exact-DDL evidence package, and emit each Tier-1 category only when both providers pass
-- `TBD` - `34-readchanges-subject-cardinality.md` - After Story 33's evidence phase, select and implement provider-appropriate `ReadChanges` relationship subject-cardinality shapes; its candidate-DDL rerun unlocks the blocked PA index category
+- `TBD` - `33-tracked-change-index-emission.md` - Evaluate each Tier-1 category with pinned candidate overlays on both providers, emit only the finally selected categories, and rerun the gates against exact generated DDL
+- `TBD` - `34-readchanges-subject-cardinality.md` - After Story 33's candidate-evaluation phase, select and implement provider-appropriate `ReadChanges` relationship subject-cardinality shapes; its candidate-overlay rerun unlocks the blocked PA index category
 - `TBD` - `35-mssql-descriptor-identity-index.md` - Emit the SQL Server live descriptor identity index selected by DMS-1185
 - `TBD` - `36-per-resource-edorg-person-index-emission.md` - After Stories 33 and 34, emit per-resource EdOrg/person tracked-change indexes
 - `TBD` - `37-tracked-namespace-index-emission.md` - After Story 33 and Authorization Story 22, adapt tracked Namespace predicates and emit tracked namespace indexes

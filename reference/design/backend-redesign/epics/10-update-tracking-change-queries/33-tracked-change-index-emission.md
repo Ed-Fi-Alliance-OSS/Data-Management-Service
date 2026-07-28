@@ -23,7 +23,7 @@ Passing the isolated gates on both providers makes a category eligible, not yet 
 When only one category is eligible, it is selected; when both are eligible, both are selected only if the combined interaction gate passes, otherwise reviewed disposition selects at most one.
 The implementation phase derives only the finally selected category or categories through `DeriveIndexInventoryPass`; the final phase reruns the applicable matrix against exact generated DDL.
 The two index categories are gated and emitted independently, and a category cannot use the other category's benefit or low cost to pass.
-The PA category is expected to be blocked on PostgreSQL by the known anti-join flip until the subject-cardinality story's shape fix lands and its candidate-DDL rerun shows the flip removed.
+The PA category is expected to be blocked on PostgreSQL by the known anti-join flip until the subject-cardinality story's shape fix lands and its candidate-overlay rerun shows the flip removed.
 Any other provider failure records the result and returns the design for review without emitting that category on either provider.
 
 ## Evidence Protocol and Gates

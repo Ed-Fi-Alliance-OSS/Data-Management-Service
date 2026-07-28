@@ -1600,8 +1600,9 @@ After category selection, gating is per table (the tracked table must be present
 
 **2. Shared-descriptor Discriminator index.**
 If Story 33 selects the shared-descriptor category, the `SharedDescriptor` tracked-change table gets one `DbIndexKind.Explicit` index with key order `[Discriminator, ChangeVersion]`.
-Every descriptor `/deletes` filters the shared table by `Discriminator IN (<bare>, <qualified>)` plus a `ChangeVersion` window with `ORDER BY ChangeVersion`, for all descriptor kinds sharing the table, so `Discriminator` leads and `ChangeVersion` completes the seek and ordered scan.
-This mirrors the `IX_Descriptor_Discriminator_ContentVersion` rationale on the live shared table.
+Every descriptor `/deletes` filters the shared table by `Discriminator IN (<bare>, <qualified>)` plus a `ChangeVersion` window with `ORDER BY ChangeVersion`, for all descriptor kinds sharing the table, so `Discriminator` leads and `ChangeVersion` completes the windowed seek.
+Because the two-value `IN` produces one seek range per discriminator, the index returns rows in `ChangeVersion` order only within each range; the global `ORDER BY ChangeVersion` still requires the engine to merge or sort the windowed rows, and implementations must not rely on the index alone for the final ordering.
+This mirrors the `Discriminator`-leading seek rationale of `IX_Descriptor_Discriminator_ContentVersion` on the live shared table, whose single-value `Discriminator` equality does allow a fully ordered range scan.
 After category selection, emit only when the model set contains the `SharedDescriptor` tracked-change table; a shared table present without its `Discriminator` system column raises in the strict pipeline and skips in the default pipeline, mirroring category 1's missing-column contract.
 A `(Discriminator, OldNamespace)` variant was measured and rejected: after the `Discriminator` seek, the residual namespace `LIKE` filters a single kind's tombstones, and only two descriptors use `NamespaceBased` `ReadChanges` authorization.
 
@@ -1612,7 +1613,7 @@ Workloads dominated by bulk deletes or cascading key changes (year-end purges, d
 
 One PostgreSQL read-side regression is known and blocking: with the tracked PA covering index present, narrow-`ChangeVersion`-window `/deletes` against the five PrimaryAssociation resources can flip from a hash anti-join to a join-filter nested loop (measured 0.5s to 2.5s at 10M tombstones, reproducible under forward and reverse controls).
 The root cause is the same `UNION`-view cardinality misestimate that defers the per-resource person and EdOrg indexes below.
-No regression exception is granted: the emission story's gates hold every measured shape on both providers to the general regression ceiling and reject the flipped plan shape, so the five-PA covering category is expected to remain blocked on PostgreSQL until the subject-cardinality story's query-shape fix removes the misestimate and a rerun with the candidate DDL shows the flip gone on all five resources.
+No regression exception is granted: the emission story's gates hold every measured shape on both providers to the general regression ceiling and reject the flipped plan shape, so the five-PA covering category is expected to remain blocked on PostgreSQL until the subject-cardinality story's query-shape fix removes the misestimate and a rerun with the pinned candidate overlay shows the flip gone on all five resources.
 The shared-descriptor category is not implicated in the flip mechanism (descriptor authorization probes no `UNION` view), so the emission story gates and adopts the two categories independently.
 Implementation verification uses the reproducible protocol and numeric gates in the new Tier-1 emission story rather than absolute timings tied to the original arm64 macOS Docker host.
 
