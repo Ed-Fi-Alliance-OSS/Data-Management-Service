@@ -1106,6 +1106,146 @@ function ConvertTo-DotenvSafeEnvValue {
     return "'" + $Value.Replace("'", "\'") + "'"
 }
 
+function Find-ConnectionStringLegacyTokenSpan {
+    <#
+    .SYNOPSIS
+        Locates the exact source span of $LegacyToken within a connection string's database-segment
+        value (a recognized Database / Initial Catalog key), or returns $null when no such segment's
+        value is exactly $LegacyToken.
+
+    .DESCRIPTION
+        A hand-written quote-aware scanner, not a regex over the raw text: the connection string is
+        split into top-level key=value segments by tracking single/double-quote state (a quote
+        character toggles a quoted region; a doubled quote character inside a quoted region is an
+        escaped literal quote, not a closing delimiter), so a ';' or '=' appearing inside a quoted
+        value - a password, for instance - is never mistaken for a segment delimiter or key/value
+        separator. Round 9 Blocker 1: a plain regex lookbehind/lookahead has no concept of quoting, so
+        the same literal token text embedded in an unrelated quoted segment (e.g.
+        Password="keep;Database=${POSTGRES_DB_NAME};inside-password") was incorrectly matched and
+        rewritten.
+
+        Only an unquoted database-segment value is matched: the checked-in templates never quote it,
+        and a caller-authored quoted value is conservatively left untouched rather than guessing at
+        escape-unescaping - not a functional regression, since a quoted database value was never part
+        of this migration's supported shape.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$ConnectionString,
+
+        [Parameter(Mandatory)]
+        [string]$LegacyToken
+    )
+
+    $length = $ConnectionString.Length
+    $segmentStart = 0
+    $quoteChar = $null
+    $index = 0
+
+    while ($index -le $length) {
+        $atEnd = $index -eq $length
+        $ch = if ($atEnd) { [char]0 } else { $ConnectionString[$index] }
+
+        if (-not $atEnd -and $null -ne $quoteChar) {
+            if ($ch -eq $quoteChar) {
+                if ($index + 1 -lt $length -and $ConnectionString[$index + 1] -eq $quoteChar) {
+                    $index += 2
+                    continue
+                }
+                $quoteChar = $null
+            }
+            $index++
+            continue
+        }
+
+        if (-not $atEnd -and ($ch -eq '"' -or $ch -eq "'")) {
+            $quoteChar = $ch
+            $index++
+            continue
+        }
+
+        if ($atEnd -or $ch -eq ';') {
+            $segmentText = $ConnectionString.Substring($segmentStart, $index - $segmentStart)
+            $equalsIndex = $segmentText.IndexOf('=')
+            if ($equalsIndex -ge 0) {
+                $key = $segmentText.Substring(0, $equalsIndex).Trim()
+                if ($key -imatch '^(database|initial\s*catalog)$') {
+                    $rawValue = $segmentText.Substring($equalsIndex + 1)
+                    $trimmedValue = $rawValue.Trim()
+                    if ([string]::Equals($trimmedValue, $LegacyToken, [System.StringComparison]::Ordinal)) {
+                        $valueLeadingWhitespace = $rawValue.Length - $rawValue.TrimStart().Length
+                        $absoluteStart = $segmentStart + $equalsIndex + 1 + $valueLeadingWhitespace
+                        return [pscustomobject]@{ Start = $absoluteStart; Length = $LegacyToken.Length }
+                    }
+                }
+            }
+            $segmentStart = $index + 1
+        }
+
+        $index++
+    }
+
+    return $null
+}
+
+function Move-EnvFileKeyBeforeAnotherKey {
+    <#
+    .SYNOPSIS
+        Reorders a .env file in place so $KeyToMove's line appears immediately before $BeforeKey's
+        line, if it does not already precede it. No-ops if either key is absent from the file, or if
+        the ordering already holds.
+
+    .DESCRIPTION
+        Docker Compose's --env-file interpolation is order-dependent, like shell `source` semantics -
+        confirmed empirically against a real Docker Compose invocation: a ${VAR} reference resolves
+        only against variables defined earlier in the same file; a forward reference (the referenced
+        key's own definition appears later) resolves to empty, not to its later-defined value.
+
+        Write-DerivedEnvFile replaces an existing key's line in place, preserving its original
+        position, but appends a genuinely new key after whatever the base file already contained. When
+        DMS_CONFIG_DATABASE_NAME is newly introduced into a base file that already defines
+        DMS_CONFIG_DATABASE_CONNECTION_STRING (todays checked-in templates all still lack the seam key,
+        so this is not a rare case - it is the ordinary shape the migration exists to handle), the new
+        key always lands after the existing connection-string line regardless of KeyOverrides
+        iteration order, since the existing line's position is untouched by the append. Left uncorrected,
+        a migrated ${DMS_CONFIG_DATABASE_NAME} reference in the connection string would resolve to
+        empty at real Compose render time, not to the intended database name - this function repairs
+        that ordering after the fact, rather than changing Write-DerivedEnvFile's own general-purpose,
+        widely-shared append/replace contract.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [Parameter(Mandatory)] [string]$KeyToMove,
+        [Parameter(Mandatory)] [string]$BeforeKey
+    )
+
+    $lines = [System.IO.File]::ReadAllLines($Path)
+    $moveIndex = -1
+    $beforeIndex = -1
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($moveIndex -lt 0 -and $lines[$i] -match "^\s*$([regex]::Escape($KeyToMove))=") {
+            $moveIndex = $i
+        }
+        if ($beforeIndex -lt 0 -and $lines[$i] -match "^\s*$([regex]::Escape($BeforeKey))=") {
+            $beforeIndex = $i
+        }
+    }
+
+    if ($moveIndex -lt 0 -or $beforeIndex -lt 0 -or $moveIndex -lt $beforeIndex) {
+        return
+    }
+
+    $reordered = [System.Collections.Generic.List[string]]::new($lines)
+    $lineToMove = $reordered[$moveIndex]
+    $reordered.RemoveAt($moveIndex)
+    # $beforeIndex is unaffected by removing an entry after it, so it still names the correct target.
+    $reordered.Insert($beforeIndex, $lineToMove)
+
+    $content = ($reordered -join "`n") + "`n"
+    [System.IO.File]::WriteAllText($Path, $content, [System.Text.UTF8Encoding]::new($false))
+}
+
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
     <#
     .SYNOPSIS
@@ -1136,6 +1276,14 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
             database container - is reflected here too, not just at validation time; separate mode
             sets the fixed literal "edfi_configurationservice".
 
+        After writing, DMS_CONFIG_DATABASE_NAME's line is guaranteed to precede
+        DMS_CONFIG_DATABASE_CONNECTION_STRING's line in the derived file (Move-EnvFileKeyBeforeAnotherKey),
+        because Docker Compose's --env-file interpolation is order-dependent: a ${VAR} reference
+        resolves only against variables defined earlier in the same file, so a migrated connection
+        string referencing ${DMS_CONFIG_DATABASE_NAME} would otherwise resolve to empty whenever that
+        key is newly introduced into a base file that already defines the connection string - exactly
+        today's checked-in templates' shape, confirmed against a real `docker compose config` render.
+
         Both values are serialized dotenv-safely (ConvertTo-DotenvSafeEnvValue): quoted only when the
         concrete value actually needs it (a space, '#', or a leading quote character), matching the
         approved design - never single-quoted for reasons that would suppress interpolation, since
@@ -1147,9 +1295,11 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         ("${POSTGRES_DB_NAME}" or "${MSSQL_DB_NAME}", matching this story's own prior default template,
         before DMS_CONFIG_DATABASE_NAME existed), that exact segment is rewritten to
         "${DMS_CONFIG_DATABASE_NAME}" so a pre-existing developer .env file reaches separate mode
-        without hand-editing. Matching is anchored to the database-segment's key=value boundary (not a
-        blind substring search across the whole string), so the same literal text appearing in an
-        unrelated segment - a password, a custom property - is never touched. The rewrite is also never
+        without hand-editing. Matching is anchored to the database-segment's key=value boundary via a
+        quote-aware scanner (Find-ConnectionStringLegacyTokenSpan), not a blind substring or regex
+        search across the whole string, so the same literal text appearing inside an unrelated quoted
+        segment - a password containing a literal ';' - is never mistaken for a real segment boundary
+        and never touched. The rewrite is also never
         a match on what the reference currently resolves to, which could coincide with a value a
         genuinely different, custom reference also happens to produce. Any connection string not
         carrying that exact token in that exact position is left completely untouched, so it either
@@ -1216,19 +1366,14 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     $currentConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
     $intendedConnectionString = $currentConnectionString
     if ($SeparateConfigDatabase) {
-        # Anchored to the database-segment's own key=value boundary (Database / Initial Catalog),
-        # never a blind substring search: the same literal token text appearing in an unrelated
-        # segment (a password, a custom property) must never be rewritten.
-        $legacyTokenPattern = [regex]::Escape($legacyToken)
-        $databaseSegmentRegex = [regex]::new(
-            '(?i)(?<=(?:^|;)\s*(?:database|initial\s*catalog)\s*=\s*)' + $legacyTokenPattern + '(?=\s*(?:;|$))'
-        )
-        $legacyTokenMatch = $databaseSegmentRegex.Match($currentConnectionString)
-        if ($legacyTokenMatch.Success) {
+        # Quote-aware: a plain substring/regex search would mistake a ';' or '=' inside an unrelated
+        # quoted segment (a password) for a real segment boundary. See Find-ConnectionStringLegacyTokenSpan.
+        $legacyTokenSpan = Find-ConnectionStringLegacyTokenSpan -ConnectionString $currentConnectionString -LegacyToken $legacyToken
+        if ($null -ne $legacyTokenSpan) {
             $intendedConnectionString =
-                $currentConnectionString.Substring(0, $legacyTokenMatch.Index) +
+                $currentConnectionString.Substring(0, $legacyTokenSpan.Start) +
                 '${DMS_CONFIG_DATABASE_NAME}' +
-                $currentConnectionString.Substring($legacyTokenMatch.Index + $legacyTokenMatch.Length)
+                $currentConnectionString.Substring($legacyTokenSpan.Start + $legacyTokenSpan.Length)
         }
     }
 
@@ -1273,6 +1418,11 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         -BaseEnvironmentFile $BaseEnvironmentFile `
         -TargetPath $derivedPath `
         -KeyOverrides $keyOverrides
+
+    # Docker Compose's --env-file interpolation is order-dependent: DMS_CONFIG_DATABASE_NAME must be
+    # defined before any line that references it via ${DMS_CONFIG_DATABASE_NAME}, or that reference
+    # resolves to empty at real Compose render time. See Move-EnvFileKeyBeforeAnotherKey.
+    Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove "DMS_CONFIG_DATABASE_NAME" -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
 
     return $derivedPath
 }

@@ -306,21 +306,28 @@ function Get-EndpointFromResolvedConnectionString {
         valid endpoint under the other engine's rules - the runtime ADO.NET provider would reject it
         too.
 
-        PostgreSQL's own connection-string shape (see local-config.yml / published-config.yml's
-        checked-in nested fallback) carries port as a standalone "port" key, not a host,port compound
-        - unlike MSSQL's Server=host,port shape. When no comma-compound is present on the matched host
-        value, a standalone "port" key (present for either engine) fills in Port; only when neither
-        form carries a port does Port come back $null.
+        Port parsing is also engine-specific, not applied uniformly (Round 9 Blocker 2): MSSQL's
+        Server=host,port compound is real SqlClient syntax, but Npgsql has no such compound - a comma
+        in a PostgreSQL Host= value is just part of the (almost certainly invalid) host string, never a
+        port separator, so it is never split there. Conversely, PostgreSQL's own connection-string
+        shape (see local-config.yml / published-config.yml's checked-in nested fallback) carries port
+        as a standalone "port" key that SqlClient does not support as a keyword at all, so it is only
+        honored for PostgreSQL, never for MSSQL. Splitting the comma-compound for PostgreSQL would
+        silently hide an explicit standalone Port= key behind whatever port a coincidental comma in the
+        host value produced; honoring a standalone Port= for MSSQL would accept a keyword the real
+        runtime provider does not recognize.
 
     .PARAMETER ConnectionString
         An already Compose-precedence-resolved connection string.
 
     .PARAMETER DatabaseEngine
-        "postgresql" or "mssql". Selects which host-key aliases are recognized.
+        "postgresql" or "mssql". Selects which host-key aliases are recognized and which port-parsing
+        rule applies.
 
     .OUTPUTS
-        An array of [pscustomobject] with Host and Port (Port is $null when the value carried no
-        comma-separated port segment and no standalone "port" key was present).
+        An array of [pscustomobject] with Host and Port (Port is $null when the applicable
+        engine-specific port form - a comma compound for MSSQL, a standalone "port" key for PostgreSQL
+        - was not present).
     #>
     param(
         [string]$ConnectionString,
@@ -345,9 +352,11 @@ function Get-EndpointFromResolvedConnectionString {
         $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
 
         $standalonePort = $null
-        foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-            if ([string]$key -ieq "port") {
-                $standalonePort = [string]$connectionStringBuilder.PSBase.get_Item($key)
+        if ($DatabaseEngine -eq "postgresql") {
+            foreach ($key in $connectionStringBuilder.PSBase.Keys) {
+                if ([string]$key -ieq "port") {
+                    $standalonePort = [string]$connectionStringBuilder.PSBase.get_Item($key)
+                }
             }
         }
 
@@ -355,10 +364,18 @@ function Get-EndpointFromResolvedConnectionString {
             foreach ($key in $connectionStringBuilder.PSBase.Keys) {
                 if ([string]$key -imatch $hostKeyPattern) {
                     $value = [string]$connectionStringBuilder.PSBase.get_Item($key)
-                    $parts = $value.Split(',', 2)
-                    [pscustomobject]@{
-                        Host = $parts[0].Trim()
-                        Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $standalonePort }
+                    if ($DatabaseEngine -eq "mssql") {
+                        $parts = $value.Split(',', 2)
+                        [pscustomobject]@{
+                            Host = $parts[0].Trim()
+                            Port = if ($parts.Count -gt 1) { $parts[1].Trim() } else { $null }
+                        }
+                    }
+                    else {
+                        [pscustomobject]@{
+                            Host = $value.Trim()
+                            Port = $standalonePort
+                        }
                     }
                 }
             }
