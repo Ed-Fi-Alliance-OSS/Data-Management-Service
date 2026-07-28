@@ -11,8 +11,8 @@ using Microsoft.AspNetCore.WebUtilities;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 
 /// <summary>
-/// Shapes framework-generated, bodiless error responses (401/403/404/405/413/415) into the Ed-Fi error
-/// contract, independent of route and authentication scheme (DMS-1218 INV-25…29).
+/// Shapes framework-generated, bodiless error responses into the Ed-Fi error contract, independent of
+/// route and authentication scheme.
 ///
 /// Registered immediately after <c>UseRouting</c> and before CORS/authentication/authorization, so it
 /// wraps the authentication/authorization short-circuits and the endpoint terminal. It shapes a

@@ -957,7 +957,7 @@ public class TokenEndpointTests
 /// <summary>
 /// End-to-end verification that CMS-generated OAuth/OIDC error branches return the Ed-Fi bad-request
 /// contract (400 preserved) in place of the OAuth <c>{ error, error_description }</c> shape, while the
-/// protocol success responses stay untouched (DMS-1218 INV-16/17/18). Non-fixture container; the
+/// protocol success responses stay untouched. Non-fixture container; the
 /// runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
 public class OAuthEndpointErrorTests

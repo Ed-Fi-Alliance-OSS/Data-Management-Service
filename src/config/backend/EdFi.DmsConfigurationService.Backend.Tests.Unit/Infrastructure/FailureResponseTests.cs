@@ -398,7 +398,7 @@ public class FailureResponseTests
     [TestFixture]
     public class Given_an_unclassified_status_failure
     {
-        // 413 Payload Too Large has no documented Ed-Fi taxonomy URI (D-08).
+        // 413 Payload Too Large has no documented Ed-Fi taxonomy URI.
         private JsonNode _result = null!;
 
         [SetUp]

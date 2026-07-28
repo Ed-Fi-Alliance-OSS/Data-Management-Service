@@ -287,7 +287,7 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
         string responseBody = await response.TextAsync();
         JsonObject body = JsonNode.Parse(responseBody)!.AsObject();
 
-        // Exact Ed-Fi data-validation contract (DMS-1218 §12.2.1). This scenario posts a path-bearing
+        // Exact Ed-Fi data-validation contract. This scenario posts a path-bearing
         // schema-validation failure, so the response is a data-validation problem: the detail is
         // carried in "validationErrors" and "errors" is empty.
         body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");

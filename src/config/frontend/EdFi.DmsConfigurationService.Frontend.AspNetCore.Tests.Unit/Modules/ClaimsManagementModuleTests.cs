@@ -596,9 +596,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    // ---- C06: reload/upload non-success DTO conversion (INV-08..15) ----
-
-    /// <summary>INV-08: a reload failure result becomes the internal-server-error contract (500).</summary>
+    /// <summary>A reload failure result becomes the internal-server-error contract (500).</summary>
     [TestFixture]
     public class Given_reload_returns_a_failure_status : ClaimsManagementModuleTests
     {
@@ -619,7 +617,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-09: a JsonException during reload becomes a generic bad-request (400).</summary>
+    /// <summary>A JsonException during reload becomes a generic bad-request (400).</summary>
     [TestFixture]
     public class Given_reload_throws_a_json_exception : ClaimsManagementModuleTests
     {
@@ -640,7 +638,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-10: an InvalidOperationException during reload becomes 500.</summary>
+    /// <summary>An InvalidOperationException during reload becomes 500.</summary>
     [TestFixture]
     public class Given_reload_throws_an_invalid_operation_exception : ClaimsManagementModuleTests
     {
@@ -661,7 +659,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-11: a null Claims body becomes data validation keyed by "Claims" (400).</summary>
+    /// <summary>A null Claims body becomes data validation keyed by "Claims" (400).</summary>
     [TestFixture]
     public class Given_upload_claims_is_null : ClaimsManagementModuleTests
     {
@@ -685,7 +683,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-12 (safe): path-bearing validation failures are grouped into validationErrors by path.</summary>
+    /// <summary>Path-bearing validation failures are grouped into validationErrors by path.</summary>
     [TestFixture]
     public class Given_upload_returns_path_bearing_validation_failures : ClaimsManagementModuleTests
     {
@@ -734,7 +732,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-12 (safe): the two fixed structure literals map to claimSets/claimsHierarchy keys.</summary>
+    /// <summary>The two fixed structure literals map to claimSets/claimsHierarchy keys.</summary>
     [TestFixture]
     public class Given_upload_returns_the_structure_literals : ClaimsManagementModuleTests
     {
@@ -789,7 +787,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-12 (unsafe): a pathless "Validation" failure is denied; its message must not leak.</summary>
+    /// <summary>A pathless "Validation" failure is denied; its message must not leak.</summary>
     [TestFixture]
     public class Given_upload_returns_a_pathless_validation_failure : ClaimsManagementModuleTests
     {
@@ -810,7 +808,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-12 (unsafe): an unrecognized/future failure type is denied even with a path.</summary>
+    /// <summary>An unrecognized/future failure type is denied even with a path.</summary>
     [TestFixture]
     public class Given_upload_returns_an_unrecognized_failure_type : ClaimsManagementModuleTests
     {
@@ -905,7 +903,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-13: a JsonException during upload becomes a generic bad-request (400).</summary>
+    /// <summary>A JsonException during upload becomes a generic bad-request (400).</summary>
     [TestFixture]
     public class Given_upload_throws_a_json_exception : ClaimsManagementModuleTests
     {
@@ -926,7 +924,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-14: an ArgumentException during upload becomes a generic bad-request (400).</summary>
+    /// <summary>An ArgumentException during upload becomes a generic bad-request (400).</summary>
     [TestFixture]
     public class Given_upload_throws_an_argument_exception : ClaimsManagementModuleTests
     {
@@ -947,7 +945,7 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>INV-15: an InvalidOperationException during upload becomes 500.</summary>
+    /// <summary>An InvalidOperationException during upload becomes 500.</summary>
     [TestFixture]
     public class Given_upload_throws_an_invalid_operation_exception : ClaimsManagementModuleTests
     {

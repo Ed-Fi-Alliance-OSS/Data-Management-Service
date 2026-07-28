@@ -22,11 +22,11 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 /// Verifies the CMS exception handler shapes every branch into the Ed-Fi contract and derives the HTTP
 /// status from the body: <see cref="BadHttpRequestException"/> is status-aware (400 with a
 /// <see cref="JsonException"/> inner exception → data-validation; 400 with no inner exception →
-/// parameter-validation; 415 → unsupported-media-type; other reachable → RFC 9457 about:blank per D-08),
+/// parameter-validation; 415 → unsupported-media-type; other reachable → RFC 9457 about:blank),
 /// <see cref="ParameterValidationException"/> yields the parameter-validation contract (matched before the
 /// generic FluentValidation type it derives from), the generic validation exception yields the
-/// data-validation contract, and any other exception yields a 500 — never exposing the exception message
-/// (DMS-1218 INV-30). This is a non-fixture container; the runnable fixtures are the nested
+/// data-validation contract, and any other exception yields a 500 — never exposing the exception
+/// message. This is a non-fixture container; the runnable fixtures are the nested
 /// <c>Given_…</c> classes.
 /// </summary>
 public class GlobalExceptionHandlerTests

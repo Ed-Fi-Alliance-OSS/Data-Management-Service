@@ -19,7 +19,7 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware;
 
 /// <summary>
-/// Verifies the DMS-1218 INV-36 pipeline ordering: because <c>UseExceptionHandler</c> is registered
+/// Verifies the pipeline ordering: because <c>UseExceptionHandler</c> is registered
 /// ahead of <c>TenantResolutionMiddleware</c>, an unexpected exception thrown during tenant
 /// resolution is shaped by GlobalExceptionHandler into the Ed-Fi internal-server-error contract
 /// (rather than an unshaped framework 500), and — because RequestLoggingMiddleware remains outermost —

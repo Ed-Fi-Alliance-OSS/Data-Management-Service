@@ -16,7 +16,7 @@
 | Author of spec | Samuel Lugo (with automated repository audit) |
 | Date | 2026-07-23 |
 | **Status** | **Approved — 2026-07-23** |
-| Revision | R4 — incorporates third architect challenge dated 2026-07-23 (INV-12 deny-by-default + control-document cleanups) |
+| Revision | R5 — records the post-PR review remediation (2026-07-27/28); R4 incorporated the third architect challenge dated 2026-07-23 (INV-12 deny-by-default + control-document cleanups) |
 | Ticket comments at time of writing | Empty (verified `acli jira workitem view DMS-1218 --fields comment`) |
 | Pre-existing repo design doc for DMS-1218 | None found (verified) |
 
@@ -27,6 +27,8 @@
 **Revision note (R3).** The second architect challenge (2026-07-23) resolved the prior eight blockers and required four narrow corrections, all applied here: (1) reclassify the 415 URI as an **Ed-Fi/DMS platform convention** (not KB-documented) and **resolve D-08 now** — reachable statuses lacking a ticket-mandated, KB-documented, or established-platform URI use RFC 9457 `type: "about:blank"` with the standard reason phrase as `title` and the HTTP status preserved; (2) framework shaping applies to **every** bodiless non-2xx response with **no route-based exclusions** and **no status-code-page re-execution** — a single status-code callback/custom middleware guarded only by `Response.HasStarted` + body/content-type checks; (3) refine INV-12 so only recognized field-validation failures with non-empty paths populate `validationErrors`, while operational/database/unexpected failures use a safe generic bad-request body (raw detail logged server-side, never in the body); (4) make control evidence truthful and executable (accurate V-01/V-02 match enumeration, split V-17, corrected §15 ordering statement, and a mismatch-proof `FailureResponseWriter`).
 
 **Revision note (R4).** The third architect challenge (2026-07-23) resolved all remaining architecture blockers and required one **blocking** fix plus small cleanups, all applied here: (1) INV-12 is now **deny-by-default** — a backend failure message reaches the body **only** for path-bearing `"Validation"` failures or the two fixed `"Structure"` literals; every other type (incl. *pathless* `"Validation"` from the data layer, `"Database"`, `"Unexpected"`, and any future type) uses a safe generic bad-request body with raw text logged server-side only, verified by a secret-sentinel test; (2) control-document cleanups — V-02 enumeration completed (adds the `FailureResults` `error_description` parser and `MetadataModule.WriteAsync`), the self-challenge/end markers advanced to R4, the stale "exclusions" wording removed from §29.2, the §10 target JSON `type` now permits an Ed-Fi URI **or** `about:blank`, and `ForUnclassifiedStatus` added to the file-impact forecast. No new architecture or product decision.
+
+**Revision note (R5).** A post-PR review (2026-07-27/28) audited the published PR implementation against the live Knowledge Base and the running service and found misclassifications the R1–R4 text either missed or described incorrectly. The remediation series (findings in §12.8; narrative in §29.7d; implementation head `83afd488`) added binding/paging/parameter classification, claims-upload structural validation and server-side failure precedence, reference-conflict and unresolved-reference reclassification to 409, sanitized-500 stored-state failure handling with 404 preserved for genuine absence, real-Kestrel 413 shaping, strict identity-provider payload parsing, and a distinct service-owned OAuth authentication-error path. This revision corrects the stale current-state statements in §8–§18, records INV-37…INV-49, and updates the active definition-of-done; the R1–R4 revision notes, decision log (§24), progress history (§26), verification history (§27), §29.7–§29.7c, and the R4 closing marker are preserved verbatim as historical record.
 
 **Evidence tags:** **[JIRA]** ticket/KB fact · **[REPO]** verified in repo at base · **[INFER]** inference · **[REC]** author recommendation · **[ARCH]** architect-decided.
 
@@ -125,7 +127,7 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 ## 8. Non-goals
 
 - Rewriting OAuth/OIDC **protocol success** contracts.
-- Changing HTTP **status codes** of compliant responses (none proposed; any change is flagged).
+- Changing HTTP **status codes** of *correctly classified* responses. **[Corrected R5]** The R1–R4 claim that no status changes were proposed did not survive the post-PR review: misclassified statuses were changed with approval — reference conflicts and caller-supplied unresolved references to **409**, stored-state lookup and identity-provider disappearance failures to sanitized **500**, and the ApiClient update vanished-target case to **404** (§12.8, §18). Correct classifications remain untouched.
 - Refactoring domain result types/repositories beyond error shaping.
 - **Repo-wide "single serialization path" rewrite** of the 12 CRUD modules purely for media type (removed per D-05/D-01) **[ARCH]**.
 - Adding taxonomy URIs not documented by the KB.
@@ -133,7 +135,9 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 
 ---
 
-## 9. Current request and error-response architecture **[REPO]**
+## 9. Request and error-response architecture **[REPO]**
+
+> **[R5]** The text below describes the **baseline at audit base `5922d4fb`** and is retained as historical record; every "current"-tense statement in it is superseded. §9.1 describes the architecture **as implemented** through `83afd488`.
 
 **Shared model `FailureResponse`.** Static factory → `JsonNode`; `CreateBaseJsonObject` always emits `detail`, `type`, `title`, `status`, `correlationId`, `validationErrors` (`{}` when null), `errors` (`[]` when null). Factories: `ForUnauthorized` (401 `security:authentication`), `ForForbidden` (403 `security:authorization`), `ForBadRequest` (400 `bad-request`), `ForDataValidation` (400 `bad-request:data` ✅), `ForNotFound` (404 `not-found`), `ForConflict` (409 `conflict`), `ForNonUniqueIdentity` (409 `conflict:non-unique-identity`), `ForBadGateway` (502 `bad-gateway`), `ForUnknown` (500 `internal-server-error`). **No 405/415 factory.**
 
@@ -148,6 +152,22 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 > **Test-host caveat [REPO]:** CMS unit tests replace the auth scheme with `TestAuthHandler` (via `AddTestAuthentication()`, scope in `X-Test-Scope`). A JwtBearer-`OnChallenge`/`OnForbidden`-only strategy would therefore be **untested** and behave differently under `TestAuthHandler`. Framework auth shaping must be **scheme-independent** (§15) **[ARCH]**.
 
 **OAuth middleware `OpenIddictErrorHandlingMiddleware`.** Converts `/connect/*` and `/.well-known/*` exceptions to OAuth `{error,error_description}` 400 (`application/json`). **Not wired** (`UseOpenIddictErrorHandling`/`UseEnhancedOpenIddict` never invoked; verified) — dead code with unit tests.
+
+### 9.1 As-implemented architecture (R5, through `83afd488`) **[REPO]**
+
+**Shared model.** `FailureResponse` additionally provides `ForParameterValidation` (400 `bad-request:parameter`), `ForMethodNotAllowed` (405), `ForUnsupportedMediaType` (415), `ForUnclassifiedStatus` (`about:blank`), `ForDependentItemExists` (409 `conflict:dependent-item-exists`), and `ForUnresolvedReference` (409 `conflict:unresolved-reference`); `ForBadRequest` accepts an optional `errors` array.
+
+**Helpers.** Every `FailureResults` method emits `application/problem+json`. `Authorization(correlationId, errors[])` passes endpoint-owned errors through verbatim (D-02); `Authentication(error, errorDescription, correlationId)` composes the 401 contract for **service-owned** OAuth errors (INV-46); `GetIdentityErrorDetails` is **strict** — the `error` and `error_description` fields of a complete `{error, error_description}` JSON object with non-blank string members are intentionally composed into a single `errors` entry, and every other provider/transport shape yields a fixed, non-identifying fallback (INV-41). `FailureResponseWriter` derives the HTTP status from the node, sets the exact `Content-Length` (replacing a stale `0`), and guards on `Response.HasStarted`.
+
+**Binding.** `RouteHandlerOptions.ThrowOnBadRequest = true` routes every minimal-API binding failure into `GlobalExceptionHandler`, which classifies without reading message text: a `JsonException` inner exception → 400 `bad-request:data` ("The request body contains invalid JSON."); no inner exception on a body-accepting endpoint (the original endpoint's `IAcceptsMetadata`, recovered from `IExceptionHandlerFeature` because exception handling clears the active endpoint) → 400 `bad-request` with `errors: ["A non-empty request body is required."]`; anything else → 400 `bad-request:parameter`. `ParameterValidationException` (thrown by the paging-validator guard) → `bad-request:parameter`, and an invalid `orderBy` never reflects the raw client-supplied value. **Known limitation:** on an endpoint that accepts a body *and* binds route/query parameters, a parameter binding failure is indistinguishable from a missing body and receives the body-required classification (deferred — INV-48; route constraints would cover today's route-ID cases but not a future query-plus-body ambiguity).
+
+**Pipeline.** `SecurityHeaders → RequestLogging → UseExceptionHandler → TenantResolution → [ReportInvalidConfiguration] → UseRouting → FrameworkErrorResponseMiddleware → CORS → AuthN → AuthZ → endpoints`. `FrameworkErrorResponseMiddleware` shapes every bodiless 401/403/404/405/**413**/415 — including the **real Kestrel 413**, which rejects an oversized body *before* exception dispatch and therefore never reaches `GlobalExceptionHandler` (INV-42; the handler's own 413 arm is retained defensively for any `BadHttpRequestException` that carries that status).
+
+**Claims upload.** A non-object `claims` payload is rejected as a path-bearing structural validation failure at the service boundary (INV-39). In the module's deny-by-default mapper, the server-side failure types `OperationError`/`Database`/`Unexpected`/`Unknown`/`Configuration` take precedence over every safe entry and return a sanitized 500 — even when mixed with otherwise-safe validation entries (INV-43, §12.2.1 correction).
+
+**Reference and stored-state classification.** Caller-supplied unresolved references (Application `VendorId`/`DataStoreIds`/`ProfileIds`; ApiClient `ApplicationId`/`DataStoreIds`; DataStoreContext `DataStoreId`; ClaimSet copy `OriginalId`; DataStoreDerivative foreign keys) return **409 `conflict:unresolved-reference`** from both pre-checks and repository race branches, preserving insert cleanup and update rollback (INV-44). `Profile` delete-in-use returns **409 `conflict:dependent-item-exists`** (INV-40). Failures no caller input can explain — `ApiClientGetResult.FailureUnknown` at the update/delete/reset-credential target lookups, and stored identity-provider client disappearance during ApiClient update or either credential reset — return a sanitized **500** with the message logged server-side; genuine target absence stays **404**, including the repository vanished-target case on ApiClient update (INV-45).
+
+**OAuth.** Self-contained (OpenIddict) authentication failures use the distinct, service-owned `TokenResult.FailureAuthentication(Error, ErrorDescription)` → `FailureResults.Authentication` path (`invalid_client` for unknown or disabled clients, `unauthorized_client` for an invalid secret); untrusted Keycloak/provider/transport content still goes through the strict parser above (INV-46).
 
 ---
 
@@ -165,7 +185,7 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 }
 ```
 
-`validationErrors` = `{}` unless field-level validation data exists (then keyed by field/JSON-path). `errors` = `[]` unless safe developer/operator messages apply (never raw exception/provider/DB/config/token/secret text). Body `status` == HTTP status. Content type: **`application/problem+json`** for `FailureResults` and newly-changed writers (D-05). This shape is exactly what `FailureResponse.CreateBaseJsonObject` already produces.
+`validationErrors` = `{}` unless field-level validation data exists (then keyed by field/JSON-path). `errors` = `[]` unless safe developer/operator messages apply (never raw exception/DB/config/token/secret text; unstructured provider/transport text uses the fixed fallback, while the `error` and `error_description` fields of a valid structured provider payload are intentionally composed into a single entry). Body `status` == HTTP status. Content type: **`application/problem+json`** for `FailureResults` and newly-changed writers (D-05). This shape is exactly what `FailureResponse.CreateBaseJsonObject` already produces.
 
 ---
 
@@ -175,16 +195,18 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 |---|---|---|---|---|---|
 | Data validation | 400 | `urn:ed-fi:api:bad-request:data` | Data Validation Failed | `ForDataValidation` ✅ | Yes |
 | Generic bad request / malformed body | 400 | `urn:ed-fi:api:bad-request` | Bad Request | `ForBadRequest` | Yes |
-| Query/parameter validation | 400 | `urn:ed-fi:api:bad-request:parameter` | Parameter Validation Failed | *(none; add only if needed)* | Yes |
+| Query/parameter validation | 400 | `urn:ed-fi:api:bad-request:parameter` | Parameter Validation Failed | `ForParameterValidation` ✅ (R5) | Yes |
 | Authentication | 401 | `urn:ed-fi:api:security:authentication` | Authentication Failed | `ForUnauthorized` | Yes |
 | Authorization | 403 | `urn:ed-fi:api:security:authorization` | Authorization Failed | `ForForbidden` | Yes |
 | Not found | 404 | `urn:ed-fi:api:not-found` | Not Found | `ForNotFound` | Yes |
-| Method not allowed | 405 | `urn:ed-fi:api:method-not-allowed` | Method Not Allowed | **add (Phase 5)** | Yes (+ DMS convention) |
-| Unsupported media type | 415 | `urn:ed-fi:api:unsupported-media-type` | Unsupported Media Type | **add (Phase 5)** | Yes (+ DMS convention) |
+| Method not allowed | 405 | `urn:ed-fi:api:method-not-allowed` | Method Not Allowed | `ForMethodNotAllowed` ✅ | Yes (+ DMS convention) |
+| Unsupported media type | 415 | `urn:ed-fi:api:unsupported-media-type` | Unsupported Media Type | `ForUnsupportedMediaType` ✅ | Yes (+ DMS convention) |
 | Conflict | 409 | `urn:ed-fi:api:conflict` (+ documented children) | Conflict | `ForConflict`/`ForNonUniqueIdentity` | Yes |
+| Dependent item exists | 409 | `urn:ed-fi:api:conflict:dependent-item-exists` | Dependent Item Exists | `ForDependentItemExists` ✅ (R5) | Yes |
+| Unresolved reference | 409 | `urn:ed-fi:api:conflict:unresolved-reference` | Unresolved Reference | `ForUnresolvedReference` ✅ (R5) | Yes |
 | Bad gateway (IdP) | 502 | `urn:ed-fi:api:bad-gateway` | Bad Gateway | `ForBadGateway` | platform |
 | Internal server error | 500 | `urn:ed-fi:api:internal-server-error` | Internal Server Error | `ForUnknown` | ticket-mandated |
-| **Unclassified reachable status** (D-08) | *(preserved)* | `about:blank` | *(standard HTTP reason phrase)* | **add `ForUnclassifiedStatus` (Phase 5)** | RFC 9457 §4.2.1 |
+| **Unclassified reachable status** (D-08) | *(preserved)* | `about:blank` | *(standard HTTP reason phrase)* | `ForUnclassifiedStatus` ✅ | RFC 9457 §4.2.1 |
 
 **Source of each 4xx/5xx `type` (no invention):** ticket-mandated (`bad-request:data`, `security:authorization`, `not-found`, `internal-server-error`), KB-documented (`bad-request`, `bad-request:parameter`, `security:authentication`, `method-not-allowed`, `conflict:*`), Ed-Fi/DMS platform convention (`unsupported-media-type` at DMS `FailureResponse.cs:47`; `bad-gateway`), or — for a reachable status matching none of these — RFC 9457 `about:blank` with the standard reason phrase as `title` (D-08). The 405/415 factories reuse the established URIs above; there is no invented URI anywhere in this plan.
 
@@ -235,6 +257,8 @@ Success DTOs unchanged. Every 400/500 branch → `FailureResponse`. Statuses pre
 
 Tests (Phase 3): (a) a field-validation case (paths → `validationErrors`); (b) a separate operational/database-failure case (→ generic bad-request, no internal text); (c) a **deny-by-default sentinel test** — inject a secret sentinel string into a **pathless `"Validation"`** message and assert the sentinel is **absent** from the serialized response body. INV-08 (reload partial failures) stays **500 → `ForUnknown`**, which exposes nothing, so this concern does not apply there.
 
+> **[Corrected R5 — post-PR review.]** As implemented through `83afd488`, the server-side failure types `"OperationError"`, `"Database"`, `"Unexpected"`, `"Unknown"`, and `"Configuration"` **take precedence** over every other entry and return a sanitized **500** (`FailureResults.Unknown`) — they no longer fall through to the generic 400 described above, including when mixed with otherwise-safe validation entries (INV-43). The schema-load `InvalidOperationException` that `ClaimsValidator` previously converted into a fabricated path-bearing `"Validation"` failure (which the deny-by-default mapper would have surfaced as safe) now propagates and is produced as `"OperationError"`. Remaining non-server-side unsafe entries still yield the safe generic 400.
+
 ### 12.3 Audit-discovered — OAuth/OIDC error branches — **all converted [ARCH/D-04]**
 
 Convert to the Ed-Fi contract; **preserve** protocol success (token 200, `{active:…}` introspection, successful revocation 200). Remove `{error,error_description}` from CMS non-success responses.
@@ -279,6 +303,8 @@ Convert to the Ed-Fi contract; **preserve** protocol success (token 200, `{activ
 - **Not handled here:** transport/parser rejections that Kestrel emits before the application pipeline (e.g. oversized request line/headers) never reach `GlobalExceptionHandler`; this spec makes no claim about them.
 - Any *additional* reachable status follows D-08 (`about:blank` + reason phrase); no URN is invented.
 
+> **[Corrected R5 — post-PR review.]** The body-size claim above is wrong for the real transport: under Kestrel, an oversized body is rejected **before** exception dispatch runs, so the 413 never reaches `GlobalExceptionHandler` — it surfaces as a bodiless 413 that `FrameworkErrorResponseMiddleware` now shapes into the `about:blank` contract (INV-42; regression-tested on the real Kestrel transport, which TestServer masked because it does not enforce the body-size limit). The handler's 413 arm is retained defensively for any `BadHttpRequestException` that does carry that status.
+
 ### 12.6 Content-type consistency — **narrowed [ARCH/D-05]**
 
 | ID | Scope | Cur CT | Target CT | Class | Phase |
@@ -295,44 +321,75 @@ Convert to the Ed-Fi contract; **preserve** protocol success (token 200, `{activ
 | INV-34 | OAuth success: token 200, `{active:…}` introspection, revoke 200, register 200 | SUCCESS/OOS |
 | INV-35 | Discovery/metadata/health modules — all 2xx; `MetadataModule` "Forbidden" is OpenAPI doc inside a 200 body | SUCCESS/OOS |
 
+### 12.8 Post-PR review findings (R5, 2026-07-27/28)
+
+A post-PR review of the published PR implementation found the misclassifications below: a first pass reviewed head `02c0e2cf`, and a fresh review pass began from `91bf9141`. All were remediated behind per-commit approval gates; the implementation head recorded for this revision is `83afd488`. Inventory numbering continues from INV-36.
+
+| ID | Finding | Resolution | Commit(s) |
+|---|---|---|---|
+| INV-37 | Minimal-API binding failures (malformed JSON body, unparsable route/query parameter, missing/null body) produced an **empty 400** outside Development | `RouteHandlerOptions.ThrowOnBadRequest = true`; `GlobalExceptionHandler` classifies by `InnerException` and the original endpoint's `IAcceptsMetadata` — never message text: JSON-body failure → `bad-request:data`; missing/null body on a body-accepting endpoint → `bad-request` + `errors: ["A non-empty request body is required."]`; otherwise → `bad-request:parameter` | `93b56c08`, `410308fa` |
+| INV-38 | Paging/query validation misclassified as `bad-request:data`; an invalid `orderBy` reflected the raw client-supplied value into the error message | `ParameterValidationException` + a paging-guard overload → 400 `urn:ed-fi:api:bad-request:parameter` (new `ForParameterValidation` factory); reasons carried in `errors`; no client-value reflection | `93b56c08` |
+| INV-39 | A non-object (array/scalar) `claims` upload payload reached indexing logic, threw, and was misclassified as a generic error | Structural validation at the `ClaimsUploadService` boundary produces a path-bearing `"Validation"` failure | `d712ba1c` |
+| INV-40 | `Profile` delete-in-use and `DataStoreDerivative` insert/update foreign-key violations returned 400 | **409** — `conflict:dependent-item-exists` (new `ForDependentItemExists`) / `conflict:unresolved-reference` (new `ForUnresolvedReference`); DataStoreDerivative E2E contract aligned | `f3d7705e`, `91bf9141` |
+| INV-41 | `GetIdentityErrorDetails` echoed raw non-JSON provider/transport text (including internal URLs) whenever the payload was not valid `{error, error_description}` JSON | Strict parsing: both fields of a complete `{error, error_description}` JSON object with non-blank string members are composed into one `errors` entry; every other shape → a fixed, non-identifying fallback message | `4f38901a` |
+| INV-42 | §12.5.1 claimed the real Kestrel 413 reaches `GlobalExceptionHandler`; in fact Kestrel rejects the oversized body before exception dispatch and the response was a bodiless 413 | `FrameworkErrorResponseMiddleware` shapes 413 (`about:blank`); regression on the real Kestrel transport (TestServer does not enforce the limit) | `e18d001f` |
+| INV-43 | Server-side claims-upload failures could demote to 400, and a schema-load exception was fabricated into a path-bearing `"Validation"` failure carrying internal configuration text that the deny-by-default mapper would surface | Server-side failure types (`OperationError`/`Database`/`Unexpected`/`Unknown`/`Configuration`) take precedence → sanitized 500, even when mixed with safe entries; the schema-load exception propagates as `OperationError` (§12.2.1 correction) | `4c85c3d8` |
+| INV-44 | Caller-supplied unresolved references (Application `VendorId`/`DataStoreIds`/`ProfileIds`, ApiClient `ApplicationId`/`DataStoreIds`, DataStoreContext `DataStoreId`, ClaimSet copy `OriginalId`) returned 400 data-validation bodies (ClaimSet copy: 404) | **409 `conflict:unresolved-reference`** at pre-checks and repository race branches; insert cleanup and update rollback preserved; `FailureUnknown` lookups and ApiClient's inherited (non-caller-supplied) `VendorId` failures → sanitized 500; E2E contracts aligned | `b27012d1`, `3d0b3f15` |
+| INV-45 | Stored-state lookup/disappearance failures conflated with caller errors: `ApiClientGetResult.FailureUnknown` at the update/delete/reset-credential lookups → 404; stored identity-provider client disappearance (ApiClient update and both credential resets) → 404; the ApiClient update vanished-target case → 400 | Unknown lookups and identity-provider disappearance → sanitized **500** (message logged server-side); genuine target absence stays **404**, including the repository vanished-target case → 404 | `46c2b9a3` |
+| INV-46 | The strict INV-41 parser broke the self-contained token-error contract: OpenIddict's plain-text messages fell to the fixed fallback instead of the documented `"invalid_client. …"`/`"unauthorized_client. …"` errors | Distinct service-owned `TokenResult.FailureAuthentication(Error, ErrorDescription)` → `FailureResults.Authentication` (no parsing, no fabricated JSON; `invalid_client` for unknown/disabled clients, `unauthorized_client` for an invalid secret); untrusted provider content keeps the strict parser | `83afd488` |
+
+Supporting hygiene in the same series: the 415-URI documentation correction (`347b6301`, §25 entry dated 2026-07-27) and infrastructure-test convention alignment (`25315f27`).
+
+**Deferred (recorded, not implemented):**
+
+| ID | Item | Notes |
+|---|---|---|
+| INV-47 | Duplicate/non-unique identity taxonomy widening | Claim-set name duplicates already use 409 `conflict:non-unique-identity`; the remaining uniqueness conflicts — Vendor company name, Application name per vendor, Tenant name, Profile name, DataStoreContext key/name, and the `IdentityModule.RegisterClient` client ID — still return 400 data-validation bodies. Widening them to the 409 taxonomy is deferred. |
+| INV-48 | Mixed body/parameter binding ambiguity | On a body-accepting endpoint, a route/query binding failure is indistinguishable from a missing body and receives the body-required classification (§9.1). Route constraints would disambiguate the **current route-ID cases** only; an endpoint that binds a query parameter *and* a body would remain ambiguous, so the general resolution stays a deferred decision. |
+| INV-49 | `ApplicationApiClientsResult` completeness gap | The union has no distinct not-found case, so Application update/reset-credential paths infer absence from an empty client list and cannot distinguish a missing application from one that has no API clients. |
+
 ---
 
-## 13. Proposed architecture
+## 13. Architecture (as implemented)
 
-1. **Centralize *changed* error construction only.** New/changed error responses go through `FailureResults` (endpoints) or a new middleware writer (direct-to-response), each setting status, body, and `application/problem+json` in one place. Add `FailureResults` factories/overloads needed by the *changed* branches (`Authorization` overload with explicit `errors[]`, plus `Conflict`/`BadRequest`/`DataValidation` only where a *changed* branch needs them). **No repo-wide rewrite of already-compliant inline responses** (D-01/D-05) **[ARCH]**.
+1. **Shared body shape, two construction paths.** `FailureResponse` owns the shared body shape and taxonomy. Endpoint branches use either `FailureResults` (e.g. `Authorization` with explicit `errors[]`, `Authentication` for service-owned OAuth errors, `BadRequest`/`DataValidation`) or direct `Results.Json(FailureResponse.ForX(...))` calls (e.g. the unresolved-reference and dependent-item conflict branches); middleware producers use `FailureResponseWriter`. `FailureResults` and the writer emit `application/problem+json`, while compliant inline module responses retain their existing media type under D-05 (the R5 unresolved-reference branches pass `application/problem+json` explicitly; the Profile/DataStoreDerivative conflict branches keep the module's existing `application/json`). **No repo-wide rewrite of already-compliant inline responses** (D-01/D-05) **[ARCH]**.
 2. **Middleware writer.** `FailureResponseWriter` serializes a `FailureResponse` node with `application/problem+json` and `TraceIdentifier`, **deriving the HTTP status from the node's `status` member** (no independent status argument → no body/HTTP mismatch), guarding on `Response.HasStarted`.
-3. **Exception boundary first.** Reorder `Program.cs` so `UseExceptionHandler` precedes `TenantResolution`/config middleware (INV-36) **[ARCH]**.
-4. **Scheme-independent framework shaping [ARCH].** A **single** status-code callback / custom terminal middleware (placed after routing/auth) shapes **every** bodiless 401/403/404/405/415 response into an Ed-Fi body, **independent of route and auth scheme**. It uses **no status-code-page re-execution** (which can invoke routing/endpoints twice). The **only** safety boundary is `Response.HasStarted` plus body/content-type checks (empty body → shape; existing body → leave). Existing headers (notably `WWW-Authenticate` on 401) are preserved; 2xx/204 are never touched (INV-25…29).
+3. **Exception boundary first.** `Program.cs` places `UseExceptionHandler` ahead of `TenantResolution`/config middleware (INV-36) **[ARCH]**.
+4. **Scheme-independent framework shaping [ARCH].** A **single** non-re-executing middleware (`FrameworkErrorResponseMiddleware`, placed after routing, before CORS/auth) shapes **every** bodiless 401/403/404/405/413/415 response into an Ed-Fi body, **independent of route and auth scheme**. It uses **no** status-code-page re-execution (which can invoke routing/endpoints twice). The **only** safety boundary is `Response.HasStarted` plus body/content-type checks (empty body → shape; existing body → leave). Existing headers (notably `WWW-Authenticate` on 401) are preserved; 2xx/204 are never touched (INV-25…29, INV-42).
 5. **Status-aware `BadHttpRequestException`.** `GlobalExceptionHandler` branches on `.StatusCode` (INV-30) **[ARCH]**.
-6. **OAuth conversion.** IdentityModule OAuth error branches → Ed-Fi contract; remove dead middleware (INV-16/17/18/24) **[ARCH]**.
-7. Never change statuses of compliant responses; never invent URIs; never expose sensitive text.
+6. **OAuth conversion.** IdentityModule OAuth error branches use the Ed-Fi contract; the dead middleware is removed (INV-16/17/18/24) **[ARCH]**.
+7. Never change statuses of correctly classified responses; never invent URIs; never expose sensitive text.
 
 ---
 
 ## 14. Shared helper responsibilities
 
-**`FailureResponse` (DataModel).** Owns body shape/taxonomy. Already emits mandatory `{}`/`[]`. Add (Phase 5), reusing established URIs — no invention:
+**`FailureResponse` (DataModel).** Owns body shape/taxonomy. Emits mandatory `{}`/`[]`. Provides, reusing established URIs — no invention:
 - `ForMethodNotAllowed` → `urn:ed-fi:api:method-not-allowed`, 405 (KB-documented + DMS convention).
 - `ForUnsupportedMediaType` → `urn:ed-fi:api:unsupported-media-type`, 415 (**KB-documented + DMS convention**, DMS Core `FailureResponse.cs:47`).
 - `ForUnclassifiedStatus(int status, string reasonPhrase, string correlationId)` → `type: "about:blank"`, `title = reasonPhrase` (standard HTTP reason phrase), given `status`, `validationErrors: {}`, `errors: []` (**D-08**, RFC 9457 §4.2.1). Used only when a reachable status has no ticket/KB/platform URI.
+- `ForParameterValidation` → `urn:ed-fi:api:bad-request:parameter`, 400 (KB-documented; R5, INV-38).
+- `ForDependentItemExists` → `urn:ed-fi:api:conflict:dependent-item-exists`, 409 (KB-documented; R5, INV-40).
+- `ForUnresolvedReference` → `urn:ed-fi:api:conflict:unresolved-reference`, 409 (KB-documented; R5, INV-40/INV-44).
 
-**`FailureResults` (Frontend).** Owns `IResult` + status + content type. Make **all** methods use `application/problem+json` (fixes INV-31a). Add:
-- `Authorization(string correlationId, string[] errors)` — **D-02** (implemented in C02): builds a 403 `security:authorization` body with the fixed safe detail (`_errorDetail` = "The request could not be processed. See 'errors' for details.") and the explicit `errors` array passed through verbatim, with **no IdP-JSON parsing** (so INV-01 yields `errors: ["Registration is disabled."]`, not the mangled `["Forbidden. …"]` the existing `GetIdentityErrorDetails` would produce). Add analogous explicit-`errors` overloads only where a *changed* branch needs them.
-- 405/415 helpers (Phase 5) wrapping the new factories.
-Preserve existing method signatures (additive overloads only).
+**`FailureResults` (Frontend).** Owns `IResult` + status + content type. **All** methods use `application/problem+json` (INV-31a). Provides:
+- `Authorization(string correlationId, string[] errors)` — **D-02** (implemented in C02): builds a 403 `security:authorization` body with the fixed safe detail (`_errorDetail` = "The request could not be processed. See 'errors' for details.") and the explicit `errors` array passed through verbatim, with **no IdP-JSON parsing** (so INV-01 yields `errors: ["Registration is disabled."]`, not the mangled `["Forbidden. …"]` the existing `GetIdentityErrorDetails` would produce). Analogous explicit-`errors` overloads exist only where a *changed* branch needs them.
+- `Authentication(string error, string errorDescription, string correlationId)` — composes the 401 contract for **service-owned** OAuth errors from trusted local constants (R5, INV-46).
+- 405/415 helpers wrapping the factories above.
+Existing method signatures preserved (additive overloads only).
 
 **`FailureResponseWriter` (new, Frontend).** For middleware/terminal shaping that writes directly to `HttpResponse` (tenant, invalid-config, framework shaping). **Mismatch-proof by construction [ARCH]:** the writer takes the `FailureResponse` node and **derives the HTTP status code from the node's own `status` member** — it does not accept an independent status argument, so a body/HTTP status mismatch is structurally impossible. (If a future signature must accept a separate status, it validates `node["status"] == status` and throws on disagreement.) The writer sets `Content-Type: application/problem+json`, ensures `correlationId` = `context.TraceIdentifier`, and guards on `Response.HasStarted` (no-op if the response has already started).
 
-**`GetIdentityErrorDetails` caveat.** Retained for IdP-JSON branches (`InvalidClient`/`Unauthorized`/`Forbidden` from token flow); **not** used for plain endpoint messages (use the D-02 overload).
+**`GetIdentityErrorDetails` caveat.** Retained for IdP-JSON branches (`InvalidClient`/`Unauthorized`/`Forbidden` from token flow); **not** used for plain endpoint messages (use the D-02 overload). **[Updated R5]** The parser is strict (INV-41): the `error` and `error_description` fields of a complete `{error, error_description}` JSON object with non-blank string members are composed into a single `errors` entry, and every other shape yields the fixed fallback message. Service-owned OAuth authentication errors bypass it entirely via `FailureResults.Authentication` (INV-46).
 
 ---
 
 ## 15. Middleware and framework-response strategy
 
-- **Exception boundary (INV-36).** Reorder to `SecurityHeaders → RequestLogging → UseExceptionHandler → TenantResolution → [ReportInvalidConfiguration] → UseRouting → UseCors → UseAuthentication → UseAuthorization → endpoints`. This keeps `RequestLoggingMiddleware` outermost (its `IExceptionHandlerFeature`-based 500 logging still observes handled exceptions on the way out) while ensuring tenant/config-middleware exceptions are shaped by `GlobalExceptionHandler`. Add a pipeline test that throws inside tenant resolution and asserts a complete Ed-Fi 500 body. **[ARCH]**
-- **TenantResolutionMiddleware (INV-19…22).** Replace all four `WriteAsJsonAsync(new {error,message})` with `FailureResponseWriter` emitting `ForBadRequest`/`ForUnknown` (+ `TraceIdentifier`); **preserve statuses** (400/400/500/400); keep `SanitizeForLog`.
-- **ReportInvalidConfigurationMiddleware (INV-23).** Write `ForUnknown(TraceIdentifier)` 500 (via the writer) instead of an empty body; config-failure messages remain `LogCritical`-only. This middleware **short-circuits deliberately** (sets the status and does not call `next`; it does not throw), so it must serialize its own body regardless of pipeline position. **After the INV-36 reorder it sits *after* `UseExceptionHandler`** (order: `… → UseExceptionHandler → TenantResolution → [ReportInvalidConfiguration] → …`); the exception handler therefore cannot help a non-throwing short-circuit, confirming the writer is required here.
-- **Framework shaping (INV-25…29) — scheme-independent, no route exclusions [ARCH].** Add a **single** status-code callback / custom terminal middleware after routing/auth that shapes **every** bodiless 401/403/404/405/415 response into an Ed-Fi body, **independent of route and auth scheme** (so it also covers `TestAuthHandler`). Rules: (a) shape **every** matching bodiless response — **no** health/text/OpenAPI or other path-based exceptions; (b) never touch 2xx/204; (c) the **only** safety boundary is `Response.HasStarted` + body/content-type checks — an existing **non-empty** error body is left alone **only** because its producer is separately verified compliant (§12); any non-empty non-compliant body is inventoried and fixed at its producer, not here; (d) **do not** use status-code-page re-execution (which can invoke routing/endpoints twice) — write directly; (e) **preserve existing headers**, notably `WWW-Authenticate` on 401. Because it keys off the final status code (not JwtBearer events), it covers every configured scheme (self-contained, Keycloak, test); if JwtBearer `OnChallenge`/`OnForbidden` are additionally added for header fidelity, tests must demonstrate coverage for **every** scheme.
+- **Exception boundary (INV-36).** The pipeline is `SecurityHeaders → RequestLogging → UseExceptionHandler → TenantResolution → [ReportInvalidConfiguration] → UseRouting → FrameworkErrorResponseMiddleware → UseCors → UseAuthentication → UseAuthorization → endpoints`. This keeps `RequestLoggingMiddleware` outermost (its `IExceptionHandlerFeature`-based 500 logging still observes handled exceptions on the way out) while ensuring tenant/config-middleware exceptions are shaped by `GlobalExceptionHandler`. A pipeline test throws inside tenant resolution and asserts a complete Ed-Fi 500 body. **[ARCH]**
+- **TenantResolutionMiddleware (INV-19…22).** All four former `WriteAsJsonAsync(new {error,message})` branches use `FailureResponseWriter` emitting `ForBadRequest`/`ForUnknown` (+ `TraceIdentifier`); **statuses preserved** (400/400/500/400); `SanitizeForLog` kept.
+- **ReportInvalidConfigurationMiddleware (INV-23).** Writes `ForUnknown(TraceIdentifier)` 500 (via the writer) instead of an empty body; config-failure messages remain `LogCritical`-only. This middleware **short-circuits deliberately** (sets the status and does not call `next`; it does not throw), so it serializes its own body regardless of pipeline position. It sits *after* `UseExceptionHandler`; the exception handler therefore cannot help a non-throwing short-circuit, confirming the writer is required here.
+- **Framework shaping (INV-25…29, INV-42) — scheme-independent, no route exclusions [ARCH].** A **single** non-re-executing middleware (`FrameworkErrorResponseMiddleware`, registered after routing and before CORS/authentication/authorization) shapes **every** bodiless 401/403/404/405/413/415 response into an Ed-Fi body, **independent of route and auth scheme** (so it also covers `TestAuthHandler`) — including the **real Kestrel 413**, whose body-size rejection short-circuits before the exception pipeline and is shaped here, not by `GlobalExceptionHandler` (§12.5.1 correction). Rules: (a) shapes **every** matching bodiless response — **no** health/text/OpenAPI or other path-based exceptions; (b) never touches 2xx/204; (c) the **only** safety boundary is `Response.HasStarted` + body/content-type checks — an existing **non-empty** error body is left alone **only** because its producer is separately verified compliant (§12); any non-empty non-compliant body is inventoried and fixed at its producer, not here; (d) **no** status-code-page re-execution (which can invoke routing/endpoints twice) — it writes directly; (e) **existing headers preserved**, notably `WWW-Authenticate` on 401. Because it keys off the final status code (not JwtBearer events), it covers every configured scheme (self-contained, Keycloak, test); if JwtBearer `OnChallenge`/`OnForbidden` are ever added for header fidelity, tests must demonstrate coverage for **every** scheme.
 
 ---
 
@@ -340,20 +397,23 @@ Preserve existing method signatures (additive overloads only).
 
 **[ARCH/D-04] Decision: convert all CMS-generated OAuth/OIDC non-success responses to the Ed-Fi contract.** No product exception exists, so the ticket's "or documented exception" branch does not apply.
 
-- **Convert:** INV-16 (`/connect/token` unsupported grant type), INV-17 (`/connect/introspect` missing token), INV-18 (`/connect/revoke` missing token) → `FailureResults`/`FailureResponse` (`ForBadRequest`, 400 preserved), carrying a safe developer message in `errors` and a `correlationId`. Remove the `{error,error_description}` bodies.
-- **Preserve protocol success:** token 200 (`TokenResponse`), introspection `200 {active:true|false}` (a *successful* RFC 7662 result), successful revocation `200` (RFC 7009). These are **not** error responses and are unchanged.
-- **Remove dead code (INV-24):** delete `OpenIddictErrorHandlingMiddleware` and its extension methods and unit tests, so no non-compliant OAuth path can be wired in later. (If the architect prefers retention, it must be rewritten to emit the Ed-Fi contract; default is removal.)
+- **Converted:** INV-16 (`/connect/token` unsupported grant type), INV-17 (`/connect/introspect` missing token), INV-18 (`/connect/revoke` missing token) → `FailureResults`/`FailureResponse` (`ForBadRequest`, 400 preserved), carrying a safe developer message in `errors` and a `correlationId`. The `{error,error_description}` bodies are removed.
+- **Protocol success preserved:** token 200 (`TokenResponse`), introspection `200 {active:true|false}` (a *successful* RFC 7662 result), successful revocation `200` (RFC 7009). These are **not** error responses and are unchanged.
+- **Dead code removed (INV-24):** `OpenIddictErrorHandlingMiddleware`, its extension methods, and its unit tests are deleted, so no non-compliant OAuth path can be wired in later.
 - **Risk R-01 (recorded, not overriding).** `{error,error_description}` is the OAuth 2.0 / RFC 7662 / RFC 7009 standard error shape; converting it can break standards-based OAuth clients that parse `error`/`error_description`. This risk is documented for operator awareness and release notes but, per the architect, does **not** override the ticket. **[INFER]**
+- **[Updated R5] Service-owned authentication errors.** Self-contained (OpenIddict) authentication failures no longer transit the provider-payload path: the token manager returns the service-owned `TokenResult.FailureAuthentication(Error, ErrorDescription)` and `IdentityModule` maps it through `FailureResults.Authentication`, composing `"<error>. <description>"` from trusted local constants (INV-46). Untrusted provider payloads (Keycloak/transport) keep the strict parse-or-fallback rule (INV-41) — both fields of a complete structured `{error, error_description}` payload are intentionally composed into a single `errors` entry; unstructured provider/transport text uses the fixed fallback.
 
 ---
 
 ## 17. Security, privacy, and logging rules
 
-- **No sensitive detail in bodies.** No exception messages, provider/DB errors, configuration text, tokens, or secrets in `detail`/`errors`. INV-05/06/09/10/13/14/15 must stop leaking `ex.Message`; 500s use `ForUnknown` (empty `detail`, `errors:[]`). **[JIRA/ARCH]**
+- **No sensitive detail in bodies.** No exception messages, raw/unstructured provider or transport text, DB errors, configuration text, tokens, or secrets in `detail`/`errors` — the sole approved exception is the structured provider `error`/`error_description` composition described below. INV-05/06/09/10/13/14/15 must stop leaking `ex.Message`; 500s use `ForUnknown` (empty `detail`, `errors:[]`). **[JIRA/ARCH]**
 - **Continue server-side logging** (`LogError(ex,…)`, `LogWarning`, `LogCritical`); only bodies change.
 - **Correlation.** Every error body `correlationId` = `HttpContext.TraceIdentifier` (or `context.TraceIdentifier` in middleware), non-empty.
 - **`validationErrors` population.** Populate only with field/JSON-path keys and field-level messages (INV-11/12); never with backend payloads or exception text. Otherwise `{}`.
 - Keep `TenantResolutionMiddleware.SanitizeForLog`.
+- **[R5] Strict provider-payload parsing.** Unstructured identity-provider/transport text is never echoed — it uses the fixed fallback message; the `error` and `error_description` fields of a complete structured `{error, error_description}` payload are intentionally composed into one `errors` entry (INV-41). Service-owned OAuth errors use the distinct trusted path (INV-46), never fabricated JSON.
+- **[R5] Stored-state failures are server faults.** Unknown lookup results and stored identity-provider client disappearance return sanitized 500s with the failure message logged server-side, never in the body (INV-43, INV-45); sentinel tests prove non-leakage on every changed branch.
 
 ---
 
@@ -361,8 +421,9 @@ Preserve existing method signatures (additive overloads only).
 
 - Success responses unchanged (INV-34/35). **[JIRA]**
 - Already-compliant error responses keep statuses, bodies, **and media type** (INV-33) — no repo-wide rewrite (D-05). Only `FailureResults.Unknown`/`NotFound` media type changes to `application/problem+json` (INV-31a).
-- Statuses preserved everywhere (D-06 keeps tenant-not-found at 400).
+- Statuses of *correctly classified* responses preserved (D-06 keeps tenant-not-found at 400); the R5 reclassifications listed below are the deliberate corrections of *misclassified* statuses.
 - **Client-visible payload changes** (documented for release notes): ClaimsManagement non-success DTOs → Ed-Fi contract (INV-08…15); OAuth error bodies → Ed-Fi contract (INV-16/17/18); framework 401/403/404/405/415 now carry bodies (INV-25…29). Tests asserting the old shapes are updated in lockstep (incl. removing `OpenIddictErrorHandlingMiddlewareTests` with INV-24).
+- **[R5] Post-PR review reclassifications** (client-visible; documented for release notes): paging/query-parameter validation failures changed shape (`bad-request:data` with populated `validationErrors` → `bad-request:parameter` with the reasons in `errors`; status stays 400); caller-supplied unresolved references and reference conflicts changed 400 (ClaimSet copy: 404) → **409** (`conflict:unresolved-reference` / `conflict:dependent-item-exists`); stored-state lookup and identity-provider disappearance failures changed 400/404 → sanitized **500**; the ApiClient update vanished-target case changed 400 → **404**; minimal-API binding failures now carry contract bodies instead of empty 400s; the real Kestrel 413 now carries the `about:blank` contract body (INV-37…INV-46).
 - DMS untouched.
 
 ---
@@ -614,17 +675,19 @@ State: `not run` · `run (baseline)` · `passed` · `failed` · `n/a`. Commands 
 - [x] `BadHttpRequestException` status-aware; ticket/KB/platform statuses mapped; unclassified reachable statuses use RFC 9457 `about:blank` (D-08); no URI invented.
 - [x] OAuth/OIDC non-success responses converted; protocol success preserved; dead OpenIddict middleware removed.
 - [x] No bare framework results, ad-hoc `{error,message}`, or `{error,error_description}` remain for CMS non-success responses.
-- [x] No raw exception/DB/config/token/secret text in any error body (500s use `ForUnknown` with empty `detail`; sentinels absent). The sole externally-sourced text is the identity-provider `error_description`, surfaced through the `errors` array by the retained IdP parser (INV-33, §14) — an intentional, approved diagnostic, not a leak.
+- [x] No raw exception/DB/config/token/secret text in any error body (500s use `ForUnknown` with empty `detail`; sentinels absent). The sole externally-sourced text is a valid structured provider payload's `error` and `error_description`, intentionally composed into one `errors` entry by the retained strict parser (INV-33/INV-41, §14) — an approved diagnostic, not a leak; unstructured provider/transport text uses the fixed fallback.
 - [x] `FailureResults`/new writers use `application/problem+json`; existing compliant inline bodies unchanged.
 - [x] Unit tests assert full contract per changed branch; compliant behavior preserved.
 - [x] Targeted + full CMS frontend unit suites pass.
-- [x] **CMS Config E2E suite (Reqnroll) green (V-23).** Full PostgreSQL E2E jobs ("self-contained" + "keycloak") and the Config CI Gate pass on PR #1125, HEAD `e06ea4a9` (whole PR 55 pass / 2 skip / 0 fail). (Gap noted: this suite was not run during C01–C15a; it caught the `_05` assertion mismatch only at PR CI — add it to the standing DoD.)
+- [x] **CMS Config E2E suite (Reqnroll) green (V-23).** The full PostgreSQL E2E jobs ("self-contained" + "keycloak") and the Config CI Gate passed on PR #1125 at the pre-review head `e06ea4a9`, and the full **self-contained PostgreSQL** workflow passes locally at the post-review implementation head. (Gap noted: this suite was not run during C01–C15a; it caught the `_05` assertion mismatch only at PR CI — it is part of the standing DoD.)
 - [x] `dotnet csharpier format src/config` run; no unrelated diffs; `git diff --check` clean.
 - [x] Final changed-file inspection confirms scope; worktree clean.
+- [x] **[R5]** Post-PR review findings INV-37…INV-46 remediated with full-contract and sentinel coverage: binding/paging/parameter classification, claims structural validation and server-side failure precedence, 409 reference conflicts and unresolved references, sanitized-500 stored-state handling with 404 preserved for genuine absence, real-Kestrel 413 shaping, strict provider parsing, and the service-owned authentication path. The unresolved-reference and self-contained token-error contracts were verified end-to-end against PostgreSQL.
+- [ ] **[R5]** Published CI green on the post-review head. Local verification is complete through `83afd488` (backend and frontend unit suites plus the full **self-contained PostgreSQL** CMS E2E workflow with setup and teardown); the PR's CI gates — including the Keycloak-provider E2E legs, which were not re-run locally — must run on the new head before merge.
 
 ---
 
-## 29. Self-challenge (adversarial review, current at R4)
+## 29. Self-challenge (adversarial review, current at R5)
 
 Labels: **[JIRA fact]**, **[Repo fact]**, **[Inference]**, **[Recommendation]**, **[Product/architect-owned decision]**.
 
@@ -673,11 +736,19 @@ INV-05/06/09/10/13/14/15 leak `ex.Message`. **[Repo fact]** All stop; 500s use `
 1. **INV-12 deny-by-default (blocking, information disclosure):** rewrote §12.2.1 so a backend failure message reaches the body **only** for path-bearing `"Validation"` failures or the two fixed `"Structure"` literals; pathless `"Validation"` (incl. data-layer `ValidationFailure.Errors`), `"Database"`, `"Unexpected"`, and any unrecognized/future type all use a safe generic `ForBadRequest` with raw text logged server-side only. `FailureType` alone never proves safety. Added a **secret-sentinel** test asserting a pathless-`"Validation"` sentinel is absent from the serialized body.
 2. **Control-document cleanups:** completed the V-02 baseline enumeration (added the compliant `FailureResults` `error_description` parser and `MetadataModule.WriteAsync`); advanced the §29 heading and end marker to R4; removed the stale "exclusions" wording in §29.2; updated the §10 target JSON so `type` permits an Ed-Fi URI **or** `about:blank`; added `ForUnclassifiedStatus` to the §20 file-impact forecast.
 
+### 29.7d Changes made because of the post-PR review (R4 → R5)
+
+A post-PR review (2026-07-27/28) audited the published PR implementation — a first pass at head `02c0e2cf`, and a fresh review pass beginning from `91bf9141` — and identified the findings recorded as **INV-37…INV-46** (§12.8); each was remediated behind a per-commit approval gate. In implementation order: binding and paging classification (`ThrowOnBadRequest`, the `bad-request:parameter` taxonomy via `ParameterValidationException`/`ForParameterValidation`, no `orderBy` reflection — `93b56c08`); claims-upload structural validation at the service boundary (`d712ba1c`); Profile/DataStoreDerivative reference conflicts to 409 with the new `ForDependentItemExists`/`ForUnresolvedReference` factories (`f3d7705e`) and the DataStoreDerivative E2E contract aligned (`91bf9141`); the 415-URI documentation correction (`347b6301`, §25 entry dated 2026-07-27); strict identity-provider payload parsing (`4f38901a`); real-Kestrel 413 shaping in `FrameworkErrorResponseMiddleware` with the §12.5.1 claim corrected (`e18d001f`); missing/null-body classification distinct from bad parameters via `IAcceptsMetadata` (`410308fa`); server-side claims-failure precedence to sanitized 500 (`4c85c3d8`); caller-supplied unresolved references to 409 with `FailureUnknown` and inherited-reference failures to sanitized 500 (`b27012d1`); stored-state lookup failures to sanitized 500 with genuine absence preserved at 404 (`46c2b9a3`); infrastructure-test convention alignment (`25315f27`); E2E unresolved-reference contract alignment (`3d0b3f15`); and the distinct service-owned OAuth authentication-error path that restored the self-contained token-error contract without weakening the strict parser (`83afd488`). Deferred items are recorded as **INV-47…INV-49** (§12.8). The implementation head recorded before this documentation commit is **`83afd488`**. Local verification is complete at that head — the backend and frontend unit suites and the full **self-contained PostgreSQL** CMS E2E workflow (with environment setup and teardown) pass, and the unresolved-reference and self-contained token-error contracts were verified end-to-end against PostgreSQL — but the published PR CI (including the Keycloak-provider E2E legs, which were not re-run locally) has not yet run on the new head, so the series is **not yet merge-ready**.
+
 ### 29.8 Remaining human decisions
-**None.** All decisions D-01…D-08 are resolved (§24). Phase 5 still performs a reachable-status audit, but only to *size the tests* — the D-08 mapping rule (ticket/KB/platform URI, else `about:blank`) is fixed and requires no further decision.
+All original decisions **D-01…D-08 are resolved** (§24); the D-08 mapping rule (ticket/KB/platform URI, else `about:blank`) is fixed and requires no further decision. **[R5]** The post-PR review deferred three follow-up/product decisions, recorded as **INV-47…INV-49** (§12.8): widening the remaining duplicate/non-unique identity conflicts to the 409 taxonomy; how to resolve the mixed body/parameter binding ambiguity (route constraints cover only the current route-ID cases); and closing the `ApplicationApiClientsResult` completeness gap.
 
 Follow-up questions for the architect may be relayed through the user.
 
 ---
 
 *End of R4. Status: Approved — 2026-07-23; on PR #1125 (rebased base `b12c5522`). Implementation delivered across commits C01–C17 (test-convention follow-ups C10a/C11a/C12a/C15a; final-review hardening C15; post-PR-CI E2E-assertion fixes C16/C17), each behind an architect approval gate. All inventory items resolved; the `FailureResponseWriter` `Content-Length` defect closed with a regression test; full CMS frontend suite 603/603 and backend `FailureResponseTests` 30/30 green. The CMS Config E2E gate (V-23) is now green: the `_05` assertion was corrected (C16) and strengthened to the exact contract (C17), and on HEAD `e06ea4a9` the PostgreSQL E2E jobs and the Config CI Gate pass (whole PR 55 pass / 2 skip / 0 fail). All gates satisfied; DMS-1218 complete and ready to merge.*
+
+---
+
+*End of R5. Status: post-PR review remediation complete and recorded — findings INV-37…INV-46 resolved; INV-47…INV-49 deferred (§12.8, §29.7d). The implementation head recorded before this documentation commit is `83afd488`. Local verification is complete at that head: the backend and frontend unit suites pass, the full self-contained PostgreSQL CMS E2E workflow (with environment setup and teardown) passes, and the unresolved-reference and self-contained token-error contracts were verified end-to-end against PostgreSQL. The published PR CI — including the Keycloak-provider E2E legs, which were not re-run locally — has not yet run on the new head, so the series is not yet merge-ready; the R4 closing statement above is retained verbatim as the historical record of the pre-review state.*

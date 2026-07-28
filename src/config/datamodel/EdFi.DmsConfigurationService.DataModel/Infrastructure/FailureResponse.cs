@@ -127,7 +127,7 @@ public static class FailureResponse
     /// <summary>
     /// RFC 9457 fallback for a reachable HTTP status that has no ticket-mandated, Knowledge-Base, or
     /// established Ed-Fi/DMS platform taxonomy URI. Uses <c>about:blank</c> with the standard HTTP
-    /// reason phrase as the title (DMS-1218 D-08); no URI is invented.
+    /// reason phrase as the title; no URI is invented.
     /// </summary>
     public static JsonNode ForUnclassifiedStatus(int status, string reasonPhrase, string correlationId) =>
         CreateBaseJsonObject(

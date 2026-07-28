@@ -137,8 +137,7 @@ public class FailureResultsTests
         public void It_has_a_body_status_matching_the_http_status() =>
             _result.Body["status"]!.GetValue<int>().Should().Be(403);
 
-        // Verifies D-02: the explicit errors array is passed through verbatim, with NO implicit
-        // identity-provider payload parsing (which would prepend "Forbidden. ").
+        // The explicit errors array bypasses identity-provider payload parsing.
         [Test]
         public void It_exposes_the_explicit_error_verbatim() =>
             _result.Body["errors"]!

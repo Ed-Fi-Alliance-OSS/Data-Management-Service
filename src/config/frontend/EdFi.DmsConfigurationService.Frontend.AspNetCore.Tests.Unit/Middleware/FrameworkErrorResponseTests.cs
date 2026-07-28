@@ -27,7 +27,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware
 /// End-to-end verification that framework-generated bodiless 401/403/404/405/415 responses are shaped
 /// into the Ed-Fi contract by <c>FrameworkErrorResponseMiddleware</c>, independent of route and
 /// authentication scheme, while already-structured errors and success/204 responses are left alone and
-/// existing headers (WWW-Authenticate, Allow) are preserved (DMS-1218 INV-25…29). This is a non-fixture
+/// existing headers (WWW-Authenticate, Allow) are preserved. This is a non-fixture
 /// container; the runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
 public class FrameworkErrorResponseTests
