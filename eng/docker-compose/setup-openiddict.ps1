@@ -375,13 +375,6 @@ function Invoke-DbQuery {
         [switch]$Debug,
         [switch]$UseMasterDatabase,
 
-        # PostgreSQL counterpart to -UseMasterDatabase: connects to the "postgres" maintenance
-        # database instead of the target one. Required for the guarded create, which cannot connect
-        # to the database it is about to create, and for the existence check that follows it. Named
-        # separately from -UseMasterDatabase because the two engines' maintenance databases are
-        # different objects and the MSSQL switch predates this path.
-        [switch]$UseMaintenanceDatabase,
-
         # Tolerates SQL Server error 1801 ("database already exists") for the guarded MSSQL
         # database-create statement only: the IF DB_ID(...) IS NULL CREATE DATABASE guard is a
         # check-then-act statement, not truly atomic, so two concurrent invocations can both pass
@@ -408,7 +401,7 @@ function Invoke-DbQuery {
         }
         $dbHost = $params['Host']
         $port = $params['Port']
-        $db = if ($UseMaintenanceDatabase) { 'postgres' } else { $params['Database'] }
+        $db = $params['Database']
         $user = $params['Username']
 
         if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
@@ -580,6 +573,12 @@ function Invoke-PostgresGuardedDatabaseCreate {
 
         Transport is `docker exec -i`, not plain `docker exec`: without -i the piped script never
         reaches psql's stdin, and psql reads an empty program and silently does nothing.
+
+        This helper builds its own psql invocation rather than routing through Invoke-DbQuery. That
+        function passes SQL as a `-c` argument, which cannot carry the `-v` variable bindings or the
+        `\gexec` metacommand this path depends on, and it always connects to the target database -
+        impossible here, since the database does not exist yet. Both connections below therefore
+        target the "postgres" maintenance database directly.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper invoked non-interactively against a local setup database.')]
     param(

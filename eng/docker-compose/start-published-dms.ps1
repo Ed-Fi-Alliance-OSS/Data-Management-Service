@@ -204,9 +204,12 @@ $cmsParticipates = (-not ($databaseOnlyStartup -or $d -or $DmsOnly)) -and $cmsIn
 if ($cmsParticipates) {
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:$true
 
-    # Both engines run the same topology-write sequence: the profile files and both .yml inline
-    # fallbacks are engine-aware, so shared and separate mode are symmetric across PostgreSQL and
-    # SQL Server.
+    # Both engines run the same topology-write sequence, so shared and separate mode are symmetric
+    # across PostgreSQL and SQL Server. The profile files and both .yml inline fallbacks carry the
+    # topology seam in their database segment; the fallbacks' host, port, and credentials stay
+    # PostgreSQL-shaped because Compose interpolation cannot branch on the engine, which is why an
+    # MSSQL run must supply DMS_CONFIG_DATABASE_CONNECTION_STRING explicitly (the .env.mssql overlay
+    # always does).
     $EnvironmentFile = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -DockerComposeRoot $PSScriptRoot
     Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
 }

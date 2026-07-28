@@ -208,6 +208,65 @@ Describe "OpenIddict MSSQL guarded database creation (DMS-1270 Phase 1b)" {
 }
 
 Describe "OpenIddict PostgreSQL guarded database creation (DMS-1270 Phase 2)" {
+    BeforeAll {
+        # A global PowerShell function stands in for docker rather than Pester's Mock, because these
+        # tests must observe what reaches the subprocess's STDIN, not just its arguments. Pester wraps
+        # a mock's scriptblock in a way that leaves $input and $MyInvocation.ExpectingInput empty, so
+        # a mock cannot tell a piped invocation from an unpiped one - which is exactly the distinction
+        # under test here. A plain function sees both. It is also pure PowerShell, so it behaves the
+        # same on the ubuntu-latest CI runner as it does locally.
+        #
+        # $Respond receives the flattened argument list and returns @{ Exit; Output }.
+        function script:Invoke-WithDockerStdinShim {
+            param(
+                [Parameter(Mandatory)] [scriptblock]$Respond,
+                [Parameter(Mandatory)] [scriptblock]$Action
+            )
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            $respond = $Respond
+            $caught = $null
+            Set-Item -Path Function:\global:docker -Value {
+                $piped = @($input)
+                $flat = @($args | ForEach-Object { $_ })
+                $calls.Add([PSCustomObject]@{
+                    Args           = $flat
+                    ArgLine        = ($flat -join " ")
+                    ExpectingInput = $MyInvocation.ExpectingInput
+                    Stdin          = (($piped | ForEach-Object { [string]$_ }) -join "`n")
+                })
+                $answer = & $respond $flat
+                $global:LASTEXITCODE = [int]$answer.Exit
+                return $answer.Output
+            }.GetNewClosure()
+
+            try { & $Action }
+            catch { $caught = $_ }
+            finally { Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue }
+
+            return [PSCustomObject]@{
+                Calls        = @($calls)
+                Create       = @($calls | Where-Object { $_.ArgLine -notlike "*-tA*" })[0]
+                Postcondition = @($calls | Where-Object { $_.ArgLine -like "*-tA*" })[0]
+                Error        = $caught
+                ErrorMessage = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
+            }
+        }
+
+        # Captured live against PostgreSQL 16.8: with -v VERBOSITY=sqlstate psql prints only the bare
+        # SQLSTATE, prefixed by its own "psql:<stdin>:<line>:" location, and exits 3 on error.
+        $script:PgDuplicateOutput = 'psql:<stdin>:1: ERROR:  42P04'
+        $script:PgRaceOutput = 'psql:<stdin>:2: ERROR:  23505'
+        $script:PgPermissionOutput = 'psql:<stdin>:1: ERROR:  42501'
+
+        # Succeeds both the create and the existence check.
+        $script:PgHappyResponder = {
+            param($flat)
+            if (($flat -join " ") -like "*-tA*") { return @{ Exit = 0; Output = "1" } }
+            return @{ Exit = 0; Output = "CREATE DATABASE" }
+        }
+    }
+
     BeforeEach {
         Push-Location $script:DockerComposePath
         try {
@@ -218,110 +277,119 @@ Describe "OpenIddict PostgreSQL guarded database creation (DMS-1270 Phase 2)" {
         finally {
             Pop-Location
         }
-
-        # Captured live against PostgreSQL 16.8: with -v VERBOSITY=sqlstate psql prints only the bare
-        # SQLSTATE, prefixed by its own "psql:<stdin>:<line>:" location, and exits 3 on error.
-        $script:PgDuplicateOutput = 'psql:<stdin>:1: ERROR:  42P04'
-        $script:PgRaceOutput = 'psql:<stdin>:2: ERROR:  23505'
-        $script:PgPermissionOutput = 'psql:<stdin>:1: ERROR:  42501'
     }
 
     It "creates the database and confirms it, on the ordinary first-run path" {
-        Mock docker {
-            $global:LASTEXITCODE = 0
-            if ($args -contains "-tA") { return "1" }
-            return "CREATE DATABASE"
+        $run = Invoke-WithDockerStdinShim -Respond $script:PgHappyResponder -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
         }
 
-        { Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres" } |
-            Should -Not -Throw
+        $run.Error | Should -BeNullOrEmpty
+        $run.Calls | Should -HaveCount 2 -Because "the guarded create and its postcondition are separate invocations"
     }
 
-    It "pipes the script to psql through docker exec -i so it reaches stdin at all" {
-        # Without -i the piped script never reaches psql's stdin: psql reads an empty program and
-        # silently does nothing, so the create would appear to succeed while doing nothing.
-        $script:capturedArgs = $null
-        Mock docker {
-            if ($null -eq $script:capturedArgs) { $script:capturedArgs = @($args) }
-            $global:LASTEXITCODE = 0
-            if ($args -contains "-tA") { return "1" }
-            return "CREATE DATABASE"
+    It "actually pipes each script into the subprocess's stdin, not merely naming -i" {
+        # The load-bearing assertion for the transport: psql is invoked with `-f -`, so it reads its
+        # program from stdin. Deleting the pipe would leave the argument list identical and psql would
+        # silently execute nothing, so asserting on arguments alone cannot detect that. These check
+        # that the process was genuinely invoked with pipeline input and that the exact script text
+        # arrived on it.
+        $run = Invoke-WithDockerStdinShim -Respond $script:PgHappyResponder -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
         }
 
-        Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
+        $run.Create.ExpectingInput | Should -BeTrue -Because "without a pipe psql reads an empty program from -f -"
+        $run.Create.Stdin | Should -BeExactly (New-PostgresCreateDatabaseScript)
 
-        $script:capturedArgs[0] | Should -Be "exec"
-        $script:capturedArgs | Should -Contain "-i"
-        $script:capturedArgs | Should -Contain "-f"
-        ($script:capturedArgs -join " ") | Should -BeLike "*-v dbName=edfi_configurationservice*"
-        ($script:capturedArgs -join " ") | Should -BeLike "*ON_ERROR_STOP=1*" -Because "without it psql exits 0 even when the gexec-generated CREATE DATABASE fails"
-        ($script:capturedArgs -join " ") | Should -BeLike "*VERBOSITY=sqlstate*" -Because "the duplicate-error predicate matches on the bare SQLSTATE"
-        ($script:capturedArgs -join " ") | Should -BeLike "*-d postgres*" -Because "the create cannot connect to the database it is about to create"
+        $run.Postcondition.ExpectingInput | Should -BeTrue
+        $run.Postcondition.Stdin | Should -BeLike "*FROM pg_database WHERE datname = :'dbName'*"
+
+        foreach ($call in $run.Calls) {
+            $call.Args[0] | Should -Be "exec"
+            $call.Args | Should -Contain "-i" -Because "docker exec without -i does not attach stdin"
+            $call.Args | Should -Contain "-f"
+            $call.Stdin | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    It "passes the database name as a psql variable and never inside the script text" {
+        $run = Invoke-WithDockerStdinShim -Respond $script:PgHappyResponder -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "weird-name" -User "postgres"
+        }
+
+        $run.Create.ArgLine | Should -BeLike "*-v dbName=weird-name*"
+        $run.Create.Stdin | Should -Not -BeLike "*weird-name*" -Because "the name must reach psql as a variable, so nothing in the SQL text needs escaping"
+    }
+
+    It "sets the psql options the guard depends on, against the maintenance database" {
+        $run = Invoke-WithDockerStdinShim -Respond $script:PgHappyResponder -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
+        }
+
+        foreach ($call in $run.Calls) {
+            $call.ArgLine | Should -BeLike "*ON_ERROR_STOP=1*" -Because "without it psql exits 0 even when the gexec-generated CREATE DATABASE fails"
+            $call.ArgLine | Should -BeLike "*VERBOSITY=sqlstate*" -Because "the duplicate-error predicate matches on the bare SQLSTATE"
+            $call.ArgLine | Should -BeLike "*-d postgres*" -Because "neither call can connect to the database being created"
+        }
     }
 
     It "tolerates the benign duplicate-database race (42P04) when the postcondition confirms the database" {
-        Mock docker {
-            if ($args -contains "-tA") {
-                $global:LASTEXITCODE = 0
-                return "1"
-            }
-            $global:LASTEXITCODE = 3
-            return $script:PgDuplicateOutput
+        $run = Invoke-WithDockerStdinShim -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
+        } -Respond {
+            param($flat)
+            if (($flat -join " ") -like "*-tA*") { return @{ Exit = 0; Output = "1" } }
+            return @{ Exit = 3; Output = $script:PgDuplicateOutput }
         }
 
-        { Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres" } |
-            Should -Not -Throw
+        $run.Error | Should -BeNullOrEmpty
     }
 
     It "tolerates the narrower internal catalog-index race (23505) as well" {
-        Mock docker {
-            if ($args -contains "-tA") {
-                $global:LASTEXITCODE = 0
-                return "1"
-            }
-            $global:LASTEXITCODE = 3
-            return $script:PgRaceOutput
+        $run = Invoke-WithDockerStdinShim -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
+        } -Respond {
+            param($flat)
+            if (($flat -join " ") -like "*-tA*") { return @{ Exit = 0; Output = "1" } }
+            return @{ Exit = 3; Output = $script:PgRaceOutput }
         }
 
-        { Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres" } |
-            Should -Not -Throw
+        $run.Error | Should -BeNullOrEmpty
     }
 
     It "does not tolerate a non-duplicate failure such as insufficient privilege (42501)" {
-        Mock docker {
-            $global:LASTEXITCODE = 3
-            return $script:PgPermissionOutput
+        $run = Invoke-WithDockerStdinShim -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "nocreate"
+        } -Respond {
+            # Every invocation fails the same way, so this responder ignores which one it is.
+            return @{ Exit = 3; Output = $script:PgPermissionOutput }
         }
 
-        { Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "nocreate" } |
-            Should -Throw "*failed to create database*"
+        $run.ErrorMessage | Should -BeLike "*failed to create database*"
+        $run.Calls | Should -HaveCount 1 -Because "a hard create failure must not go on to run the postcondition"
     }
 
     It "throws when the postcondition cannot confirm the database exists after a tolerated race" {
-        Mock docker {
-            if ($args -contains "-tA") {
-                $global:LASTEXITCODE = 0
-                return ""
-            }
-            $global:LASTEXITCODE = 3
-            return $script:PgDuplicateOutput
+        $run = Invoke-WithDockerStdinShim -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
+        } -Respond {
+            param($flat)
+            if (($flat -join " ") -like "*-tA*") { return @{ Exit = 0; Output = "" } }
+            return @{ Exit = 3; Output = $script:PgDuplicateOutput }
         }
 
-        { Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres" } |
-            Should -Throw "*does not exist*"
+        $run.ErrorMessage | Should -BeLike "*does not exist*"
     }
 
     It "throws when the postcondition query itself fails" {
-        Mock docker {
-            if ($args -contains "-tA") {
-                $global:LASTEXITCODE = 2
-                return "connection refused"
-            }
-            $global:LASTEXITCODE = 0
-            return "CREATE DATABASE"
+        $run = Invoke-WithDockerStdinShim -Action {
+            Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres"
+        } -Respond {
+            param($flat)
+            if (($flat -join " ") -like "*-tA*") { return @{ Exit = 2; Output = "connection refused" } }
+            return @{ Exit = 0; Output = "CREATE DATABASE" }
         }
 
-        { Invoke-PostgresGuardedDatabaseCreate -DatabaseName "edfi_configurationservice" -User "postgres" } |
-            Should -Throw "*failed to confirm*"
+        $run.ErrorMessage | Should -BeLike "*failed to confirm*"
     }
 }
