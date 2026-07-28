@@ -396,6 +396,34 @@ public class ApplicationModule : IEndpointModule
                         return profileFailure;
                     }
 
+                    // A failed repository update is compensated from the application's original
+                    // state, so the update is refused when that state cannot be read.
+                    ApplicationResponse originalApplication;
+                    switch (await repository.GetApplication(id))
+                    {
+                        case ApplicationGetResult.Success originalSuccess:
+                            originalApplication = originalSuccess.ApplicationResponse;
+                            break;
+                        case ApplicationGetResult.FailureNotFound:
+                            return FailureResults.NotFound(
+                                "Application not found",
+                                httpContext.TraceIdentifier
+                            );
+                        case ApplicationGetResult.FailureUnknown originalFailure:
+                            logger.LogError(
+                                "Error reading the original state of Application {Id}: {Message}",
+                                id,
+                                SanitizeForLog(originalFailure.FailureMessage)
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                        default:
+                            logger.LogError(
+                                "Unexpected result reading the original state of Application {Id}",
+                                id
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    }
+
                     logger.LogInformation("Updating client {ClientId}", client.ClientId);
                     var clientUpdateResult = await clientRepository.UpdateClientAsync(
                         client.ClientUuid.ToString(),
@@ -419,8 +447,103 @@ public class ApplicationModule : IEndpointModule
                                 }
                             );
 
+                            // Restores the identity provider to the original application state and
+                            // persists the new client UUID its delete-and-recreate update issues.
+                            async Task<bool> TryRollbackAsync()
+                            {
+                                logger.LogWarning(
+                                    "Repository update failed for Application {Id}; rolling back the identity provider",
+                                    id
+                                );
+                                var rollbackResult = await clientRepository.UpdateClientAsync(
+                                    updateSuccess.ClientUuid.ToString(),
+                                    originalApplication.ApplicationName,
+                                    originalApplication.ClaimSetName,
+                                    string.Join(",", originalApplication.EducationOrganizationIds),
+                                    [.. originalApplication.DataStoreIds],
+                                    client.IsApproved,
+                                    identitySettings.Value.ClientRole
+                                );
+                                if (rollbackResult is not ClientUpdateResult.Success rollbackSuccess)
+                                {
+                                    logger.LogError(
+                                        "Identity provider rollback failed for Application {Id}; stored client state is inconsistent",
+                                        id
+                                    );
+                                    return false;
+                                }
+
+                                var syncResult = await repository.UpdateApplication(
+                                    new ApplicationUpdateCommand
+                                    {
+                                        Id = id,
+                                        ApplicationName = originalApplication.ApplicationName,
+                                        ClaimSetName = originalApplication.ClaimSetName,
+                                        VendorId = originalApplication.VendorId,
+                                        EducationOrganizationIds =
+                                        [
+                                            .. originalApplication.EducationOrganizationIds,
+                                        ],
+                                        DataStoreIds = [.. originalApplication.DataStoreIds],
+                                        ProfileIds = [.. originalApplication.ProfileIds],
+                                    },
+                                    new()
+                                    {
+                                        ClientId = client.ClientId,
+                                        ClientUuid = rollbackSuccess.ClientUuid,
+                                        DataStoreIds = [.. originalApplication.DataStoreIds],
+                                    }
+                                );
+                                if (syncResult is ApplicationUpdateResult.FailureNotExists)
+                                {
+                                    // The application vanished during the rollback, so the client
+                                    // the rollback recreated is deleted rather than kept.
+                                    await TryDeleteRecreatedClientAsync(rollbackSuccess.ClientUuid);
+                                    return false;
+                                }
+
+                                if (syncResult is not ApplicationUpdateResult.Success)
+                                {
+                                    logger.LogError(
+                                        "Failed to persist the rolled-back client UUID for Application {Id}; stored client state is inconsistent",
+                                        id
+                                    );
+                                    return false;
+                                }
+
+                                return true;
+                            }
+
+                            // Removes the identity provider client recreated for a vanished
+                            // application; a client that is already gone is the same end state.
+                            async Task<bool> TryDeleteRecreatedClientAsync(Guid clientUuid)
+                            {
+                                var cleanupResult = await clientRepository.DeleteClientAsync(
+                                    clientUuid.ToString()
+                                );
+                                if (
+                                    cleanupResult
+                                    is ClientDeleteResult.Success
+                                        or ClientDeleteResult.FailureClientNotFound
+                                )
+                                {
+                                    return true;
+                                }
+
+                                logger.LogError(
+                                    "Failed to delete the identity provider client for the missing Application {Id}; stored client state is inconsistent",
+                                    id
+                                );
+                                return false;
+                            }
+
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
                             {
+                                if (!await TryRollbackAsync())
+                                {
+                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                }
+
                                 return Results.Json(
                                     FailureResponse.ForUnresolvedReference(
                                         "Reference 'VendorId' does not exist.",
@@ -433,6 +556,11 @@ public class ApplicationModule : IEndpointModule
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureDataStoreNotFound)
                             {
+                                if (!await TryRollbackAsync())
+                                {
+                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                }
+
                                 return Results.Json(
                                     FailureResponse.ForUnresolvedReference(
                                         "Data store does not exist.",
@@ -445,6 +573,11 @@ public class ApplicationModule : IEndpointModule
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureProfileNotFound)
                             {
+                                if (!await TryRollbackAsync())
+                                {
+                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                }
+
                                 return Results.Json(
                                     FailureResponse.ForUnresolvedReference(
                                         "Profile does not exist.",
@@ -460,6 +593,11 @@ public class ApplicationModule : IEndpointModule
                                 is ApplicationUpdateResult.FailureDuplicateApplication duplicateApp
                             )
                             {
+                                if (!await TryRollbackAsync())
+                                {
+                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                }
+
                                 throw new ValidationException([
                                     new ValidationFailure(
                                         "ApplicationName",
@@ -468,15 +606,28 @@ public class ApplicationModule : IEndpointModule
                                 ]);
                             }
 
-                            return applicationUpdateResult switch
+                            if (applicationUpdateResult is ApplicationUpdateResult.Success)
                             {
-                                ApplicationUpdateResult.Success => Results.NoContent(),
-                                ApplicationUpdateResult.FailureNotExists => FailureResults.NotFound(
+                                return Results.NoContent();
+                            }
+
+                            if (applicationUpdateResult is ApplicationUpdateResult.FailureNotExists)
+                            {
+                                // The application row is gone, so the recreated identity-provider
+                                // client is deleted rather than restored.
+                                if (!await TryDeleteRecreatedClientAsync(updateSuccess.ClientUuid))
+                                {
+                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                }
+
+                                return FailureResults.NotFound(
                                     "Application not found",
                                     httpContext.TraceIdentifier
-                                ),
-                                _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-                            };
+                                );
+                            }
+
+                            await TryRollbackAsync();
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
 
                         case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                             logger.LogError(
