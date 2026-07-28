@@ -182,11 +182,6 @@ if (invalidConfigurationException is null)
         exitCode: 1
     );
 
-    if (enableAspNetCompression)
-    {
-        app.UseResponseCompression();
-    }
-
     startupPhaseExecutor.WriteStarting(
         DmsStartupPhases.ConfigureEndpoints,
         "Configuring DMS middleware and endpoints."
@@ -194,6 +189,11 @@ if (invalidConfigurationException is null)
 
     try
     {
+        if (enableAspNetCompression)
+        {
+            app.UseResponseCompression();
+        }
+
         app.UseRouting();
 
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
@@ -229,9 +229,11 @@ if (invalidConfigurationException is null)
     }
     catch (Exception ex)
     {
-        // Endpoint configuration is fatal, and the throw below preserves that. Without this the
+        // Endpoint configuration is fatal, and the throw below preserves that. RunFatalAsync is
+        // the wrong tool here: endpoint mapping is synchronous and RunFatalAsync would invoke the
+        // process-exit hook, whereas the rethrow already terminates the process. Without this the
         // status file would be stranded at Starting, losing ErrorType and ErrorMessage.
-        startupPhaseExecutor.WriteFailed(
+        startupPhaseExecutor.WriteFatalFailure(
             DmsStartupPhases.ConfigureEndpoints,
             "Middleware and endpoint configuration failed. DMS cannot serve requests without mapped HTTP endpoints.",
             ex

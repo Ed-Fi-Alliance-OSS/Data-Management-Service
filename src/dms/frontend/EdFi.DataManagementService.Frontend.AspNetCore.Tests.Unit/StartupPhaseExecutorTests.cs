@@ -42,35 +42,61 @@ public class StartupStatusTests
         }
     }
 
+    protected string StatusDirectory = null!;
+    protected string StatusFilePath = null!;
+
+    /// <summary>
+    /// Gives each test its own status directory so concurrent fixtures cannot collide. The
+    /// directory is deliberately not created: several fixtures depend on the file being absent
+    /// until the signal writes it, and the signal creates the directory on demand.
+    /// </summary>
+    /// <remarks>
+    /// Named distinctly from the fixtures' own Setup/Teardown on purpose. NUnit runs a base and a
+    /// derived setup in sequence only while their names differ; a derived method with the same
+    /// name hides this one and it would silently never run.
+    /// </remarks>
+    [SetUp]
+    public void CreateStatusFilePath()
+    {
+        StatusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        StatusFilePath = Path.Combine(StatusDirectory, "dms-startup-status.json");
+    }
+
+    [TearDown]
+    public void DeleteStatusDirectory()
+    {
+        if (Directory.Exists(StatusDirectory))
+        {
+            Directory.Delete(StatusDirectory, recursive: true);
+        }
+    }
+
+    // These two are internal rather than protected because the types they expose
+    // (StartupPhaseExecutor, IStartupProcessExit, StartupStatusDocument) are internal to the
+    // production assembly and reach this project through InternalsVisibleTo. A protected member of
+    // a public class cannot expose an internal type — CS0050/CS0051 — so widening these to
+    // protected breaks the build. The derived fixtures are in this assembly, so internal is enough.
+    internal StartupPhaseExecutor CreateStartupPhaseExecutor(IStartupProcessExit startupProcessExit) =>
+        new(
+            new FileStartupStatusSignal(StatusFilePath),
+            startupProcessExit,
+            NullLogger<StartupPhaseExecutor>.Instance
+        );
+
+    internal StartupStatusDocument ReadStartupStatus() =>
+        JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(StatusFilePath))!;
+
     [TestFixture]
     public class Given_Backend_Mapping_Initialization_Fails : StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
         private RecordingStartupProcessExit _startupProcessExit = null!;
-        private string _statusDirectory = null!;
-        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
-            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
             _startupProcessExit = new RecordingStartupProcessExit();
-
-            _startupPhaseExecutor = new StartupPhaseExecutor(
-                new FileStartupStatusSignal(_statusFilePath),
-                _startupProcessExit,
-                NullLogger<StartupPhaseExecutor>.Instance
-            );
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            if (Directory.Exists(_statusDirectory))
-            {
-                Directory.Delete(_statusDirectory, recursive: true);
-            }
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
         }
 
         [Test]
@@ -109,38 +135,17 @@ public class StartupStatusTests
                 .ErrorMessage.Should()
                 .Be("Startup task 'Backend Mapping Initialization' failed: Broken schema input.");
         }
-
-        private StartupStatusDocument ReadStartupStatus() =>
-            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
     }
 
     [TestFixture]
     public class Given_Backend_Mapping_Initialization_Succeeds : StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
-        private string _statusDirectory = null!;
-        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
-            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
-
-            _startupPhaseExecutor = new StartupPhaseExecutor(
-                new FileStartupStatusSignal(_statusFilePath),
-                new RecordingStartupProcessExit(),
-                NullLogger<StartupPhaseExecutor>.Instance
-            );
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            if (Directory.Exists(_statusDirectory))
-            {
-                Directory.Delete(_statusDirectory, recursive: true);
-            }
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(new RecordingStartupProcessExit());
         }
 
         [Test]
@@ -189,9 +194,6 @@ public class StartupStatusTests
             startupStatus.ErrorType.Should().BeNull();
             startupStatus.ErrorMessage.Should().BeNull();
         }
-
-        private StartupStatusDocument ReadStartupStatus() =>
-            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
     }
 
     [TestFixture]
@@ -199,35 +201,17 @@ public class StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
         private RecordingStartupProcessExit _startupProcessExit = null!;
-        private string _statusDirectory = null!;
-        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
-            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
             _startupProcessExit = new RecordingStartupProcessExit();
-
-            _startupPhaseExecutor = new StartupPhaseExecutor(
-                new FileStartupStatusSignal(_statusFilePath),
-                _startupProcessExit,
-                NullLogger<StartupPhaseExecutor>.Instance
-            );
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
 
             _startupPhaseExecutor.WriteCompleted(
                 DmsStartupPhases.InitializeApiSchemas,
                 "API schema initialization completed successfully."
             );
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            if (Directory.Exists(_statusDirectory))
-            {
-                Directory.Delete(_statusDirectory, recursive: true);
-            }
         }
 
         [Test]
@@ -255,38 +239,17 @@ public class StartupStatusTests
             startupStatus.ErrorType.Should().BeNull();
             startupStatus.ErrorMessage.Should().BeNull();
         }
-
-        private StartupStatusDocument ReadStartupStatus() =>
-            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
     }
 
     [TestFixture]
     public class Given_Backend_Mapping_Initialization_Is_In_Progress : StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
-        private string _statusDirectory = null!;
-        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
-            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
-
-            _startupPhaseExecutor = new StartupPhaseExecutor(
-                new FileStartupStatusSignal(_statusFilePath),
-                new RecordingStartupProcessExit(),
-                NullLogger<StartupPhaseExecutor>.Instance
-            );
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            if (Directory.Exists(_statusDirectory))
-            {
-                Directory.Delete(_statusDirectory, recursive: true);
-            }
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(new RecordingStartupProcessExit());
         }
 
         [Test]
@@ -326,9 +289,6 @@ public class StartupStatusTests
             allowCompletion.SetResult();
             await runTask;
         }
-
-        private StartupStatusDocument ReadStartupStatus() =>
-            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
     }
 
     [TestFixture]
@@ -336,30 +296,12 @@ public class StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
         private RecordingStartupProcessExit _startupProcessExit = null!;
-        private string _statusDirectory = null!;
-        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
-            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
             _startupProcessExit = new RecordingStartupProcessExit();
-
-            _startupPhaseExecutor = new StartupPhaseExecutor(
-                new FileStartupStatusSignal(_statusFilePath),
-                _startupProcessExit,
-                NullLogger<StartupPhaseExecutor>.Instance
-            );
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            if (Directory.Exists(_statusDirectory))
-            {
-                Directory.Delete(_statusDirectory, recursive: true);
-            }
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
         }
 
         [Test]
@@ -390,9 +332,6 @@ public class StartupStatusTests
             startupStatus.Phase.Should().Be(DmsStartupPhases.InitializeAuthMetadata);
             startupStatus.ErrorType.Should().Be(nameof(InvalidOperationException));
         }
-
-        private StartupStatusDocument ReadStartupStatus() =>
-            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
     }
 
     [TestFixture]
@@ -400,32 +339,15 @@ public class StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
         private RecordingStartupProcessExit _startupProcessExit = null!;
-        private string _statusDirectory = null!;
-        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
-            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
             _startupProcessExit = new RecordingStartupProcessExit();
 
             // Deliberately no status write here: the snapshot must capture a non-existent file so
             // the restore path exercises removal rather than rewrite.
-            _startupPhaseExecutor = new StartupPhaseExecutor(
-                new FileStartupStatusSignal(_statusFilePath),
-                _startupProcessExit,
-                NullLogger<StartupPhaseExecutor>.Instance
-            );
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            if (Directory.Exists(_statusDirectory))
-            {
-                Directory.Delete(_statusDirectory, recursive: true);
-            }
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
         }
 
         [Test]
@@ -447,7 +369,7 @@ public class StartupStatusTests
 
             // Cancellation must leave no trace: a stranded Starting document would be read as a
             // hung phase by anyone collecting the file.
-            File.Exists(_statusFilePath).Should().BeFalse();
+            File.Exists(StatusFilePath).Should().BeFalse();
         }
     }
 
@@ -456,30 +378,12 @@ public class StartupStatusTests
     {
         private StartupPhaseExecutor _startupPhaseExecutor = null!;
         private StatusCapturingStartupProcessExit _startupProcessExit = null!;
-        private string _statusDirectory = null!;
-        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
-            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
-            _startupProcessExit = new StatusCapturingStartupProcessExit(_statusFilePath);
-
-            _startupPhaseExecutor = new StartupPhaseExecutor(
-                new FileStartupStatusSignal(_statusFilePath),
-                _startupProcessExit,
-                NullLogger<StartupPhaseExecutor>.Instance
-            );
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            if (Directory.Exists(_statusDirectory))
-            {
-                Directory.Delete(_statusDirectory, recursive: true);
-            }
+            _startupProcessExit = new StatusCapturingStartupProcessExit(StatusFilePath);
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
         }
 
         [Test]
@@ -513,6 +417,55 @@ public class StartupStatusTests
                 .Be("API schema initialization failed. DMS cannot start with invalid schemas.");
             startupStatusAtExit.ErrorType.Should().Be(nameof(InvalidOperationException));
             startupStatusAtExit.ErrorMessage.Should().Be("Broken schema input.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Fatal_Failure_Is_Recorded_Outside_The_Executor : StartupStatusTests
+    {
+        private StartupPhaseExecutor _startupPhaseExecutor = null!;
+        private RecordingStartupProcessExit _startupProcessExit = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _startupProcessExit = new RecordingStartupProcessExit();
+            _startupPhaseExecutor = CreateStartupPhaseExecutor(_startupProcessExit);
+        }
+
+        [Test]
+        public void It_writes_failed_status_and_leaves_termination_to_the_caller()
+        {
+            // Act
+            // ConfigureEndpoints uses this instead of RunFatalAsync because it terminates by
+            // rethrow. Not exiting is the contract Program.cs depends on: an exit here would kill
+            // the process before the rethrow could carry the exception to the runtime.
+            _startupPhaseExecutor.WriteFatalFailure(
+                DmsStartupPhases.ConfigureEndpoints,
+                "Middleware and endpoint configuration failed. DMS cannot serve requests without mapped HTTP endpoints.",
+                new InvalidOperationException(
+                    "The route parameter name 'districtId' appears more than one time in the route template."
+                )
+            );
+
+            // Assert
+            _startupProcessExit.ExitCallCount.Should().Be(0);
+            _startupProcessExit.ExitCode.Should().BeNull();
+
+            var startupStatus = ReadStartupStatus();
+            startupStatus.State.Should().Be("Failed");
+            startupStatus.Phase.Should().Be(DmsStartupPhases.ConfigureEndpoints);
+            startupStatus
+                .Summary.Should()
+                .Be(
+                    "Middleware and endpoint configuration failed. DMS cannot serve requests without mapped HTTP endpoints."
+                );
+            startupStatus.ErrorType.Should().Be(nameof(InvalidOperationException));
+            startupStatus
+                .ErrorMessage.Should()
+                .Be(
+                    "The route parameter name 'districtId' appears more than one time in the route template."
+                );
         }
     }
 }

@@ -127,13 +127,29 @@ public class ConfigurationTests
     public class Given_A_Configuration_With_Default_Max_Request_Body_Size
     {
         private WebApplicationFactory<Program>? _factory;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
 
         [SetUp]
         public void Setup()
         {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:StartupStatusFilePath"] = _statusFilePath,
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(collection => TestMockHelper.AddEssentialMocks(collection));
             });
         }
@@ -142,6 +158,31 @@ public class ConfigurationTests
         public void Teardown()
         {
             _factory!.Dispose();
+
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        /// <summary>
+        /// Guards the success side of the ConfigureEndpoints try/catch. Endpoint configuration is
+        /// wrapped, but WriteReady sits outside the guard, so a change that moves it inside or
+        /// swallows the exception instead of rethrowing would leave the file short of Ready with
+        /// every other test still green.
+        /// </summary>
+        [Test]
+        public void It_writes_ready_startup_status_once_endpoint_configuration_succeeds()
+        {
+            // Act
+            using var client = _factory!.CreateClient();
+
+            // Assert
+            File.Exists(_statusFilePath).Should().BeTrue();
+            var startupStatus = JsonNode.Parse(File.ReadAllText(_statusFilePath))!.AsObject();
+
+            startupStatus["State"]!.GetValue<string>().Should().Be("Ready");
+            startupStatus["Phase"]!.GetValue<string>().Should().Be(DmsStartupPhases.Ready);
         }
 
         [Test]

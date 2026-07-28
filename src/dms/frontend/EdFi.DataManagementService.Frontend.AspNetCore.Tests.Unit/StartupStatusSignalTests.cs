@@ -185,7 +185,17 @@ public class StartupStatusSignalTests
             );
 
             // Assert
-            ReadStartupStatus().UpdatedAtUtc.Offset.Should().Be(TimeSpan.Zero);
+            DateTimeOffset updatedAtUtc = ReadStartupStatus().UpdatedAtUtc;
+
+            updatedAtUtc.Offset.Should().Be(TimeSpan.Zero);
+
+            // The offset check alone is not enough: default(DateTimeOffset) is 0001-01-01 with a
+            // zero offset, so it would still pass if UpdatedAtUtc were dropped or renamed out of
+            // the serialized document and deserialization fell back to the default. Pinning the
+            // value to the write window is what makes this assertion real. The window is
+            // deliberately wide because its only job is to exclude that default, not to measure
+            // write latency.
+            updatedAtUtc.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5));
         }
 
         private StartupStatusDocument ReadStartupStatus() =>

@@ -57,6 +57,26 @@ internal sealed class StartupPhaseExecutor(
         _startupStatusSignal.WriteFailed(phase, summary, exception);
     }
 
+    /// <summary>
+    /// Records a phase failure that is terminating the process, for phases that are not routed
+    /// through <see cref="RunFatalAsync"/> and terminate by rethrow rather than the exit hook.
+    /// Emits the same phase-labelled Critical event as the fatal phases so a log search by phase
+    /// name covers every fatal phase uniformly. Callers rethrow; this method does not exit.
+    /// </summary>
+    public void WriteFatalFailure(string phase, string failureSummary, Exception exception)
+    {
+        // The status file is written first because it is the artifact CI collects; nothing that
+        // can fail should precede it.
+        _startupStatusSignal.WriteFailed(phase, failureSummary, exception);
+
+        _logger.LogCritical(
+            exception,
+            "Fatal startup failure in phase {StartupPhase}. {FailureSummary}",
+            phase,
+            failureSummary
+        );
+    }
+
     public async Task RunFatalAsync(
         string phase,
         string startingSummary,
@@ -94,14 +114,7 @@ internal sealed class StartupPhaseExecutor(
 
     private void HandleFatalFailure(string phase, string failureSummary, int exitCode, Exception exception)
     {
-        _startupStatusSignal.WriteFailed(phase, failureSummary, exception);
-
-        _logger.LogCritical(
-            exception,
-            "Fatal startup failure in phase {StartupPhase}. {FailureSummary}",
-            phase,
-            failureSummary
-        );
+        WriteFatalFailure(phase, failureSummary, exception);
 
         _startupProcessExit.Exit(exitCode);
     }
