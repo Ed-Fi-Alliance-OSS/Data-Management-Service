@@ -151,6 +151,11 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
         var descriptorAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Descriptor);
         var tableAliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
+        var sourceGroups = ProjectionSourceBranchSql.GroupByTable(
+            sqlSources,
+            static source => source.TableModel,
+            static source => source.StorageColumn
+        );
         var writer = new SqlWriter(_sqlDialect);
 
         writer.AppendLine("SELECT");
@@ -172,22 +177,20 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
             using (writer.Indent())
             {
-                for (var index = 0; index < sqlSources.Count; index++)
+                for (var index = 0; index < sourceGroups.Count; index++)
                 {
-                    var sqlSource = sqlSources[index];
-
                     ProjectionSourceBranchSql.Append(
                         writer,
                         _planSqlDialect,
-                        new ProjectionSourceTableGroup(sqlSource.TableModel, [sqlSource.StorageColumn]),
+                        sourceGroups[index],
                         tableAliasAllocator.AllocateNextSourceAliases(),
                         _descriptorIdProjectionColumn,
                         sourceFilter,
-                        emitDistinct: sqlSources.Count == 1,
+                        emitDistinct: sourceGroups.Count == 1,
                         "descriptor projection plan"
                     );
 
-                    if (index + 1 < sqlSources.Count)
+                    if (index + 1 < sourceGroups.Count)
                     {
                         writer.AppendLine("UNION");
                     }
