@@ -271,7 +271,9 @@ OpenIddict identity stores — can live in one of two places, on either database
 * **Separate (opt-in).** Pass `-SeparateConfigDatabase` and CMS lives in a dedicated
   `edfi_configurationservice` database on the same server container. The database is created
   during the infrastructure phase if absent (`setup-openiddict.ps1 -InitDb` in the self-contained
-  flow; CMS's own startup deploy otherwise), and the DMS datastore database is not touched.
+  flow; CMS's own startup deploy otherwise). The switch leaves the DMS datastore's selection and
+  lifecycle unchanged — ordinary startup and provisioning still create and use the datastore
+  database exactly as in shared mode; it just no longer hosts CMS.
 
 The switch exists on every public entry point and is forwarded unchanged:
 `start-local-dms.ps1`, `start-published-dms.ps1`, `bootstrap-local-dms.ps1`,
@@ -306,8 +308,12 @@ environment files alias it to the datastore name (shared mode); a `-SeparateConf
 writes a derived environment file under `.derived/` that redirects it to
 `edfi_configurationservice` — your source `-EnvironmentFile` is never edited. The derived file
 also carries an internal `DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE` marker recording the selection.
-When the connection string is entirely absent, the Compose fallback in `local-config.yml` /
-`published-config.yml` resolves the same seam (`${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}}`).
+When the connection string is entirely absent on PostgreSQL, the Compose fallback in
+`local-config.yml` / `published-config.yml` resolves the same seam
+(`${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}}`). That fallback is PostgreSQL-shaped — Compose
+interpolation cannot branch on the engine — so MSSQL always requires an explicit
+`DMS_CONFIG_DATABASE_CONNECTION_STRING` (the `.env.mssql` overlay supplies it), and an MSSQL run
+with the key entirely absent fails clearly rather than starting CMS against an unusable fallback.
 
 CMS-starting invocations validate the result before any container starts: the resolved connection
 string's database, host, and port must agree with the selected topology, and a hand-edited
