@@ -17,7 +17,7 @@ This story implements that SQL-only decision without expanding the unrelated tra
 
 - Consume the reviewed DMS-1185 result for the two required SQL Server descriptor-probe shapes: descriptor `/deletes` and regular-resource Grade `/deletes`.
 - Emit the live `(Discriminator, Namespace, CodeValue)` index for SQL Server only through the dialect-aware index inventory.
-- Cover inventory derivation, SQL Server DDL and manifest output, upgrade behavior, deterministic naming, a `RelationalMappingVersion` bump, and golden regeneration.
+- Cover inventory derivation, SQL Server DDL and manifest output, upgrade behavior, deterministic naming, and golden regeneration; the `RelationalMappingVersion` bump this physical change requires is tracked by its own open ticket rather than owned here.
 - Add a SQL Server integration plan assertion proving that each descriptor identity probe uses a nonclustered `Index Seek` on the new index, with `Discriminator`, `Namespace`, and `CodeValue` represented in the seek predicates, no scan of that index, no key lookup, and no residual predicate substituting for an identity-key seek.
 - Pin the SQL Server image/version, deterministic generator implementation/version and integer seed, descriptor cardinality and value distributions, exact read and write parameters, statistics preparation, and cache-preparation policy before running the A/B gates.
 - Rerun the isolated read comparison against the exact implemented DDL with the spike's warm-up, repetition, ordering, count, and noise controls; both shapes must remain at or below the `1.20` elapsed regression ceiling and at least one must retain a 20% elapsed or logical-read improvement.
