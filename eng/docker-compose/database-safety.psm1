@@ -397,10 +397,14 @@ function Get-CmsDatabaseTopologyDefaultConnectionString {
         oracle).
 
     .DESCRIPTION
-        PostgreSQL-only: Phase 1 (MSSQL wiring) fails clearly instead of constructing an MSSQL default
-        for this case, since neither .yml file has an engine-aware inline fallback yet (an untested
-        guess could disagree with Compose's still-PostgreSQL-shaped fallback). Phase 2 introduces the
-        MSSQL counterpart here once both .yml files gain an engine-aware fallback together.
+        PostgreSQL-only, and durably so rather than pending a later phase: both .yml fallbacks
+        hardcode a PostgreSQL host, port, and username because Compose interpolation cannot branch on
+        the database engine. Only the database segment could be made topology-aware, and it has been.
+        So there is no MSSQL default to construct - for an MSSQL run with the key absent, Compose
+        would render a PostgreSQL-shaped string that is not a usable SQL Server connection at all.
+        That case cannot arise in practice, because the .env.mssql overlay always supplies the key
+        explicitly; Confirm-CmsDatabaseTopologyAgreement fails clearly if it ever does, rather than
+        validating against a value Compose would never produce.
 
         Extracted into its own function specifically so it can be asserted, in isolation, against a
         real Compose-rendered oracle string byte-for-byte - not merely indirectly by observing that
@@ -460,11 +464,10 @@ function Test-MssqlDuplicateDatabaseError {
         IF DB_ID(...) IS NULL CREATE DATABASE ... check-then-act statement.
 
     .DESCRIPTION
-        Per Microsoft's documented, stable error catalog. Not independently spiked against a live
-        SQL Server instance in this pass (the companion PostgreSQL predicate above required a live
-        spike because that engine's race can surface as either of two codes depending on timing;
-        SQL Server's single documented code is lower-risk to take on documentation alone, but
-        should still be confirmed against a live instance before Phase 1b relies on it).
+        Confirmed against a live SQL Server 2025 instance: an unguarded duplicate CREATE DATABASE
+        reports "Msg 1801, Level 16, State 3, Server <name>, Line 1" followed by the human-readable
+        "already exists" text, and this predicate matches it while correctly rejecting an unrelated
+        failure (Msg 208, invalid object name).
 
         Matches only the structured sqlcmd error-number position ("Msg 1801,"), not a bare "1801"
         anywhere in the output - unrelated text that happens to contain that number (a row count, a

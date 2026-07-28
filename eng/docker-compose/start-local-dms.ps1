@@ -182,8 +182,7 @@ param (
     # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Applies only when CMS actually
     # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
-    # CMS does not start. MSSQL only in this phase (DMS-1270 Phase 1b) - PostgreSQL support lands
-    # in Phase 2; combining this with -DatabaseEngine postgresql fails fast.
+    # CMS does not start. Supported on both database engines.
     [Switch]
     $SeparateConfigDatabase
 )
@@ -263,17 +262,11 @@ $cmsParticipates = -not ($databaseOnlyStartup -or $d -or $DmsOnly)
 if ($cmsParticipates) {
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:$true
 
-    if ($SeparateConfigDatabase -and $DatabaseEngine -eq "postgresql") {
-        throw "-SeparateConfigDatabase is not yet supported for -DatabaseEngine postgresql; PostgreSQL support lands in Phase 2 (DMS-1270)."
-    }
-
-    # The topology-write sequence is gated to MSSQL only in this phase: PostgreSQL-facing profile
-    # files and the .yml inline fallbacks are untouched until Phase 2, so nothing here should run
-    # for a plain PostgreSQL invocation (even without -SeparateConfigDatabase).
-    if ($DatabaseEngine -eq "mssql") {
-        $EnvironmentFile = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -DockerComposeRoot $PSScriptRoot
-        Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
-    }
+    # Both engines run the same topology-write sequence: the profile files and both .yml inline
+    # fallbacks are engine-aware, so shared and separate mode are symmetric across PostgreSQL and
+    # SQL Server.
+    $EnvironmentFile = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -DockerComposeRoot $PSScriptRoot
+    Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
 }
 else {
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
@@ -623,19 +616,19 @@ else {
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
     }
 
-    # Engine-aware database parameters for the setup-openiddict.ps1 calls below. On SQL Server the
+    # Engine-aware database parameters for the setup-openiddict.ps1 calls below. On both engines the
     # OpenIddict stores live in whichever database CMS itself targets - DMS_CONFIG_DATABASE_NAME,
     # the CMS database topology seam (DMS-1270): the shared DMS datastore database by default, or
     # the dedicated edfi_configurationservice database when -SeparateConfigDatabase redirects CMS
     # there. -InitDb creates that database (and the dmscs schema) when missing, ahead of the CMS
-    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared POSTGRES_DB_NAME
-    # database - PostgreSQL support for -SeparateConfigDatabase lands in Phase 2).
+    # startup deploy. Only the connection details differ per engine; the database name is resolved
+    # from the same seam either way, so the two modes stay symmetric across engines.
     $identityDbParams =
         if ($DatabaseEngine -eq "mssql") {
             @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME" }
         }
         else {
-            @{}
+            @{ DbName = "ENV:DMS_CONFIG_DATABASE_NAME" }
         }
 
     Start-Sleep 20

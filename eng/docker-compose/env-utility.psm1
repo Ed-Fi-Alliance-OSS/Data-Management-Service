@@ -1535,11 +1535,13 @@ function Confirm-CmsDatabaseTopologyAgreement {
         string (both ambient and file) falls back to a concrete default constructed by
         Get-CmsDatabaseTopologyDefaultConnectionString - never a template string, because
         Get-ComposeResolvedEnvValue returns its own DefaultValue argument verbatim without expanding
-        any ${...} inside it. For MSSQL, Phase 1 fails clearly instead of constructing a default: no
-        Compose YAML has an engine-aware inline fallback for MSSQL yet (both files' inline fallback
-        is still PostgreSQL-shaped), so a guessed default here could accept a connection Compose
-        itself would never render; Phase 2 introduces the MSSQL counterpart once both YAML files gain
-        an engine-aware fallback together.
+        any ${...} inside it. Both .yml fallbacks honor the topology seam in their database segment
+        (${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}}), so that default is correct for shared and
+        separate mode alike. For MSSQL there is no default to construct at all: the fallbacks' host,
+        port, and username are PostgreSQL-shaped and Compose interpolation cannot branch on the
+        engine, so a guessed SQL Server default would accept a connection Compose itself would never
+        render. That case cannot arise in practice (the .env.mssql overlay always supplies the key),
+        and this function fails clearly if it ever does.
 
         Every recognized database-name key present (Database, Initial Catalog) must individually
         agree with the expected name - the same all-candidates-must-agree pattern
@@ -1591,11 +1593,13 @@ function Confirm-CmsDatabaseTopologyAgreement {
 
     $actualConnectionString =
         if ($DatabaseEngine -eq "mssql") {
-            # Phase 1 (MSSQL wiring): fail clearly for an entirely absent connection string rather
-            # than construct an untested default - see the .DESCRIPTION note above.
+            # Fail clearly for an entirely absent connection string rather than validate against a
+            # value Compose would never render: both .yml fallbacks are PostgreSQL-shaped by
+            # construction (Compose interpolation cannot branch on the engine), so there is no MSSQL
+            # default to compare against - see the .DESCRIPTION note above.
             $explicitConnectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
             if ([string]::IsNullOrWhiteSpace($explicitConnectionString)) {
-                throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING is required for MSSQL and cannot be entirely absent. This design does not construct an MSSQL default until Phase 2 introduces an engine-aware Compose fallback; check for a corrupted or manually-edited environment file."
+                throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING is required for MSSQL and cannot be entirely absent. The Compose inline fallback is PostgreSQL-shaped, so no SQL Server default exists to validate against; the .env.mssql overlay normally supplies this key, so check for a corrupted or manually-edited environment file."
             }
             $explicitConnectionString
         }

@@ -543,8 +543,8 @@ function Invoke-BootstrapWrapper {
         # Redirects the CMS (Configuration Service) database to a dedicated
         # edfi_configurationservice database instead of sharing the DMS datastore database.
         # Forwarded to the start-script invocations below; NOT forwarded to configure-local-data-store.ps1
-        # or provision-dms-schema.ps1, which are untouched by this seam (DMS-1270). MSSQL only in
-        # this phase (Phase 1b) - PostgreSQL support lands in Phase 2.
+        # or provision-dms-schema.ps1, which are untouched by this seam (DMS-1270). Supported on both
+        # database engines.
         [Switch]$SeparateConfigDatabase,
 
         # Data standard version for the local-bootstrap package surface. For
@@ -710,27 +710,16 @@ function Invoke-BootstrapWrapper {
         # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
         # env-utility sibling module.
         $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
-        if ($DatabaseEngine -eq "mssql" -and (Test-Path -LiteralPath $envUtilityPathForEngineOverlay)) {
+        if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
             Import-Module $envUtilityPathForEngineOverlay -Force
+
+            # Composing the engine overlay is a SQL Server concern only, but the function returns the
+            # base file unchanged for postgresql, so calling it either way keeps this to one path.
             $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -BaseEnvironmentFile $baseEnvFile `
                 -DockerComposeRoot $PSScriptRoot `
                 -SkipMssqlCmsDatabaseValidation:$true
-
-            # The wrapper's own pre-resolution chain always represents a CMS-participating context
-            # (its initial infra-start invocation below always includes CMS), so this story's own
-            # topology-write sequence and validator - which supersede the shared-mode-only check
-            # just skipped above - run unconditionally here (DMS-1270 Phase 1b).
-            $baseEnvFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
-                -BaseEnvironmentFile $baseEnvFile `
-                -DatabaseEngine $DatabaseEngine `
-                -SeparateConfigDatabase:$SeparateConfigDatabase `
-                -DockerComposeRoot $PSScriptRoot
-            Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $baseEnvFile -DatabaseEngine $DatabaseEngine
-        }
-        elseif ($SeparateConfigDatabase -and $DatabaseEngine -eq "postgresql") {
-            throw "-SeparateConfigDatabase is not yet supported for -DatabaseEngine postgresql; PostgreSQL support lands in Phase 2 (DMS-1270)."
         }
 
         # Resolve identity provider once and forward the same value to both phases. This runs before
@@ -744,6 +733,22 @@ function Invoke-BootstrapWrapper {
             -ExplicitProvider $IdentityProvider `
             -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) `
             -EffectiveEnvironmentFile $baseEnvFile
+
+        # The wrapper's own pre-resolution chain always represents a CMS-participating context (its
+        # initial infra-start invocation below always includes CMS), so this story's own
+        # topology-write sequence and validator - which supersede the shared-mode-only check skipped
+        # above - run unconditionally here, for both engines. Deliberately sequenced after identity
+        # resolution: that check is the wrapper's documented earliest failure, and a topology error
+        # raised ahead of it would mask an unsupported identity provider behind a database-name
+        # complaint.
+        if (Test-Path -LiteralPath $envUtilityPathForEngineOverlay) {
+            $baseEnvFile = Resolve-CmsDatabaseTopologyEnvironmentFile `
+                -BaseEnvironmentFile $baseEnvFile `
+                -DatabaseEngine $DatabaseEngine `
+                -SeparateConfigDatabase:$SeparateConfigDatabase `
+                -DockerComposeRoot $PSScriptRoot
+            Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $baseEnvFile -DatabaseEngine $DatabaseEngine
+        }
 
         # Resolve the effective env file. When seed loading is requested, materialize a derived env
         # with the bootstrap profile so the circuit breaker tolerates the bulk-load failure ratio.
