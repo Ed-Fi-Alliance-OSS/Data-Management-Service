@@ -96,6 +96,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         var phase6 = _ddl.IndexOf("Phase 6: Foreign Keys", StringComparison.Ordinal);
         var phase7 = _ddl.IndexOf("Phase 7: Indexes", StringComparison.Ordinal);
         var phase8 = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
+        var phase9 = _ddl.IndexOf("Phase 9: Security and Grants", StringComparison.Ordinal);
 
         phase1.Should().BeGreaterOrEqualTo(0);
         phase2.Should().BeGreaterThan(phase1);
@@ -105,6 +106,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         phase6.Should().BeGreaterThan(phase5);
         phase7.Should().BeGreaterThan(phase6);
         phase8.Should().BeGreaterThan(phase7);
+        phase9.Should().BeGreaterThan(phase8);
     }
 
     // ── Schema and sequence ─────────────────────────────────────────
@@ -951,6 +953,236 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         {
             line.Should().Be(line.TrimEnd(), $"Line has trailing whitespace: [{line}]");
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PostgreSQL transactional enqueue
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new CoreDdlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+        _ddl = emitter.Emit();
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_functions_as_security_definer_with_pg_catalog_search_path()
+    {
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionBody = ExtractFunction(_ddl, functionName);
+
+            functionBody
+                .Should()
+                .Contain(
+                    "RETURNS TRIGGER\n"
+                        + "LANGUAGE plpgsql\n"
+                        + "SECURITY DEFINER\n"
+                        + "SET search_path = pg_catalog\n"
+                        + "AS $func$"
+                );
+            functionBody.Should().Contain("FROM \"dms\".\"DocumentCacheState\"");
+            functionBody.Should().Contain("INSERT INTO \"dms\".\"DocumentProjectionWork\" AS work");
+            functionBody.Should().NotContain("FROM DocumentCacheState");
+            functionBody.Should().NotContain("INSERT INTO DocumentProjectionWork");
+        }
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_insert_and_update_statement_triggers_with_transition_relations()
+    {
+        _ddl.Should()
+            .Contain(
+                "DROP TRIGGER IF EXISTS \"TR_Document_EnqueueProjectionInsert\" ON \"dms\".\"Document\""
+            );
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_Document_EnqueueProjectionInsert\"");
+        _ddl.Should().Contain("AFTER INSERT ON \"dms\".\"Document\"");
+        _ddl.Should().Contain("REFERENCING NEW TABLE AS new_rows");
+        _ddl.Should().Contain("FOR EACH STATEMENT");
+        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"();");
+
+        _ddl.Should()
+            .Contain(
+                "DROP TRIGGER IF EXISTS \"TR_Document_EnqueueProjectionUpdate\" ON \"dms\".\"Document\""
+            );
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_Document_EnqueueProjectionUpdate\"");
+        _ddl.Should().Contain("AFTER UPDATE ON \"dms\".\"Document\"");
+        _ddl.Should().Contain("REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows");
+        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"();");
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_lifecycle_gate_and_missing_state_failure()
+    {
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionBody = ExtractFunction(_ddl, functionName);
+
+            CountOccurrences(functionBody, "WHERE \"StateId\" = 1;").Should().Be(1);
+            functionBody.Should().Contain("IF NOT FOUND THEN");
+            functionBody
+                .Should()
+                .Contain(
+                    "RAISE EXCEPTION 'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.';"
+                );
+            functionBody
+                .Should()
+                .Contain(
+                    "IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN"
+                );
+            functionBody
+                .Should()
+                .Contain(
+                    "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;"
+                );
+            functionBody.Should().Contain("IF _lifecycle_state = 'Disabled' THEN");
+            functionBody.Should().Contain("RETURN NULL;");
+        }
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_update_filter_for_changed_content_versions()
+    {
+        var updateFunction = ExtractFunction(_ddl, "TF_Document_EnqueueProjectionUpdate");
+
+        updateFunction.Should().Contain("FROM new_rows n");
+        updateFunction.Should().Contain("INNER JOIN old_rows o ON o.\"DocumentId\" = n.\"DocumentId\"");
+        updateFunction.Should().Contain("WHERE n.\"ContentVersion\" <> o.\"ContentVersion\"");
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_monotonic_upsert_with_one_statement_timestamp()
+    {
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionBody = ExtractFunction(_ddl, functionName);
+            CountOccurrences(functionBody, "statement_timestamp()").Should().Be(1);
+
+            var upsertStart = functionBody.IndexOf(
+                "ON CONFLICT (\"DocumentId\") DO UPDATE",
+                StringComparison.Ordinal
+            );
+            upsertStart.Should().BeGreaterOrEqualTo(0);
+            var upsertBody = functionBody[upsertStart..];
+
+            upsertBody
+                .Should()
+                .Contain("SET \"RequiredContentVersion\" = EXCLUDED.\"RequiredContentVersion\",");
+            upsertBody.Should().Contain("\"LastEnqueuedAt\" = EXCLUDED.\"LastEnqueuedAt\"");
+            upsertBody
+                .Should()
+                .Contain("WHERE work.\"RequiredContentVersion\" < EXCLUDED.\"RequiredContentVersion\";");
+            upsertBody.Should().NotContain("\"FirstEnqueuedAt\" =");
+        }
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_owner_role_membership_ownership_and_grants()
+    {
+        _ddl.Should()
+            .Contain(
+                "CREATE ROLE \"edfi_dms_enqueue_owner\" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
+            );
+        _ddl.Should()
+            .Contain(
+                "ALTER ROLE \"edfi_dms_enqueue_owner\" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
+            );
+        _ddl.Should().Contain("WHERE membership.member = 'edfi_dms_enqueue_owner'::pg_catalog.regrole");
+        _ddl.Should()
+            .Contain("AND (membership.admin_option OR membership.inherit_option OR membership.set_option)");
+        _ddl.Should()
+            .Contain(
+                "GRANT \"edfi_dms_enqueue_owner\" TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;"
+            );
+
+        _ddl.Should()
+            .Contain(
+                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() OWNER TO \"edfi_dms_enqueue_owner\";"
+            );
+        _ddl.Should()
+            .Contain(
+                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() OWNER TO \"edfi_dms_enqueue_owner\";"
+            );
+        _ddl.Should()
+            .Contain(
+                "REVOKE EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() FROM PUBLIC;"
+            );
+        _ddl.Should()
+            .Contain(
+                "REVOKE EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() FROM PUBLIC;"
+            );
+        _ddl.Should()
+            .Contain(
+                "REVOKE INSERT, UPDATE, DELETE ON TABLE \"dms\".\"DocumentProjectionWork\" FROM PUBLIC;"
+            );
+        _ddl.Should().Contain("GRANT USAGE ON SCHEMA \"dms\" TO \"edfi_dms_enqueue_owner\";");
+        _ddl.Should()
+            .Contain("GRANT SELECT ON TABLE \"dms\".\"DocumentCacheState\" TO \"edfi_dms_enqueue_owner\";");
+        _ddl.Should()
+            .Contain(
+                "GRANT SELECT, INSERT, UPDATE ON TABLE \"dms\".\"DocumentProjectionWork\" TO \"edfi_dms_enqueue_owner\";"
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_Postgresql_Enqueue_runtime_cdc_or_delete_grants()
+    {
+        _ddl.Should().NotContain("GRANT DELETE ON TABLE \"dms\".\"DocumentProjectionWork\"");
+        _ddl.Should().NotContain("cdc");
+        _ddl.Should().NotContain("CREATE PUBLICATION");
+        _ddl.Should().NotContain("CREATE SUBSCRIPTION");
+    }
+
+    private static string ExtractFunction(string ddl, string functionName)
+    {
+        var start = ddl.IndexOf(
+            $"CREATE OR REPLACE FUNCTION \"dms\".\"{functionName}\"()",
+            StringComparison.Ordinal
+        );
+        start.Should().BeGreaterOrEqualTo(0);
+
+        var end = ddl.IndexOf("$func$;", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start);
+
+        return ddl[start..(end + "$func$;".Length)];
+    }
+
+    private static int CountOccurrences(string value, string pattern)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(pattern, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += pattern.Length;
+        }
+
+        return count;
     }
 }
 

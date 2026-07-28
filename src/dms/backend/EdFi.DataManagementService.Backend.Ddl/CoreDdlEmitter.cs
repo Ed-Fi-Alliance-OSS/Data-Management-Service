@@ -26,6 +26,7 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <item>Foreign keys (ALTER TABLE ADD CONSTRAINT)</item>
 /// <item>Indexes</item>
 /// <item>Triggers</item>
+/// <item>Security and grants (PostgreSQL enqueue ownership only)</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -72,6 +73,11 @@ public sealed class CoreDdlEmitter
 
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
     private const string DocumentCacheUuidValidationTriggerName = "TR_DocumentCache_ValidateDocumentUuid";
+    private const string DocumentEnqueueProjectionInsertFunctionName = "TF_Document_EnqueueProjectionInsert";
+    private const string DocumentEnqueueProjectionUpdateFunctionName = "TF_Document_EnqueueProjectionUpdate";
+    private const string DocumentEnqueueProjectionInsertTriggerName = "TR_Document_EnqueueProjectionInsert";
+    private const string DocumentEnqueueProjectionUpdateTriggerName = "TR_Document_EnqueueProjectionUpdate";
+    private const string PgsqlDocumentEnqueueOwnerRoleName = "edfi_dms_enqueue_owner";
 
     private static readonly DbTableName _dataStoreIdentityTable = DmsTableNames.DataStoreIdentity;
     private static readonly DbTableName _descriptorTable = DmsTableNames.Descriptor;
@@ -157,6 +163,7 @@ public sealed class CoreDdlEmitter
         EmitForeignKeys(writer);
         EmitIndexes(writer);
         EmitTriggers(writer);
+        EmitSecurityAndGrants(writer);
 
         return writer.ToString();
     }
@@ -987,6 +994,7 @@ public sealed class CoreDdlEmitter
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             EmitPgsqlDescriptorStampingTrigger(writer);
+            EmitPgsqlDocumentProjectionEnqueueTriggers(writer);
             EmitPgsqlDocumentCacheUuidValidationTrigger(writer);
         }
         else
@@ -1100,6 +1108,150 @@ public sealed class CoreDdlEmitter
         }
         writer.AppendLine("END;");
         writer.AppendLine("GO");
+        writer.AppendLine();
+    }
+
+    // ── Document projection enqueue triggers ─────────────────────────
+
+    /// <summary>
+    /// Emits PostgreSQL statement-level enqueue trigger functions and triggers for
+    /// <c>dms.Document</c>.
+    /// </summary>
+    private void EmitPgsqlDocumentProjectionEnqueueTriggers(SqlWriter writer)
+    {
+        var documentTable = _dialect.QualifyTable(_documentTable);
+        var insertFunctionName = PgsqlDmsFunctionName(DocumentEnqueueProjectionInsertFunctionName);
+        var updateFunctionName = PgsqlDmsFunctionName(DocumentEnqueueProjectionUpdateFunctionName);
+
+        EmitPgsqlDocumentProjectionEnqueueFunction(writer, insertFunctionName, isUpdate: false);
+        EmitPgsqlDocumentProjectionEnqueueFunction(writer, updateFunctionName, isUpdate: true);
+
+        writer.AppendLine(
+            _dialect.DropTriggerIfExists(_documentTable, DocumentEnqueueProjectionInsertTriggerName)
+        );
+        writer.AppendLine($"CREATE TRIGGER {Quote(DocumentEnqueueProjectionInsertTriggerName)}");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"AFTER INSERT ON {documentTable}");
+            writer.AppendLine("REFERENCING NEW TABLE AS new_rows");
+            writer.AppendLine("FOR EACH STATEMENT");
+            writer.AppendLine($"EXECUTE FUNCTION {insertFunctionName}();");
+        }
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.DropTriggerIfExists(_documentTable, DocumentEnqueueProjectionUpdateTriggerName)
+        );
+        writer.AppendLine($"CREATE TRIGGER {Quote(DocumentEnqueueProjectionUpdateTriggerName)}");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"AFTER UPDATE ON {documentTable}");
+            writer.AppendLine("REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows");
+            writer.AppendLine("FOR EACH STATEMENT");
+            writer.AppendLine($"EXECUTE FUNCTION {updateFunctionName}();");
+        }
+        writer.AppendLine();
+    }
+
+    private void EmitPgsqlDocumentProjectionEnqueueFunction(
+        SqlWriter writer,
+        string functionName,
+        bool isUpdate
+    )
+    {
+        var documentCacheStateTable = _dialect.QualifyTable(_documentCacheStateTable);
+        var documentProjectionWorkTable = _dialect.QualifyTable(_documentProjectionWorkTable);
+
+        writer.AppendLine($"CREATE OR REPLACE FUNCTION {functionName}()");
+        writer.AppendLine("RETURNS TRIGGER");
+        writer.AppendLine("LANGUAGE plpgsql");
+        writer.AppendLine("SECURITY DEFINER");
+        writer.AppendLine("SET search_path = pg_catalog");
+        writer.AppendLine("AS $func$");
+        writer.AppendLine("DECLARE");
+        using (writer.Indent())
+        {
+            writer.AppendLine("_lifecycle_state text;");
+            writer.AppendLine("_enqueued_at timestamp with time zone;");
+        }
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"SELECT {Quote("ProjectionLifecycleState")} INTO _lifecycle_state");
+            writer.AppendLine($"FROM {documentCacheStateTable}");
+            writer.AppendLine($"WHERE {Quote("StateId")} = 1;");
+            writer.AppendLine();
+            writer.AppendLine("IF NOT FOUND THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "RAISE EXCEPTION 'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.';"
+                );
+            }
+            writer.AppendLine("END IF;");
+            writer.AppendLine();
+            writer.AppendLine(
+                "IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN"
+            );
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;"
+                );
+            }
+            writer.AppendLine("END IF;");
+            writer.AppendLine();
+            writer.AppendLine("IF _lifecycle_state = 'Disabled' THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("RETURN NULL;");
+            }
+            writer.AppendLine("END IF;");
+            writer.AppendLine();
+            writer.AppendLine("_enqueued_at := statement_timestamp();");
+            writer.AppendLine();
+            writer.AppendLine($"INSERT INTO {documentProjectionWorkTable} AS work (");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"{Quote("DocumentId")},");
+                writer.AppendLine($"{Quote("RequiredContentVersion")},");
+                writer.AppendLine($"{Quote("FirstEnqueuedAt")},");
+                writer.AppendLine($"{Quote("LastEnqueuedAt")}");
+            }
+            writer.AppendLine(")");
+
+            if (isUpdate)
+            {
+                writer.AppendLine(
+                    $"SELECT n.{Quote("DocumentId")}, n.{Quote("ContentVersion")}, _enqueued_at, _enqueued_at"
+                );
+                writer.AppendLine("FROM new_rows n");
+                writer.AppendLine(
+                    $"INNER JOIN old_rows o ON o.{Quote("DocumentId")} = n.{Quote("DocumentId")}"
+                );
+                writer.AppendLine($"WHERE n.{Quote("ContentVersion")} <> o.{Quote("ContentVersion")}");
+            }
+            else
+            {
+                writer.AppendLine(
+                    $"SELECT {Quote("DocumentId")}, {Quote("ContentVersion")}, _enqueued_at, _enqueued_at"
+                );
+                writer.AppendLine("FROM new_rows");
+            }
+
+            writer.AppendLine($"ON CONFLICT ({Quote("DocumentId")}) DO UPDATE");
+            writer.AppendLine(
+                $"SET {Quote("RequiredContentVersion")} = EXCLUDED.{Quote("RequiredContentVersion")},"
+            );
+            writer.AppendLine($"    {Quote("LastEnqueuedAt")} = EXCLUDED.{Quote("LastEnqueuedAt")}");
+            writer.AppendLine(
+                $"WHERE work.{Quote("RequiredContentVersion")} < EXCLUDED.{Quote("RequiredContentVersion")};"
+            );
+            writer.AppendLine();
+            writer.AppendLine("RETURN NULL;");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("$func$;");
         writer.AppendLine();
     }
 
@@ -1569,6 +1721,99 @@ public sealed class CoreDdlEmitter
             );
         }
     }
+
+    // ── Phase 9: Security and Grants ──────────────────────────────────
+
+    /// <summary>
+    /// Emits least-privilege ownership and grants. SQL Server has no generated
+    /// enqueue principal or grant matrix for this story.
+    /// </summary>
+    private void EmitSecurityAndGrants(SqlWriter writer)
+    {
+        if (_dialect.Rules.Dialect != SqlDialect.Pgsql)
+        {
+            return;
+        }
+
+        writer.WritePhaseHeader(9, "Security and Grants");
+        EmitPgsqlDocumentProjectionEnqueueSecurity(writer);
+    }
+
+    private void EmitPgsqlDocumentProjectionEnqueueSecurity(SqlWriter writer)
+    {
+        var ownerRole = Quote(PgsqlDocumentEnqueueOwnerRoleName);
+        var documentCacheStateTable = _dialect.QualifyTable(_documentCacheStateTable);
+        var documentProjectionWorkTable = _dialect.QualifyTable(_documentProjectionWorkTable);
+        var insertFunctionName = PgsqlDmsFunctionName(DocumentEnqueueProjectionInsertFunctionName);
+        var updateFunctionName = PgsqlDmsFunctionName(DocumentEnqueueProjectionUpdateFunctionName);
+
+        writer.AppendLine("DO $$");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine(
+                $"IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{PgsqlDocumentEnqueueOwnerRoleName}') THEN"
+            );
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    $"CREATE ROLE {ownerRole} WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
+                );
+            }
+            writer.AppendLine("END IF;");
+            writer.AppendLine();
+            writer.AppendLine(
+                $"ALTER ROLE {ownerRole} WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
+            );
+            writer.AppendLine();
+            writer.AppendLine("IF EXISTS (");
+            using (writer.Indent())
+            {
+                writer.AppendLine("SELECT 1");
+                writer.AppendLine("FROM pg_catalog.pg_auth_members membership");
+                writer.AppendLine(
+                    $"WHERE membership.member = '{PgsqlDocumentEnqueueOwnerRoleName}'::pg_catalog.regrole"
+                );
+                writer.AppendLine(
+                    "AND (membership.admin_option OR membership.inherit_option OR membership.set_option)"
+                );
+            }
+            writer.AppendLine(") THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships.';"
+                );
+            }
+            writer.AppendLine("END IF;");
+        }
+        writer.AppendLine("END $$;");
+        writer.AppendLine();
+
+        writer.AppendLine($"GRANT {ownerRole} TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;");
+        writer.AppendLine();
+
+        writer.AppendLine($"ALTER FUNCTION {insertFunctionName}() OWNER TO {ownerRole};");
+        writer.AppendLine($"ALTER FUNCTION {updateFunctionName}() OWNER TO {ownerRole};");
+        writer.AppendLine();
+
+        writer.AppendLine($"REVOKE EXECUTE ON FUNCTION {insertFunctionName}() FROM PUBLIC;");
+        writer.AppendLine($"REVOKE EXECUTE ON FUNCTION {updateFunctionName}() FROM PUBLIC;");
+        writer.AppendLine(
+            $"REVOKE INSERT, UPDATE, DELETE ON TABLE {documentProjectionWorkTable} FROM PUBLIC;"
+        );
+        writer.AppendLine();
+
+        writer.AppendLine($"GRANT USAGE ON SCHEMA {Quote(DmsTableNames.DmsSchema.Value)} TO {ownerRole};");
+        writer.AppendLine($"GRANT SELECT ON TABLE {documentCacheStateTable} TO {ownerRole};");
+        writer.AppendLine(
+            $"GRANT SELECT, INSERT, UPDATE ON TABLE {documentProjectionWorkTable} TO {ownerRole};"
+        );
+        writer.AppendLine();
+    }
+
+    private string PgsqlDmsFunctionName(string functionName) =>
+        $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(functionName)}";
 
     private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
 }
