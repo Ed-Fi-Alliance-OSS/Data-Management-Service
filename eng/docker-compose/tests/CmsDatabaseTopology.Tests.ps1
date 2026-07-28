@@ -125,6 +125,73 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         }
     }
 
+    Context "declaration order (Compose resolves --env-file references in file order)" {
+        # This function's hashtable-based resolution is order-blind, so a value can look correct here
+        # and still render empty for Compose: verified against a real `docker compose config` render,
+        # DMS_CONFIG_DATABASE_NAME=`${POSTGRES_DB_NAME} declared ABOVE POSTGRES_DB_NAME produced
+        # database= (empty). A disordered file therefore must not take the unchanged early return; the
+        # derived-write path heals it, because the writer serializes the alias as the resolved literal
+        # and the post-write reorder keeps the alias ahead of the connection string.
+        It "does not early-return a shared-mode file whose alias is declared before the datastore name" {
+            $basePath = Join-Path $script:work ".env.disordered"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $result | Should -Not -Be $basePath -Because "the disordered base file renders database= empty at real Compose render time"
+
+            # The healed file must be order-viable: the alias is a resolved literal (nothing left to
+            # forward-reference) and still precedes the connection string that references it.
+            $derivedLines = [System.IO.File]::ReadAllLines($result)
+            $aliasLine = @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_NAME=*' })[0]
+            $aliasLine | Should -Be 'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice'
+            $aliasIndex = [Array]::IndexOf($derivedLines, $aliasLine)
+            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=*' })[0])
+            $aliasIndex | Should -BeLessThan $connIndex
+        }
+
+        It "does not early-return a file whose connection string is declared before the alias it references" {
+            $basePath = Join-Path $script:work ".env.conn-first"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $result | Should -Not -Be $basePath
+            $derivedLines = [System.IO.File]::ReadAllLines($result)
+            $aliasIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_NAME=*' })[0])
+            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=*' })[0])
+            $aliasIndex | Should -BeLessThan $connIndex
+        }
+
+        It "still early-returns a correctly-ordered, already-correct file" {
+            # The order check must not turn every call into a rewrite: the checked-in profile shape
+            # (datastore name, then alias, then connection string) stays untouched.
+            $basePath = Join-Path $script:work ".env.ordered"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work |
+                Should -Be $basePath
+        }
+    }
+
     Context "separate mode" {
         It "sets DMS_CONFIG_DATABASE_NAME to the fixed edfi_configurationservice literal" {
             $basePath = Join-Path $script:work ".env.base"
@@ -590,6 +657,84 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*edfi_configurationservice*"
+        }
+
+        It "rejects a datastore name that IS edfi_configurationservice: separate mode must be physically separate (<_>)" -ForEach @('postgresql', 'mssql') {
+            # Every equality check below would pass while both services silently share one database,
+            # so distinctness is its own explicit assertion.
+            $datastoreKeyLine = if ($_ -eq 'mssql') { 'MSSQL_DB_NAME=edfi_configurationservice' } else { 'POSTGRES_DB_NAME=edfi_configurationservice' }
+            $connectionLine = if ($_ -eq 'mssql') {
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            } else {
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
+            }
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                $datastoreKeyLine,
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                $connectionLine
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine $_ } |
+                Should -Throw "*physically distinct*"
+        }
+
+        It "rejects a case-variant datastore collision on MSSQL (names are case-insensitive there)" {
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=EDFI_ConfigurationService',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*physically distinct*"
+        }
+
+        It "rejects an ambient datastore-name override that collides with the dedicated CMS database" {
+            # Resolved with Compose precedence like everything else: an ambient POSTGRES_DB_NAME
+            # genuinely moves the running datastore, so an ambient collision is a real collision.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "edfi_configurationservice")
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw "*physically distinct*"
+        }
+
+        It "accepts a caller-authored connection string built on Compose default-value interpolation" {
+            # database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}} is exactly what the checked-in
+            # Compose fallback renders; Compose documents the operator, so validation must resolve it
+            # rather than reject a working configuration as a literal mismatch.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
+        }
+
+        It "accepts the same default-value form in shared mode, resolving through the default arm" {
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
         }
     }
 
@@ -1388,6 +1533,32 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.TopologyFile | Should -BeNullOrEmpty -Because "Resolve-CmsDatabaseTopologyEnvironmentFile must not run when cmsParticipates is false"
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
         }
+
+        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored source file targeting the dedicated database" {
+            # The topology marker lives only in derived files, so a documented continuation against
+            # the ORIGINAL -EnvironmentFile carries no marker. The explicit switch is the caller's
+            # declaration of separate topology, and the legacy shared-mode invariant must not judge a
+            # topology the caller explicitly declined.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*" -Because "the shared-mode invariant is definitionally inapplicable to the topology the switch declares"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the continuation must reach the docker boundary"
+        }
+
+        It "mssql -DmsOnly WITHOUT the switch: still rejects the same separate-target file (today's behavior preserved)" {
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*" -Because "with no switch and no marker, today's shared-mode check runs exactly as before"
+            $run.Invocations | Should -BeNullOrEmpty
+        }
     }
 
     Context "start-published-dms.ps1" {
@@ -1475,6 +1646,41 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.TopologyFile | Should -BeNullOrEmpty -Because "Resolve-CmsDatabaseTopologyEnvironmentFile must not run when cmsParticipates is false"
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
+        }
+
+        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored source file targeting the dedicated database" {
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*" -Because "the shared-mode invariant is definitionally inapplicable to the topology the switch declares"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the continuation must reach the docker boundary"
+        }
+
+        It "rejects -DataStoreDatabaseName edfi_configurationservice with -SeparateConfigDatabase, before any docker activity" {
+            # -DataStoreDatabaseName renames the DMS datastore for the CMS data-store record AFTER
+            # topology validation has already run, so an unguarded collision would silently
+            # reintroduce the very sharing the switch opts out of. Case-insensitive by design.
+            foreach ($collidingName in @('edfi_configurationservice', 'EDFI_ConfigurationService')) {
+                $run = Invoke-StartScript {
+                    & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DataStoreDatabaseName $collidingName -EnvironmentFile (New-WiringEnvFile) -InfraOnly *>$null
+                }
+
+                $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "'$collidingName' collides with the dedicated CMS database"
+                $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+            }
+        }
+
+        It "accepts -DataStoreDatabaseName edfi_configurationservice when the switch is not requested" {
+            # Without -SeparateConfigDatabase there is no dedicated-CMS-database contract to protect;
+            # the pre-existing parameter keeps its pre-existing latitude.
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) -InfraOnly *>$null
+            }
+
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
         }
     }
 
@@ -1595,5 +1801,80 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ErrorMessage | Should -Not -BeLike "*topology*" -Because "Confirm-CmsDatabaseTopologyAgreement checks the host and must not have run"
             $run.TopologyFile | Should -BeNullOrEmpty
         }
+    }
+}
+
+Describe "CMS database creation ownership (DMS-1270)" {
+    # The acceptance contract assigns database creation per identity provider and forbids overlap:
+    # self-contained creation belongs to the OpenIddict bootstrap (setup-openiddict.ps1 -InitDb),
+    # Keycloak-mode creation belongs to CMS itself (its startup EnsureDatabase deploy, switched on
+    # by AppSettings__DeployDatabaseOnStartup), and PostgreSQL container initialization never
+    # creates the CMS database at all. These pin each side of that contract.
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+
+        # Returns every setup-openiddict.ps1 -InitDb invocation in a script, paired with whether any
+        # enclosing if-clause's condition mentions the self-contained identity provider. AST-based,
+        # so it follows real block structure instead of guessing with regex distance.
+        function script:Get-InitDbInvocationGuard {
+            param([Parameter(Mandatory)] [string]$ScriptPath)
+
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$null, [ref]$null)
+            $invocations = $ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.Extent.Text -match 'setup-openiddict\.ps1' -and
+                $node.Extent.Text -match '-InitDb'
+            }, $true)
+
+            return @($invocations | ForEach-Object {
+                $guarded = $false
+                $child = $_
+                $ancestor = $_.Parent
+                while ($null -ne $ancestor) {
+                    if ($ancestor -is [System.Management.Automation.Language.IfStatementAst]) {
+                        foreach ($clause in $ancestor.Clauses) {
+                            $body = $clause.Item2
+                            if ($body.Extent.StartOffset -le $child.Extent.StartOffset -and
+                                $body.Extent.EndOffset -ge $child.Extent.EndOffset -and
+                                $clause.Item1.Extent.Text -match 'self-contained') {
+                                $guarded = $true
+                            }
+                        }
+                    }
+                    if (-not $guarded) { $child = $ancestor }
+                    $ancestor = $ancestor.Parent
+                }
+                [PSCustomObject]@{ Line = $_.Extent.StartLineNumber; Guarded = $guarded }
+            })
+        }
+    }
+
+    It "guards every setup-openiddict.ps1 -InitDb invocation behind the self-contained identity provider: <_>" -ForEach @(
+        'start-local-dms.ps1', 'start-published-dms.ps1'
+    ) {
+        $invocations = Get-InitDbInvocationGuard -ScriptPath (Join-Path $script:dockerComposeRoot $_)
+
+        $invocations.Count | Should -BeGreaterThan 0 -Because "the self-contained flow must bootstrap the identity store"
+        foreach ($invocation in $invocations) {
+            $invocation.Guarded | Should -BeTrue -Because "the -InitDb call at line $($invocation.Line) must run only for self-contained identity - under Keycloak, CMS owns database creation"
+        }
+    }
+
+    It "keeps CMS the Keycloak-mode database-creation owner: both config compose files enable the startup deploy" {
+        foreach ($composeFile in @('local-config.yml', 'published-config.yml')) {
+            $content = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot $composeFile) -Raw
+            $content | Should -Match 'AppSettings__DeployDatabaseOnStartup:\s*\$\{DMS_CONFIG_DEPLOY_DATABASE:-true\}' -Because "$composeFile must default CMS's own EnsureDatabase deploy on, so Keycloak-mode creation needs no script-side bootstrap"
+        }
+    }
+
+    It "postgresql-init.sh creates only the datastore database, never the CMS one" {
+        # Container-init creation of the CMS database would duplicate ownership held by the
+        # OpenIddict bootstrap (self-contained) or CMS's deploy (Keycloak).
+        $content = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot 'postgresql-init.sh') -Raw
+
+        $content | Should -Match 'CREATE DATABASE \$\{POSTGRES_DB_NAME\}'
+        $content | Should -Not -Match 'configurationservice' -Because "the CMS database is never a container-init concern"
+        $content | Should -Not -Match 'DMS_CONFIG_DATABASE_NAME' -Because "the topology seam must not leak into container initialization"
     }
 }

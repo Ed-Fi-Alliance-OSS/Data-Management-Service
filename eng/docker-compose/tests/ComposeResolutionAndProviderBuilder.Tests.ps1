@@ -67,6 +67,66 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
     }
 
+    Context "Compose default-value and nested interpolation (DMS-1270)" {
+        # Ground truth for every expectation here was captured from a real `docker compose config`
+        # render (Compose v2, 2026-07-28) over an env file defining CPI270_EMPTY= (set-but-empty),
+        # CPI270_SET=set-value, CPI270_NESTED=nested-value, and leaving CPI270_UNSET undefined:
+        # ':-' substitutes when unset OR empty, '-' only when unset; ':+' substitutes when set AND
+        # non-empty, '+' whenever set (even empty); defaults interpolate recursively, including the
+        # nested ${A:-${B}} form. Docker documents these operators for .env interpolation, and a
+        # caller-authored connection string using them must resolve here exactly as Compose renders
+        # it, or a valid configuration is rejected by validation.
+        BeforeAll {
+            $script:interpolationValues = @{
+                CPI270_EMPTY  = ''
+                CPI270_SET    = 'set-value'
+                CPI270_NESTED = 'nested-value'
+            }
+        }
+
+        It "resolves <_.v> to '<_.e>'" -ForEach @(
+            @{ v = '${CPI270_UNSET:-def}'; e = 'def' }
+            @{ v = '${CPI270_EMPTY:-def}'; e = 'def' }
+            @{ v = '${CPI270_SET:-def}'; e = 'set-value' }
+            @{ v = '${CPI270_UNSET-def}'; e = 'def' }
+            @{ v = '${CPI270_EMPTY-def}'; e = '' }
+            @{ v = '${CPI270_SET-def}'; e = 'set-value' }
+            @{ v = '${CPI270_EMPTY:+alt}'; e = '' }
+            @{ v = '${CPI270_SET:+alt}'; e = 'alt' }
+            @{ v = '${CPI270_UNSET:+alt}'; e = '' }
+            @{ v = '${CPI270_EMPTY+alt}'; e = 'alt' }
+            @{ v = '${CPI270_UNSET+alt}'; e = '' }
+            @{ v = '${CPI270_UNSET:-${CPI270_NESTED}}'; e = 'nested-value' }
+            @{ v = '${CPI270_UNSET:-pre${CPI270_NESTED}post}'; e = 'prenested-valuepost' }
+            @{ v = 'database=${CPI270_UNSET:-${CPI270_NESTED}}'; e = 'database=nested-value' }
+            @{ v = '$${CPI270_NESTED}'; e = '${CPI270_NESTED}' }
+            @{ v = '${1BAD}'; e = '${1BAD}' }
+            @{ v = '${CPI270_SET|x}'; e = '${CPI270_SET|x}' }
+        ) {
+            Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value $_.v |
+                Should -BeExactly $_.e
+        }
+
+        It "resolves operators inside an env-file value reached through a plain reference" {
+            # Compose interpolates the env file's own values with the same operators; verified live
+            # (CHAIN=`${A:-`${B}} in the env file rendered the nested default).
+            $values = $script:interpolationValues.Clone()
+            $values['CPI270_CHAIN'] = '${CPI270_UNSET:-${CPI270_NESTED}}'
+            Resolve-ComposeEnvReference -EnvironmentValues $values -Value '${CPI270_CHAIN}' |
+                Should -BeExactly 'nested-value'
+        }
+
+        It "surfaces the :? and ? required-variable errors instead of resolving to empty" {
+            { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_UNSET:?var is required}' } |
+                Should -Throw "*required variable 'CPI270_UNSET'*var is required*"
+            { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_EMPTY:?must be non-empty}' } |
+                Should -Throw "*required variable 'CPI270_EMPTY'*"
+            # '?' (without ':') accepts a set-but-empty value.
+            Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_EMPTY?msg}' |
+                Should -BeExactly ''
+        }
+    }
+
     Context "Get-RequiredComposeResolvedEnvValue" {
         It "returns the resolved value when present" {
             Get-RequiredComposeResolvedEnvValue -EnvironmentValues @{ K = "value" } -Name "K" | Should -Be "value"

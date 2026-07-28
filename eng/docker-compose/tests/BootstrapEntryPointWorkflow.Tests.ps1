@@ -1853,7 +1853,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $source | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?Import-Module .*?bootstrap-manifest\.psm1.*?bootstrap-claims-gate\.psm1'
                 $source | Should -Match '(?s)\$bootstrapMode\s*=\s*\$false.*?\$bootstrapManifestPresent\s*=\s*\$false.*?if \(-not \$databaseOnlyStartup\) \{.*?Invoke-BootstrapStartupConfiguration.*?Get-BootstrapRoot'
                 $source | Should -Match '(?s)\$envValues\s*=\s*ReadValuesFromEnvFile.*?if \(-not \$databaseOnlyStartup\) \{.*?Resolve-IdentityClientSecretConfiguration'
-                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile[^\r\n]*-SkipMssqlCmsDatabaseValidation:\(\$databaseOnlyStartup -or \$d\)' -Because "DbOnly and teardown must not parse application-only CMS database settings"
+                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile[^\r\n]*-SkipMssqlCmsDatabaseValidation:\(\$databaseOnlyStartup -or \$d -or \$SeparateConfigDatabase\)' -Because "DbOnly, teardown, and an explicitly-declared separate topology must not run the shared-mode CMS database check (DMS-1270)"
             }
         }
 
@@ -1890,6 +1890,12 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                     {
                         & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -InfraOnly
                     } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+
+                    # DMS-1270: introducing -SeparateConfigDatabase must not weaken or reorder the
+                    # existing diagnostic for an invalid shape combination.
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -InfraOnly -SeparateConfigDatabase
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
                 }
                 finally {
                     Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
@@ -1903,6 +1909,11 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 try {
                     {
                         & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -DmsOnly
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+
+                    # DMS-1270: same diagnostic with the topology switch present.
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -DmsOnly -SeparateConfigDatabase
                     } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
                 }
                 finally {
