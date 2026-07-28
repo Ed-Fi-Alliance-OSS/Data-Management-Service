@@ -801,8 +801,7 @@ public enum TrackedChangeColumnRole
 
     /// <summary>
     /// A materialized person (Student/Contact/Staff) resource <c>DocumentId</c>, reached via a
-    /// table-level person join or, for that person resource's own identity path, read directly from
-    /// its root <c>DocumentId</c>.
+    /// table-level person join.
     /// </summary>
     PersonDocumentId,
 }
