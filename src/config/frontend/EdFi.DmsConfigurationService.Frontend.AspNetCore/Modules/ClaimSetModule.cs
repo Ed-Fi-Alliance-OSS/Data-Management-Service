@@ -248,11 +248,12 @@ public class ClaimSetModule : IEndpointModule
                 null
             ),
             ClaimSetCopyResult.FailureNotFound => Results.Json(
-                FailureResponse.ForNotFound(
+                FailureResponse.ForUnresolvedReference(
                     $"OriginalId {entity.OriginalId} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
-                statusCode: (int)HttpStatusCode.NotFound
+                contentType: "application/problem+json",
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             ClaimSetCopyResult.FailureDuplicateClaimSetName => DuplicateClaimSetName(httpContext),
             ClaimSetCopyResult.FailureMultiUserConflict => Results.Json(

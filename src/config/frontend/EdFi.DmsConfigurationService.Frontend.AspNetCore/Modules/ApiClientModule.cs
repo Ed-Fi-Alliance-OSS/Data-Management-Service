@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
@@ -13,8 +14,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation;
-using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -59,14 +58,24 @@ public class ApiClientModule : IEndpointModule
         ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
             command.ApplicationId
         );
+        if (applicationResult is ApplicationGetResult.FailureUnknown applicationFailure)
+        {
+            logger.LogError(
+                "Error validating ApplicationId: {Message}",
+                SanitizeForLog(applicationFailure.FailureMessage)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
         if (applicationResult is not ApplicationGetResult.Success applicationSuccess)
         {
-            throw new ValidationException([
-                new ValidationFailure(
-                    "ApplicationId",
-                    $"Application with ID {command.ApplicationId} not found."
+            return Results.Json(
+                FailureResponse.ForUnresolvedReference(
+                    $"Application with ID {command.ApplicationId} not found.",
+                    httpContext.TraceIdentifier
                 ),
-            ]);
+                contentType: "application/problem+json",
+                statusCode: (int)HttpStatusCode.Conflict
+            );
         }
 
         ApplicationResponse application = applicationSuccess.ApplicationResponse;
@@ -83,12 +92,14 @@ public class ApiClientModule : IEndpointModule
 
                 if (notFoundIds.Count > 0)
                 {
-                    throw new ValidationException([
-                        new ValidationFailure(
-                            "DataStoreIds",
-                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}"
+                    return Results.Json(
+                        FailureResponse.ForUnresolvedReference(
+                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}",
+                            httpContext.TraceIdentifier
                         ),
-                    ]);
+                        contentType: "application/problem+json",
+                        statusCode: (int)HttpStatusCode.Conflict
+                    );
                 }
             }
             else if (existingIdsResult is DataStoreIdsExistResult.FailureUnknown failure)
@@ -106,9 +117,12 @@ public class ApiClientModule : IEndpointModule
                 namespacePrefixes = success.VendorResponse.NamespacePrefixes;
                 break;
             default:
-                throw new ValidationException([
-                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                ]);
+                logger.LogError(
+                    "Application {ApplicationId}'s VendorId {VendorId} could not be resolved",
+                    command.ApplicationId,
+                    application.VendorId
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         var clientId = Guid.NewGuid().ToString();
@@ -180,17 +194,24 @@ public class ApiClientModule : IEndpointModule
                 );
             case ApiClientInsertResult.FailureApplicationNotFound:
                 await clientRepository.DeleteClientAsync(clientUuid.ToString());
-                throw new ValidationException([
-                    new ValidationFailure(
-                        "ApplicationId",
-                        $"Application with ID {command.ApplicationId} not found."
+                return Results.Json(
+                    FailureResponse.ForUnresolvedReference(
+                        $"Application with ID {command.ApplicationId} not found.",
+                        httpContext.TraceIdentifier
                     ),
-                ]);
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
             case ApiClientInsertResult.FailureDataStoreNotFound:
                 await clientRepository.DeleteClientAsync(clientUuid.ToString());
-                throw new ValidationException([
-                    new ValidationFailure("DataStoreId", "Data store does not exist."),
-                ]);
+                return Results.Json(
+                    FailureResponse.ForUnresolvedReference(
+                        "Data store does not exist.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
             case ApiClientInsertResult.FailureUnknown failure:
                 logger.LogError("Failure creating client {Failure}", failure);
                 await clientRepository.DeleteClientAsync(clientUuid.ToString());
@@ -278,14 +299,24 @@ public class ApiClientModule : IEndpointModule
         ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
             command.ApplicationId
         );
+        if (applicationResult is ApplicationGetResult.FailureUnknown applicationFailure)
+        {
+            logger.LogError(
+                "Error validating ApplicationId: {Message}",
+                SanitizeForLog(applicationFailure.FailureMessage)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
         if (applicationResult is not ApplicationGetResult.Success applicationSuccess)
         {
-            throw new ValidationException([
-                new ValidationFailure(
-                    "ApplicationId",
-                    $"Application with ID {command.ApplicationId} not found."
+            return Results.Json(
+                FailureResponse.ForUnresolvedReference(
+                    $"Application with ID {command.ApplicationId} not found.",
+                    httpContext.TraceIdentifier
                 ),
-            ]);
+                contentType: "application/problem+json",
+                statusCode: (int)HttpStatusCode.Conflict
+            );
         }
 
         ApplicationResponse application = applicationSuccess.ApplicationResponse;
@@ -302,12 +333,14 @@ public class ApiClientModule : IEndpointModule
 
                 if (notFoundIds.Count > 0)
                 {
-                    throw new ValidationException([
-                        new ValidationFailure(
-                            "DataStoreIds",
-                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}"
+                    return Results.Json(
+                        FailureResponse.ForUnresolvedReference(
+                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}",
+                            httpContext.TraceIdentifier
                         ),
-                    ]);
+                        contentType: "application/problem+json",
+                        statusCode: (int)HttpStatusCode.Conflict
+                    );
                 }
             }
             else if (existingIdsResult is DataStoreIdsExistResult.FailureUnknown failure)
@@ -323,9 +356,12 @@ public class ApiClientModule : IEndpointModule
         // Validate vendor exists
         if (await vendorRepository.GetVendor(application.VendorId) is not VendorGetResult.Success)
         {
-            throw new ValidationException([
-                new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-            ]);
+            logger.LogError(
+                "Application {ApplicationId}'s VendorId {VendorId} could not be resolved",
+                command.ApplicationId,
+                application.VendorId
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         // Get original application for rollback if needed
@@ -436,22 +472,30 @@ public class ApiClientModule : IEndpointModule
                         return Results.NoContent();
                     case ApiClientUpdateResult.FailureNotFound:
                         await AttemptRollback();
-                        throw new ValidationException([
-                            new ValidationFailure("Id", $"ApiClient with ID {id} not found."),
-                        ]);
+                        return FailureResults.NotFound(
+                            $"ApiClient with ID {id} not found.",
+                            httpContext.TraceIdentifier
+                        );
                     case ApiClientUpdateResult.FailureApplicationNotFound:
                         await AttemptRollback();
-                        throw new ValidationException([
-                            new ValidationFailure(
-                                "ApplicationId",
-                                $"Application with ID {command.ApplicationId} not found."
+                        return Results.Json(
+                            FailureResponse.ForUnresolvedReference(
+                                $"Application with ID {command.ApplicationId} not found.",
+                                httpContext.TraceIdentifier
                             ),
-                        ]);
+                            contentType: "application/problem+json",
+                            statusCode: (int)HttpStatusCode.Conflict
+                        );
                     case ApiClientUpdateResult.FailureDataStoreNotFound:
                         await AttemptRollback();
-                        throw new ValidationException([
-                            new ValidationFailure("DataStoreId", "Data store does not exist."),
-                        ]);
+                        return Results.Json(
+                            FailureResponse.ForUnresolvedReference(
+                                "Data store does not exist.",
+                                httpContext.TraceIdentifier
+                            ),
+                            contentType: "application/problem+json",
+                            statusCode: (int)HttpStatusCode.Conflict
+                        );
                     case ApiClientUpdateResult.FailureUnknown failure:
                         await AttemptRollback();
                         logger.LogError(

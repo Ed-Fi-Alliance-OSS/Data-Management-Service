@@ -801,6 +801,18 @@ public class ClaimSetModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v3/claimSets/1");
+            var exportResponse = await client.GetAsync("/v3/claimSets/1/export");
+
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            exportResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_returns_conflict_when_original_claim_set_not_found_on_copy()
+        {
+            using var client = SetUpClient();
             var copyResponse = await client.PostAsync(
                 "/v3/claimSets/copy",
                 new StringContent(
@@ -814,14 +826,25 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var exportResponse = await client.GetAsync("/v3/claimSets/1/export");
 
-            //Assert
-            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            copyResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            exportResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            copyResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseContent = await copyResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseContent)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "OriginalId 1 not found. It may have been recently deleted.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
 

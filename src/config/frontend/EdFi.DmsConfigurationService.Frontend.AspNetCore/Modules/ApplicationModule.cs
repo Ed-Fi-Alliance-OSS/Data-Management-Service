@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
@@ -69,10 +70,21 @@ public class ApplicationModule : IEndpointModule
             case VendorGetResult.Success success:
                 namespacePrefixes = success.VendorResponse.NamespacePrefixes;
                 break;
+            case VendorGetResult.FailureUnknown failure:
+                logger.LogError(
+                    "Error validating VendorId: {Message}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
             default:
-                throw new ValidationException([
-                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                ]);
+                return Results.Json(
+                    FailureResponse.ForUnresolvedReference(
+                        "Reference 'VendorId' does not exist.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
         }
 
         // Validate references before creating the identity provider client so a failed
@@ -136,19 +148,34 @@ public class ApplicationModule : IEndpointModule
                         );
                     case ApplicationInsertResult.FailureVendorNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                        ]);
+                        return Results.Json(
+                            FailureResponse.ForUnresolvedReference(
+                                "Reference 'VendorId' does not exist.",
+                                httpContext.TraceIdentifier
+                            ),
+                            contentType: "application/problem+json",
+                            statusCode: (int)HttpStatusCode.Conflict
+                        );
                     case ApplicationInsertResult.FailureDataStoreNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure("DataStoreId", "Data store does not exist."),
-                        ]);
+                        return Results.Json(
+                            FailureResponse.ForUnresolvedReference(
+                                "Data store does not exist.",
+                                httpContext.TraceIdentifier
+                            ),
+                            contentType: "application/problem+json",
+                            statusCode: (int)HttpStatusCode.Conflict
+                        );
                     case ApplicationInsertResult.FailureProfileNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure("ProfileId", "Profile does not exist."),
-                        ]);
+                        return Results.Json(
+                            FailureResponse.ForUnresolvedReference(
+                                "Profile does not exist.",
+                                httpContext.TraceIdentifier
+                            ),
+                            contentType: "application/problem+json",
+                            statusCode: (int)HttpStatusCode.Conflict
+                        );
                     case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
                         throw new ValidationException([
@@ -233,9 +260,14 @@ public class ApplicationModule : IEndpointModule
         {
             case DataStoreIdsExistResult.Success success
                 when success.ExistingIds.Count != dataStoreIds.Distinct().Count():
-                throw new ValidationException([
-                    new ValidationFailure("DataStoreId", "Data store does not exist."),
-                ]);
+                return Results.Json(
+                    FailureResponse.ForUnresolvedReference(
+                        "Data store does not exist.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
             case DataStoreIdsExistResult.FailureUnknown failure:
                 logger.LogError(
                     "Error validating DataStoreIds: {Message}",
@@ -267,9 +299,14 @@ public class ApplicationModule : IEndpointModule
                 case ProfileGetResult.Success:
                     break;
                 case ProfileGetResult.FailureNotFound:
-                    throw new ValidationException([
-                        new ValidationFailure("ProfileId", "Profile does not exist."),
-                    ]);
+                    return Results.Json(
+                        FailureResponse.ForUnresolvedReference(
+                            "Profile does not exist.",
+                            httpContext.TraceIdentifier
+                        ),
+                        contentType: "application/problem+json",
+                        statusCode: (int)HttpStatusCode.Conflict
+                    );
                 case ProfileGetResult.FailureUnknown failure:
                     logger.LogError("Error validating ProfileId: {Message}", SanitizeForLog(failure.Message));
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
@@ -323,9 +360,14 @@ public class ApplicationModule : IEndpointModule
                             );
                             return FailureResults.Unknown(httpContext.TraceIdentifier);
                         default:
-                            throw new ValidationException([
-                                new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                            ]);
+                            return Results.Json(
+                                FailureResponse.ForUnresolvedReference(
+                                    "Reference 'VendorId' does not exist.",
+                                    httpContext.TraceIdentifier
+                                ),
+                                contentType: "application/problem+json",
+                                statusCode: (int)HttpStatusCode.Conflict
+                            );
                     }
 
                     if (
@@ -379,26 +421,38 @@ public class ApplicationModule : IEndpointModule
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure(
-                                        "VendorId",
-                                        $"Reference 'VendorId' does not exist."
+                                return Results.Json(
+                                    FailureResponse.ForUnresolvedReference(
+                                        "Reference 'VendorId' does not exist.",
+                                        httpContext.TraceIdentifier
                                     ),
-                                ]);
+                                    contentType: "application/problem+json",
+                                    statusCode: (int)HttpStatusCode.Conflict
+                                );
                             }
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureDataStoreNotFound)
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure("DataStoreId", $"Data store does not exist."),
-                                ]);
+                                return Results.Json(
+                                    FailureResponse.ForUnresolvedReference(
+                                        "Data store does not exist.",
+                                        httpContext.TraceIdentifier
+                                    ),
+                                    contentType: "application/problem+json",
+                                    statusCode: (int)HttpStatusCode.Conflict
+                                );
                             }
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureProfileNotFound)
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure("ProfileId", $"Profile does not exist."),
-                                ]);
+                                return Results.Json(
+                                    FailureResponse.ForUnresolvedReference(
+                                        "Profile does not exist.",
+                                        httpContext.TraceIdentifier
+                                    ),
+                                    contentType: "application/problem+json",
+                                    statusCode: (int)HttpStatusCode.Conflict
+                                );
                             }
 
                             if (
