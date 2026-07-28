@@ -2110,7 +2110,7 @@ FROM
   (
     SELECT r."DocumentId" 
     FROM 
-      "dms"."Descriptor" r 
+      "dms"."Descriptor" r
     WHERE 
       r."ResourceKeyId" = @resourceKeyId -- Denormalized type authority; no dms.Document join required
       AND r."ContentVersion" >= @MinChangeVersion AND r."ContentVersion" <= @MaxChangeVersion -- Range filter on ContentVersion
@@ -2164,7 +2164,7 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.
 - DB-behavior: root deletes with cascaded child, nested-child, or `_ext` rows produce exactly one visible root tombstone in the relevant `tracked_changes_*` table. The tombstone's `ChangeVersion` is the final delete ChangeVersion exposed to Change Queries, and no later visible root stamp or tracked-change row can advance an extraction watermark past that tombstone. Run this on PostgreSQL and SQL Server for at least one child-bearing resource and one extension-bearing resource.
 - DB-behavior: `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope root table and from `dms.Descriptor`.
-- Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` (with the `Discriminator` predicate) for descriptors, and the same shape for at least one extension-project resource endpoint.
+- Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` (with the `ResourceKeyId` predicate) for descriptors, and the same shape for at least one extension-project resource endpoint.
 
 ### ProblemDetails
 

@@ -60,8 +60,8 @@ For every read or write A/B shape:
 2. Run five unmeasured warm-ups per variant.
 3. Record twenty measured pairs, alternating `A → B` and `B → A` order.
 4. Record raw elapsed time, the provider execution plan, PostgreSQL buffer counts or SQL Server logical reads, and the returned/qualifying row counts.
-5. Use the median of the twenty paired `candidate / baseline` elapsed-time ratios as the gate.
-6. Treat a run as noisy when either variant's median absolute deviation divided by its median exceeds 15%; rerun the full comparison once, and leave the decision blocked if the second run is also noisy.
+5. Use the median of the twenty paired `candidate / baseline` elapsed-time ratios as the regression gate, and the median of the twenty paired buffer-count (PostgreSQL) or logical-read (SQL Server) ratios wherever a gate accepts a read improvement.
+6. Treat a run as noisy when either variant's elapsed-time median absolute deviation divided by its median exceeds 15%; rerun the full comparison once, and leave the decision blocked if the second run is also noisy. A buffer- or logical-read benefit claim uses the same twenty recorded pairs and is valid only from a run that passed this noise check.
 
 Provider- and category-specific read gates:
 
