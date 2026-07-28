@@ -679,6 +679,17 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_CONNECTION_STRING", "")
+
+            # A present-but-blank ambient value is only representable on Windows: on Unix, .NET
+            # deletes the variable when it is set to an empty string, so the scenario under test
+            # cannot be established and the file value (a valid connection string) would be used
+            # instead. Assert the precondition rather than letting the platform silently decide
+            # whether this test means anything.
+            if ($null -eq [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_CONNECTION_STRING")) {
+                Set-ItResult -Skipped -Because "this platform cannot represent a present-but-blank ambient environment variable"
+                return
+            }
+
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*required for MSSQL*"
         }
 
@@ -1097,27 +1108,25 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
 
-        # A "docker" stand-in placed first on PATH. It records every invocation's arguments and
-        # succeeds for the `network` subcommands the start scripts issue before any compose call,
-        # then fails for the first `compose` subcommand. That first compose invocation already
-        # carries the complete -f file set, so the recorded arguments are the real compose file set
-        # the script built, and the immediately-following exit-code check turns the failure into a
+        # Runs a start script with a "docker" stand-in in place and reports everything the run is
+        # asserted on: the recorded docker invocations, the terminating error, and the files the run
+        # added under eng/docker-compose/.derived/.
+        #
+        # The stand-in is a global PowerShell *function* named docker, not an executable on PATH.
+        # PowerShell resolves functions ahead of external commands, and function lookup walks the
+        # scope chain into the `&`-invoked start script, so this intercepts every `docker ...` call
+        # with no PATH manipulation and no platform-specific shim file. That matters because the
+        # registered CI job for these tests runs on ubuntu-latest, where a docker.cmd would not be
+        # resolved as `docker` at all and the runner's real Docker would be invoked instead - which
+        # for `docker compose ... up` would start actual containers.
+        #
+        # It succeeds for the `network` subcommands the start scripts issue before any compose call,
+        # then fails the first `compose` subcommand. That first compose invocation already carries
+        # the complete -f file set, so the recorded arguments are the real compose file set the
+        # script built, and the immediately-following exit-code check turns the failure into a
         # specific, assertable error rather than an ambient "docker is missing" one. The start
         # scripts' own topology wiring is pure PowerShell that runs to completion before any of
         # this, so its derived-file side effects are observable too.
-        $script:shimDir = Join-Path ([System.IO.Path]::GetTempPath()) "dms-docker-shim-$([Guid]::NewGuid().ToString('N'))"
-        New-Item -ItemType Directory -Path $script:shimDir -Force | Out-Null
-        Set-Content -LiteralPath (Join-Path $script:shimDir "docker.cmd") -Encoding ascii -Value @(
-            '@echo off',
-            'echo %*>>"%DMS_DOCKER_SHIM_LOG%"',
-            'echo %*| findstr /C:"compose" >nul',
-            'if %ERRORLEVEL%==0 exit /b 1',
-            'exit /b 0'
-        )
-
-        # Runs a start script with the shim ahead of any real docker on PATH and reports everything
-        # the run is asserted on: the recorded docker invocations, the terminating error, and the
-        # files the run added under eng/docker-compose/.derived/.
         #
         # Deliberately a single function rather than composed helpers: `& $ScriptBlock` executes in a
         # child scope, so a nested helper cannot assign a result back into the caller's scope, and a
@@ -1130,34 +1139,59 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         function script:Invoke-StartScript {
             param([scriptblock]$ScriptBlock)
 
+            # -Force is required on every .derived enumeration in this Describe, not optional
+            # tidiness: derived files are all dot-prefixed, and Linux PowerShell treats a leading dot
+            # as hidden, so without it the snapshots come back empty, every derived-file assertion
+            # silently matches nothing, and the cleanup leaves files behind. Windows has no such
+            # attribute, so omitting it passes locally and fails only on the ubuntu-latest CI runner.
             $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
             $before = @{}
             if (Test-Path $derivedDir) {
-                foreach ($name in (Get-ChildItem $derivedDir -Name)) { $before[$name] = $true }
+                foreach ($name in (Get-ChildItem $derivedDir -Name -Force)) { $before[$name] = $true }
             }
 
-            $logPath = Join-Path $script:shimDir "invocations-$([Guid]::NewGuid().ToString('N')).log"
-            $originalPath = $env:PATH
-            $hadLog = Test-Path Env:\DMS_DOCKER_SHIM_LOG
-            $originalLog = $env:DMS_DOCKER_SHIM_LOG
+            # The stand-in has to be global to be visible inside the invoked start script, but the
+            # list it records into is captured by closure rather than parked in a global variable,
+            # so nothing of this harness leaks into the session beyond the function itself.
+            $recorded = [System.Collections.Generic.List[string]]::new()
+            $hadRealDocker = $null -ne (Get-Command docker -CommandType Application -ErrorAction SilentlyContinue)
             $caught = $null
             try {
-                $env:DMS_DOCKER_SHIM_LOG = $logPath
-                $env:PATH = $script:shimDir + [System.IO.Path]::PathSeparator + $originalPath
+                # Recorded as a single space-joined string per invocation, which is what the
+                # assertions match against. The callers splat array variables (the compose -f file
+                # set, the up flags), and a PowerShell function receives each of those as a single
+                # array object rather than the flattened argv a native command would get - so
+                # enumerate one level through the pipeline before joining, or the whole file set
+                # renders as "System.Object[]" and every file-set assertion silently matches nothing.
+                Set-Item -Path Function:\global:docker -Value {
+                    $flattened = @($args | ForEach-Object { $_ })
+                    $recorded.Add(($flattened -join " "))
+                    if ($flattened.Count -gt 0 -and $flattened[0] -eq "compose") {
+                        $global:LASTEXITCODE = 1
+                    }
+                    else {
+                        $global:LASTEXITCODE = 0
+                    }
+                }.GetNewClosure()
+
                 & $ScriptBlock
             }
             catch {
                 $caught = $_
             }
             finally {
-                $env:PATH = $originalPath
-                if ($hadLog) { $env:DMS_DOCKER_SHIM_LOG = $originalLog }
-                else { Remove-Item Env:\DMS_DOCKER_SHIM_LOG -ErrorAction SilentlyContinue }
+                Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
             }
 
-            $after = if (Test-Path $derivedDir) { @(Get-ChildItem $derivedDir -Name) } else { @() }
+            # The interception must have been the thing that stopped the run; if a real docker
+            # executable were reached instead, these tests would be starting containers.
+            if ($hadRealDocker -and (Get-Command docker -CommandType Function -ErrorAction SilentlyContinue)) {
+                throw "The docker stand-in outlived the run; refusing to continue with a live docker on PATH."
+            }
+
+            $after = if (Test-Path $derivedDir) { @(Get-ChildItem $derivedDir -Name -Force) } else { @() }
             $newDerived = @($after | Where-Object { -not $before.ContainsKey($_) })
-            $invocations = if (Test-Path -LiteralPath $logPath) { @(Get-Content -LiteralPath $logPath) } else { @() }
+            $invocations = @($recorded)
 
             return [PSCustomObject]@{
                 Invocations     = $invocations
@@ -1206,9 +1240,8 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     }
 
     AfterAll {
-        if ($script:shimDir -and (Test-Path -LiteralPath $script:shimDir)) {
-            Remove-Item -LiteralPath $script:shimDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        # Defensive: Invoke-StartScript removes this itself, including on failure.
+        Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
@@ -1217,7 +1250,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
         $script:derivedBefore = @{}
         if (Test-Path $derivedDir) {
-            foreach ($name in (Get-ChildItem $derivedDir -Name)) { $script:derivedBefore[$name] = $true }
+            foreach ($name in (Get-ChildItem $derivedDir -Name -Force)) { $script:derivedBefore[$name] = $true }
         }
     }
 
@@ -1227,7 +1260,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         }
         $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
         if (Test-Path $derivedDir) {
-            foreach ($name in (Get-ChildItem $derivedDir -Name)) {
+            foreach ($name in (Get-ChildItem $derivedDir -Name -Force)) {
                 if (-not $script:derivedBefore.ContainsKey($name)) {
                     Remove-Item (Join-Path $derivedDir $name) -Force -ErrorAction SilentlyContinue
                 }
@@ -1439,19 +1472,42 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ErrorMessage | Should -Not -BeLike "*topology*"
         }
 
-        It "keeps today's legacy shared-database rejection for a bare Keycloak start whose CMS endpoint disagrees" {
+        It "keeps today's legacy shared-database rejection for a bare Keycloak start whose CMS database name disagrees" {
             # Non-participating shapes must keep running Assert-MssqlCmsDatabaseIsShared exactly as
-            # they do today (the spec's own requirement), so a mismatched CMS database name is still
-            # rejected here - by the legacy DMS-1255 check, not by this story's topology validator.
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=some-other-host,1433;Database=a_totally_different_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            # they do today (the spec's own requirement), so a CMS connection string naming a
+            # different database is still rejected here - by the legacy DMS-1255 check, not by this
+            # story's topology validator. Only the database name differs: that check inspects the
+            # Database/Initial Catalog aliases and nothing else, so the database name alone is what
+            # drives this rejection.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=a_totally_different_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
 
             $run = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
             }
 
             $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*"
+            $run.ErrorMessage | Should -BeLike "*a_totally_different_db*"
             $run.ErrorMessage | Should -Not -BeLike "*CMS database topology mismatch*" -Because "the legacy check owns this non-participating shape, not this story's validator"
             $run.Invocations | Should -BeNullOrEmpty -Because "the legacy check rejects the invocation before any docker call, exactly as it does today"
+        }
+
+        It "accepts a custom CMS host under bare Keycloak, proving the endpoint validator did not run" {
+            # The sharpest available probe of the participation gate: host and port are checked only
+            # by Confirm-CmsDatabaseTopologyAgreement, never by the legacy database-name check. So a
+            # CMS connection string whose database name agrees but whose host is not dms-mssql must
+            # be accepted for this non-participating shape - if the gate were wrongly broad the new
+            # validator would run and reject the host. Complements the database-mismatch test above,
+            # which the legacy check alone can explain.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=some-other-host,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "a custom CMS host is irrelevant when CMS never starts, so the run must reach the docker boundary"
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.ErrorMessage | Should -Not -BeLike "*topology*" -Because "Confirm-CmsDatabaseTopologyAgreement checks the host and must not have run"
+            $run.TopologyFile | Should -BeNullOrEmpty
         }
     }
 }
