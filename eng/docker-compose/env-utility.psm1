@@ -1076,7 +1076,7 @@ function ConvertTo-DotenvSafeEnvValue {
     .SYNOPSIS
         Returns a dotenv/Compose-safe serialization of a single concrete value: bare when the value
         needs no protection, single-quoted (with the embedded-apostrophe form backslash-escaped, not
-        doubled) when it contains a space, a '#', or opens with a quote character that would
+        doubled) when it contains a space, a '#', a '$', or opens with a quote character that would
         otherwise be misread as delimiting the value.
 
     .DESCRIPTION
@@ -1087,6 +1087,14 @@ function ConvertTo-DotenvSafeEnvValue {
         design introduces (the marker is always "true"/"false"; DMS_CONFIG_DATABASE_NAME's shared-
         mode value is the ambient-aware-resolved concrete database name, not an alias) - unlike the
         connection string's ${DMS_CONFIG_DATABASE_NAME} reference, which single-quoting would freeze.
+
+        A concrete value containing a literal '$' must be quoted too (Round 10 Blocker 2):
+        Resolve-ComposeEnvReference's interpolation regex matches both ${NAME} and a bare $NAME (no
+        braces required), so an unquoted value like tenant$db, once written back to a derived file
+        and re-read, would have $db misinterpreted as a reference to an unset variable named "db" and
+        silently collapse to just "tenant". Quoting unconditionally on any '$' (rather than only when
+        it is followed by an identifier-shaped reference) is the simpler, strictly safer rule -
+        over-quoting a harmless '$' is free; under-quoting a dangerous one is not.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1098,7 +1106,7 @@ function ConvertTo-DotenvSafeEnvValue {
         return $Value
     }
 
-    $needsQuoting = $Value.Contains(" ") -or $Value.Contains("#") -or $Value[0] -in @("'", '"')
+    $needsQuoting = $Value.Contains(" ") -or $Value.Contains("#") -or $Value.Contains('$') -or $Value[0] -in @("'", '"')
     if (-not $needsQuoting) {
         return $Value
     }
@@ -1285,8 +1293,8 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         today's checked-in templates' shape, confirmed against a real `docker compose config` render.
 
         Both values are serialized dotenv-safely (ConvertTo-DotenvSafeEnvValue): quoted only when the
-        concrete value actually needs it (a space, '#', or a leading quote character), matching the
-        approved design - never single-quoted for reasons that would suppress interpolation, since
+        concrete value actually needs it (a space, '#', a '$', or a leading quote character), matching
+        the approved design - never single-quoted for reasons that would suppress interpolation, since
         neither value is itself a ${VAR} reference this design writes.
 
         When switching to separate mode, if the connection string's database-segment value specifically
@@ -1299,7 +1307,11 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         quote-aware scanner (Find-ConnectionStringLegacyTokenSpan), not a blind substring or regex
         search across the whole string, so the same literal text appearing inside an unrelated quoted
         segment - a password containing a literal ';' - is never mistaken for a real segment boundary
-        and never touched. The rewrite is also never
+        and never touched. A dotenv-level outer quote wrapper around the whole connection-string value
+        (e.g. "host=...;database=${TOKEN};" as one double-quoted dotenv value) is detected and stripped
+        before the scanner runs, then the found span is mapped back and spliced into the original,
+        still-wrapped string, so the outer wrapper is preserved exactly while only the inner token
+        changes. The rewrite is also never
         a match on what the reference currently resolves to, which could coincide with a value a
         genuinely different, custom reference also happens to produce. Any connection string not
         carrying that exact token in that exact position is left completely untouched, so it either
@@ -1366,14 +1378,31 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     $currentConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
     $intendedConnectionString = $currentConnectionString
     if ($SeparateConfigDatabase) {
+        # Get-EnvValue returns the raw dotenv value verbatim, including any outer dotenv-level quote
+        # wrapper (e.g. "host=...;database=${TOKEN};" as a whole). That outer quote character must be
+        # stripped before the connection-string-level scanner runs, or its leading quote is mistaken
+        # for an ADO.NET value-quote, swallowing every real ';' inside as "quoted" and finding no
+        # segments at all (Round 10 Blocker 1). A connection-string value never legitimately starts
+        # with a quote character itself - an ADO.NET key always starts with an identifier - so a
+        # leading quote unambiguously signals a dotenv-level wrapper, not connection-string content.
+        # The wrapper is preserved exactly: only the inner span is scanned, and the replacement is
+        # spliced back into the original, still-wrapped string.
+        $dotenvWrapped =
+            $currentConnectionString.Length -ge 2 -and
+            $currentConnectionString[0] -in @("'", '"') -and
+            $currentConnectionString[-1] -eq $currentConnectionString[0]
+        $searchText = if ($dotenvWrapped) { $currentConnectionString.Substring(1, $currentConnectionString.Length - 2) } else { $currentConnectionString }
+        $searchOffset = if ($dotenvWrapped) { 1 } else { 0 }
+
         # Quote-aware: a plain substring/regex search would mistake a ';' or '=' inside an unrelated
         # quoted segment (a password) for a real segment boundary. See Find-ConnectionStringLegacyTokenSpan.
-        $legacyTokenSpan = Find-ConnectionStringLegacyTokenSpan -ConnectionString $currentConnectionString -LegacyToken $legacyToken
+        $legacyTokenSpan = Find-ConnectionStringLegacyTokenSpan -ConnectionString $searchText -LegacyToken $legacyToken
         if ($null -ne $legacyTokenSpan) {
+            $absoluteStart = $legacyTokenSpan.Start + $searchOffset
             $intendedConnectionString =
-                $currentConnectionString.Substring(0, $legacyTokenSpan.Start) +
+                $currentConnectionString.Substring(0, $absoluteStart) +
                 '${DMS_CONFIG_DATABASE_NAME}' +
-                $currentConnectionString.Substring($legacyTokenSpan.Start + $legacyTokenSpan.Length)
+                $currentConnectionString.Substring($absoluteStart + $legacyTokenSpan.Length)
         }
     }
 
