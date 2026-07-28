@@ -796,7 +796,7 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $publishedConfigGuardPattern = 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+            $publishedConfigGuardPattern = 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode -or \$SeparateConfigDatabase\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
             $startScript | Should -Match $publishedConfigGuardPattern -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
         }
 
@@ -812,7 +812,7 @@ $failureStatement
             $guardMatch.Success | Should -BeTrue
 
             $condition = $guardMatch.Groups["condition"].Value
-            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode'
+            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase'
             $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
         }
     }
@@ -868,10 +868,12 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # On SQL Server the OpenIddict stores live in the shared DMS datastore database
-            # (created by -InitDb when missing, now that CMS shares it too); every invocation
-            # must splat the shared engine-aware parameters.
-            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME"'
+            # On SQL Server the OpenIddict stores live in the CMS database (the shared DMS
+            # datastore in shared mode, or the dedicated Configuration Service database in
+            # separate mode; created by -InitDb when missing); every invocation must splat the
+            # shared engine-aware parameters, tracking the CMS topology seam via
+            # DMS_CONFIG_DATABASE_NAME rather than always targeting the DMS datastore.
+            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME"'
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
             foreach ($call in $openiddictCalls) {

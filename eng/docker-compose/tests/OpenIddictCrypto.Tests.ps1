@@ -83,4 +83,81 @@ Describe "OpenIddict SQL Server bootstrap script" {
         Resolve-DbHost -DbHost "" -DbType "Postgresql" | Should -Be "localhost"
         Resolve-DbHost -DbHost "sql-host" -DbType "MSSQL" | Should -Be "sql-host"
     }
+
+    It "builds the guarded create-if-absent statement, escaping both T-SQL delimiter positions" {
+        $statement = New-MssqlCreateDatabaseStatement -DatabaseName "a'b]c"
+        $statement | Should -Be "IF DB_ID(N'a''b]c') IS NULL CREATE DATABASE [a'b]]c];"
+    }
+}
+
+Describe "OpenIddict MSSQL guarded database creation (DMS-1270 Phase 1b)" {
+    BeforeEach {
+        Push-Location $script:DockerComposePath
+        try {
+            . ./setup-openiddict.ps1 -EnvironmentFile "" -DbType "MSSQL" -DbName "edfi_configurationservice" -DbUser "sa" -DbPassword "abcdefgh1!" -MssqlContainerName "dms-mssql-test" -EncryptionKey "test-encryption-key"
+        }
+        finally {
+            Pop-Location
+        }
+
+        # The OpenIddictKey insert path uses a real ADO.NET SqlConnection, not docker exec - mock it
+        # to a no-op so these tests exercise only the guarded-create/postcondition logic under test,
+        # without attempting a real SQL Server connection.
+        Mock Invoke-MssqlParameterizedQuery { }
+    }
+
+    It "tolerates the benign concurrent-creation race (SQL Server error 1801) and does not swallow the postcondition check" {
+        # Round: DMS-1270 Phase 1b. The IF DB_ID(...) IS NULL CREATE DATABASE guard is a
+        # check-then-act statement, not truly atomic: this simulates the losing side of a genuine
+        # concurrent race (sqlcmd exits nonzero reporting "Msg 1801,") and confirms
+        # Invoke-InitDbScripts does not throw when the follow-up postcondition query proves the
+        # database exists.
+        Mock docker {
+            $sql = $args[-1]
+            if ($sql -match "CREATE DATABASE") {
+                $global:LASTEXITCODE = 1
+                return "Msg 1801, Level 16, State 3, Server dms-mssql-test, Line 1`nDatabase 'edfi_configurationservice' already exists. Choose a different database name."
+            }
+            if ($sql -match "SELECT CASE WHEN DB_ID") {
+                $global:LASTEXITCODE = 0
+                return "1"
+            }
+            $global:LASTEXITCODE = 0
+            return ""
+        }
+
+        { Invoke-InitDbScripts } | Should -Not -Throw
+    }
+
+    It "does not tolerate a non-1801 sqlcmd failure even with the tolerance flag set" {
+        Mock docker {
+            $sql = $args[-1]
+            if ($sql -match "CREATE DATABASE") {
+                $global:LASTEXITCODE = 1
+                return "Msg 4060, Level 11, State 1, Server dms-mssql-test, Line 1`nCannot open database requested by the login."
+            }
+            $global:LASTEXITCODE = 0
+            return ""
+        }
+
+        { Invoke-InitDbScripts } | Should -Throw "*sqlcmd failed*"
+    }
+
+    It "throws when the postcondition cannot confirm the database exists after a tolerated 1801" {
+        Mock docker {
+            $sql = $args[-1]
+            if ($sql -match "CREATE DATABASE") {
+                $global:LASTEXITCODE = 1
+                return "Msg 1801, Level 16, State 3, Server dms-mssql-test, Line 1`nDatabase 'edfi_configurationservice' already exists. Choose a different database name."
+            }
+            if ($sql -match "SELECT CASE WHEN DB_ID") {
+                $global:LASTEXITCODE = 0
+                return "0"
+            }
+            $global:LASTEXITCODE = 0
+            return ""
+        }
+
+        { Invoke-InitDbScripts } | Should -Throw "*does not exist*"
+    }
 }

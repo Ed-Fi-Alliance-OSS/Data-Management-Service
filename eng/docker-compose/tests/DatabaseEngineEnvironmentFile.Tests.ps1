@@ -357,9 +357,13 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         # whole stack on SQL Server: no PostgreSQL container exists to fall back to.
         $script:overlayValues["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
-            Should -Match '^Server=dms-mssql,1433;Database=\$\{MSSQL_DB_NAME\};'
+            Should -Match '^Server=dms-mssql,1433;Database=\$\{DMS_CONFIG_DATABASE_NAME\};'
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
             Should -Match '\$\{MSSQL_SA_PASSWORD\}'
+    }
+
+    It "aliases DMS_CONFIG_DATABASE_NAME to MSSQL_DB_NAME (shared mode, the DMS-1270 CMS database topology seam)" {
+        $script:overlayValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be '${MSSQL_DB_NAME}'
     }
 
     It "does not duplicate SCHEMA_PACKAGES or other keys already carried by the base environment file" {
