@@ -13,6 +13,8 @@ using FluentValidation.Results;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.AspNetCore.WebUtilities;
 using NUnit.Framework;
 
@@ -31,23 +33,38 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 /// </summary>
 public class GlobalExceptionHandlerTests
 {
+    private sealed class FakeAcceptsMetadata : IAcceptsMetadata
+    {
+        public IReadOnlyList<string> ContentTypes => ["application/json"];
+        public Type? RequestType => null;
+        public bool IsOptional => false;
+    }
+
     private static async Task<(
         bool Handled,
         DefaultHttpContext Context,
         string Content,
         JsonObject Body
-    )> HandleAsync(Exception exception, string traceId, Endpoint? endpoint = null)
+    )> HandleAsync(
+        Exception exception,
+        string traceId,
+        Endpoint? endpoint = null,
+        RouteValueDictionary? routeValues = null
+    )
     {
         var context = new DefaultHttpContext { TraceIdentifier = traceId };
         context.Response.Body = new MemoryStream();
         if (endpoint is not null)
         {
+            // Exception handling clears the active endpoint and route values; the middleware stashes
+            // the originals on this feature, which is what the handler reads.
             context.Features.Set<IExceptionHandlerFeature>(
                 new ExceptionHandlerFeature
                 {
                     Error = exception,
                     Path = context.Request.Path,
                     Endpoint = endpoint,
+                    RouteValues = routeValues,
                 }
             );
         }
@@ -142,13 +159,6 @@ public class GlobalExceptionHandlerTests
         private string _content = null!;
         private JsonObject _body = null!;
 
-        private sealed class FakeAcceptsMetadata : IAcceptsMetadata
-        {
-            public IReadOnlyList<string> ContentTypes => ["application/json"];
-            public Type? RequestType => null;
-            public bool IsOptional => false;
-        }
-
         [SetUp]
         public async Task Setup() =>
             (_handled, _context, _content, _body) = await HandleAsync(
@@ -183,6 +193,188 @@ public class GlobalExceptionHandlerTests
                 .Select(node => node!.GetValue<string>())
                 .Should()
                 .Equal("A non-empty request body is required.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_bad_http_request_with_an_unbindable_route_value_on_a_body_accepting_endpoint
+    {
+        private const string Sentinel = "SENTINEL_BADREQ_ROUTE_7c3e_must_not_leak";
+
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        private static Task RouteHandler(long id, object command)
+        {
+            _ = id;
+            _ = command;
+            return Task.CompletedTask;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var endpoint = new RouteEndpoint(
+                _ => Task.CompletedTask,
+                RoutePatternFactory.Parse("/v3/applications/{id}"),
+                0,
+                new EndpointMetadataCollection(
+                    new FakeAcceptsMetadata(),
+                    ((Func<long, object, Task>)RouteHandler).Method
+                ),
+                "unbindable-route-endpoint"
+            );
+
+            (_handled, _context, _content, _body) = await HandleAsync(
+                new BadHttpRequestException(Sentinel, StatusCodes.Status400BadRequest),
+                "trace-route-unbindable",
+                endpoint,
+                new RouteValueDictionary { ["id"] = "not-a-long" }
+            );
+        }
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_parameter_validation_contract_despite_the_endpoint_accepting_a_body() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "Parameter validation failed. See 'errors' for details."
+            );
+
+        [Test]
+        public void It_does_not_leak_the_exception_message() => _content.Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_has_the_fixed_parameter_message_and_empty_validation_errors()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("The request contains one or more invalid parameters.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_bad_http_request_with_a_bindable_route_value_on_a_body_accepting_endpoint
+    {
+        private const string Sentinel = "SENTINEL_BADREQ_ROUTE_OK_5d1b_must_not_leak";
+
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        private static Task RouteHandler(long id, object command)
+        {
+            _ = id;
+            _ = command;
+            return Task.CompletedTask;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var endpoint = new RouteEndpoint(
+                _ => Task.CompletedTask,
+                RoutePatternFactory.Parse("/v3/applications/{id}"),
+                0,
+                new EndpointMetadataCollection(
+                    new FakeAcceptsMetadata(),
+                    ((Func<long, object, Task>)RouteHandler).Method
+                ),
+                "bindable-route-endpoint"
+            );
+
+            (_handled, _context, _content, _body) = await HandleAsync(
+                new BadHttpRequestException(Sentinel, StatusCodes.Status400BadRequest),
+                "trace-route-bindable",
+                endpoint,
+                new RouteValueDictionary { ["id"] = "123" }
+            );
+        }
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_still_returns_the_generic_missing_body_contract() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request could not be processed. See 'errors' for details."
+            );
+
+        [Test]
+        public void It_does_not_leak_the_exception_message() => _content.Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_has_the_missing_body_message_and_empty_validation_errors()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("A non-empty request body is required.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_invalid_data_exception
+    {
+        private const string Sentinel = "SENTINEL_FORM_6b4d_must_not_leak";
+
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_handled, _context, _content, _body) = await HandleAsync(
+                new InvalidDataException(Sentinel),
+                "trace-form"
+            );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_generic_bad_request_contract() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request could not be processed. See 'errors' for details."
+            );
+
+        [Test]
+        public void It_does_not_leak_the_exception_message() => _content.Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_has_the_fixed_malformed_form_message_and_empty_validation_errors()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("The request form payload is malformed.");
         }
     }
 

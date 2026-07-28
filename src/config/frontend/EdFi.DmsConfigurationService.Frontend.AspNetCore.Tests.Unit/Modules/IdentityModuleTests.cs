@@ -1043,6 +1043,74 @@ public class OAuthEndpointErrorTests
     }
 
     [TestFixture]
+    public class Given_a_token_request_with_a_malformed_form_payload
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTransient(_ => new TokenRequest.Validator());
+                collection.AddTransient(_ => _tokenManager);
+            });
+            _client = _factory.CreateClient();
+
+            // multipart/form-data without a boundary makes form reading throw InvalidDataException.
+            var requestContent = new StringContent("client_id=x");
+            requestContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                "multipart/form-data"
+            );
+            _response = await _client.PostAsync("/connect/token", requestContent);
+            _content = await _response.Content.ReadAsStringAsync();
+            _body = JsonNode.Parse(_content)!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        [Test]
+        public void It_returns_the_generic_bad_request_contract_with_the_fixed_form_message()
+        {
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            _body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            _body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The request could not be processed. See 'errors' for details.");
+            _body["status"]!.GetValue<int>().Should().Be(400);
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("The request form payload is malformed.");
+        }
+
+        [Test]
+        public void It_does_not_leak_the_framework_parsing_message() =>
+            _content.Should().NotContain("boundary");
+    }
+
+    [TestFixture]
     public class Given_an_introspection_request_without_a_token
     {
         private WebApplicationFactory<Program> _factory = null!;

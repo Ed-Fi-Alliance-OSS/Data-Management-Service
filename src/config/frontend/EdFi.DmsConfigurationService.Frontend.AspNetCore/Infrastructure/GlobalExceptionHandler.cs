@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.ComponentModel;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -45,6 +47,13 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
             FluentValidation.ValidationException validationException => FailureResponse.ForDataValidation(
                 validationException.Errors,
                 traceId
+            ),
+            // Form reading surfaces malformed caller payloads (e.g. a missing multipart boundary or
+            // too many form values) as InvalidDataException — client input, not a server fault.
+            InvalidDataException => FailureResponse.ForBadRequest(
+                "The request could not be processed. See 'errors' for details.",
+                traceId,
+                ["The request form payload is malformed."]
             ),
             _ => FailureResponse.ForUnknown(traceId),
         };
@@ -89,13 +98,22 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
             );
         }
 
-        // Exception handling clears the active endpoint but preserves the original endpoint on this feature.
-        bool endpointAcceptsBody =
-            httpContext
-                .Features.Get<IExceptionHandlerFeature>()
-                ?.Endpoint?.Metadata.GetMetadata<IAcceptsMetadata>()
-            is not null;
-        if (endpointAcceptsBody)
+        // Exception handling clears the active endpoint and route values but preserves the originals
+        // on this feature.
+        IExceptionHandlerFeature? exceptionFeature = httpContext.Features.Get<IExceptionHandlerFeature>();
+        Endpoint? endpoint = exceptionFeature?.Endpoint;
+
+        // A route value that cannot bind to its declared handler parameter type marks the failure as
+        // parameter-level even when the endpoint also accepts a body.
+        if (HasUnbindableRouteValue(endpoint, exceptionFeature?.RouteValues))
+        {
+            return FailureResponse.ForParameterValidation(
+                ["The request contains one or more invalid parameters."],
+                traceId
+            );
+        }
+
+        if (endpoint?.Metadata.GetMetadata<IAcceptsMetadata>() is not null)
         {
             return FailureResponse.ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
@@ -108,5 +126,61 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
             ["The request contains one or more invalid parameters."],
             traceId
         );
+    }
+
+    private static bool HasUnbindableRouteValue(Endpoint? endpoint, RouteValueDictionary? routeValues)
+    {
+        if (routeValues is null || endpoint is not RouteEndpoint routeEndpoint)
+        {
+            return false;
+        }
+
+        if (endpoint.Metadata.GetMetadata<MethodInfo>() is not MethodInfo handler)
+        {
+            return false;
+        }
+
+        ParameterInfo[] handlerParameters = handler.GetParameters();
+        foreach (
+            string routeParameterName in routeEndpoint.RoutePattern.Parameters.Select(routeParameter =>
+                routeParameter.Name
+            )
+        )
+        {
+            ParameterInfo? handlerParameter = Array.Find(
+                handlerParameters,
+                parameter =>
+                    string.Equals(parameter.Name, routeParameterName, StringComparison.OrdinalIgnoreCase)
+            );
+            if (handlerParameter is null)
+            {
+                continue;
+            }
+
+            Type targetType =
+                Nullable.GetUnderlyingType(handlerParameter.ParameterType) ?? handlerParameter.ParameterType;
+            if (targetType == typeof(string))
+            {
+                continue;
+            }
+
+            if (
+                routeValues.TryGetValue(routeParameterName, out object? rawValue)
+                && rawValue is string rawText
+                && !CanConvert(targetType, rawText)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool CanConvert(Type targetType, string rawText)
+    {
+        TypeConverter converter = TypeDescriptor.GetConverter(targetType);
+        // A type without a string conversion cannot prove the route value invalid.
+        return !converter.CanConvertFrom(typeof(string)) || converter.IsValid(rawText);
     }
 }

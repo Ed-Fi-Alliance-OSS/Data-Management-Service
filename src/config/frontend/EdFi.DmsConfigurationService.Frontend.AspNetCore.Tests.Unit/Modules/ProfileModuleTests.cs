@@ -947,7 +947,24 @@ public class ProfileMissingBodyTests
         }
 
         [Test]
-        public void It_returns_the_generic_missing_body_contract_despite_a_valid_body_being_sent() =>
-            AssertGenericMissingBodyContract(_response, _body);
+        public void It_returns_the_parameter_validation_contract()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            _body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
+            _body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Parameter validation failed. See 'errors' for details.");
+            _body["status"]!.GetValue<int>().Should().Be(400);
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(e => e!.GetValue<string>())
+                .Should()
+                .Equal("The request contains one or more invalid parameters.");
+        }
     }
 }
