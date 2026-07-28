@@ -102,12 +102,18 @@ function Resolve-ComposeEnvReference {
     <#
     .SYNOPSIS
         Resolves ${VAR}/$VAR references in a Compose-converted value against the other environment
-        values, following Docker Compose interpolation: a literal '$' is written '$$' and preserved,
-        ${NAME}/$NAME expand (recursively, bounded), an unset reference expands to empty, and a value
-        set in the process/shell environment wins over the env file. A referenced value is resolved
-        through Resolve-ComposeEnvRawValue so its own quoting (single-quote literal) semantics hold.
+        values, following Docker Compose interpolation: a literal '$' is written '$$' and preserved;
+        $NAME and ${NAME} expand (recursively, bounded); the braced form supports Compose's full
+        operator set - ${NAME:-default}, ${NAME-default}, ${NAME:?error}, ${NAME?error},
+        ${NAME:+replacement}, ${NAME+replacement} - including nested references inside the
+        default/replacement word (e.g. ${A:-${B}}); an unset plain reference expands to empty; and a
+        value set in the process/shell environment wins over the env file. A referenced value is
+        resolved through Resolve-ComposeEnvRawValue so its own quoting (single-quote literal)
+        semantics hold. Operator semantics were confirmed against a real `docker compose config`
+        render: ':-' substitutes when unset OR empty, '-' only when unset; ':+' substitutes when set
+        AND non-empty, '+' whenever set (even empty); the error forms fail interpolation, surfaced
+        here as a thrown error.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'EnvironmentValues', Justification = 'Consumed inside the [regex]::Replace callback scriptblock to resolve ${VAR} references; the analyzer does not detect uses within the nested scriptblock.')]
     param(
         [hashtable]$EnvironmentValues,
         [AllowEmptyString()][string]$Value,
@@ -122,21 +128,174 @@ function Resolve-ComposeEnvReference {
     $placeholder = [char]0x1
     $working = $Value.Replace('$$', $placeholder)
 
-    $working = [regex]::Replace($working, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', {
-        param($match)
-        $referenceName = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value }
-        # Docker Compose resolves ${VAR} from the shell/process environment with precedence over the
-        # env file, then from the env file, then to empty. Honour that so a reference whose value lives
-        # only in - or is overridden by - the ambient environment matches what the container receives.
-        $ambient = [System.Environment]::GetEnvironmentVariable($referenceName)
-        if ($null -ne $ambient) { return $ambient }
-        if ($null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($referenceName)) {
-            return Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$referenceName]) -Depth ($Depth + 1)
-        }
-        return ""
-    })
+    $working = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $working -Depth $Depth
 
     return $working.Replace($placeholder, '$')
+}
+
+function Resolve-ComposeNamedReference {
+    <#
+    .SYNOPSIS
+        Resolves a single variable NAME with Compose precedence: the process/shell environment wins,
+        then the env-file map (whose value is itself resolved through Resolve-ComposeEnvRawValue so
+        quoting and nested references hold), then $null for "unset". Distinguishing $null (unset)
+        from "" (set-but-empty) is what the ':-' vs '-' and ':+' vs '+' operators key on.
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [Parameter(Mandatory)] [string]$Name,
+        [int]$Depth = 0
+    )
+
+    $ambient = [System.Environment]::GetEnvironmentVariable($Name)
+    if ($null -ne $ambient) { return $ambient }
+    if ($null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($Name)) {
+        return Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$Name]) -Depth ($Depth + 1)
+    }
+    return $null
+}
+
+function Resolve-ComposeInterpolatedText {
+    <#
+    .SYNOPSIS
+        Scanner behind Resolve-ComposeEnvReference. Operates on placeholder-protected text ('$$'
+        already replaced), so recursive word resolution re-enters here rather than the public
+        function and the single final restore stays correct. A regex cannot express the braced
+        form's nesting (${A:-${B}}), hence a hand-rolled scan matching compose-go's matching-brace
+        behavior: '${' opens a nesting level, '}' closes the innermost one.
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [AllowEmptyString()][string]$Text,
+        [int]$Depth = 0
+    )
+
+    if ([string]::IsNullOrEmpty($Text) -or $Text.IndexOf('$') -lt 0 -or $Depth -ge 8) {
+        return $Text
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    $i = 0
+    while ($i -lt $Text.Length) {
+        $character = $Text[$i]
+        if ($character -ne '$' -or $i + 1 -ge $Text.Length) {
+            [void]$builder.Append($character)
+            $i++
+            continue
+        }
+
+        $next = $Text[$i + 1]
+
+        if ($next -eq '{') {
+            # Find the matching close brace, counting nested '${' opens.
+            $scan = $i + 2
+            $nesting = 1
+            while ($scan -lt $Text.Length -and $nesting -gt 0) {
+                if ($Text[$scan] -eq '{' -and $Text[$scan - 1] -eq '$') { $nesting++ }
+                elseif ($Text[$scan] -eq '}') { $nesting--; if ($nesting -eq 0) { break } }
+                $scan++
+            }
+            if ($nesting -ne 0) {
+                # Unterminated ${...: leave the rest literal, matching the old leniency.
+                [void]$builder.Append($Text.Substring($i))
+                break
+            }
+
+            $inner = $Text.Substring($i + 2, $scan - ($i + 2))
+            [void]$builder.Append((Resolve-ComposeBracedReference -EnvironmentValues $EnvironmentValues -Inner $inner -Depth $Depth))
+            $i = $scan + 1
+            continue
+        }
+
+        if ($next -match '[A-Za-z_]') {
+            # Bare $NAME form: no operators possible.
+            $scan = $i + 1
+            while ($scan -lt $Text.Length -and $Text[$scan] -match '[A-Za-z0-9_]') { $scan++ }
+            $name = $Text.Substring($i + 1, $scan - ($i + 1))
+            $resolved = Resolve-ComposeNamedReference -EnvironmentValues $EnvironmentValues -Name $name -Depth $Depth
+            [void]$builder.Append([string]($resolved ?? ""))
+            $i = $scan
+            continue
+        }
+
+        [void]$builder.Append($character)
+        $i++
+    }
+
+    return $builder.ToString()
+}
+
+function Resolve-ComposeBracedReference {
+    <#
+    .SYNOPSIS
+        Resolves the inner content of one ${...} occurrence: NAME alone, or NAME followed by one of
+        Compose's six operators and a word. The word is itself interpolated - lazily, only in the
+        branch that actually uses it, matching compose-go. Content that does not parse as a valid
+        NAME[op word] form is left literal (the pre-existing leniency for non-reference text).
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [AllowEmptyString()][string]$Inner,
+        [int]$Depth = 0
+    )
+
+    $nameMatch = [regex]::Match($Inner, '^[A-Za-z_][A-Za-z0-9_]*')
+    if (-not $nameMatch.Success) {
+        return '${' + $Inner + '}'
+    }
+
+    $name = $nameMatch.Value
+    $rest = $Inner.Substring($name.Length)
+
+    if ($rest.Length -eq 0) {
+        $resolved = Resolve-ComposeNamedReference -EnvironmentValues $EnvironmentValues -Name $name -Depth $Depth
+        return [string]($resolved ?? "")
+    }
+
+    $operator =
+        if ($rest.StartsWith(':-') -or $rest.StartsWith(':?') -or $rest.StartsWith(':+')) { $rest.Substring(0, 2) }
+        elseif ($rest[0] -eq '-' -or $rest[0] -eq '?' -or $rest[0] -eq '+') { $rest.Substring(0, 1) }
+        else { $null }
+
+    if ($null -eq $operator) {
+        return '${' + $Inner + '}'
+    }
+
+    $word = $rest.Substring($operator.Length)
+    $value = Resolve-ComposeNamedReference -EnvironmentValues $EnvironmentValues -Name $name -Depth $Depth
+
+    switch ($operator) {
+        ':-' {
+            if ($null -eq $value -or $value -eq '') { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            return $value
+        }
+        '-' {
+            if ($null -eq $value) { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            return $value
+        }
+        ':+' {
+            if ($null -ne $value -and $value -ne '') { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            return ""
+        }
+        '+' {
+            if ($null -ne $value) { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            return ""
+        }
+        ':?' {
+            if ($null -eq $value -or $value -eq '') {
+                $message = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1)
+                throw "Docker Compose interpolation error: required variable '$name' is missing a value: $message"
+            }
+            return $value
+        }
+        '?' {
+            if ($null -eq $value) {
+                $message = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1)
+                throw "Docker Compose interpolation error: required variable '$name' is missing a value: $message"
+            }
+            return $value
+        }
+    }
 }
 
 function Get-ComposeResolvedEnvValue {

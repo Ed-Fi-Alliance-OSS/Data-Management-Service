@@ -273,10 +273,16 @@ if ($cmsParticipates) {
 }
 else {
     # CMS does not participate in this shape, so the legacy shared-mode-only check keeps running
-    # exactly as it does today. Resolve-DatabaseEngineEnvironmentFile itself skips that check for an
-    # env file already declaring the separate topology, so a -DmsOnly continuation against a stack
-    # started with -SeparateConfigDatabase is not rejected by a shared-mode invariant.
-    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+    # exactly as it does today for a plain (no-switch) invocation of a shared-mode file.
+    # Two separate-topology signals skip it, because it asserts an invariant that is definitionally
+    # false for a separate-mode configuration: Resolve-DatabaseEngineEnvironmentFile itself skips it
+    # for an env file already carrying the topology marker (a derived-file continuation), and an
+    # explicit -SeparateConfigDatabase skips it here for a caller-authored source file that targets
+    # the dedicated database directly - the marker lives only in derived files, so without this a
+    # documented "accepted, gated no-op" continuation like `-DmsOnly -SeparateConfigDatabase` against
+    # the original -EnvironmentFile would be rejected by a check for a topology the caller explicitly
+    # declined.
+    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
 }
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {

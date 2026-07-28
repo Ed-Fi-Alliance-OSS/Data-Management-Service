@@ -1504,7 +1504,47 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     $nameChanged = -not [string]::Equals($currentDatabaseName, $intendedDatabaseName, [System.StringComparison]::Ordinal)
     $connectionStringChanged = -not [string]::Equals($currentConnectionString, $intendedConnectionString, [System.StringComparison]::Ordinal)
 
-    if (-not $markerChanged -and -not $nameChanged -and -not $connectionStringChanged) {
+    # Docker Compose resolves --env-file references in declaration order, so a value can be correct
+    # in this function's hashtable-based (order-blind) resolution and still render empty for Compose:
+    # DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME} declared ABOVE POSTGRES_DB_NAME resolves here (the
+    # map is complete) but to "" at real render time. So an early return additionally requires the
+    # seam keys' declaration order to be Compose-viable; a disordered file falls through to the
+    # derived-write path, which heals it - the writer serializes DMS_CONFIG_DATABASE_NAME as the
+    # resolved literal (no references left to be forward), and the Move below keeps the alias ahead
+    # of the connection string that references it.
+    $declarationOrderBroken = $false
+    $rawLines = [System.IO.File]::ReadAllLines($BaseEnvironmentFile)
+    $indexOfKeyLine = {
+        param([string]$key)
+        for ($lineIndex = 0; $lineIndex -lt $rawLines.Count; $lineIndex++) {
+            if ($rawLines[$lineIndex] -match ('^\s*' + [regex]::Escape($key) + '\s*=')) { return $lineIndex }
+        }
+        return -1
+    }
+    $aliasLineIndex = & $indexOfKeyLine 'DMS_CONFIG_DATABASE_NAME'
+    if ($aliasLineIndex -ge 0) {
+        # Every variable the alias's own raw value references (${NAME}, $NAME, and names inside
+        # ${NAME:-...} forms all match this scan) must be declared before the alias.
+        $aliasRawValue = [string](Get-EnvValue -EnvValues $baseValues -Name 'DMS_CONFIG_DATABASE_NAME' -DefaultValue '')
+        foreach ($referenceMatch in [regex]::Matches($aliasRawValue, '\$\{?([A-Za-z_][A-Za-z0-9_]*)')) {
+            $referenceLineIndex = & $indexOfKeyLine $referenceMatch.Groups[1].Value
+            if ($referenceLineIndex -gt $aliasLineIndex) {
+                $declarationOrderBroken = $true
+                break
+            }
+        }
+
+        # And the connection string, when it references the alias, must be declared after it.
+        if (-not $declarationOrderBroken) {
+            $connectionLineIndex = & $indexOfKeyLine 'DMS_CONFIG_DATABASE_CONNECTION_STRING'
+            if ($connectionLineIndex -ge 0 -and $connectionLineIndex -lt $aliasLineIndex -and
+                $currentConnectionString -match '\$\{?DMS_CONFIG_DATABASE_NAME') {
+                $declarationOrderBroken = $true
+            }
+        }
+    }
+
+    if (-not $markerChanged -and -not $nameChanged -and -not $connectionStringChanged -and -not $declarationOrderBroken) {
         return $BaseEnvironmentFile
     }
 
@@ -1619,6 +1659,19 @@ function Confirm-CmsDatabaseTopologyAgreement {
         }
     if ([string]::IsNullOrWhiteSpace($expectedDatabaseName)) {
         throw "Confirm-CmsDatabaseTopologyAgreement: could not resolve a non-blank expected database name for '$datastoreNameKey'."
+    }
+
+    if ($isSeparate) {
+        # Separate mode's whole promise is two physically distinct databases. A datastore name that
+        # itself resolves to the dedicated CMS name would pass every equality check below while both
+        # services silently share one database, so distinctness is proven explicitly. Resolved with
+        # the same Compose precedence as everything else here, so an ambient datastore-name override
+        # that collides is caught too.
+        $datastoreDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $datastoreNameKey
+        if (-not [string]::IsNullOrWhiteSpace($datastoreDatabaseName) -and
+            [string]::Equals($datastoreDatabaseName, $expectedDatabaseName, $nameComparison)) {
+            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' also resolves to '$datastoreDatabaseName'. Rename the datastore database or use shared mode."
+        }
     }
 
     $actualConnectionString =

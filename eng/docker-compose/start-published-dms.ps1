@@ -215,10 +215,16 @@ if ($cmsParticipates) {
 }
 else {
     # CMS does not participate in this shape, so the legacy shared-mode-only check keeps running
-    # exactly as it does today. Resolve-DatabaseEngineEnvironmentFile itself skips that check for an
-    # env file already declaring the separate topology, so a -DmsOnly continuation against a stack
-    # started with -SeparateConfigDatabase is not rejected by a shared-mode invariant.
-    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+    # exactly as it does today for a plain (no-switch) invocation of a shared-mode file.
+    # Two separate-topology signals skip it, because it asserts an invariant that is definitionally
+    # false for a separate-mode configuration: Resolve-DatabaseEngineEnvironmentFile itself skips it
+    # for an env file already carrying the topology marker (a derived-file continuation), and an
+    # explicit -SeparateConfigDatabase skips it here for a caller-authored source file that targets
+    # the dedicated database directly - the marker lives only in derived files, so without this a
+    # documented "accepted, gated no-op" continuation like `-DmsOnly -SeparateConfigDatabase` against
+    # the original -EnvironmentFile would be rejected by a check for a topology the caller explicitly
+    # declined.
+    $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
 }
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
@@ -256,6 +262,18 @@ if (-not $d) {
 
     if ($DmsOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
         throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
+    }
+
+    # -DataStoreDatabaseName renames the DMS datastore database for the CMS data-store record,
+    # AFTER topology validation has already run - so it could silently reintroduce the very
+    # sharing -SeparateConfigDatabase exists to remove. Distinctness is enforced here, at the same
+    # fail-fast boundary as the other parameter rules. Case-insensitive deliberately: SQL Server
+    # database names are case-insensitive, and on PostgreSQL a case-variant collision is far more
+    # likely a mistake than a genuinely intended distinct database.
+    if ($SeparateConfigDatabase -and
+        -not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName) -and
+        [string]::Equals($DataStoreDatabaseName, "edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of."
     }
 
     if ($DbOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
