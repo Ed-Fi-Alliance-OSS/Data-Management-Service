@@ -329,6 +329,46 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;User Id=custom;Pass
     }
 }
 
+Describe "The checked-in PostgreSQL-base profile files carry the CMS database topology seam" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    # The three .env.config.* profiles are deliberately out of scope for this seam, as is
+    # DATABASE_CONNECTION_STRING_ADMIN in every file.
+    It "aliases the seam and routes the CMS connection string through it: <_>" -ForEach @(
+        '.env.e2e', '.env.example', '.env.multitenancy', '.env.routeContext.e2e',
+        '.env.smoke', '.env.smoke.ds61', '.env.template', '.env.template.ds61'
+    ) {
+        $path = Join-Path $script:dockerComposeRoot $_
+        $values = ReadValuesFromEnvFile $path
+
+        $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be '${POSTGRES_DB_NAME}' -Because "shared mode aliases the seam to the datastore name"
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -BeLike '*database=${DMS_CONFIG_DATABASE_NAME};*' -Because "the connection string must follow the seam, not POSTGRES_DB_NAME directly"
+
+        # Docker Compose resolves --env-file references in file order, so the alias defined below its
+        # consumer would resolve to empty and silently produce database= with no value.
+        $lines = [System.IO.File]::ReadAllLines($path)
+        $aliasIndex = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq 'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}' })
+        $connectionIndex = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=*' })
+        $aliasIndex | Should -BeGreaterOrEqual 0
+        $aliasIndex | Should -BeLessThan $connectionIndex -Because "a forward reference resolves to empty under --env-file"
+    }
+
+    It "leaves DATABASE_CONNECTION_STRING_ADMIN on the datastore name: <_>" -ForEach @(
+        '.env.e2e', '.env.example', '.env.multitenancy', '.env.routeContext.e2e',
+        '.env.smoke', '.env.smoke.ds61', '.env.template', '.env.template.ds61'
+    ) {
+        # The admin connection string belongs to the DMS datastore, not CMS, and is explicitly out of
+        # scope for this seam - a stray migration here would repoint DMS itself at the CMS database.
+        $values = ReadValuesFromEnvFile (Join-Path $script:dockerComposeRoot $_)
+        if ($values.ContainsKey("DATABASE_CONNECTION_STRING_ADMIN")) {
+            $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -BeLike '*DMS_CONFIG_DATABASE_NAME*'
+        }
+    }
+}
+
 Describe "The real .env.mssql overlay (DMS-1238)" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -397,6 +437,25 @@ Describe "The .env.example MSSQL hint block" {
     It "defines every variable referenced by the commented CMS SQL Server connection string" {
         $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_DB_NAME=edfi_datamanagementservice$'
         $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_SA_PASSWORD=abcdefgh1!$'
-        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_CONNECTION_STRING=.*\$\{MSSQL_DB_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
+        # The commented block carries its own paired alias line, so the connection string references
+        # the topology seam rather than MSSQL_DB_NAME directly - matching the active PostgreSQL block
+        # above it and the real .env.mssql overlay.
+        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_NAME=\$\{MSSQL_DB_NAME\}$'
+        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_CONNECTION_STRING=.*\$\{DMS_CONFIG_DATABASE_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
+    }
+
+    It "keeps the seam alias above the connection string that references it, in both blocks" {
+        # Docker Compose resolves --env-file references in file order, so an alias defined below its
+        # consumer resolves to empty. Pin the ordering rather than trusting it to survive edits.
+        $lines = $script:exampleEnvironment -split "`r?`n"
+        $activeAlias = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq 'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}' })
+        $activeConnection = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=*' })
+        $commentedAlias = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq '# DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}' })
+        $commentedConnection = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like '# DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=*' })
+
+        $activeAlias | Should -BeGreaterOrEqual 0
+        $commentedAlias | Should -BeGreaterOrEqual 0
+        $activeAlias | Should -BeLessThan $activeConnection
+        $commentedAlias | Should -BeLessThan $commentedConnection
     }
 }

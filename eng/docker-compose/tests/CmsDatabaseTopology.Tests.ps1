@@ -1028,12 +1028,32 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
     It "the checked-in local-config.yml / published-config.yml nested fallback still matches the captured oracle text" {
         # Guards against silent drift: if either file's nested default is ever edited without
         # re-running the live oracle capture, this fails loudly instead of the fixture going stale.
+        # The database segment is itself a nested default so the fallback honors the topology seam:
+        # DMS_CONFIG_DATABASE_NAME when set, POSTGRES_DB_NAME otherwise. Re-captured live against
+        # Docker Compose for all three shapes (explicit key, seam set, seam absent) when this form
+        # was introduced; both frozen oracle strings below matched the render unchanged.
         $localConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "local-config.yml") -Raw
         $publishedConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "published-config.yml") -Raw
-        $expectedNestedSyntax = 'DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+        $expectedNestedSyntax = 'DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
 
         $localConfig | Should -Match ([regex]::Escape($expectedNestedSyntax))
         $publishedConfig | Should -Match ([regex]::Escape($expectedNestedSyntax))
+    }
+
+    It "the nested fallback resolves the seam for separate mode and the datastore name otherwise" {
+        # Both captured oracle strings come from the same nested fallback, differing only in whether
+        # DMS_CONFIG_DATABASE_NAME was set - which is precisely the behavior the nesting exists for.
+        # Asserting the resolver agrees with both renders pins the seam's two outcomes together.
+        $sharedValues = @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice'; POSTGRES_PASSWORD = 'abcdefgh1!' }
+        $separateValues = @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice'; POSTGRES_PASSWORD = 'abcdefgh1!'; DMS_CONFIG_DATABASE_NAME = 'edfi_configurationservice' }
+
+        $sharedName = Get-ComposeResolvedEnvValue -EnvironmentValues $sharedValues -Name "DMS_CONFIG_DATABASE_NAME" -DefaultValue $sharedValues.POSTGRES_DB_NAME
+        $separateName = Get-ComposeResolvedEnvValue -EnvironmentValues $separateValues -Name "DMS_CONFIG_DATABASE_NAME" -DefaultValue $separateValues.POSTGRES_DB_NAME
+
+        (Get-CmsDatabaseTopologyDefaultConnectionString -ExpectedHost "dms-postgresql" -ExpectedPort "5432" -ExpectedDatabaseName $sharedName -PostgresPassword 'abcdefgh1!') |
+            Should -BeExactly $script:composeRenderedDefault
+        (Get-CmsDatabaseTopologyDefaultConnectionString -ExpectedHost "dms-postgresql" -ExpectedPort "5432" -ExpectedDatabaseName $separateName -PostgresPassword 'abcdefgh1!') |
+            Should -BeExactly $script:composeRenderedMigratedSeparateMode
     }
 
     It "Get-CmsDatabaseTopologyDefaultConnectionString's construction matches the real Compose-rendered value byte-for-byte" {
@@ -1273,15 +1293,38 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     # are covered by duplicated Context blocks (below) rather than a loop over their names.
 
     Context "start-local-dms.ps1" {
-        It "fails fast for -SeparateConfigDatabase with -DatabaseEngine postgresql, before touching Docker" {
+        It "postgresql separate mode: migrates DMS_CONFIG_DATABASE_NAME and reaches the docker boundary" {
+            # PostgreSQL is at parity with SQL Server: the same topology-write sequence runs, so
+            # -SeparateConfigDatabase is accepted rather than rejected by an engine guard.
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-local-dms.ps1" -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*Phase 2*"
-            $run.Invocations | Should -BeNullOrEmpty -Because "the guard must reject the combination before any docker invocation"
+            $run.ErrorMessage | Should -Not -BeLike "*not yet supported*"
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a topology-derived file on PostgreSQL too"
+
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
+            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
+
+            $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
+        }
+
+        It "postgresql shared mode: writes the seam without redirecting it away from POSTGRES_DB_NAME" {
+            $envFile = New-WiringEnvFile
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly *>$null
+            }
+
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "the seam is written unconditionally so old .env files predating the key still resolve"
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
+            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty
         }
 
         It "shared mode (switch omitted): does not migrate DMS_CONFIG_DATABASE_NAME away from its .env.mssql alias" {
@@ -1348,15 +1391,36 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     }
 
     Context "start-published-dms.ps1" {
-        It "fails fast for -SeparateConfigDatabase with -DatabaseEngine postgresql, before touching Docker" {
+        It "postgresql separate mode: migrates DMS_CONFIG_DATABASE_NAME and reaches the docker boundary" {
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*Phase 2*"
-            $run.Invocations | Should -BeNullOrEmpty -Because "the guard must reject the combination before any docker invocation"
+            $run.ErrorMessage | Should -Not -BeLike "*not yet supported*"
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a topology-derived file on PostgreSQL too"
+
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
+            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
+
+            $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
+        }
+
+        It "postgresql shared mode: writes the seam without redirecting it away from POSTGRES_DB_NAME" {
+            $envFile = New-WiringEnvFile
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly *>$null
+            }
+
+            $run.TopologyFile | Should -Not -BeNullOrEmpty
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
+            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty
         }
 
         It "shared mode (switch omitted): does not migrate DMS_CONFIG_DATABASE_NAME away from its .env.mssql alias" {
