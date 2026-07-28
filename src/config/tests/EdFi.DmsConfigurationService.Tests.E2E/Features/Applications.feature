@@ -344,21 +344,17 @@ Feature: Applications endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
+                    "detail": "Reference 'VendorId' does not exist.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
-                    "validationErrors": {
-                    "VendorId": [
-                      "Reference 'VendorId' does not exist."
-                    ]
-                  },
-                  "errors": []
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
@@ -710,21 +706,17 @@ Feature: Applications endpoints
                    "profileIds": [9999]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
+                    "detail": "Profile does not exist.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
-                    "validationErrors": {
-                    "ProfileId": [
-                      "Profile does not exist."
-                    ]
-                  },
-                  "errors": []
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
