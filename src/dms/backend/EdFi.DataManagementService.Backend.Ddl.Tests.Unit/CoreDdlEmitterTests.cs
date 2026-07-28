@@ -1955,6 +1955,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // separate equality guard still rejects values that diverge from dms.Document.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         string[] immutableColumns = ["ResourceKeyId"];
+        var descriptorTriggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns
@@ -1972,7 +1973,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             var expected = isStringType
                 ? $"CAST(i.[{name}] AS varbinary(max)) <> CAST(del.[{name}] AS varbinary(max))"
                 : $"i.[{name}] <> del.[{name}]";
-            _ddl.Should()
+            descriptorTriggerBody
+                .Should()
                 .Contain(
                     expected,
                     $"descriptor stamping trigger must compare {name} ({type}); "
@@ -1982,7 +1984,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         foreach (var excludedColumn in stampColumns.Concat(immutableColumns))
         {
-            _ddl.Should()
+            descriptorTriggerBody
+                .Should()
                 .NotContain(
                     $"i.[{excludedColumn}] <> del.[{excludedColumn}]",
                     "stamp targets and immutable columns must not appear in the no-op diff"
@@ -2091,6 +2094,164 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
             );
         _ddl.Should().Contain("seq.name = 'ChangeVersionSequence' AND sch.name = 'dms'");
+    }
+
+    private static string ExtractMssqlTriggerBody(string ddl, string triggerName)
+    {
+        var triggerStart = ddl.IndexOf(
+            $"CREATE OR ALTER TRIGGER [dms].[{triggerName}]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerEnd = ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+
+        return ddl[triggerStart..triggerEnd];
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SQL Server transactional enqueue
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_CoreDdlEmitter_With_MssqlDialect_Enqueue
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new CoreDdlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit();
+    }
+
+    [Test]
+    public void It_should_emit_one_Mssql_Enqueue_trigger_without_execute_as()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        CountOccurrences(_ddl, "CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]")
+            .Should()
+            .Be(1);
+        triggerBody.Should().Contain("ON [dms].[Document]");
+        triggerBody.Should().Contain("AFTER INSERT, UPDATE");
+        triggerBody.Should().Contain("FROM inserted i");
+        triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        triggerBody.Should().NotContain("EXECUTE AS");
+    }
+
+    [Test]
+    public void It_should_emit_Mssql_Enqueue_lifecycle_gate_and_missing_state_failure()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        CountOccurrences(triggerBody, "WHERE [StateId] = 1;").Should().Be(1);
+        triggerBody.Should().Contain("DECLARE @lifecycleState varchar(16) COLLATE Latin1_General_100_BIN2;");
+        triggerBody.Should().Contain("SELECT @lifecycleState = [ProjectionLifecycleState]");
+        triggerBody.Should().Contain("FROM [dms].[DocumentCacheState]");
+        triggerBody.Should().Contain("IF @lifecycleState IS NULL");
+        triggerBody
+            .Should()
+            .Contain(
+                "THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;"
+            );
+        triggerBody
+            .Should()
+            .Contain("IF @lifecycleState NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')");
+        triggerBody
+            .Should()
+            .Contain(
+                "THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;"
+            );
+        triggerBody.Should().Contain("IF @lifecycleState = 'Disabled'");
+        triggerBody.Should().Contain("RETURN;");
+    }
+
+    [Test]
+    public void It_should_emit_Mssql_Enqueue_filter_for_inserts_and_changed_content_versions()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        triggerBody.Should().Contain("INSERT INTO @required ([DocumentId], [RequiredContentVersion])");
+        triggerBody.Should().Contain("SELECT i.[DocumentId], MAX(i.[ContentVersion])");
+        triggerBody.Should().Contain("FROM inserted i");
+        triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        triggerBody
+            .Should()
+            .Contain("WHERE del.[DocumentId] IS NULL OR i.[ContentVersion] <> del.[ContentVersion]");
+        triggerBody.Should().Contain("GROUP BY i.[DocumentId];");
+    }
+
+    [Test]
+    public void It_should_emit_Mssql_Enqueue_monotonic_upsert_with_one_statement_timestamp()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        CountOccurrences(triggerBody, "SYSUTCDATETIME()").Should().Be(1);
+        triggerBody.Should().Contain("DECLARE @enqueuedAt datetime2(7) = SYSUTCDATETIME();");
+        triggerBody.Should().Contain("SET work.[RequiredContentVersion] = req.[RequiredContentVersion],");
+        triggerBody.Should().Contain("work.[LastEnqueuedAt] = @enqueuedAt");
+        triggerBody.Should().Contain("WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion];");
+        triggerBody
+            .Should()
+            .Contain(
+                "INSERT INTO [dms].[DocumentProjectionWork] ([DocumentId], [RequiredContentVersion], [FirstEnqueuedAt], [LastEnqueuedAt])"
+            );
+        triggerBody
+            .Should()
+            .Contain("SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt");
+        triggerBody.Should().Contain("WHERE work.[DocumentId] IS NULL;");
+
+        var updateStart = triggerBody.IndexOf("UPDATE work", StringComparison.Ordinal);
+        var insertStart = triggerBody.IndexOf(
+            "INSERT INTO [dms].[DocumentProjectionWork]",
+            StringComparison.Ordinal
+        );
+        updateStart.Should().BeGreaterOrEqualTo(0);
+        insertStart.Should().BeGreaterThan(updateStart);
+        var updateBody = triggerBody[updateStart..insertStart];
+        updateBody.Should().NotContain("[FirstEnqueuedAt]");
+    }
+
+    [Test]
+    public void It_should_not_emit_Mssql_Enqueue_runtime_identity_grants_cdc_or_server_config_reads()
+    {
+        _ddl.Should().NotContain("edfi_dms_enqueue_owner");
+        _ddl.Should().NotContain("CREATE USER");
+        _ddl.Should().NotContain("CREATE ROLE");
+        _ddl.Should().NotContain("GRANT");
+        _ddl.Should().NotContain("cdc");
+        _ddl.Should().NotContain("sys.configurations");
+        _ddl.Should().NotContain("EXECUTE AS");
+    }
+
+    private static string ExtractEnqueueTrigger(string ddl)
+    {
+        var triggerStart = ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerEnd = ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+
+        return ddl[triggerStart..triggerEnd];
+    }
+
+    private static int CountOccurrences(string value, string pattern)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(pattern, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += pattern.Length;
+        }
+
+        return count;
     }
 }
 

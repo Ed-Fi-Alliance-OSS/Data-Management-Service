@@ -77,6 +77,7 @@ public sealed class CoreDdlEmitter
     private const string DocumentEnqueueProjectionUpdateFunctionName = "TF_Document_EnqueueProjectionUpdate";
     private const string DocumentEnqueueProjectionInsertTriggerName = "TR_Document_EnqueueProjectionInsert";
     private const string DocumentEnqueueProjectionUpdateTriggerName = "TR_Document_EnqueueProjectionUpdate";
+    private const string DocumentEnqueueProjectionWorkTriggerName = "TR_Document_EnqueueProjectionWork";
     private const string PgsqlDocumentEnqueueOwnerRoleName = "edfi_dms_enqueue_owner";
 
     private static readonly DbTableName _dataStoreIdentityTable = DmsTableNames.DataStoreIdentity;
@@ -1000,6 +1001,7 @@ public sealed class CoreDdlEmitter
         else
         {
             EmitMssqlDescriptorStampingTrigger(writer);
+            EmitMssqlDocumentProjectionEnqueueTrigger(writer);
             EmitMssqlDocumentCacheUuidValidationTrigger(writer);
         }
     }
@@ -1252,6 +1254,108 @@ public sealed class CoreDdlEmitter
         }
         writer.AppendLine("END;");
         writer.AppendLine("$func$;");
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the SQL Server set-based enqueue trigger for <c>dms.Document</c>.
+    /// </summary>
+    private void EmitMssqlDocumentProjectionEnqueueTrigger(SqlWriter writer)
+    {
+        var documentTable = _dialect.QualifyTable(_documentTable);
+        var documentCacheStateTable = _dialect.QualifyTable(_documentCacheStateTable);
+        var documentProjectionWorkTable = _dialect.QualifyTable(_documentProjectionWorkTable);
+        var triggerName =
+            $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DocumentEnqueueProjectionWorkTriggerName)}";
+
+        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
+        writer.AppendLine("GO");
+        writer.AppendLine($"CREATE OR ALTER TRIGGER {triggerName}");
+        writer.AppendLine($"ON {documentTable}");
+        writer.AppendLine("AFTER INSERT, UPDATE");
+        writer.AppendLine("AS");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("SET NOCOUNT ON;");
+            writer.AppendLine("DECLARE @lifecycleState varchar(16) COLLATE Latin1_General_100_BIN2;");
+            writer.AppendLine("SELECT @lifecycleState = [ProjectionLifecycleState]");
+            writer.Append("FROM ");
+            writer.AppendLine(documentCacheStateTable);
+            writer.AppendLine("WHERE [StateId] = 1;");
+            writer.AppendLine();
+            writer.AppendLine("IF @lifecycleState IS NULL");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;"
+                );
+            }
+            writer.AppendLine("END");
+            writer.AppendLine();
+            writer.AppendLine(
+                "IF @lifecycleState NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')"
+            );
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;"
+                );
+            }
+            writer.AppendLine("END");
+            writer.AppendLine();
+            writer.AppendLine("IF @lifecycleState = 'Disabled'");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("RETURN;");
+            }
+            writer.AppendLine("END");
+            writer.AppendLine();
+            writer.AppendLine("DECLARE @required TABLE (");
+            using (writer.Indent())
+            {
+                writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
+                writer.AppendLine("[RequiredContentVersion] bigint NOT NULL");
+            }
+            writer.AppendLine(");");
+            writer.AppendLine();
+            writer.AppendLine("INSERT INTO @required ([DocumentId], [RequiredContentVersion])");
+            writer.AppendLine("SELECT i.[DocumentId], MAX(i.[ContentVersion])");
+            writer.AppendLine("FROM inserted i");
+            writer.AppendLine("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+            writer.AppendLine("WHERE del.[DocumentId] IS NULL OR i.[ContentVersion] <> del.[ContentVersion]");
+            writer.AppendLine("GROUP BY i.[DocumentId];");
+            writer.AppendLine();
+            writer.AppendLine("DECLARE @enqueuedAt datetime2(7) = SYSUTCDATETIME();");
+            writer.AppendLine();
+            writer.AppendLine("UPDATE work");
+            writer.AppendLine("SET work.[RequiredContentVersion] = req.[RequiredContentVersion],");
+            writer.AppendLine("    work.[LastEnqueuedAt] = @enqueuedAt");
+            writer.Append("FROM ");
+            writer.Append(documentProjectionWorkTable);
+            writer.AppendLine(" work");
+            writer.AppendLine("INNER JOIN @required req ON req.[DocumentId] = work.[DocumentId]");
+            writer.AppendLine("WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion];");
+            writer.AppendLine();
+            writer.Append("INSERT INTO ");
+            writer.Append(documentProjectionWorkTable);
+            writer.AppendLine(
+                " ([DocumentId], [RequiredContentVersion], [FirstEnqueuedAt], [LastEnqueuedAt])"
+            );
+            writer.AppendLine(
+                "SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt"
+            );
+            writer.AppendLine("FROM @required req");
+            writer.Append("LEFT JOIN ");
+            writer.Append(documentProjectionWorkTable);
+            writer.AppendLine(" work ON work.[DocumentId] = req.[DocumentId]");
+            writer.AppendLine("WHERE work.[DocumentId] IS NULL;");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("GO");
         writer.AppendLine();
     }
 
