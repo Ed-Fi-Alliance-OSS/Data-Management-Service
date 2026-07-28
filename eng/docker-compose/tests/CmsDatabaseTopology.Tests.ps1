@@ -166,6 +166,38 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
         }
 
+        It "guarantees DMS_CONFIG_DATABASE_NAME precedes DMS_CONFIG_DATABASE_CONNECTION_STRING in the derived file" {
+            # Empirically confirmed against a real Docker Compose invocation (DMS-1270 Phase 1a Round 9
+            # spike): --env-file interpolation is order-dependent, like shell `source` semantics - a
+            # ${VAR} reference resolves only against variables defined EARLIER in the same file. A
+            # forward reference (the referenced key's own definition appears later) resolves to empty.
+            # Write-DerivedEnvFile appends a genuinely new key after whatever the base file already
+            # contains, so introducing DMS_CONFIG_DATABASE_NAME into a base file that already defines
+            # DMS_CONFIG_DATABASE_CONNECTION_STRING - exactly today's checked-in templates' shape -
+            # would otherwise leave the migrated ${DMS_CONFIG_DATABASE_NAME} reference resolving to
+            # empty at real Compose render time. See Move-EnvFileKeyBeforeAnotherKey.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $lines = Get-Content -LiteralPath $result
+            $nameIndex = -1
+            $connectionStringIndex = -1
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                if ($nameIndex -lt 0 -and $lines[$i] -match '^DMS_CONFIG_DATABASE_NAME=') { $nameIndex = $i }
+                if ($connectionStringIndex -lt 0 -and $lines[$i] -match '^DMS_CONFIG_DATABASE_CONNECTION_STRING=') { $connectionStringIndex = $i }
+            }
+
+            $nameIndex | Should -BeGreaterThan -1
+            $connectionStringIndex | Should -BeGreaterThan -1
+            $nameIndex | Should -BeLessThan $connectionStringIndex
+        }
+
         It "does NOT rewrite the legacy token when it appears outside the database segment" {
             # Round 8 Blocker 2: a blind Contains/Replace across the whole connection string could
             # rewrite the token inside an unrelated segment (here, the password) that merely happens
@@ -182,6 +214,23 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $values = ReadValuesFromEnvFile $result
             $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_DB_NAME};database=custom;' -Because "the token is not in a recognized database-name key's value, so it must be left untouched"
+        }
+
+        It "does NOT rewrite the legacy token when it appears inside a quoted, unrelated segment" {
+            # Round 9 Blocker 1: a plain regex lookbehind/lookahead has no concept of quoting, so a
+            # ';' inside a quoted password value was mistaken for a real segment boundary, letting the
+            # token text embedded in that unrelated quoted value be matched and rewritten.
+            $basePath = Join-Path $script:work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Password="keep;Database=${POSTGRES_DB_NAME};inside-password";Database=custom;'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Password="keep;Database=${POSTGRES_DB_NAME};inside-password";Database=custom;' -Because "the token is inside a quoted password value, not a real Database= segment, and the real Database=custom segment does not match the legacy token either"
         }
 
         It "does NOT rewrite a genuinely custom reference that currently resolves to the same value as the datastore name" {
@@ -461,6 +510,19 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*9999*"
         }
 
+        It "does not honor a standalone Port= key for MSSQL (SqlClient does not support that keyword)" {
+            # Round 9 Blocker 2: honoring a standalone Port= for MSSQL would accept a keyword the real
+            # SqlClient provider does not recognize, defaulting to the expected port instead of failing.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql;Port=9999;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw -Because "the standalone Port= key is not a real MSSQL keyword and must be ignored, defaulting to the expected port 1433"
+        }
+
         It "fails clearly, without constructing a default, when the connection string is entirely absent" {
             # Round 8 Blocker 5 / spec Phase 1 rule: neither .yml file has an engine-aware inline
             # fallback for MSSQL yet, so guessing a default here could accept a connection Compose
@@ -521,6 +583,24 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*host*"
+        }
+
+        It "rejects a comma-bearing PostgreSQL Host= value as a literal (malformed) host, rather than splitting it and hiding an explicit Port=" {
+            # Round 9 Blocker 2: Npgsql has no Server=host,port compound - a comma in a PostgreSQL
+            # Host= value is not a port separator. Before the fix, splitting it anyway extracted
+            # "dms-postgresql" as Host (matching the expected host) and the comma-compound's second
+            # half as Port, silently hiding the disagreeing explicit standalone Port=9999 key behind a
+            # port that was never really specified that way. After the fix, the comma is not split, so
+            # the whole value "dms-postgresql,5432" is correctly rejected as not matching the expected
+            # host "dms-postgresql" - a comma-bearing value is simply not a valid PostgreSQL host.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Host=dms-postgresql,5432;Port=9999;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*dms-postgresql,5432*"
         }
     }
 
@@ -629,6 +709,20 @@ Describe "Get-DatabaseNameFromResolvedConnectionString / Get-EndpointFromResolve
     It "returns a null Port when neither a comma compound nor a standalone port key is present" {
         $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "host=dms-postgresql;database=x;" -DatabaseEngine "postgresql")
         $endpoints[0].Host | Should -Be "dms-postgresql"
+        $endpoints[0].Port | Should -BeNullOrEmpty
+    }
+
+    It "does not split a comma inside a PostgreSQL Host= value (Npgsql has no host,port compound)" {
+        # Round 9 Blocker 2: splitting the comma hides an explicit standalone Port= key behind
+        # whatever port a coincidental comma in the host value produced.
+        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "Host=dms-postgresql,5432;Port=9999;Database=x;" -DatabaseEngine "postgresql")
+        $endpoints[0].Host | Should -Be "dms-postgresql,5432"
+        $endpoints[0].Port | Should -Be "9999"
+    }
+
+    It "does not honor a standalone Port= key for MSSQL (SqlClient does not support that keyword)" {
+        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString "Server=dms-mssql;Port=1433;Database=x;" -DatabaseEngine "mssql")
+        $endpoints[0].Host | Should -Be "dms-mssql"
         $endpoints[0].Port | Should -BeNullOrEmpty
     }
 
@@ -743,6 +837,47 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         # empirical fixture, not a live Docker dependency of this suite -- re-capture it manually
         # if the checked-in nested-fallback syntax in those two files ever changes.
         $script:composeRenderedDefault = 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+
+        # Captured empirically (DMS-1270 Phase 1a Round 9 spike) by running the production
+        # Resolve-CmsDatabaseTopologyEnvironmentFile function (separate mode, against a base file
+        # shaped exactly like today's checked-in templates - connection string present,
+        # DMS_CONFIG_DATABASE_NAME absent) and feeding the ACTUAL resulting derived file to a real
+        # Docker Compose invocation:
+        #   docker compose -f postgresql.yml -f local-config.yml --env-file <derived file> config
+        # This uncovered a genuine bug, since fixed (Move-EnvFileKeyBeforeAnotherKey): Docker
+        # Compose's --env-file interpolation is order-dependent, like shell `source` semantics - a
+        # forward reference (DMS_CONFIG_DATABASE_NAME's line appearing after the connection string
+        # that references it) rendered database= as EMPTY, not the intended database name. After the
+        # fix, Docker Compose v5.1.3 rendered DatabaseSettings__DatabaseConnection as the string below.
+        $script:composeRenderedMigratedSeparateMode = 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
+    }
+
+    BeforeEach {
+        # Round 9 Blocker 4: this block calls Confirm-CmsDatabaseTopologyAgreement (and now
+        # Resolve-CmsDatabaseTopologyEnvironmentFile too) without clearing ambient state, so a
+        # leftover shell value for a datastore name, password, or the connection string itself could
+        # silently change what these tests exercise - the same hermeticity already applied to the
+        # other two Describe blocks.
+        $script:ambientKeys = @(
+            "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_SA_PASSWORD",
+            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+        )
+        $script:ambientSnapshot = @{}
+        foreach ($key in $script:ambientKeys) {
+            $script:ambientSnapshot[$key] = [System.Environment]::GetEnvironmentVariable($key)
+            Remove-Item "Env:\$key" -ErrorAction SilentlyContinue
+        }
+    }
+
+    AfterEach {
+        foreach ($key in $script:ambientKeys) {
+            if ($null -eq $script:ambientSnapshot[$key]) {
+                Remove-Item "Env:\$key" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($key, $script:ambientSnapshot[$key])
+            }
+        }
     }
 
     It "the checked-in local-config.yml / published-config.yml nested fallback still matches the captured oracle text" {
@@ -793,5 +928,32 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $script:composeRenderedDefault -DatabaseEngine "postgresql")
         $endpoints[0].Host | Should -Be "dms-postgresql"
         $endpoints[0].Port | Should -Be "5432"
+    }
+
+    It "the production migration function's actual derived file, run through Confirm-CmsDatabaseTopologyAgreement, agrees with the real Compose-rendered migrated value" {
+        # Round 9 Blocker 3: the prior oracle only covered the absent-key default construction, never
+        # the migration/serialization path - which is exactly where the order-dependent-interpolation
+        # bug this round found and fixed was hiding. This exercises the real, unmodified production
+        # function end to end and validates its output against the empirically-captured oracle above.
+        $work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-cms-topology-migration-oracle-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $work -Force | Out-Null
+        try {
+            $basePath = Join-Path $work ".env.base"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+            ) -join "`n") -NoNewline
+
+            $derived = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $work
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $derived -DatabaseEngine "postgresql" } | Should -Not -Throw -Because "the migrated file must validate against its own now-separate-mode target"
+
+            $migratedConnectionString = Get-ComposeResolvedEnvValue -EnvironmentValues (ReadValuesFromEnvFile $derived) -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+            $migratedConnectionString | Should -BeExactly $script:composeRenderedMigratedSeparateMode -Because "this is the exact value a real Docker Compose invocation rendered for this same derived file"
+        }
+        finally {
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
