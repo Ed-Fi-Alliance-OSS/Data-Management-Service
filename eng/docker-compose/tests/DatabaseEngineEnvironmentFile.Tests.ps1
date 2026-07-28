@@ -300,6 +300,85 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;User Id=custom;Pass
         $result | Should -Be $mismatchedPath -Because "DbOnly neither starts CMS nor initializes OpenIddict"
     }
 
+    It "does not apply the shared-database invariant to a file declaring the separate topology" {
+        # Regression, DMS-1270 Phase 3: the invariant asserts that CMS and OpenIddict both target
+        # MSSQL_DB_NAME, which is false by definition once a run opts into a dedicated CMS database.
+        # The configure and provision phases own the DMS datastore, take no part in the CMS seam, and
+        # so pass no skip switch here - without this they rejected the configuration the preceding
+        # start phase had just established, which is how a full
+        # `build-dms.ps1 StartEnvironment -SeparateConfigDatabase -DatabaseEngine mssql` run failed
+        # after its infrastructure phase had already succeeded.
+        $separatePath = Join-Path $script:work ".env.separate-topology"
+        Set-Content -LiteralPath $separatePath -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true
+DMS_CONFIG_DATABASE_NAME=edfi_configurationservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $separatePath `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Not -Throw
+    }
+
+    It "still applies the shared-database invariant when the separate-topology marker is absent or false" {
+        # Guards the narrowness of the exemption above: only this design's own marker may switch the
+        # invariant off, so an ordinary mismatch is still rejected.
+        foreach ($markerLine in @('', 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false')) {
+            $path = Join-Path $script:work ".env.marker-$([Guid]::NewGuid().ToString('N'))"
+            Set-Content -LiteralPath $path -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+$markerLine
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+            {
+                Resolve-DatabaseEngineEnvironmentFile `
+                    -DatabaseEngine "mssql" `
+                    -BaseEnvironmentFile $path `
+                    -DockerComposeRoot $script:composeRoot
+            } | Should -Throw "*shared-database configuration mismatch*"
+        }
+    }
+
+    It "does not let an ambient topology marker switch the shared-database invariant off" {
+        # The marker is read raw from the file, never through Compose precedence, so a stray shell
+        # variable cannot disable a safety check.
+        $path = Join-Path $script:work ".env.ambient-marker"
+        Set-Content -LiteralPath $path -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+        $had = Test-Path Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE
+        $previous = $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE
+        try {
+            $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"
+            {
+                Resolve-DatabaseEngineEnvironmentFile `
+                    -DatabaseEngine "mssql" `
+                    -BaseEnvironmentFile $path `
+                    -DockerComposeRoot $script:composeRoot
+            } | Should -Throw "*shared-database configuration mismatch*"
+        }
+        finally {
+            if ($had) { $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $previous }
+            else { Remove-Item Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE -ErrorAction SilentlyContinue }
+        }
+    }
+
     It "requires every current overlay key before short-circuiting composition" {
         $overlayPath = Join-Path $script:composeRoot ".env.mssql"
         $overlayValues = ReadValuesFromEnvFile $overlayPath

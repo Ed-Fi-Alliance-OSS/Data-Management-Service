@@ -214,6 +214,10 @@ if ($cmsParticipates) {
     Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
 }
 else {
+    # CMS does not participate in this shape, so the legacy shared-mode-only check keeps running
+    # exactly as it does today. Resolve-DatabaseEngineEnvironmentFile itself skips that check for an
+    # env file already declaring the separate topology, so a -DmsOnly continuation against a stack
+    # started with -SeparateConfigDatabase is not rejected by a shared-mode invariant.
     $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
 }
 $envValues = ReadValuesFromEnvFile $EnvironmentFile

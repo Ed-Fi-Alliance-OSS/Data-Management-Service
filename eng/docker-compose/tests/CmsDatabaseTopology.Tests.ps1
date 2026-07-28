@@ -1485,7 +1485,25 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     # endpoint. These cover both halves behaviorally: the compose file set as actually built, and
     # the gate that follows from it.
     Context "start-published-dms.ps1 Configuration Service participation" {
+        BeforeAll {
+            # Every "bare Keycloak omits CMS" case below depends on nothing ELSE pulling CMS into the
+            # compose set. Bootstrap mode does, and it is enabled by the mere presence of a staged
+            # workspace at eng/docker-compose/.bootstrap - real developer state this suite must not
+            # move or delete, since it can be bind-mounted into a running stack. So these cases
+            # declare that precondition and skip when it does not hold, rather than silently
+            # inverting their own premise.
+            function script:Assert-NoStagedBootstrapWorkspace {
+                $manifest = Join-Path (Join-Path $script:dockerComposeRoot ".bootstrap") "bootstrap-manifest.json"
+                if (Test-Path -LiteralPath $manifest -PathType Leaf) {
+                    Set-ItResult -Skipped -Because "a staged .bootstrap workspace enables bootstrap mode, which includes CMS on its own and so removes this case's premise"
+                    return $false
+                }
+                return $true
+            }
+        }
+
         It "omits published-config.yml for a bare Keycloak start (CMS opt-in preserved)" {
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
@@ -1497,6 +1515,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         }
 
         It "includes published-config.yml for -SeparateConfigDatabase under Keycloak, which would otherwise omit it" {
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
@@ -1520,6 +1539,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         }
 
         It "does not run this story's topology validator for a bare Keycloak start that omits CMS" {
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             # CMS is absent from the compose set, so Confirm-CmsDatabaseTopologyAgreement must not
             # run and no topology-derived file may be written. A consistent (shared) CMS connection
             # string keeps the legacy shared-database check satisfied, isolating the gate itself as
@@ -1537,6 +1557,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         }
 
         It "keeps today's legacy shared-database rejection for a bare Keycloak start whose CMS database name disagrees" {
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             # Non-participating shapes must keep running Assert-MssqlCmsDatabaseIsShared exactly as
             # they do today (the spec's own requirement), so a CMS connection string naming a
             # different database is still rejected here - by the legacy DMS-1255 check, not by this
@@ -1556,6 +1577,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         }
 
         It "accepts a custom CMS host under bare Keycloak, proving the endpoint validator did not run" {
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             # The sharpest available probe of the participation gate: host and port are checked only
             # by Confirm-CmsDatabaseTopologyAgreement, never by the legacy database-name check. So a
             # CMS connection string whose database name agrees but whose host is not dms-mssql must

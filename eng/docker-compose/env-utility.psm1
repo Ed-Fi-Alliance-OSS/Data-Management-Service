@@ -947,6 +947,14 @@ function Resolve-DatabaseEngineEnvironmentFile {
         Skips the CMS/OpenIddict shared-database invariant only for a dedicated database-only
         diagnostic startup or teardown, where neither CMS nor OpenIddict is initialized. Full-stack,
         configure, provision, and wrapper startup flows must leave this off.
+
+        The invariant is also skipped automatically, regardless of this switch, when the base env file
+        declares the separate CMS database topology (DMS-1270). That check asserts a *shared-mode*
+        invariant - CMS and OpenIddict must both target MSSQL_DB_NAME - which is by definition false
+        once a run has opted into a dedicated CMS database. Without this, the configure and provision
+        phases (which own the DMS datastore, take no part in the CMS seam, and so pass no switch here)
+        would reject the very configuration the preceding start phase established. Detected from the
+        internal topology marker, so only a file this design itself wrote can trigger it.
     #>
     param(
         [string]$DatabaseEngine = "postgresql",
@@ -979,7 +987,13 @@ function Resolve-DatabaseEngineEnvironmentFile {
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
 
-    if ($baseDeclaresMssql -and -not $SkipMssqlCmsDatabaseValidation) {
+    # A separate-mode file is out of the shared-mode invariant's scope by construction; see the
+    # -SkipMssqlCmsDatabaseValidation note above. Read raw from the file's own marker, not through
+    # Compose precedence, so an unrelated ambient variable cannot switch the invariant off.
+    $baseDeclaresSeparateTopology =
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -DefaultValue "false") -eq "true"
+
+    if ($baseDeclaresMssql -and -not $SkipMssqlCmsDatabaseValidation -and -not $baseDeclaresSeparateTopology) {
         $baseCmsConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
         if (Test-MssqlConnectionStringValue -ConnectionString $baseCmsConnectionString) {
             # Overlay values establish defaults; caller values then win, matching the actual

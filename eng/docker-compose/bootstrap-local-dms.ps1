@@ -253,6 +253,12 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 
+    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Forwarded unchanged to
+    # start-local-dms.ps1; not forwarded to the configure or provision phases, which own the DMS
+    # datastore and are untouched by this seam. Supported on both database engines.
+    [Switch]$SeparateConfigDatabase,
+
     # Data standard version for the local-bootstrap package surface. The .env.bootstrap.<token>
     # overlay is always composed onto -EnvironmentFile: DS 5.2 (default) stages core + TPDM,
     # DS 6.1 stages core only (TPDM is folded into core in 6.1). Distinct from
@@ -284,6 +290,11 @@ if ($d) {
     # overlay only rewrites env values such as SCHEMA_PACKAGES), so they are omitted. Each is forwarded
     # only when the caller bound it; the unbound defaults (postgresql, no switches) match
     # start-local-dms.ps1's own, so an omitted flag and its default forward identically.
+    #
+    # -SeparateConfigDatabase is deliberately omitted too: local-config.yml is unconditional in
+    # start-local-dms.ps1's compose set, so the switch changes which database CMS targets but never
+    # which compose files a teardown must cover. (It does shape the set in start-published-dms.ps1,
+    # but that script owns its own teardown; this wrapper offers none for the published path.)
     foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine') {
         if ($PSBoundParameters.ContainsKey($name)) {
             $teardownArgs[$name] = $PSBoundParameters[$name]

@@ -138,10 +138,21 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 [string]$Directory,
 
                 [Parameter(Mandatory)]
-                [string]$CallLogPath
+                [string]$CallLogPath,
+
+                # When supplied, each invocation also records the forwarded engine and
+                # -SeparateConfigDatabase state to this separate file. Deliberately not the shared
+                # call log: several tests assert that log's exact line count and ordering.
+                [string]$ForwardLogPath
             )
 
             $scriptPath = Join-Path $Directory "start-local-dms.ps1"
+            $forwardRecording = if ([string]::IsNullOrWhiteSpace($ForwardLogPath)) {
+                ""
+            }
+            else {
+                "Add-Content -LiteralPath '$ForwardLogPath' -Value `"`$label engine=`$DatabaseEngine separate=`$(`$SeparateConfigDatabase.IsPresent)`""
+            }
             @"
 param(
     [switch] `$InfraOnly,
@@ -150,6 +161,8 @@ param(
     [string] `$EnvironmentFile,
     [string] `$IdentityProvider,
     [string] `$DmsBaseUrl,
+    [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 `$hasDmsBaseUrl = `$PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)
@@ -158,6 +171,7 @@ param(
           elseif (`$DmsOnly)  { "start-dms" }
           else                { "start-legacy" }
 Add-Content -LiteralPath '$CallLogPath' -Value "`$label DmsBaseUrl=`$DmsBaseUrl"
+$forwardRecording
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
@@ -620,6 +634,64 @@ $failureStatement
             & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly *>&1 | Out-Null
 
             @(Get-Content -LiteralPath $engineLog) | Should -Contain "provision-engine=postgresql"
+        }
+
+        # DMS-1270 Phase 3: -SeparateConfigDatabase is forwarded unchanged from the public wrapper to
+        # the start script, on both engines. Asserted through the recording stub's own parameter
+        # binding, so the switch has to survive the wrapper -> start-script boundary rather than
+        # merely appear in a hashtable.
+        It "forwards -SeparateConfigDatabase to the start script for <_>" -ForEach @('postgresql', 'mssql') {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-sep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                -SeparateConfigDatabase `
+                *>&1 | Out-Null
+
+            $forwarded = @(Get-Content -LiteralPath $forwardLog)
+            $forwarded | Should -Contain "start-infra engine=$_ separate=True" -Because "the start script must receive both the engine and the topology switch the wrapper was invoked with"
+        }
+
+        It "does not forward -SeparateConfigDatabase when it was not requested, for <_>" -ForEach @('postgresql', 'mssql') {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-nosep-$_.txt"
+            $forwardLog = Join-Path $script:repo.RepoRoot "forward-log-nosep-$_.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ForwardLogPath $forwardLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DatabaseEngine $_ `
+                *>&1 | Out-Null
+
+            @(Get-Content -LiteralPath $forwardLog) | Should -Contain "start-infra engine=$_ separate=False" -Because "shared mode must remain the default all the way through the wrapper"
+        }
+
+        It "does not forward -SeparateConfigDatabase to the configure or provision phases" {
+            # Those phases own the DMS datastore and are explicitly untouched by this seam; if the
+            # wrapper splatted the switch at them they would fail on an unknown parameter, so a clean
+            # run through both is itself the assertion.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-sep-phases.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly -SeparateConfigDatabase *>&1 | Out-Null } |
+                Should -Not -Throw
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Contain "configure smoke=False"
+            $log | Should -Contain "provision"
         }
 
         It "start-local-dms.ps1 terminal guidance block does not print a second start run as a resume mechanism" {
@@ -1417,7 +1489,12 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
-                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials'
+                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials',
+                # -SeparateConfigDatabase changes which database CMS targets, never which compose
+                # files a teardown must cover: local-config.yml is unconditional in
+                # start-local-dms.ps1's compose set. So it is excluded, like the other
+                # non-compose-shaping options.
+                'SeparateConfigDatabase'
             )
 
             # Completeness guard: every parameter the entry script declares must be classified here
@@ -1446,6 +1523,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -AddExtensionSecurityMetadata `
                 -NoDataStore `
                 -AddSmokeTestCredentials `
+                -SeparateConfigDatabase `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
@@ -1881,7 +1959,15 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 Join-Path $script:sourceRepoRoot "build-dms.ps1"
             ) -Raw
 
-            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -SeparateConfigDatabase:\$SeparateConfigDatabase -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards -SeparateConfigDatabase to the bootstrap wrapper only when requested" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)if \(\$SeparateConfigDatabase\) \{\s*\$bootstrapArgs\.SeparateConfigDatabase = \$true\s*\}'
         }
 
         It "Start-BootstrapDockerEnvironment forwards -DatabaseEngine to the bootstrap wrapper only when supplied" {

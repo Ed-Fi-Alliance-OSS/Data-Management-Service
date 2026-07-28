@@ -126,6 +126,13 @@ param(
     [ValidateSet("postgresql", "mssql")]
     $DatabaseEngine,
 
+    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Used by StartEnvironment only,
+    # forwarded unchanged to the bootstrap wrapper and on to the start script. Supported on both
+    # database engines.
+    [switch]
+    $SeparateConfigDatabase,
+
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
@@ -996,6 +1003,10 @@ function Start-BootstrapDockerEnvironment {
         [string]
         $IdentityProvider="self-contained",
 
+        # Forwarded to the bootstrap wrapper unchanged; see the top-level parameter for semantics.
+        [switch]
+        $SeparateConfigDatabase,
+
         # Forwarded to the bootstrap wrapper only when the caller explicitly supplied it (see
         # $dataStandardVersionSupplied), so the wrapper's own default-composition behavior governs
         # when it is absent.
@@ -1041,6 +1052,10 @@ function Start-BootstrapDockerEnvironment {
 
             if ($DatabaseEngine) {
                 $bootstrapArgs.DatabaseEngine = $DatabaseEngine
+            }
+
+            if ($SeparateConfigDatabase) {
+                $bootstrapArgs.SeparateConfigDatabase = $true
             }
 
             if ($DataStandardVersionSupplied) {
@@ -2040,7 +2055,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

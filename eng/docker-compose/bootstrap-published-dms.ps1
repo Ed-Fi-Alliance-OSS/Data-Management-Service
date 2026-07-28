@@ -138,6 +138,13 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 
+    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Forwarded unchanged to
+    # start-published-dms.ps1, where it also brings published-config.yml into the compose set so CMS
+    # actually runs to create that database. Not forwarded to the configure or provision phases,
+    # which own the DMS datastore and are untouched by this seam. Supported on both database engines.
+    [Switch]$SeparateConfigDatabase,
+
     # Data standard version for the local-bootstrap package surface. The .env.bootstrap.<token>
     # overlay (DS 5.2, the default: core + TPDM; DS 6.1: core only, since TPDM is folded into
     # core in 6.1) is composed onto -EnvironmentFile ONLY when this parameter is explicitly
