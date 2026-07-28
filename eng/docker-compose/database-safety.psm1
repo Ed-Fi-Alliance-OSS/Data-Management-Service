@@ -411,6 +411,7 @@ function Get-CmsDatabaseTopologyDefaultConnectionString {
         Confirm-CmsDatabaseTopologyAgreement does not throw when validating its own construction
         against itself.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'PostgresPassword', Justification = 'Constructs the plaintext connection string Docker Compose itself renders for the CMS container; the password necessarily appears in that string, so SecureString adds no protection across this boundary.')]
     param(
         [Parameter(Mandatory)] [string]$ExpectedHost,
         [Parameter(Mandatory)] [string]$ExpectedPort,

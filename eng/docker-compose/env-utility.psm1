@@ -447,6 +447,7 @@ function Write-DerivedEnvFile {
             -KeyOverrides @{ FAILURE_RATIO = "0.95" }
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Bootstrap helper, no -WhatIf surface needed.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'matchInfo', Justification = 'MatchEvaluator delegate parameter: the evaluator deliberately ignores the match and returns the literal replacement line, which is the whole point - the string-replacement overload would interpret $-sequences in caller values as substitution directives.')]
     param(
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
         [Parameter(Mandatory)] [string]$TargetPath,
