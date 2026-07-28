@@ -1278,7 +1278,7 @@ public sealed class CoreDdlEmitter
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
-            writer.AppendLine("DECLARE @lifecycleState varchar(16) COLLATE Latin1_General_100_BIN2;");
+            writer.AppendLine("DECLARE @lifecycleState varchar(16);");
             writer.AppendLine("SELECT @lifecycleState = [ProjectionLifecycleState]");
             writer.Append("FROM ");
             writer.AppendLine(documentCacheStateTable);
@@ -1295,7 +1295,7 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("END");
             writer.AppendLine();
             writer.AppendLine(
-                "IF @lifecycleState NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')"
+                "IF @lifecycleState COLLATE Latin1_General_100_BIN2 NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')"
             );
             writer.AppendLine("BEGIN");
             using (writer.Indent())

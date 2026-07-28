@@ -401,9 +401,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                     }
                     writer.AppendLine("END");
                     writer.AppendLine();
-                    writer.AppendLine(
-                        "DECLARE @preflight_lifecycle_state varchar(16) COLLATE Latin1_General_100_BIN2;"
-                    );
+                    writer.AppendLine("DECLARE @preflight_lifecycle_state varchar(16);");
                     writer.AppendLine("DECLARE @preflight_cache_ahead_recovery_required bit;");
                     writer.AppendLine("EXEC sys.sp_executesql");
                     using (writer.Indent())
@@ -432,16 +430,16 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                     using (writer.Indent())
                     {
                         writer.AppendLine(
-                            "(@preflight_lifecycle_state = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)"
+                            "(@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)"
                         );
                         writer.AppendLine(
-                            "OR (@preflight_lifecycle_state = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)"
+                            "OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)"
                         );
                         writer.AppendLine(
-                            "OR (@preflight_lifecycle_state = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)"
+                            "OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)"
                         );
                         writer.AppendLine(
-                            "OR (@preflight_lifecycle_state = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)"
+                            "OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)"
                         );
                     }
                     writer.AppendLine(")");

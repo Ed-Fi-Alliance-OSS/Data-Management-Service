@@ -49,7 +49,7 @@ BEGIN
             THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState is missing. Drop and recreate the database before re-provisioning.', 1;
         END
 
-        DECLARE @preflight_lifecycle_state varchar(16) COLLATE Latin1_General_100_BIN2;
+        DECLARE @preflight_lifecycle_state varchar(16);
         DECLARE @preflight_cache_ahead_recovery_required bit;
         EXEC sys.sp_executesql
             N'SELECT @lifecycle_state = [ProjectionLifecycleState], @cache_ahead_recovery_required = [CacheAheadRecoveryRequired] FROM [dms].[DocumentCacheState] WHERE [StateId] = 1;',
@@ -61,10 +61,10 @@ BEGIN
             THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState singleton row is missing. Drop and recreate the database before re-provisioning.', 1;
         END
         IF NOT (
-            (@preflight_lifecycle_state = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)
-            OR (@preflight_lifecycle_state = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)
-            OR (@preflight_lifecycle_state = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)
-            OR (@preflight_lifecycle_state = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+            (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)
         )
         BEGIN
             THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value during provisioning preflight.', 1;
@@ -599,7 +599,7 @@ AFTER INSERT, UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    DECLARE @lifecycleState varchar(16) COLLATE Latin1_General_100_BIN2;
+    DECLARE @lifecycleState varchar(16);
     SELECT @lifecycleState = [ProjectionLifecycleState]
     FROM [dms].[DocumentCacheState]
     WHERE [StateId] = 1;
@@ -609,7 +609,7 @@ BEGIN
         THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;
     END
 
-    IF @lifecycleState NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')
+    IF @lifecycleState COLLATE Latin1_General_100_BIN2 NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')
     BEGIN
         THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;
     END

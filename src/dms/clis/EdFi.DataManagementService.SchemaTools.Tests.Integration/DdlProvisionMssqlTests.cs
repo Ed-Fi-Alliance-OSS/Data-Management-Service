@@ -100,6 +100,73 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
     }
 
     [Test]
+    public void It_initializes_document_cache_mutable_singletons()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        ProvisionTestHelper.AssertDocumentCacheStateSeeded(connection, "mssql");
+    }
+
+    [Test]
+    public void It_rejects_invalid_document_cache_lifecycle_values()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        ProvisionTestHelper.AssertDocumentCacheLifecycleRejectsInvalidValues(connection, "mssql");
+    }
+
+    [Test]
+    public void It_configures_lifecycle_collation_and_same_owner_enqueue_trigger()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT c.collation_name
+                FROM sys.columns c
+                INNER JOIN sys.tables t ON t.object_id = c.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = N'dms'
+                AND t.name = N'DocumentCacheState'
+                AND c.name = N'ProjectionLifecycleState'
+                """;
+            command.ExecuteScalar().Should().Be("Latin1_General_100_BIN2");
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT
+                    OBJECT_SCHEMA_NAME(tr.object_id) AS trigger_schema,
+                    SCHEMA_NAME(parent_schema.schema_id) AS parent_schema,
+                    module.execute_as_principal_id,
+                    module.definition
+                FROM sys.triggers tr
+                INNER JOIN sys.tables parent_table ON parent_table.object_id = tr.parent_id
+                INNER JOIN sys.schemas parent_schema ON parent_schema.schema_id = parent_table.schema_id
+                INNER JOIN sys.sql_modules module ON module.object_id = tr.object_id
+                WHERE tr.name = N'TR_Document_EnqueueProjectionWork'
+                """;
+            using var reader = command.ExecuteReader();
+            reader.Read().Should().BeTrue("the enqueue trigger should exist");
+            reader.GetString(0).Should().Be("dms");
+            reader.GetString(1).Should().Be("dms");
+            reader.IsDBNull(2).Should().BeTrue("the trigger should not use EXECUTE AS");
+            reader.GetString(3).Should().NotContain("EXECUTE AS");
+        }
+    }
+
+    [Test]
     public void It_creates_the_uuidv5_function()
     {
         using var connection = new SqlConnection(
@@ -171,6 +238,8 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
     private string _secondError = null!;
     private string? _firstManifestJson;
     private string? _secondManifestJson;
+    private ProvisionTestHelper.DocumentCacheMutableStateSnapshot? _beforeRerun;
+    private ProvisionTestHelper.DocumentCacheMutableStateSnapshot? _afterRerun;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -199,6 +268,13 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         var firstManifest = introspector.Introspect(connectionString, schemaAllowlist);
         _firstManifestJson = ProvisionedSchemaManifestEmitter.Emit(firstManifest);
 
+        using (var connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "mssql");
+            _beforeRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "mssql");
+        }
+
         // Second provisioning run (idempotent rerun)
         (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
             "mssql",
@@ -211,6 +287,12 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         var secondSchemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
         var secondManifest = introspector.Introspect(connectionString, secondSchemaAllowlist);
         _secondManifestJson = ProvisionedSchemaManifestEmitter.Emit(secondManifest);
+
+        using (var connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            _afterRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "mssql");
+        }
     }
 
     [OneTimeTearDown]
@@ -243,6 +325,176 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
                 _firstManifestJson,
                 "the schema manifest after the second provisioning should be identical to the first"
             );
+    }
+
+    [Test]
+    public void It_preserves_document_cache_mutable_rows_on_second_run()
+    {
+        _afterRerun.Should().Be(_beforeRerun);
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_Mssql_Bounded_E18_Preflight_Guards
+{
+    [TestCase(
+        """DROP TABLE [dms].[DataStoreIdentity];""",
+        "DataStoreIdentity] is missing",
+        TestName = "It_rejects_missing_DataStoreIdentity_table"
+    )]
+    [TestCase(
+        """DELETE FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1;""",
+        "DataStoreIdentity singleton row is missing",
+        TestName = "It_rejects_missing_DataStoreIdentity_singleton"
+    )]
+    [TestCase(
+        """UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = '00000000-0000-0000-0000-000000000000' WHERE [DataStoreIdentitySingletonId] = 1;""",
+        "SourceIdentity must not be the zero UUID",
+        TestName = "It_rejects_zero_SourceIdentity"
+    )]
+    [TestCase(
+        """DROP TABLE [dms].[DocumentCacheState];""",
+        "DocumentCacheState] is missing",
+        TestName = "It_rejects_missing_DocumentCacheState_table"
+    )]
+    [TestCase(
+        """DELETE FROM [dms].[DocumentCacheState] WHERE [StateId] = 1;""",
+        "DocumentCacheState singleton row is missing",
+        TestName = "It_rejects_missing_DocumentCacheState_singleton"
+    )]
+    [TestCase(
+        """
+            ALTER TABLE [dms].[DocumentCacheState] DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+            UPDATE [dms].[DocumentCacheState] SET [ProjectionLifecycleState] = 'Broken' WHERE [StateId] = 1;
+            """,
+        "ProjectionLifecycleState has unsupported value",
+        TestName = "It_rejects_invalid_DocumentCacheState_lifecycle"
+    )]
+    [TestCase(
+        """ALTER TABLE [dms].[DocumentCache] ADD [Etag] nvarchar(64) NULL;""",
+        "Known legacy DocumentCache artifact",
+        TestName = "It_rejects_legacy_DocumentCache_Etag"
+    )]
+    [TestCase(
+        """CREATE UNIQUE INDEX [UX_DocumentCache_DocumentUuid] ON [dms].[DocumentCache] ([DocumentUuid]);""",
+        "UX_DocumentCache_DocumentUuid",
+        TestName = "It_rejects_legacy_DocumentCache_uuid_index"
+    )]
+    [TestCase(
+        """CREATE INDEX [IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt] ON [dms].[DocumentCache] ([ProjectName], [ResourceName], [LastModifiedAt]);""",
+        "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
+        TestName = "It_rejects_legacy_DocumentCache_scan_index"
+    )]
+    public void It_rejects_incompatible_completed_state_before_rerun(string mutationSql, string expectedError)
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        var databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(databaseName);
+
+        try
+        {
+            var (firstExitCode, firstOutput, firstError) = ProvisionTestHelper.RunProvision(
+                "mssql",
+                connectionString,
+                createDatabase: true
+            );
+            firstExitCode.Should().Be(0, $"stdout: {firstOutput}\nstderr: {firstError}");
+
+            using (var connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = mutationSql;
+                command.ExecuteNonQuery();
+            }
+
+            var (secondExitCode, secondOutput, secondError) = ProvisionTestHelper.RunProvision(
+                "mssql",
+                connectionString
+            );
+
+            secondExitCode.Should().NotBe(0, $"stdout: {secondOutput}\nstderr: {secondError}");
+            secondError.Should().Contain(expectedError);
+        }
+        finally
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(databaseName);
+        }
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_Mssql_Compatible_Interrupted_Initial_Apply
+{
+    private string _databaseName = null!;
+    private int _exitCode;
+    private string _output = null!;
+    private string _error = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+        using (var connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE SCHEMA [dms];";
+            command.ExecuteNonQuery();
+
+            command.CommandText =
+                "CREATE SEQUENCE [dms].[ChangeVersionSequence] AS bigint START WITH 1 INCREMENT BY 1;";
+            command.ExecuteNonQuery();
+        }
+
+        (_exitCode, _output, _error) = ProvisionTestHelper.RunProvision("mssql", connectionString);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_completes_successfully()
+    {
+        _exitCode.Should().Be(0, $"stdout: {_output}\nstderr: {_error}");
+    }
+
+    [Test]
+    public void It_creates_and_seeds_document_cache_state()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        ProvisionTestHelper.AssertCoreTablesExist(connection);
+        ProvisionTestHelper.AssertDocumentCacheStateSeeded(connection, "mssql");
     }
 }
 

@@ -28,6 +28,10 @@
     },
     {
       "schema_name": "dms",
+      "table_name": "DataStoreIdentity"
+    },
+    {
+      "schema_name": "dms",
       "table_name": "Descriptor"
     },
     {
@@ -37,6 +41,14 @@
     {
       "schema_name": "dms",
       "table_name": "DocumentCache"
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCacheState"
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentProjectionWork"
     },
     {
       "schema_name": "dms",
@@ -2906,6 +2918,26 @@
     },
     {
       "schema_name": "dms",
+      "table_name": "DataStoreIdentity",
+      "column_name": "DataStoreIdentitySingletonId",
+      "ordinal_position": 1,
+      "data_type": "smallint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DataStoreIdentity",
+      "column_name": "SourceIdentity",
+      "ordinal_position": 2,
+      "data_type": "uuid",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "CodeValue",
       "ordinal_position": 4,
@@ -3128,7 +3160,7 @@
       "schema_name": "dms",
       "table_name": "DocumentCache",
       "column_name": "ContentVersion",
-      "ordinal_position": 7,
+      "ordinal_position": 6,
       "data_type": "bigint",
       "is_nullable": false,
       "default_expression": null,
@@ -3160,16 +3192,6 @@
       "column_name": "DocumentUuid",
       "ordinal_position": 2,
       "data_type": "uuid",
-      "is_nullable": false,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "column_name": "Etag",
-      "ordinal_position": 6,
-      "data_type": "character varying(64)",
       "is_nullable": false,
       "default_expression": null,
       "is_computed": false
@@ -3210,6 +3232,86 @@
       "column_name": "ResourceVersion",
       "ordinal_position": 5,
       "data_type": "character varying(32)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCache",
+      "column_name": "StreamEtag",
+      "ordinal_position": 7,
+      "data_type": "character varying(64)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCacheState",
+      "column_name": "CacheAheadRecoveryRequired",
+      "ordinal_position": 3,
+      "data_type": "boolean",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCacheState",
+      "column_name": "ProjectionLifecycleState",
+      "ordinal_position": 2,
+      "data_type": "character varying(16)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCacheState",
+      "column_name": "StateId",
+      "ordinal_position": 1,
+      "data_type": "smallint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentProjectionWork",
+      "column_name": "DocumentId",
+      "ordinal_position": 1,
+      "data_type": "bigint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentProjectionWork",
+      "column_name": "FirstEnqueuedAt",
+      "ordinal_position": 3,
+      "data_type": "timestamp with time zone",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentProjectionWork",
+      "column_name": "LastEnqueuedAt",
+      "ordinal_position": 4,
+      "data_type": "timestamp with time zone",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentProjectionWork",
+      "column_name": "RequiredContentVersion",
+      "ordinal_position": 2,
+      "data_type": "bigint",
       "is_nullable": false,
       "default_expression": null,
       "is_computed": false
@@ -66121,6 +66223,30 @@
     },
     {
       "schema_name": "dms",
+      "table_name": "DataStoreIdentity",
+      "constraint_name": "CK_DataStoreIdentity_Singleton",
+      "constraint_type": "CHECK",
+      "columns": [
+        "DataStoreIdentitySingletonId"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DataStoreIdentity",
+      "constraint_name": "PK_DataStoreIdentity",
+      "constraint_type": "PRIMARY KEY",
+      "columns": [
+        "DataStoreIdentitySingletonId"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
       "table_name": "Descriptor",
       "constraint_name": "FK_Descriptor_Document",
       "constraint_type": "FOREIGN KEY",
@@ -66250,11 +66376,61 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "constraint_name": "UX_DocumentCache_DocumentUuid",
-      "constraint_type": "UNIQUE",
+      "table_name": "DocumentCacheState",
+      "constraint_name": "CK_DocumentCacheState_Lifecycle",
+      "constraint_type": "CHECK",
       "columns": [
-        "DocumentUuid"
+        "ProjectionLifecycleState"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCacheState",
+      "constraint_name": "CK_DocumentCacheState_Singleton",
+      "constraint_type": "CHECK",
+      "columns": [
+        "StateId"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCacheState",
+      "constraint_name": "PK_DocumentCacheState",
+      "constraint_type": "PRIMARY KEY",
+      "columns": [
+        "StateId"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentProjectionWork",
+      "constraint_name": "FK_DocumentProjectionWork_Document",
+      "constraint_type": "FOREIGN KEY",
+      "columns": [
+        "DocumentId"
+      ],
+      "referenced_schema": "dms",
+      "referenced_table": "Document",
+      "referenced_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentProjectionWork",
+      "constraint_name": "PK_DocumentProjectionWork",
+      "constraint_type": "PRIMARY KEY",
+      "columns": [
+        "DocumentId"
       ],
       "referenced_schema": null,
       "referenced_table": null,
@@ -114583,13 +114759,11 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "DocumentCache",
-      "index_name": "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
+      "table_name": "DocumentProjectionWork",
+      "index_name": "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId",
       "is_unique": false,
       "columns": [
-        "ProjectName",
-        "ResourceName",
-        "LastModifiedAt",
+        "FirstEnqueuedAt",
         "DocumentId"
       ]
     },
@@ -126985,6 +127159,33 @@
       "action_timing": "AFTER",
       "definition": "CREATE TRIGGER \u0022TR_Descriptor_Stamp_Document\u0022 AFTER INSERT OR DELETE OR UPDATE ON dms.\u0022Descriptor\u0022 FOR EACH ROW EXECUTE FUNCTION dms.\u0022TF_Descriptor_Stamp_Document\u0022()",
       "function_name": "TF_Descriptor_Stamp_Document"
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Document",
+      "trigger_name": "TR_Document_EnqueueProjectionInsert",
+      "event_manipulation": "INSERT",
+      "action_timing": "AFTER",
+      "definition": "CREATE TRIGGER \u0022TR_Document_EnqueueProjectionInsert\u0022 AFTER INSERT ON dms.\u0022Document\u0022 REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION dms.\u0022TF_Document_EnqueueProjectionInsert\u0022()",
+      "function_name": "TF_Document_EnqueueProjectionInsert"
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Document",
+      "trigger_name": "TR_Document_EnqueueProjectionUpdate",
+      "event_manipulation": "UPDATE",
+      "action_timing": "AFTER",
+      "definition": "CREATE TRIGGER \u0022TR_Document_EnqueueProjectionUpdate\u0022 AFTER UPDATE ON dms.\u0022Document\u0022 REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION dms.\u0022TF_Document_EnqueueProjectionUpdate\u0022()",
+      "function_name": "TF_Document_EnqueueProjectionUpdate"
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCache",
+      "trigger_name": "TR_DocumentCache_ValidateDocumentUuid",
+      "event_manipulation": "INSERT OR UPDATE",
+      "action_timing": "BEFORE",
+      "definition": "CREATE TRIGGER \u0022TR_DocumentCache_ValidateDocumentUuid\u0022 BEFORE INSERT OR UPDATE ON dms.\u0022DocumentCache\u0022 FOR EACH ROW EXECUTE FUNCTION dms.\u0022TF_DocumentCache_ValidateDocumentUuid\u0022()",
+      "function_name": "TF_DocumentCache_ValidateDocumentUuid"
     },
     {
       "schema_name": "edfi",
@@ -140228,6 +140429,27 @@
       "return_type": "trigger",
       "parameter_types": [],
       "definition": "CREATE OR REPLACE FUNCTION dms.\u0022TF_Descriptor_Stamp_Document\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP IN (\u0027INSERT\u0027, \u0027UPDATE\u0027) THEN\n        IF NOT EXISTS (\n            SELECT 1\n            FROM \u0022dms\u0022.\u0022Document\u0022\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n                AND \u0022ResourceKeyId\u0022 = NEW.\u0022ResourceKeyId\u0022\n        ) THEN\n            RAISE EXCEPTION \u0027dms.Descriptor.ResourceKeyId % diverges from the owning dms.Document row for DocumentId %\u0027, NEW.\u0022ResourceKeyId\u0022, NEW.\u0022DocumentId\u0022;\n        END IF;\n    END IF;\n    IF TG_OP = \u0027UPDATE\u0027 THEN\n        IF NOT (OLD.\u0022Namespace\u0022 IS DISTINCT FROM NEW.\u0022Namespace\u0022 OR OLD.\u0022CodeValue\u0022 IS DISTINCT FROM NEW.\u0022CodeValue\u0022 OR OLD.\u0022ShortDescription\u0022 IS DISTINCT FROM NEW.\u0022ShortDescription\u0022 OR OLD.\u0022Description\u0022 IS DISTINCT FROM NEW.\u0022Description\u0022 OR OLD.\u0022EffectiveBeginDate\u0022 IS DISTINCT FROM NEW.\u0022EffectiveBeginDate\u0022 OR OLD.\u0022EffectiveEndDate\u0022 IS DISTINCT FROM NEW.\u0022EffectiveEndDate\u0022 OR OLD.\u0022Discriminator\u0022 IS DISTINCT FROM NEW.\u0022Discriminator\u0022 OR OLD.\u0022Uri\u0022 IS DISTINCT FROM NEW.\u0022Uri\u0022) THEN\n            RETURN NEW;\n        END IF;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 THEN\n        WITH stamped AS (\n            SELECT \u0022DocumentId\u0022, \u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022\n            FROM \u0022dms\u0022.\u0022Document\u0022\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n        )\n        UPDATE \u0022dms\u0022.\u0022Descriptor\u0022 r\n        SET \u0022ContentVersion\u0022 = stamped.\u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022 = stamped.\u0022ContentLastModifiedAt\u0022\n        FROM stamped\n        WHERE r.\u0022DocumentId\u0022 = stamped.\u0022DocumentId\u0022;\n    ELSIF TG_OP = \u0027UPDATE\u0027 THEN\n        WITH stamped AS (\n            UPDATE \u0022dms\u0022.\u0022Document\u0022\n            SET \u0022ContentVersion\u0022 = nextval(\u0027\u0022dms\u0022.\u0022ChangeVersionSequence\u0022\u0027), \u0022ContentLastModifiedAt\u0022 = now()\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n            RETURNING \u0022DocumentId\u0022, \u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022\n        )\n        UPDATE \u0022dms\u0022.\u0022Descriptor\u0022 r\n        SET \u0022ContentVersion\u0022 = stamped.\u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022 = stamped.\u0022ContentLastModifiedAt\u0022\n        FROM stamped\n        WHERE r.\u0022DocumentId\u0022 = stamped.\u0022DocumentId\u0022;\n    ELSIF TG_OP = \u0027DELETE\u0027 THEN\n        UPDATE \u0022dms\u0022.\u0022Document\u0022\n        SET \u0022ContentVersion\u0022 = nextval(\u0027\u0022dms\u0022.\u0022ChangeVersionSequence\u0022\u0027), \u0022ContentLastModifiedAt\u0022 = now()\n        WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        INSERT INTO \u0022tracked_changes_edfi\u0022.\u0022Descriptor\u0022 (\n            \u0022Discriminator\u0022,\n            \u0022OldNamespace\u0022,\n            \u0022OldCodeValue\u0022,\n            \u0022Id\u0022,\n            \u0022ChangeVersion\u0022\n        )\n        SELECT\n            OLD.\u0022Discriminator\u0022,\n            OLD.\u0022Namespace\u0022,\n            OLD.\u0022CodeValue\u0022,\n            doc.\u0022DocumentUuid\u0022,\n            doc.\u0022ContentVersion\u0022\n        FROM \u0022dms\u0022.\u0022Document\u0022 doc\n        WHERE doc.\u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+    },
+    {
+      "schema_name": "dms",
+      "function_name": "TF_DocumentCache_ValidateDocumentUuid",
+      "return_type": "trigger",
+      "parameter_types": [],
+      "definition": "CREATE OR REPLACE FUNCTION dms.\u0022TF_DocumentCache_ValidateDocumentUuid\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    _canonical_document_uuid uuid;\nBEGIN\n    SELECT \u0022DocumentUuid\u0022 INTO _canonical_document_uuid\n    FROM \u0022dms\u0022.\u0022Document\u0022\n    WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022;\n\n    IF _canonical_document_uuid IS NOT NULL AND NEW.\u0022DocumentUuid\u0022 \u003C\u003E _canonical_document_uuid THEN\n        RAISE EXCEPTION \u0027dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row for DocumentId %\u0027, NEW.\u0022DocumentId\u0022;\n    END IF;\n\n    RETURN NEW;\nEND;\n$function$"
+    },
+    {
+      "schema_name": "dms",
+      "function_name": "TF_Document_EnqueueProjectionInsert",
+      "return_type": "trigger",
+      "parameter_types": [],
+      "definition": "CREATE OR REPLACE FUNCTION dms.\u0022TF_Document_EnqueueProjectionInsert\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO \u0027pg_catalog\u0027\nAS $function$\nDECLARE\n    _lifecycle_state text;\n    _enqueued_at timestamp with time zone;\nBEGIN\n    SELECT \u0022ProjectionLifecycleState\u0022 INTO _lifecycle_state\n    FROM \u0022dms\u0022.\u0022DocumentCacheState\u0022\n    WHERE \u0022StateId\u0022 = 1;\n\n    IF NOT FOUND THEN\n        RAISE EXCEPTION \u0027dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.\u0027;\n    END IF;\n\n    IF _lifecycle_state NOT IN (\u0027Disabled\u0027, \u0027Resetting\u0027, \u0027Rebuilding\u0027, \u0027Tracking\u0027) THEN\n        RAISE EXCEPTION \u0027dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.\u0027, _lifecycle_state;\n    END IF;\n\n    IF _lifecycle_state = \u0027Disabled\u0027 THEN\n        RETURN NULL;\n    END IF;\n\n    _enqueued_at := statement_timestamp();\n\n    INSERT INTO \u0022dms\u0022.\u0022DocumentProjectionWork\u0022 AS work (\n        \u0022DocumentId\u0022,\n        \u0022RequiredContentVersion\u0022,\n        \u0022FirstEnqueuedAt\u0022,\n        \u0022LastEnqueuedAt\u0022\n    )\n    SELECT \u0022DocumentId\u0022, \u0022ContentVersion\u0022, _enqueued_at, _enqueued_at\n    FROM new_rows\n    ON CONFLICT (\u0022DocumentId\u0022) DO UPDATE\n    SET \u0022RequiredContentVersion\u0022 = EXCLUDED.\u0022RequiredContentVersion\u0022,\n        \u0022LastEnqueuedAt\u0022 = EXCLUDED.\u0022LastEnqueuedAt\u0022\n    WHERE work.\u0022RequiredContentVersion\u0022 \u003C EXCLUDED.\u0022RequiredContentVersion\u0022;\n\n    RETURN NULL;\nEND;\n$function$"
+    },
+    {
+      "schema_name": "dms",
+      "function_name": "TF_Document_EnqueueProjectionUpdate",
+      "return_type": "trigger",
+      "parameter_types": [],
+      "definition": "CREATE OR REPLACE FUNCTION dms.\u0022TF_Document_EnqueueProjectionUpdate\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO \u0027pg_catalog\u0027\nAS $function$\nDECLARE\n    _lifecycle_state text;\n    _enqueued_at timestamp with time zone;\nBEGIN\n    SELECT \u0022ProjectionLifecycleState\u0022 INTO _lifecycle_state\n    FROM \u0022dms\u0022.\u0022DocumentCacheState\u0022\n    WHERE \u0022StateId\u0022 = 1;\n\n    IF NOT FOUND THEN\n        RAISE EXCEPTION \u0027dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.\u0027;\n    END IF;\n\n    IF _lifecycle_state NOT IN (\u0027Disabled\u0027, \u0027Resetting\u0027, \u0027Rebuilding\u0027, \u0027Tracking\u0027) THEN\n        RAISE EXCEPTION \u0027dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.\u0027, _lifecycle_state;\n    END IF;\n\n    IF _lifecycle_state = \u0027Disabled\u0027 THEN\n        RETURN NULL;\n    END IF;\n\n    _enqueued_at := statement_timestamp();\n\n    INSERT INTO \u0022dms\u0022.\u0022DocumentProjectionWork\u0022 AS work (\n        \u0022DocumentId\u0022,\n        \u0022RequiredContentVersion\u0022,\n        \u0022FirstEnqueuedAt\u0022,\n        \u0022LastEnqueuedAt\u0022\n    )\n    SELECT n.\u0022DocumentId\u0022, n.\u0022ContentVersion\u0022, _enqueued_at, _enqueued_at\n    FROM new_rows n\n    INNER JOIN old_rows o ON o.\u0022DocumentId\u0022 = n.\u0022DocumentId\u0022\n    WHERE n.\u0022ContentVersion\u0022 \u003C\u003E o.\u0022ContentVersion\u0022\n    ON CONFLICT (\u0022DocumentId\u0022) DO UPDATE\n    SET \u0022RequiredContentVersion\u0022 = EXCLUDED.\u0022RequiredContentVersion\u0022,\n        \u0022LastEnqueuedAt\u0022 = EXCLUDED.\u0022LastEnqueuedAt\u0022\n    WHERE work.\u0022RequiredContentVersion\u0022 \u003C EXCLUDED.\u0022RequiredContentVersion\u0022;\n\n    RETURN NULL;\nEND;\n$function$"
     },
     {
       "schema_name": "dms",

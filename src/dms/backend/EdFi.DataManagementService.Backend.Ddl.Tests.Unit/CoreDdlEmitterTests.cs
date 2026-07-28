@@ -2148,7 +2148,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect_Enqueue
         var triggerBody = ExtractEnqueueTrigger(_ddl);
 
         CountOccurrences(triggerBody, "WHERE [StateId] = 1;").Should().Be(1);
-        triggerBody.Should().Contain("DECLARE @lifecycleState varchar(16) COLLATE Latin1_General_100_BIN2;");
+        triggerBody.Should().Contain("DECLARE @lifecycleState varchar(16);");
         triggerBody.Should().Contain("SELECT @lifecycleState = [ProjectionLifecycleState]");
         triggerBody.Should().Contain("FROM [dms].[DocumentCacheState]");
         triggerBody.Should().Contain("IF @lifecycleState IS NULL");
@@ -2159,7 +2159,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect_Enqueue
             );
         triggerBody
             .Should()
-            .Contain("IF @lifecycleState NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')");
+            .Contain(
+                "IF @lifecycleState COLLATE Latin1_General_100_BIN2 NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')"
+            );
         triggerBody
             .Should()
             .Contain(
