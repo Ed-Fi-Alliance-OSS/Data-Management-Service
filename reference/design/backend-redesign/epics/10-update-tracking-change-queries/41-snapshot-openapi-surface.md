@@ -11,6 +11,8 @@ Restore the snapshot OpenAPI surface intentionally deferred from DMS v1.0.
 
 The contract has two halves in two different repositories. The `Use-Snapshot` parameter and the snapshot response components are authored in MetaEd and reach DMS only inside published ApiSchema packages; DMS then assembles and serves documents that must define every component they reference. This story owns the DMS half. It cannot be delivered by hand-editing OpenAPI in this repository, and it must not be implemented by changing backend authoritative fixture inputs that do not feed the served documents.
 
+Three served documents are package-authored: resources, descriptors, and the standalone Change Queries document. Profile documents are not. DMS derives each served profile document by filtering a clone of the assembled resource document through `ProfileOpenApiSpecificationFilter`, so there is no profile base document for MetaEd to author. Everything the profile documents must serve is therefore this story's responsibility, produced from upstream resource content rather than requested from upstream.
+
 This split follows the precedent in `20-openapi-change-query-surface.md` (DMS-1183), which separated the already-delivered MetaEd contract from the DMS continuation that consumed it.
 
 ## Upstream Prerequisite
@@ -18,14 +20,14 @@ This split follows the precedent in `20-openapi-change-query-surface.md` (DMS-11
 The following is MetaEd/ApiSchema work in the upstream repository, not DMS implementation work in this story. It is the input contract this story consumes.
 
 - MetaEd defines a reusable boolean `Use-Snapshot` header parameter with default `false`.
-- MetaEd references the parameter from resource, descriptor, and profile GET-many and GET-by-id operations, from resource and descriptor `/deletes` and `/keyChanges`, from the profile-shaped `/deletes` and `/keyChanges` operations that `20-openapi-change-query-surface.md` requires profile documents to preserve, and from `/changeQueries/v1/availableChangeVersions`.
+- MetaEd references the parameter from resource and descriptor GET-many and GET-by-id operations, from resource and descriptor `/deletes` and `/keyChanges`, and from `/changeQueries/v1/availableChangeVersions`. The profile-shaped operations that `20-openapi-change-query-surface.md` requires profile documents to preserve are not authored upstream; they inherit the parameter from the resource document through DMS profile filtering, and preserving it there is this story's work under § Served documents.
 - MetaEd documents Snapshot Not Found `404` on snapshot-eligible GET operations, and the snapshot-specific `405` with its exact ProblemDetails schema, `application/problem+json`, and `Allow: GET` response header on resource and descriptor `POST`, `PUT`, and `DELETE`.
-- MetaEd emits the reusable parameter and the snapshot response components into the `components` block of every independently served base document that references them: resources, descriptors, profiles, and the standalone `projectSchema.openApiBaseDocuments.changeQueries` document. The Change Queries document ships today with empty `parameters` and `responses` collections and no `$ref` of any kind, so it must be populated rather than assumed to inherit.
+- MetaEd emits the reusable parameter and the snapshot response components into the `components` block of every independently served base document that references them: resources, descriptors, and the standalone `projectSchema.openApiBaseDocuments.changeQueries` document. The Change Queries document ships today with empty `parameters` and `responses` collections and no `$ref` of any kind, so it must be populated rather than assumed to inherit. `openApiBaseDocuments` has no `profiles` key, so no profile components are requested upstream.
 - MetaEd advertises the header on GET-many as well as GET-by-id, deliberately diverging from the older ODS-derived fixture shape that advertises it only for by-id.
 
 ### Dependency mechanics
 
-- DMS consumes ApiSchema as NuGet packages pinned in `src/Directory.Packages.props` — `EdFi.DataStandard52.ApiSchema`, `EdFi.DataStandard52.TPDM.ApiSchema`, the Homograph and Sample variants, and the `EdFi.DataStandard61.*` equivalents. There is no in-repository source for the served OpenAPI documents.
+- DMS consumes ApiSchema as seven NuGet packages pinned in `src/Directory.Packages.props`: `EdFi.DataStandard52.ApiSchema`, `EdFi.DataStandard52.TPDM.ApiSchema`, `EdFi.DataStandard52.Homograph.ApiSchema`, `EdFi.DataStandard52.Sample.ApiSchema`, `EdFi.DataStandard61.ApiSchema`, `EdFi.DataStandard61.Homograph.ApiSchema`, and `EdFi.DataStandard61.Sample.ApiSchema`. Data Standard 6.1 folds TPDM into core, so there is no `EdFi.DataStandard61.TPDM.ApiSchema` package and none is expected; 6.1 is Core plus Sample plus Homograph. There is no in-repository source for the served OpenAPI documents.
 - This story is therefore blocked until the upstream change is merged and published, and its first DMS commit is the package version bump in `src/Directory.Packages.props` covering every ApiSchema package whose served documents gain snapshot artifacts.
 - The upstream change must be tracked as its own MetaEd ticket, created and linked before this story is scheduled. This story is not "done" on DMS-side assembly code alone; it is done when DMS serves the snapshot contract from published packages.
 - If the upstream ticket cannot be scheduled and published in the same release, this DMS story does not start. DMS assembly-and-reference-resolution work is not landed against a hand-authored or backend fixture ahead of the package bump. If preparatory DMS work is needed before publication, create a separate explicitly scoped story that identifies an upstream-produced prerelease ApiSchema artifact; that preparatory story cannot satisfy any served-surface acceptance criterion below.
@@ -37,7 +39,7 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
 
 - `src/Directory.Packages.props` is bumped to published ApiSchema package versions containing the snapshot OpenAPI contract, for every affected data-standard and extension package.
 - The bump does not change the effective-schema hash and requires no `apiSchemaVersion` bump. Existing DDL, plan, and mapping-set goldens are unchanged by it.
-- No served OpenAPI content is authored in this repository. The snapshot parameter and response components appear in served documents only because the packages supply them.
+- No served OpenAPI content is authored in this repository. The snapshot parameter and response components originate only in the packages; in the resource, descriptor, and Change Queries documents they are served as supplied, and in the profile documents they are carried through by DMS filtering of the resource document rather than authored here.
 - Backend authoritative fixture inputs used for DDL and plan compilation are not edited to affect served OpenAPI.
 
 ### Served documents
@@ -45,6 +47,8 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
 - Resource, descriptor, and profile GET-many and GET-by-id operations serve the `Use-Snapshot` parameter.
 - Resource and descriptor `/deletes` and `/keyChanges` operations serve the parameter.
 - Profile `/deletes` and `/keyChanges` operations serve the parameter and the Snapshot Not Found `404`, matching their unprofiled counterparts. `20-openapi-change-query-surface.md` requires profile documents to preserve those paths for readable profiled resources, and `29-snapshot-support.md` routes them through the same snapshot-eligible tracked-changes pipeline, so omitting them here would advertise a contract narrower than the runtime's.
+- `ProfileOpenApiSpecificationFilter` preserves the snapshot parameter and response `$ref`s on every profiled operation that survives filtering, and preserves the `components.parameters` and `components.responses` entries those references resolve to, so each served profile document remains self-resolving. This is delivered work rather than an assumed side effect: the filter removes component parameters that no surviving path references, so a profiled operation that loses its `Use-Snapshot` reference also loses the component, and a correct upstream package alone does not guarantee a correct profile document.
+- Profile filtering behaves identically for readable and writable profiles: readable profiled GET, `/deletes`, and `/keyChanges` operations keep the parameter and the `404`, and writable profiled `POST`, `PUT`, and `DELETE` operations keep the snapshot `405` with its `Allow: GET` header.
 - `/changeQueries/v1/availableChangeVersions` serves the parameter.
 - Snapshot-eligible GET operations serve Snapshot Not Found `404` with the exact runtime ProblemDetails contract from `40-snapshot-problem-details.md`.
 - Resource and descriptor `POST`, `PUT`, and `DELETE` operations serve the snapshot-specific `405`, its exact ProblemDetails schema, `application/problem+json`, and the `Allow: GET` response header.
@@ -60,12 +64,13 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
 - Tests resolve every local `$ref` within each independently served document and fail for missing sibling-only components. This check is written so it fails on the pre-bump packages, proving it detects the gap rather than passing vacuously.
 - Tests verify the parameter type/default, operation coverage, exact ProblemDetails metadata, response content type, and `Allow` header declaration.
 - Operation-coverage tests enumerate the profile document's `/deletes` and `/keyChanges` paths explicitly, so a profile document that preserves those paths without the snapshot parameter fails rather than passing on the unprofiled operations alone.
+- `ProfileOpenApiSpecificationFilter` tests prove the snapshot parameter and response references survive filtering on readable and writable profiled operations, including profile `/deletes` and `/keyChanges`, and that the `components.parameters` and `components.responses` entries they resolve to are retained rather than pruned as unreferenced. These run against the filter directly, so a regression is attributed to filtering rather than to the packages.
 - A test asserts the served snapshot response metadata matches the runtime contract in `40-snapshot-problem-details.md` exactly, so the two cannot drift independently.
 - Effective-schema hash and golden-stability coverage confirms the package bump is OpenAPI-only.
 
 ## Dependencies
 
-- An upstream MetaEd/ApiSchema ticket delivering the § Upstream Prerequisite contract, and published ApiSchema packages containing it. This is a hard, cross-repository dependency; see § Dependency mechanics.
+- An upstream MetaEd/ApiSchema ticket delivering the § Upstream Prerequisite contract for the resource, descriptor, and standalone Change Queries base documents, and published ApiSchema packages containing it. This is a hard, cross-repository dependency; see § Dependency mechanics. The profile-document work depends on it only for the resource content it filters, and is otherwise owned here.
 - The response definitions must remain identical to `40-snapshot-problem-details.md`.
 
 ## Out of Scope

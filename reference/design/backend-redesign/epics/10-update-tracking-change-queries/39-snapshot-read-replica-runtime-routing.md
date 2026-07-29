@@ -23,6 +23,7 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 - An undecryptable derivative logs an error identifying tenant, parent `DataStoreId`, and derivative type, and never the ciphertext, partial plaintext, encryption key, or any connection string. The log is distinguishable from the normal not-configured path, which is not an error.
 - An undecryptable primary connection string retains its existing behavior unchanged, which is tenant-wide: it is decrypted in the same projection, so it fails the entire tenant data-store load rather than only its own data store. Narrowing that to per-data-store isolation is out of scope for this story.
 - An unusable `Snapshot` is treated as though no snapshot were configured, so a snapshot-eligible read produces the missing-snapshot outcome rather than reading current data. An unusable `ReadReplica` is treated as though no replica were configured, and the request is served by the primary.
+- "Not configured" covers missing rows, null, empty, or whitespace connection strings, and undecryptable connection strings only. A connection string that decrypts to a non-blank but provider-invalid value is **not** in that set: DMS cannot recognize it as malformed without asking a provider, so it is selectable, is selected normally, and fails at the backend connection-acquisition boundary owned by `40-snapshot-problem-details.md`. A selected `Snapshot` in this state yields the unreachable-snapshot outcome rather than the missing-snapshot outcome, and a selected `ReadReplica` retains the normal database-availability contract and is not served from the primary. Neither falls back, matching the rule that a configured but failing derivative never falls back.
 - The primary and its derivatives refresh atomically through the existing per-tenant data-store cache. In-flight requests retain their selected target while later requests observe refreshed configuration.
 - `IDataStoreSelection` becomes a two-phase contract: the resolver records the parent data store, then the target-selection step records the effective target kind and connection string exactly once.
 - Reading the effective target before assignment and assigning it a second time are errors.
@@ -87,6 +88,7 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 - Configuration-provider tests cover deserialization, decryption, unknown types, null and blank connection strings, tenant cache isolation, and atomic refresh.
 - Configuration-provider tests cover undecryptable derivative connection strings for all three failure modes — invalid Base64, a payload at or below the IV length, and a valid payload encrypted under a different key — and prove the parent data store, its sibling derivatives, and other data stores in the same response still load.
 - A characterization test pins the unchanged primary behavior: an undecryptable primary fails the whole tenant data-store load, including sibling data stores in the same response.
+- Configuration-provider tests prove a derivative whose connection string decrypts to a non-blank but provider-invalid value is loaded as a configured derivative rather than dropped as not configured, so target selection reaches it and the failure surfaces at the acquisition boundary instead of being silently reinterpreted as an absent derivative.
 - Routing unit tests cover every row of both eligibility matrices, snapshot precedence, no-fallback behavior, boolean parsing, path precedence, and write-once target assignment.
 - Pipeline-composition tests assert the selection step's position in all eight pipelines, including that `CreateGetAvailableChangeVersionsPipeline` gains selection but gains no ApiSchema, endpoint, path, or resource-key step, and that `CreateGetTokenInfoPipeline` runs selection and resolves `Primary`.
 - Tests prove `/availableChangeVersions` honors `Use-Snapshot: true` against a configured snapshot and selects a configured read replica for a normal read, with fingerprint validation and the handler both running against the selected target.
@@ -109,6 +111,6 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 
 ## Out of Scope
 
-- The HTTP ProblemDetails factories and connection-open failure translation, owned by `40-snapshot-problem-details.md`.
+- The HTTP ProblemDetails factories and connection-acquisition failure translation, owned by `40-snapshot-problem-details.md`.
 - Served OpenAPI changes.
 - Database-engine-specific snapshot or read-replica lifecycle tooling.

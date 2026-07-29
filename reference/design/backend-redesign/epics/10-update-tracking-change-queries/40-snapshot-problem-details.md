@@ -9,7 +9,7 @@ jira_url: TBD
 
 Implement the deferred snapshot failure contract from DMS-1190.
 
-Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to the ODS-compatible missing-snapshot and mutation responses. Introduce a backend-neutral connection-unavailable exception at each read-path connection-open seam so an unreachable selected snapshot returns Snapshot Not Found without converting query, schema, authorization, or application defects into false `404` responses.
+Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to the ODS-compatible missing-snapshot and mutation responses. Introduce a backend-neutral connection-unavailable exception at each read-path connection-acquisition seam so an unreachable or provider-invalid selected snapshot returns Snapshot Not Found without converting query, schema, authorization, or application defects into false `404` responses.
 
 ## Acceptance Criteria
 
@@ -33,8 +33,9 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
 
 ### Connection failure classification
 
-- A backend-neutral `DatabaseConnectionUnavailableException` distinguishes failures raised while opening a database connection from failures raised after a connection is open.
-- The connection-open boundary is wrapped at all seven read-path seams:
+- A backend-neutral `DatabaseConnectionUnavailableException` distinguishes failures raised while **acquiring** a database connection from failures raised after a connection is open. Acquisition spans provider data-source and connection construction, connection-string parsing, and the open call.
+- The boundary covers construction and parsing rather than the open call alone. At every seam the provider parses the connection string on a statement that precedes the open — PostgreSQL while the pooled data source is built, SQL Server in the `SqlConnection` constructor — so a wrap around the open call alone would let a provider-invalid connection string escape as an unhandled provider argument failure at all seven seams.
+- The connection-acquisition boundary is wrapped at all seven read-path seams, each covering that seam's construction, parsing, and open:
   1. database fingerprint reader;
   2. PostgreSQL resource-key row reader;
   3. SQL Server resource-key row reader;
@@ -42,7 +43,8 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
   5. SQL Server relational command executor;
   6. PostgreSQL document hydrator;
   7. SQL Server document hydrator.
-- Catalog absence, authentication failure, DNS or network failure, timeout, and firewall rejection during connection open are classified as connection unavailable.
+- Catalog absence, authentication failure, DNS or network failure, timeout, and firewall rejection during connection acquisition are classified as connection unavailable.
+- A connection string that decrypts to a non-blank but provider-invalid value is also classified as connection unavailable, because the provider rejects it during construction or parsing. Per `39-snapshot-read-replica-runtime-routing.md` such a derivative is configured-but-unavailable rather than not configured, so a selected `Snapshot` returns Snapshot Not Found `404` and a selected `ReadReplica` retains the normal database-availability contract, neither falling back. An equivalently malformed primary connection string keeps its existing behavior.
 - Translation to Snapshot Not Found occurs only when the request-scoped target kind is `Snapshot`.
 - Read-replica connection failures retain the normal database-availability contract and never become Snapshot Not Found.
 - A reachable snapshot missing `dms.EffectiveSchema`, a malformed fingerprint, or an effective-schema mismatch retains the existing provisioning or compatibility `503`.
@@ -57,8 +59,9 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
 - An unknown resource with `Use-Snapshot: true` retains its existing `404` rather than returning the snapshot mutation `405`.
 - An invalid mutation route with `Use-Snapshot: true` — collection `DELETE`, collection `PUT`, and item `POST` — retains the route-semantics `405` body, content type, and lack of `Allow`, asserted field by field rather than by status code.
 - A route-valid resource or descriptor mutation with `Use-Snapshot: true` and an invalid or missing content type, malformed or invalid body, invalid profile, or document-validation failure returns the snapshot `405` rather than the later `415` or `400`; tests assert the exact ProblemDetails response and `Allow: GET` and prove no database connection is opened.
-- PostgreSQL and SQL Server tests cover snapshot-unavailable behavior at every applicable connection-open seam.
-- Document-hydrator tests include a request whose fingerprint and resource-key validations are already cached so hydration is the first failing connection open.
+- PostgreSQL and SQL Server tests cover snapshot-unavailable behavior at every applicable connection-acquisition seam.
+- PostgreSQL and SQL Server tests cover a decrypted, non-blank, provider-invalid derivative connection string at the acquisition boundary, proving the provider's construction-time rejection is classified rather than escaping as an unhandled argument failure: a selected `Snapshot` returns Snapshot Not Found `404` with no fallback, a selected `ReadReplica` returns the normal database-availability response and is not served from the primary, the verdict is not cached so a corrected CMS row recovers on the next request, and no log records the connection string.
+- Document-hydrator tests include a request whose fingerprint and resource-key validations are already cached so hydration is the first failing connection acquisition.
 - Tests prove a reachable but unprovisioned or fingerprint-incompatible snapshot returns the existing `503`.
 - Tests prove ordinary query, mapping, and authorization failures against a snapshot are not translated.
 - Tests prove read-replica connectivity failures retain the normal availability response.
