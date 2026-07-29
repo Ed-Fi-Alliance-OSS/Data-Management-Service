@@ -385,9 +385,10 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_phase_7_header()
+    public void It_should_emit_standalone_seed_data_header()
     {
-        _ddl.Should().Contain("Phase 7: Seed Data");
+        _ddl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _ddl.Should().NotContain("-- Phase ");
     }
 
     [Test]
@@ -577,9 +578,10 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_phase_7_header()
+    public void It_should_emit_standalone_seed_data_header()
     {
-        _ddl.Should().Contain("Phase 7: Seed Data");
+        _ddl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _ddl.Should().NotContain("-- Phase ");
     }
 
     [Test]
@@ -851,15 +853,17 @@ public class Given_SeedDmlEmitter_With_Empty_ResourceKeys
     }
 
     [Test]
-    public void It_should_still_emit_phase_7_header_for_pgsql()
+    public void It_should_still_emit_standalone_seed_data_header_for_pgsql()
     {
-        _pgsqlDdl.Should().Contain("Phase 7: Seed Data");
+        _pgsqlDdl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _pgsqlDdl.Should().NotContain("-- Phase ");
     }
 
     [Test]
-    public void It_should_still_emit_phase_7_header_for_mssql()
+    public void It_should_still_emit_standalone_seed_data_header_for_mssql()
     {
-        _mssqlDdl.Should().Contain("Phase 7: Seed Data");
+        _mssqlDdl.Should().Contain("-- Seed Data (insert-if-missing + validation)");
+        _mssqlDdl.Should().NotContain("-- Phase ");
     }
 
     [Test]
@@ -1002,9 +1006,9 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_not_contain_phase_7_header()
+    public void It_should_not_contain_a_combined_phase_header()
     {
-        _sql.Should().NotContain("Phase 7");
+        _sql.Should().NotContain("-- Phase ");
     }
 
     [Test]
@@ -1081,9 +1085,9 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_not_contain_phase_7_header()
+    public void It_should_not_contain_a_combined_phase_header()
     {
-        _sql.Should().NotContain("Phase 7");
+        _sql.Should().NotContain("-- Phase ");
     }
 
     [Test]

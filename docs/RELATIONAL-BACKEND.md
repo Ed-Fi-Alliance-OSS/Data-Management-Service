@@ -201,14 +201,13 @@ The generated DDL ([`SeedDmlEmitter.cs`](../src/dms/backend/EdFi.DataManagementS
 assembled by [`FullDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/FullDdlEmitter.cs))
 protects the database in two places:
 
-- **Preflight** (search the script for the full `-- Phase 0: Preflight (fail fast on schema hash mismatch)` header). Before any DDL runs,
+- **Preflight** (search the script for the full `-- Phase 0: Bounded Provisioning Guards` header). Before any DDL runs,
   if `dms.EffectiveSchema` already exists with a *different* hash, the script raises an error and
   aborts. You cannot accidentally re-provision an existing database for a different effective schema.
   The same phase performs only the bounded DocumentCache safety checks described above; it
   is not a full schema-drift validator.
-- **Seed insert-if-missing + validate** (search for the full `-- Phase 7: Seed Data (insert-if-missing
-  + validation)` header — the bare "Phase 7" number is reused by other emitters for unrelated
-  sections, so match on the label text). The fingerprint row is inserted only if absent
+- **Seed insert-if-missing + validate** (search for the full `-- Phase 10: Seed Data (insert-if-missing
+  + validation)` header). The fingerprint row is inserted only if absent
   (`ON CONFLICT DO NOTHING` / `IF NOT EXISTS`), then the stored `ApiSchemaFormatVersion`,
   `ResourceKeyCount`, and `ResourceKeySeedHash` are validated against the expected values and
   the script fails on any mismatch.

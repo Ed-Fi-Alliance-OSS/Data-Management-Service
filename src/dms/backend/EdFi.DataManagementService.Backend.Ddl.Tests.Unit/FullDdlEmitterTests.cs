@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -133,5 +134,34 @@ public class Given_FullDdlEmitter_With_Bounded_Preflight_Guards(SqlDialect diale
         singletonGuard.Should().BeGreaterThan(hashGuard);
         legacyGuard.Should().BeGreaterThan(singletonGuard);
         firstMutation.Should().BeGreaterThan(legacyGuard);
+    }
+
+    [Test]
+    public void It_should_emit_unique_full_ddl_phase_numbers_in_order()
+    {
+        var phaseNumbers = Regex
+            .Matches(_sql, "^-- Phase (?<phase>[0-9]+):", RegexOptions.Multiline)
+            .Select(match => int.Parse(match.Groups["phase"].Value))
+            .ToList();
+
+        phaseNumbers.Should().NotBeEmpty();
+        phaseNumbers.Should().OnlyHaveUniqueItems();
+        phaseNumbers.Should().BeInAscendingOrder();
+    }
+
+    [Test]
+    public void It_should_emit_seed_initialization_as_the_final_full_ddl_phase()
+    {
+        var seedPhase = _sql.IndexOf(
+            "Phase 10: Seed Data (insert-if-missing + validation)",
+            StringComparison.Ordinal
+        );
+        var priorDdlPhase =
+            dialect == SqlDialect.Pgsql
+                ? _sql.IndexOf("Phase 9: Security and Grants", StringComparison.Ordinal)
+                : _sql.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
+
+        priorDdlPhase.Should().BeGreaterOrEqualTo(0);
+        seedPhase.Should().BeGreaterThan(priorDdlPhase);
     }
 }

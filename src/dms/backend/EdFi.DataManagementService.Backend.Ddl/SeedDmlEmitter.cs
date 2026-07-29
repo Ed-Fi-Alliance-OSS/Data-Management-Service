@@ -36,6 +36,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
+    private const string SeedDataHeader = "Seed Data (insert-if-missing + validation)";
+
     private const string ZeroUuid = "00000000-0000-0000-0000-000000000000";
 
     /// <summary>
@@ -61,8 +63,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     /// <summary>
-    /// Emits only the bounded create-only provisioning guard SQL (Phase 0), without
-    /// the Phase 7 seed DML. Used by <see cref="FullDdlEmitter"/> to place preflight
+    /// Emits only the bounded create-only provisioning guard SQL, without
+    /// seed DML. Used by <see cref="FullDdlEmitter"/> to place preflight
     /// validation before core DDL.
     /// </summary>
     public string EmitPreflightOnly(string effectiveSchemaHash)
@@ -78,7 +80,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Generates the seed DML script (Phase 7) for the configured dialect.
+    /// Generates the standalone seed DML script for the configured dialect.
     /// </summary>
     /// <param name="effectiveSchema">
     /// The effective schema info providing resource keys, schema components,
@@ -89,6 +91,19 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     /// (insert-if-missing + validation).
     /// </returns>
     public string Emit(EffectiveSchemaInfo effectiveSchema)
+    {
+        return Emit(effectiveSchema, fullDdlPhaseNumber: null);
+    }
+
+    /// <summary>
+    /// Generates the seed DML script with a combined full-DDL phase label.
+    /// </summary>
+    internal string EmitForFullDdl(EffectiveSchemaInfo effectiveSchema)
+    {
+        return Emit(effectiveSchema, fullDdlPhaseNumber: 10);
+    }
+
+    private string Emit(EffectiveSchemaInfo effectiveSchema, int? fullDdlPhaseNumber)
     {
         ArgumentNullException.ThrowIfNull(effectiveSchema);
 
@@ -106,7 +121,14 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         var writer = new SqlWriter(_dialect);
 
-        writer.WritePhaseHeader(7, "Seed Data (insert-if-missing + validation)");
+        if (fullDdlPhaseNumber is int phaseNumber)
+        {
+            writer.WritePhaseHeader(phaseNumber, SeedDataHeader);
+        }
+        else
+        {
+            writer.WriteSectionHeader(SeedDataHeader);
+        }
 
         EmitDataStoreIdentityInsert(writer);
         EmitDocumentCacheStateInsert(writer);

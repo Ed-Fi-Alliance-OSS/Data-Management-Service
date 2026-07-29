@@ -31,7 +31,7 @@ public static class FullDdlEmitter
         );
         string coreDdl = new CoreDdlEmitter(dialect, sharedDescriptorTrackedChangeTable).Emit();
         string relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
-        string seedDml = seedEmitter.Emit(modelSet.EffectiveSchema);
+        string seedDml = seedEmitter.EmitForFullDdl(modelSet.EffectiveSchema);
         return JoinSegments(preflightDdl, coreDdl, relationalDdl, seedDml);
     }
 

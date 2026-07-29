@@ -1588,7 +1588,7 @@ FOR EACH STATEMENT
 EXECUTE FUNCTION "rootext"."TF_TR_ParentResourceExtensionRootExtChildren_Stamp_del"();
 
 -- ==========================================================
--- Phase 7: Seed Data (insert-if-missing + validation)
+-- Phase 10: Seed Data (insert-if-missing + validation)
 -- ==========================================================
 
 -- DataStoreIdentity singleton insert-if-missing

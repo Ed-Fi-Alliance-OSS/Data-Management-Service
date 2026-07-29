@@ -1289,7 +1289,7 @@ FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Student_Stamp"();
 
 -- ==========================================================
--- Phase 7: Seed Data (insert-if-missing + validation)
+-- Phase 10: Seed Data (insert-if-missing + validation)
 -- ==========================================================
 
 -- DataStoreIdentity singleton insert-if-missing
