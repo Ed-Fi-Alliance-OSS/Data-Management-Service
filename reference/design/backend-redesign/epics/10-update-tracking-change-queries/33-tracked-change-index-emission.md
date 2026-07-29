@@ -89,3 +89,4 @@ The ceiling values and their rationale live in the protocol section and are not 
 Review-derived notes recorded at spike approval; this ticket's tasking adopts each into acceptance criteria or rejects it with recorded rationale. These are input, not acceptance criteria.
 
 - Cross the shared-descriptor matrix cells with both descriptor authorization shapes on both providers: `NoFurtherAuthorizationRequired` (no row-level predicate) and `NamespaceBased` (adds the `OldNamespace` residual), across the five window shapes and both page and count statements.
+- Pin the authorization strategy for every endpoint cell, and cover each of the three people strategies' distinct `/deletes` anti-join and `/keyChanges` CTE envelopes across the PrimaryAssociation resources, not a single unspecified people strategy.
