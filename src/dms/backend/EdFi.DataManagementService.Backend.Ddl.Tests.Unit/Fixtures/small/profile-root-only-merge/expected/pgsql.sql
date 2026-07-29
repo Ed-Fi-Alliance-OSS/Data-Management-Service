@@ -764,6 +764,7 @@ BEGIN
     RETURN NULL;
 END;
 $func$;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
 
 CREATE OR REPLACE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"()
 RETURNS TRIGGER
@@ -811,6 +812,7 @@ BEGIN
     RETURN NULL;
 END;
 $func$;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() TO SESSION_USER;
 GRANT EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() TO SESSION_USER;

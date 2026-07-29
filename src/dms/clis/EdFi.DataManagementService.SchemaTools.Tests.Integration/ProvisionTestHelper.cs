@@ -567,7 +567,11 @@ internal static partial class ProvisionTestHelper
         string sqlFilePath
     )
     {
-        return CliTestHelper.RunProcess("sqlcmd", BuildSqlcmdArguments(connectionString, sqlFilePath));
+        return CliTestHelper.RunProcess(
+            "sqlcmd",
+            BuildSqlcmdArguments(connectionString, sqlFilePath),
+            BuildSqlcmdEnvironmentVariables(connectionString)
+        );
     }
 
     internal static string[] BuildSqlcmdArguments(string connectionString, string sqlFilePath)
@@ -596,8 +600,6 @@ internal static partial class ProvisionTestHelper
         {
             args.Add("-U");
             args.Add(builder.UserID);
-            args.Add("-P");
-            args.Add(builder.Password);
         }
 
         if (builder.TrustServerCertificate)
@@ -606,5 +608,12 @@ internal static partial class ProvisionTestHelper
         }
 
         return [.. args];
+    }
+
+    internal static Dictionary<string, string> BuildSqlcmdEnvironmentVariables(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+
+        return builder.IntegratedSecurity ? [] : new() { ["SQLCMDPASSWORD"] = builder.Password };
     }
 }

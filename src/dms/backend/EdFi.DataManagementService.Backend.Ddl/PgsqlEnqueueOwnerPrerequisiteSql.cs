@@ -15,12 +15,16 @@ public static class PgsqlEnqueueOwnerPrerequisiteSql
 {
     public const string RoleName = "edfi_dms_enqueue_owner";
     public const string DirectMembershipOptions = "SET TRUE, INHERIT FALSE, ADMIN FALSE";
+    public const string LockedDownRoleOptions =
+        "NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS";
 
     public const string CreateRoleCapabilityDiagnostic =
         "PostgreSQL provisioning principal must be SUPERUSER or CREATEROLE to create edfi_dms_enqueue_owner before provisioning.";
 
     public const string LockedDownRoleDiagnostic =
-        "PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before provisioning.";
+        "PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as "
+        + LockedDownRoleOptions
+        + ". Drop or repair the role before provisioning.";
 
     public const string OutgoingMembershipPreflightDiagnostic =
         "PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before provisioning.";
@@ -29,10 +33,14 @@ public static class PgsqlEnqueueOwnerPrerequisiteSql
         "PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships.";
 
     public const string UnsafeDirectMembershipDiagnostic =
-        "PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.";
+        "PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are "
+        + DirectMembershipOptions
+        + ".";
 
     public const string MissingRequiredDirectMembershipDiagnostic =
-        "PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.";
+        "PostgreSQL provisioning principal must have direct "
+        + DirectMembershipOptions
+        + " membership in existing edfi_dms_enqueue_owner before provisioning.";
 
     /// <summary>
     /// Gets the read-only provider prerequisite query used by <c>ddl provision</c>.
@@ -134,6 +142,130 @@ public static class PgsqlEnqueueOwnerPrerequisiteSql
         writer.AppendLine("AND membership.set_option");
     }
 
+    internal static void EmitStandalonePreflightDoBlock(SqlWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        writer.AppendLine("-- Preflight: validate PostgreSQL enqueue-owner prerequisites");
+        writer.AppendLine("DO $$");
+        writer.AppendLine("DECLARE");
+        using (writer.Indent())
+        {
+            EmitOwnerRoleDeclaration(writer);
+            EmitSessionRoleAttributeDeclarations(writer);
+            writer.AppendLine("_has_required_direct_membership boolean;");
+        }
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            EmitLoadSessionRoleAttributes(writer);
+            writer.AppendLine();
+            writer.AppendLine("IF _owner_role IS NULL THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "IF NOT COALESCE(_session_is_superuser OR _session_can_create_role, false) THEN"
+                );
+                using (writer.Indent())
+                {
+                    EmitRaiseException(writer, CreateRoleCapabilityDiagnostic);
+                }
+                writer.AppendLine("END IF;");
+                writer.AppendLine("RETURN;");
+            }
+            writer.AppendLine("END IF;");
+            writer.AppendLine();
+            EmitStandaloneLockedDownOwnerRoleValidation(writer);
+            writer.AppendLine();
+            EmitOutgoingPrivilegeBearingMembershipValidation(writer, OutgoingMembershipPreflightDiagnostic);
+            writer.AppendLine();
+            EmitUnsafeDirectMembershipValidation(writer);
+            writer.AppendLine();
+            writer.AppendLine("_has_required_direct_membership := EXISTS (");
+            using (writer.Indent())
+            {
+                EmitRequiredDirectMembershipSelect(writer, "_owner_role", "_session_role");
+            }
+            writer.AppendLine(");");
+            writer.AppendLine();
+            writer.AppendLine("IF NOT COALESCE(_session_is_superuser, false)");
+            writer.AppendLine("AND NOT _has_required_direct_membership THEN");
+            using (writer.Indent())
+            {
+                EmitRaiseException(writer, MissingRequiredDirectMembershipDiagnostic);
+            }
+            writer.AppendLine("END IF;");
+        }
+        writer.AppendLine("END $$;");
+        writer.AppendLine();
+    }
+
+    internal static void EmitEnsureOwnerRoleAndMembershipDoBlock(SqlWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        var ownerRole = writer.Dialect.QuoteIdentifier(RoleName);
+
+        writer.AppendLine("DO $$");
+        writer.AppendLine("DECLARE");
+        using (writer.Indent())
+        {
+            EmitOwnerRoleDeclaration(writer);
+            EmitSessionRoleAttributeDeclarations(writer);
+            writer.AppendLine("_created_owner_role boolean := false;");
+        }
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            EmitLoadSessionRoleAttributes(writer);
+            writer.AppendLine();
+            writer.AppendLine("IF _owner_role IS NULL THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "IF NOT COALESCE(_session_is_superuser OR _session_can_create_role, false) THEN"
+                );
+                using (writer.Indent())
+                {
+                    EmitRaiseException(writer, CreateRoleCapabilityDiagnostic);
+                }
+                writer.AppendLine("END IF;");
+                writer.AppendLine($"CREATE ROLE {ownerRole} WITH {LockedDownRoleOptions};");
+                EmitOwnerRoleAssignment(writer);
+                writer.AppendLine("_created_owner_role := true;");
+            }
+            writer.AppendLine("END IF;");
+            writer.AppendLine();
+            EmitMutableLockedDownOwnerRoleValidation(writer);
+            writer.AppendLine();
+            EmitOutgoingPrivilegeBearingMembershipValidation(writer, OutgoingMembershipSecurityDiagnostic);
+            writer.AppendLine();
+            EmitUnsafeDirectMembershipValidation(writer);
+            writer.AppendLine();
+            writer.AppendLine("IF NOT EXISTS (");
+            using (writer.Indent())
+            {
+                EmitRequiredDirectMembershipSelect(writer, "_owner_role", "_session_role");
+            }
+            writer.AppendLine(") THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "IF NOT COALESCE(_session_is_superuser OR (_created_owner_role AND _session_can_create_role), false) THEN"
+                );
+                using (writer.Indent())
+                {
+                    EmitRaiseException(writer, MissingRequiredDirectMembershipDiagnostic);
+                }
+                writer.AppendLine("END IF;");
+                writer.AppendLine($"GRANT {ownerRole} TO SESSION_USER WITH {DirectMembershipOptions};");
+            }
+            writer.AppendLine("END IF;");
+        }
+        writer.AppendLine("END $$;");
+        writer.AppendLine();
+    }
+
     private static void EmitProviderPrerequisiteSql(SqlWriter writer)
     {
         writer.AppendLine("WITH owner_role AS (");
@@ -198,5 +330,101 @@ public static class PgsqlEnqueueOwnerPrerequisiteSql
             EmitRequiredDirectMembershipSelect(writer, "owner_role.oid", "session_role.oid");
         }
         writer.AppendLine(")");
+    }
+
+    private static void EmitOwnerRoleDeclaration(SqlWriter writer)
+    {
+        writer.AppendLine($"_owner_role oid := pg_catalog.to_regrole('{RoleName}');");
+    }
+
+    private static void EmitOwnerRoleAssignment(SqlWriter writer)
+    {
+        writer.AppendLine($"_owner_role := pg_catalog.to_regrole('{RoleName}');");
+    }
+
+    private static void EmitSessionRoleAttributeDeclarations(SqlWriter writer)
+    {
+        writer.AppendLine("_session_role oid;");
+        writer.AppendLine("_session_is_superuser boolean;");
+        writer.AppendLine("_session_can_create_role boolean;");
+    }
+
+    private static void EmitLoadSessionRoleAttributes(SqlWriter writer)
+    {
+        writer.AppendLine("SELECT oid, rolsuper, rolcreaterole");
+        writer.AppendLine("INTO _session_role, _session_is_superuser, _session_can_create_role");
+        writer.AppendLine("FROM pg_catalog.pg_roles");
+        writer.AppendLine("WHERE rolname = SESSION_USER;");
+    }
+
+    private static void EmitStandaloneLockedDownOwnerRoleValidation(SqlWriter writer)
+    {
+        writer.AppendLine("IF EXISTS (");
+        using (writer.Indent())
+        {
+            writer.AppendLine("SELECT 1");
+            writer.AppendLine("FROM pg_catalog.pg_roles owner_role");
+            writer.AppendLine("WHERE owner_role.oid = _owner_role");
+            writer.AppendLine($"AND ({UnsafeRoleAttributePredicate("owner_role")})");
+        }
+        writer.AppendLine(") THEN");
+        using (writer.Indent())
+        {
+            EmitRaiseException(writer, LockedDownRoleDiagnostic);
+        }
+        writer.AppendLine("END IF;");
+    }
+
+    private static void EmitMutableLockedDownOwnerRoleValidation(SqlWriter writer)
+    {
+        writer.AppendLine(
+            "IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles owner_role WHERE owner_role.oid = _owner_role"
+        );
+        writer.AppendLine($"AND ({UnsafeRoleAttributePredicate("owner_role")})) THEN");
+        using (writer.Indent())
+        {
+            EmitRaiseException(writer, LockedDownRoleDiagnostic);
+        }
+        writer.AppendLine("END IF;");
+    }
+
+    private static void EmitOutgoingPrivilegeBearingMembershipValidation(SqlWriter writer, string diagnostic)
+    {
+        writer.AppendLine("IF EXISTS (");
+        using (writer.Indent())
+        {
+            EmitOutgoingPrivilegeBearingMembershipSelect(writer, "_owner_role");
+        }
+        writer.AppendLine(") THEN");
+        using (writer.Indent())
+        {
+            EmitRaiseException(writer, diagnostic);
+        }
+        writer.AppendLine("END IF;");
+    }
+
+    private static void EmitUnsafeDirectMembershipValidation(SqlWriter writer)
+    {
+        writer.AppendLine("IF EXISTS (");
+        using (writer.Indent())
+        {
+            EmitUnsafeDirectMembershipSelect(
+                writer,
+                "_owner_role",
+                "_session_role",
+                "COALESCE(_session_can_create_role, false)"
+            );
+        }
+        writer.AppendLine(") THEN");
+        using (writer.Indent())
+        {
+            EmitRaiseException(writer, UnsafeDirectMembershipDiagnostic);
+        }
+        writer.AppendLine("END IF;");
+    }
+
+    private static void EmitRaiseException(SqlWriter writer, string diagnostic)
+    {
+        writer.AppendLine($"RAISE EXCEPTION '{diagnostic}';");
     }
 }

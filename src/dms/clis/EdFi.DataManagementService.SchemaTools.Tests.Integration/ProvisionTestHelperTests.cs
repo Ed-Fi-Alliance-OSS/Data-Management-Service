@@ -31,9 +31,21 @@ public class Given_ProvisionTestHelper_When_Building_Sqlcmd_Arguments
                 "-i",
                 "/tmp/mssql.sql"
             );
-        args.Should().ContainInOrder("-U", "sa", "-P", "Secret1!");
+        args.Should().ContainInOrder("-U", "sa");
+        args.Should().NotContain("-P");
+        args.Should().NotContain("Secret1!");
         args.Should().Contain("-C");
         args.Should().NotContain("-E");
+    }
+
+    [Test]
+    public void It_uses_sqlcmdpassword_environment_variable_for_sql_authentication()
+    {
+        var env = ProvisionTestHelper.BuildSqlcmdEnvironmentVariables(
+            "Server=localhost,14333;Initial Catalog=dms_test;User Id=sa;Password=Secret1!;TrustServerCertificate=true"
+        );
+
+        env.Should().ContainKey("SQLCMDPASSWORD").WhoseValue.Should().Be("Secret1!");
     }
 
     [Test]
@@ -47,5 +59,15 @@ public class Given_ProvisionTestHelper_When_Building_Sqlcmd_Arguments
         args.Should().Contain("-E");
         args.Should().NotContain("-U");
         args.Should().NotContain("-P");
+    }
+
+    [Test]
+    public void It_uses_no_sqlcmdpassword_environment_variable_for_trusted_authentication()
+    {
+        var env = ProvisionTestHelper.BuildSqlcmdEnvironmentVariables(
+            "Server=.;Database=dms_test;Integrated Security=true"
+        );
+
+        env.Should().NotContainKey("SQLCMDPASSWORD");
     }
 }

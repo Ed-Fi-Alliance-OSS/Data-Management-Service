@@ -9,8 +9,8 @@
     },
     {
       "dialect": "pgsql",
-      "normalized_sql_sha256": "4d1c5e267d7a4b4b0df7d81f96d4d0721b4dc1e4f92aadd388ca73b061acd89d",
-      "statement_count": 8669
+      "normalized_sql_sha256": "49f4a813001d4c9221f4e0acf3d72504fa87cd8c53bce69035c70d5a0ed63dda",
+      "statement_count": 8671
     }
   ]
 }

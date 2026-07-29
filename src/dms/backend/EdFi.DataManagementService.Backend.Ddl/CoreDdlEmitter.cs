@@ -1339,6 +1339,7 @@ public sealed class CoreDdlEmitter
         }
         writer.AppendLine("END;");
         writer.AppendLine("$func$;");
+        writer.AppendLine($"REVOKE EXECUTE ON FUNCTION {functionName}() FROM PUBLIC;");
         writer.AppendLine();
     }
 
@@ -1953,129 +1954,7 @@ public sealed class CoreDdlEmitter
         var insertFunctionName = PgsqlDmsFunctionName(DocumentEnqueueProjectionInsertFunctionName);
         var updateFunctionName = PgsqlDmsFunctionName(DocumentEnqueueProjectionUpdateFunctionName);
 
-        writer.AppendLine("DO $$");
-        writer.AppendLine("DECLARE");
-        using (writer.Indent())
-        {
-            writer.AppendLine(
-                $"_owner_role oid := pg_catalog.to_regrole('{PgsqlEnqueueOwnerPrerequisiteSql.RoleName}');"
-            );
-            writer.AppendLine("_session_role oid;");
-            writer.AppendLine("_session_is_superuser boolean;");
-            writer.AppendLine("_session_can_create_role boolean;");
-            writer.AppendLine("_created_owner_role boolean := false;");
-        }
-        writer.AppendLine("BEGIN");
-        using (writer.Indent())
-        {
-            writer.AppendLine("SELECT oid, rolsuper, rolcreaterole");
-            writer.AppendLine("INTO _session_role, _session_is_superuser, _session_can_create_role");
-            writer.AppendLine("FROM pg_catalog.pg_roles");
-            writer.AppendLine("WHERE rolname = SESSION_USER;");
-            writer.AppendLine();
-            writer.AppendLine("IF _owner_role IS NULL THEN");
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    "IF NOT COALESCE(_session_is_superuser OR _session_can_create_role, false) THEN"
-                );
-                using (writer.Indent())
-                {
-                    writer.AppendLine(
-                        $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.CreateRoleCapabilityDiagnostic}';"
-                    );
-                }
-                writer.AppendLine("END IF;");
-                writer.AppendLine(
-                    $"CREATE ROLE {ownerRole} WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
-                );
-                writer.AppendLine(
-                    $"_owner_role := pg_catalog.to_regrole('{PgsqlEnqueueOwnerPrerequisiteSql.RoleName}');"
-                );
-                writer.AppendLine("_created_owner_role := true;");
-            }
-            writer.AppendLine("END IF;");
-            writer.AppendLine();
-            writer.AppendLine(
-                "IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles owner_role WHERE owner_role.oid = _owner_role"
-            );
-            writer.AppendLine(
-                $"AND ({PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role")})) THEN"
-            );
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.LockedDownRoleDiagnostic}';"
-                );
-            }
-            writer.AppendLine("END IF;");
-            writer.AppendLine();
-            writer.AppendLine("IF EXISTS (");
-            using (writer.Indent())
-            {
-                PgsqlEnqueueOwnerPrerequisiteSql.EmitOutgoingPrivilegeBearingMembershipSelect(
-                    writer,
-                    "_owner_role"
-                );
-            }
-            writer.AppendLine(") THEN");
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipSecurityDiagnostic}';"
-                );
-            }
-            writer.AppendLine("END IF;");
-            writer.AppendLine();
-            writer.AppendLine("IF EXISTS (");
-            using (writer.Indent())
-            {
-                PgsqlEnqueueOwnerPrerequisiteSql.EmitUnsafeDirectMembershipSelect(
-                    writer,
-                    "_owner_role",
-                    "_session_role",
-                    "COALESCE(_session_can_create_role, false)"
-                );
-            }
-            writer.AppendLine(") THEN");
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.UnsafeDirectMembershipDiagnostic}';"
-                );
-            }
-            writer.AppendLine("END IF;");
-            writer.AppendLine();
-            writer.AppendLine("IF NOT EXISTS (");
-            using (writer.Indent())
-            {
-                PgsqlEnqueueOwnerPrerequisiteSql.EmitRequiredDirectMembershipSelect(
-                    writer,
-                    "_owner_role",
-                    "_session_role"
-                );
-            }
-            writer.AppendLine(") THEN");
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    "IF NOT COALESCE(_session_is_superuser OR (_created_owner_role AND _session_can_create_role), false) THEN"
-                );
-                using (writer.Indent())
-                {
-                    writer.AppendLine(
-                        $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.MissingRequiredDirectMembershipDiagnostic}';"
-                    );
-                }
-                writer.AppendLine("END IF;");
-                writer.AppendLine(
-                    $"GRANT {ownerRole} TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;"
-                );
-            }
-            writer.AppendLine("END IF;");
-        }
-        writer.AppendLine("END $$;");
-        writer.AppendLine();
+        PgsqlEnqueueOwnerPrerequisiteSql.EmitEnsureOwnerRoleAndMembershipDoBlock(writer);
 
         writer.AppendLine("DO $$");
         writer.AppendLine("DECLARE");

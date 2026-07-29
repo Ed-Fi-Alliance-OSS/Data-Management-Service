@@ -1135,6 +1135,35 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
         _ddl.Should().NotContain("WITH ADMIN OPTION");
         _ddl.Should().NotContain("pg_catalog.pg_has_role");
 
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionCreateIndex = _ddl.IndexOf(
+                $"CREATE OR REPLACE FUNCTION \"dms\".\"{functionName}\"()",
+                StringComparison.Ordinal
+            );
+            functionCreateIndex.Should().BeGreaterOrEqualTo(0);
+
+            var immediatePublicRevokeIndex = _ddl.IndexOf(
+                $"REVOKE EXECUTE ON FUNCTION \"dms\".\"{functionName}\"() FROM PUBLIC;",
+                functionCreateIndex,
+                StringComparison.Ordinal
+            );
+            var temporarySessionGrantIndex = _ddl.IndexOf(
+                $"GRANT EXECUTE ON FUNCTION \"dms\".\"{functionName}\"() TO SESSION_USER;",
+                StringComparison.Ordinal
+            );
+
+            temporarySessionGrantIndex.Should().BeGreaterOrEqualTo(0);
+            immediatePublicRevokeIndex.Should().BeGreaterThan(functionCreateIndex);
+            immediatePublicRevokeIndex.Should().BeLessThan(temporarySessionGrantIndex);
+        }
+
         _ddl.Should()
             .Contain(
                 "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() OWNER TO \"edfi_dms_enqueue_owner\""
