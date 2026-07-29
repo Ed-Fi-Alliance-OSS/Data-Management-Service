@@ -5,7 +5,6 @@
 
 using System.Data.Common;
 using System.Text.RegularExpressions;
-using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
@@ -568,27 +567,44 @@ internal static partial class ProvisionTestHelper
         string sqlFilePath
     )
     {
-        try
+        return CliTestHelper.RunProcess("sqlcmd", BuildSqlcmdArguments(connectionString, sqlFilePath));
+    }
+
+    internal static string[] BuildSqlcmdArguments(string connectionString, string sqlFilePath)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+
+        List<string> args =
+        [
+            "-S",
+            builder.DataSource,
+            "-d",
+            builder.InitialCatalog,
+            "-b",
+            "-I",
+            "-r",
+            "1",
+            "-i",
+            sqlFilePath,
+        ];
+
+        if (builder.IntegratedSecurity)
         {
-            var sql = File.ReadAllText(sqlFilePath);
-            var batches = MssqlDatabaseProvisioner.SplitOnGoBatchSeparator(sql).ToList();
-
-            using var connection = new SqlConnection(connectionString);
-            connection.Open();
-
-            for (int i = 0; i < batches.Count; i++)
-            {
-                using var command = connection.CreateCommand();
-                command.CommandText = batches[i];
-                command.CommandTimeout = 300;
-                command.ExecuteNonQuery();
-            }
-
-            return (0, $"Executed {batches.Count} SQL Server batches.", string.Empty);
+            args.Add("-E");
         }
-        catch (Exception ex)
+        else
         {
-            return (1, string.Empty, ex.ToString());
+            args.Add("-U");
+            args.Add(builder.UserID);
+            args.Add("-P");
+            args.Add(builder.Password);
         }
+
+        if (builder.TrustServerCertificate)
+        {
+            args.Add("-C");
+        }
+
+        return [.. args];
     }
 }
