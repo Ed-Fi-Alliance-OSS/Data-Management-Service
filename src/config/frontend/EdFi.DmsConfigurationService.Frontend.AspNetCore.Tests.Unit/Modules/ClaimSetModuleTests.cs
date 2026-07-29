@@ -89,7 +89,7 @@ public class ClaimSetModuleTests
                     ])
                 );
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<int>.Ignored))
                 .Returns(
                     new ClaimSetGetResult.Success(
                         new ClaimSetResponse
@@ -114,13 +114,13 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
                 .Returns(new ClaimSetUpdateResult.Success());
 
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.Success());
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
                 .Returns(new ClaimSetCopyResult.Success(1));
 
-            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.Export(A<int>.Ignored))
                 .Returns(
                     new ClaimSetExportResult.Success(
                         new ClaimSetExportResponse()
@@ -750,16 +750,16 @@ public class ClaimSetModuleTests
         [SetUp]
         public void Setup()
         {
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureNotFound());
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
                 .Returns(new ClaimSetUpdateResult.FailureNotFound());
 
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.FailureNotFound());
 
-            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.Export(A<int>.Ignored))
                 .Returns(new ClaimSetExportResult.FailureNotFound());
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
@@ -860,19 +860,19 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
                 .Returns(new ClaimSetQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
                 .Returns(new ClaimSetUpdateResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
                 .Returns(new ClaimSetCopyResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.Export(A<int>.Ignored))
                 .Returns(new ClaimSetExportResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
@@ -1347,7 +1347,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_conflict_when_multi_user_conflict_occurs_on_claim_set_delete()
         {
             // Arrange
-            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<int>.Ignored))
                 .Returns(new ClaimSetDeleteResult.FailureMultiUserConflict());
 
             // Act

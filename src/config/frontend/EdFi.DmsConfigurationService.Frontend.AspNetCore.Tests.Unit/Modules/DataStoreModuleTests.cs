@@ -117,7 +117,7 @@ public class DataStoreModuleTests
                     ])
                 );
 
-            A.CallTo(() => _dataStoreRepository.GetDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.GetDataStore(A<int>._))
                 .Returns(
                     new DataStoreGetResult.Success(
                         new DataStoreResponse
@@ -143,10 +143,10 @@ public class DataStoreModuleTests
             A.CallTo(() => _dataStoreRepository.UpdateDataStore(A<DataStoreUpdateCommand>._))
                 .Returns(new DataStoreUpdateResult.Success());
 
-            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<int>._))
                 .Returns(new DataStoreDeleteResult.Success());
 
-            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<long>._, A<PagingQuery>._))
+            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<int>._, A<PagingQuery>._))
                 .Returns(
                     new ApplicationByDataStoreQueryResult.Success([
                         new ApplicationResponse
@@ -346,16 +346,16 @@ public class DataStoreModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _dataStoreRepository.GetDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.GetDataStore(A<int>._))
                 .Returns(new DataStoreGetResult.FailureNotFound());
 
             A.CallTo(() => _dataStoreRepository.UpdateDataStore(A<DataStoreUpdateCommand>._))
                 .Returns(new DataStoreUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<long>._))
+            A.CallTo(() => _dataStoreRepository.DeleteDataStore(A<int>._))
                 .Returns(new DataStoreDeleteResult.FailureNotExists());
 
-            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<long>._, A<PagingQuery>._))
+            A.CallTo(() => _dataStoreRepository.QueryApplicationByDataStore(A<int>._, A<PagingQuery>._))
                 .Returns(new ApplicationByDataStoreQueryResult.FailureNotExists());
         }
 

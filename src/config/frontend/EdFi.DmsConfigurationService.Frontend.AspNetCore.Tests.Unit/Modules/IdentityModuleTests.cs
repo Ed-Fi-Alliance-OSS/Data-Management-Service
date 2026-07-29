@@ -48,7 +48,7 @@ public class RegisterEndpointTests
                     A<string>.Ignored,
                     A<string>.Ignored,
                     A<string>.Ignored,
-                    A<long[]?>.Ignored
+                    A<int[]?>.Ignored
                 )
             )
             .Returns(new ClientCreateResult.Success(Guid.NewGuid()));

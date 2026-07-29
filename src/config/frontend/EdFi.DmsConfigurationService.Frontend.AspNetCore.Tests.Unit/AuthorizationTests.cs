@@ -109,7 +109,7 @@ public class AuthorizationTests
                     ])
                 );
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse()
@@ -126,7 +126,7 @@ public class AuthorizationTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.Success(new List<Guid>()));
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.Success());
         }
 
@@ -206,7 +206,7 @@ public class AuthorizationTests
                     ])
                 );
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse()
