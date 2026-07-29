@@ -70,18 +70,27 @@ Both CMS engines add:
 
 Both constraints must be named so repository exception handling can filter on the constraint name, matching how the existing foreign-key handling identifies `FK_DataStoreDerivative_DataStore`. The existing foreign key and cascade-delete behavior remain unchanged.
 
-The two engines must agree on the case semantics of `DerivativeType`, which they will not do by default. The CMS SQL Server deploy scripts specify no collation and contain no existing check constraint, so the column inherits the case-insensitive server default, under which a naive `IN` check would accept `SNAPSHOT` or `readreplica`. PostgreSQL comparison is case-sensitive by default, so the same naive check would reject those values there while the unique constraint would also fail to treat `Snapshot` and `SNAPSHOT` as the same derivative type. The check constraint must therefore state its case semantics explicitly in both engines so that exactly the values `Snapshot` and `ReadReplica` are accepted and case variants are rejected identically. The CMS API validator is already ordinal and case-sensitive, so this aligns the database with the API rather than changing the accepted contract.
+The two engines must agree on the comparison semantics of `DerivativeType`, which they will not do by default, and case is only one of the two ways they disagree. The column is `NVARCHAR(50)` on SQL Server and `VARCHAR(50)` on PostgreSQL, and neither deploy script specifies a collation or any existing check constraint.
+
+- **Case.** The SQL Server column inherits the case-insensitive server default, under which a naive `IN` check would accept `SNAPSHOT` or `readreplica`. PostgreSQL comparison is case-sensitive by default, so the same naive check would reject those values there while the unique constraint would also fail to treat `Snapshot` and `SNAPSHOT` as the same derivative type.
+- **Trailing whitespace.** A case-sensitive collation alone does not make SQL Server equality exact. SQL Server applies SQL-92 string-padding semantics to `=` and `IN` on variable-length string types, padding the shorter operand, so `Snapshot ` compares equal to `Snapshot` and a naive `IN` check accepts it regardless of collation. PostgreSQL `varchar` comparison is exact and rejects the same value. `LIKE` and `DATALENGTH` are not padding-insensitive and are the available tools for an exact SQL Server comparison; `LEN` is not, because it ignores trailing spaces. See [string comparison and assignment](https://learn.microsoft.com/en-us/sql/t-sql/language-elements/string-comparison-assignment).
+
+The check constraint must therefore require ordinal equality *including length* in both engines, so that exactly the values `Snapshot` and `ReadReplica` are accepted and case and whitespace variants are rejected identically. The CMS API validator is already ordinal and case-sensitive, so this aligns the database with the API rather than changing the accepted contract.
+
+The same requirement applies to the preflight, for the same reason and with a worse outcome if omitted. A `NOT IN` preflight scan on SQL Server would not report `Snapshot ` as an invalid type, a padding-insensitive check constraint would then accept the row, and the upgrade would complete successfully while leaving a value the DMS runtime does not recognize. Because DMS matches derivative types ordinally, that row is ignored with an error log: the operator has a `Snapshot` derivative registered in CMS that never routes, the upgrade reported no problem, and nothing identifies the whitespace as the cause. Whitespace variants must therefore be detected and reported alongside case variants, using a padding-exact comparison in the preflight itself.
 
 The upgrade uses a hard-stop preflight rather than warn-and-defer, because deferring the constraints would leave runtime selection ambiguous. The preflight runs before either constraint is added and fails the upgrade if it finds a problem:
 
 - duplicate `(DataStoreId, DerivativeType)` rows, reported as the offending `(DataStoreId, DerivativeType, Id)` tuples;
-- rows whose `DerivativeType` is not exactly `Snapshot` or `ReadReplica`, reported as the offending `(Id, DataStoreId, DerivativeType)` tuples, including case variants that a case-insensitive collation would otherwise hide.
+- rows whose `DerivativeType` is not exactly `Snapshot` or `ReadReplica`, reported as the offending `(Id, DataStoreId, DerivativeType)` tuples, including the case variants that a case-insensitive collation would otherwise hide and the whitespace variants that SQL Server's string padding would otherwise hide.
 
 Remediation is documented for both: correct an invalid type through `PUT /v3/dataStoreDerivatives/{id}`, or remove the unwanted or unrecoverable row through `DELETE /v3/dataStoreDerivatives/{id}`, then retry the upgrade. The migration never deletes a derivative, rewrites a type, or selects a row by order.
 
 Both conditions are reachable today because the column has never had a unique constraint or a value constraint and rows can be written outside the API, so neither preflight check is hypothetical. Reporting invalid types is what keeps the promised actionable diagnostics: without it, a legacy value would surface only as a bare check-constraint failure during deployment.
 
-Conflict handling is new work in both backends, not a mapping adjustment: the insert and update result types have no duplicate case today, and the endpoint module maps anything other than success or a foreign-key violation to an unknown-error response. Explicit conflict result variants and their frontend mappings must be added for both insert and update, in both engines, and `DerivativeType` and `DataStoreId` remain updatable so the constraint is reachable from update as well as insert.
+Conflict handling is new work in both backends, not a mapping adjustment: the insert and update result types have no duplicate case today, and neither the insert nor the update switch in the endpoint module has a duplicate-result arm, so a newly added duplicate result would fall through to the unknown-error response until it is explicitly mapped. Explicit conflict result variants must be added for both insert and update, in both engines, along with frontend mappings to the conflict response CMS already uses elsewhere — `FailureResponse.ForConflict` with HTTP `409`. `DerivativeType` and `DataStoreId` remain updatable so the constraint is reachable from update as well as insert.
+
+The repository result and the HTTP mapping are two separate changes, and repository-level integration tests can prove the first while the second still falls through to the unknown-error response. Coverage must therefore assert the `409` at the frontend for both insert and update, not only the conflict result in the backend.
 
 A missing derivative row and a row with a null, empty, or whitespace connection string have the same runtime meaning: that derivative is not configured. This preserves the existing nullable CMS contract. Connection-string encryption, tenant scoping, and auditing remain unchanged. DMS continues to ignore an unrecognized `DerivativeType` with an error log as defense in depth, even though the check constraint prevents new invalid values.
 
@@ -93,7 +102,7 @@ The primary connection and its derivatives are one cached configuration unit:
 
 - they refresh atomically on the existing per-tenant data-store cache schedule;
 - an in-flight request keeps the target it selected at request start;
-- a later request observes a derivative update or removal after the normal cache refresh;
+- a later request observes a derivative update or removal after the normal cache refresh, so a multi-request extraction is only as stable as the derivative configuration behind it. Extraction-wide stability is an operator obligation, specified under § Extraction-window stability;
 - unknown derivative types are ignored with an error log so one bad CMS row does not prevent all data stores from loading.
 
 Derivative targets require different validation- and pool-cache semantics from the primary. These are stated as required behavior; the cache implementation is left to the implementation ticket.
@@ -253,13 +262,36 @@ Operators are responsible for:
 - using credentials with read-only permissions;
 - registering or updating the derivative connection string in CMS;
 - allowing for the configured DMS data-store cache interval before beginning extraction;
+- holding the derivative configuration and the snapshot database itself unchanged while an extraction reads from them, as specified under § Extraction-window stability;
 - removing or replacing the CMS derivative when the database is retired.
 
 This matches ODS ownership, avoids granting the DMS runtime database-creation privileges, and avoids pretending that SQL Server snapshots and PostgreSQL backup/restore or replication have one portable lifecycle.
 
-Reusing one connection string across successive snapshots is supported. Because derivative validation results are time-bounded rather than cached for the process lifetime, a snapshot recreated at the same connection string becomes usable again after the bounded cache interval without restarting DMS. Operators who instead give each snapshot a distinct name should still remove the retired derivative configuration, so obsolete pooled connections can be released.
+Reusing one connection string across successive snapshots is supported between extraction windows, not during one. Because derivative validation results are time-bounded rather than cached for the process lifetime, a snapshot recreated at the same connection string becomes usable again after the bounded cache interval without restarting DMS. Within an extraction window that same reuse is a hazard rather than a convenience, because the unchanged connection string leaves DMS nothing to detect; § Extraction-window stability constrains when the recreation may happen. Operators who instead give each snapshot a distinct name should still remove the retired derivative configuration, so obsolete pooled connections can be released.
 
 A read replica may be eventually consistent. DMS does not measure replica lag or guarantee that `/availableChangeVersions` on a read replica has caught up with the primary. Operators that require a fixed extraction boundary should request a prepared `Snapshot` rather than rely on `ReadReplica`.
+
+### Extraction-window stability
+
+DMS binds the effective target once per request, not once per extraction, and it has no extraction, session, or cursor identity to bind to instead: Publisher issues many independent HTTP requests and nothing in the Ed-Fi API contract correlates them into one unit of work. The snapshot isolation guarantee therefore depends on the operator holding the `Snapshot` derivative fixed for the duration of an extraction:
+
+- do not replace or re-point a data store's `Snapshot` derivative in CMS while an extraction against it is in progress;
+- do not recreate the underlying snapshot database at an existing derivative connection string while an extraction against it is in progress;
+- do not remove the derivative row, and do not drop or make the snapshot database unreachable, until the extractions that read from it have finished.
+
+The three cases do not fail the same way, and only the first two are silent:
+
+| Operator action | Detection | Extraction outcome |
+| --- | --- | --- |
+| The CMS derivative row is re-pointed to a different connection string | Not detected | Requests issued after the data-store configuration cache refreshes succeed against the replacement image |
+| The snapshot database is recreated at the unchanged derivative connection string | Not detectable at all | Requests succeed against the replacement image once a later connection reaches it; the configuration cache is not involved, because the configuration never changed |
+| The derivative row is removed, or the snapshot database is dropped or made unreachable | Detected | The extraction is interrupted with Snapshot Not Found `404` and no fallback |
+
+The first two rows are the hazard this section exists for: the extraction completes normally while its pages come from two different points in time, and the pages already returned are not re-read. Nothing in the response distinguishes that outcome from a correctly isolated extraction. The same-connection-string case is the worse of the two, because it is invisible not only to routing but to every cache keyed by connection string, so DMS has no signal to act on even in principle.
+
+The third row is not silent and is not an isolation defect — it is the documented missing-snapshot and unreachable-snapshot contract from § Snapshot ProblemDetails, reached mid-extraction. It still loses the extraction, so it belongs in the same operator constraint.
+
+Because DMS cannot prevent any of the three, the operator workflow and the release notes must state the constraint and distinguish these outcomes.
 
 ## OpenAPI Surface
 
@@ -292,7 +324,8 @@ Interoperability validation must prove that a Publisher extraction can use DMS w
 
 - Publisher's `Use-Snapshot: true` source requests are served only from the configured snapshot;
 - a write committed to the primary after snapshot creation does not appear during that extraction;
-- live GET-many, GET-by-id, `/deletes`, `/keyChanges`, and `/availableChangeVersions` all use the same snapshot target within one extraction, which follows from Publisher setting the header on the source client's default headers rather than on a single probe;
+- live GET-many, GET-by-id, `/deletes`, `/keyChanges`, and `/availableChangeVersions` all carry `Use-Snapshot: true` within one extraction, which follows from Publisher setting the header on the source client's default headers rather than on a single probe. Those requests resolve to the same snapshot database only while the derivative configuration and the underlying snapshot are unchanged: the default header proves every request asks for the snapshot, not that the snapshot is the same database on every request;
+- the operator constraint from § Extraction-window stability is documented, distinguishing its two silent outcomes — a re-pointed derivative row, and a database recreated at the unchanged connection string — from removal or unreachability, which instead interrupts the extraction with the `404` covered below;
 - a mutation carrying `Use-Snapshot: true` returns the snapshot `405` with `Allow: GET`;
 - no configured snapshot produces the expected `404`;
 - retiring or making the configured snapshot unreachable produces the same `404`;
@@ -304,7 +337,8 @@ Validation records the API and Publisher versions used so future changes to Publ
 
 Implementation coverage should include:
 
-- CMS PostgreSQL and SQL Server integration tests for the unique and check constraints, the new insert and update conflict responses, preflight diagnostics for both duplicate rows and invalid derivative types, rejection of case variants such as `SNAPSHOT` in both engines, tenant isolation, and derivative inclusion in data-store responses.
+- CMS PostgreSQL and SQL Server integration tests for the unique and check constraints, the new insert and update conflict repository results, preflight diagnostics for both duplicate rows and invalid derivative types, rejection of case variants such as `SNAPSHOT` and whitespace variants such as `Snapshot ` in both engines, tenant isolation, and derivative inclusion in data-store responses.
+- CMS frontend unit or E2E coverage asserting that both the insert duplicate and the update duplicate return HTTP `409`. The integration tests above prove the repository conflict result, not the response mapping.
 - DMS configuration-provider unit tests for derivative deserialization, decryption, unknown types, null and blank connection strings, tenant caches, and cache refresh.
 - Core routing unit tests for every row in both eligibility matrices, snapshot precedence over read replica, absence of fallback, header parsing, response precedence, and rejection of a second effective-target assignment within one request.
 - Frontend or E2E coverage for blank and multi-valued `Use-Snapshot` headers, which core cannot observe because the frontend normalizes them.
@@ -327,6 +361,8 @@ This changes the post-v1.0 behavior of an existing header:
 
 Release notes must call out that operators using API Publisher either configure a snapshot or continue to opt out explicitly with `--ignoreIsolation=true`.
 
+Release notes must also call out that a snapshot must not be replaced, re-pointed, removed, or recreated at the same connection string while an extraction is reading from it, because DMS selects the target per request. Re-pointing the derivative row or recreating the database at the unchanged connection string silently moves later pages to the replacement image; removal or unreachability instead interrupts the extraction with Snapshot Not Found `404`.
+
 Release notes must also call out that read-replica routing becomes active for any valid `ReadReplica` rows already stored in CMS, and that a read replica may be eventually consistent. Creating a derivative row is itself the configuration action that enables routing, matching ODS, so this is the activation of previously inert configuration rather than an implicit default. Operators should verify or remove stale derivative configuration before upgrading.
 
 No database document or Change Query DDL changes are required in the DMS data store. Snapshot databases must already contain the same generated DDL as their primary because they are copies of a provisioned primary.
@@ -341,6 +377,7 @@ No database document or Change Query DDL changes are required in the DMS data st
 - **Translating every `DbException` raised under a snapshot target to Snapshot Not Found.** Rejected because it would convert ordinary query, mapping, and provisioning defects into a misleading `404`. DMS preserves the ODS client contract through a structural connection-open boundary instead.
 - **Caching derivative validation results for the process lifetime, as the primary does.** Rejected because a snapshot is recreated between extraction windows, so a latched failure would require a service restart to clear.
 - **Open a transaction with snapshot isolation for each request.** Rejected because Publisher extraction spans many HTTP requests and needs one stable database image across all of them.
+- **Pin the snapshot binding to an extraction, so a mid-extraction replacement cannot move later pages.** Rejected because neither the Ed-Fi API contract nor Publisher supplies an extraction, session, or cursor identity for DMS to bind to. DMS would have to invent that identity, decide when to expire it, and keep a superseded snapshot's connection alive for an unbounded period, which conflicts with the bounded derivative caches and with an operator's ability to retire a snapshot at all. The isolation guarantee is preserved instead by the explicit operator obligation in § Extraction-window stability.
 - **Route derivatives as independent data stores.** Rejected because authorization, tenant, and route context belong to the parent and duplicating them can create isolation gaps.
 
 ## Resolved Decisions
@@ -354,6 +391,7 @@ Reviewed and resolved during this spike:
 5. **The CMS uniqueness migration hard-stops on duplicates,** reports the offending rows, and documents deletion through the derivative endpoint as remediation.
 6. **Path validation precedes snapshot policy,** so an unknown resource still returns its existing `400` or `404`; the mutation `405` is still emitted before any database connection is opened.
 7. **The OpenAPI surface is re-added, not normalized,** including a reusable `Use-Snapshot` parameter applied to GET-many as well as GET-by-id, and a new snapshot-specific `405` ProblemDetails factory.
+8. **Extraction-wide snapshot stability is an operator obligation, not a DMS binding.** Target selection stays per request because DMS has no extraction identity to pin to. Operators must not replace, re-point, remove, or recreate a `Snapshot` derivative while an extraction against it is in progress. Re-pointing and same-connection-string recreation are silent, and the latter is undetectable by DMS even in principle; removal and unreachability surface as the existing Snapshot Not Found `404`. The obligation and the distinction between those outcomes are stated in the design, the operator workflow, and the release notes.
 
 ## Follow-on Ticket Plan
 
@@ -361,7 +399,7 @@ Create and link the following implementation tickets only after this proposal is
 
 | Story | Area | Scope |
 | --- | --- | --- |
-| `38-cms-data-store-derivative-invariants.md` | CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and the explicitly case-sensitive `DerivativeType` check constraint for PostgreSQL and SQL Server, add the preflight for duplicate rows and invalid derivative types with its diagnostics, add insert and update conflict result variants and frontend mappings, and cover upgrade behavior and CMS tests. |
+| `38-cms-data-store-derivative-invariants.md` | CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and a `DerivativeType` check constraint requiring ordinal equality including length for PostgreSQL and SQL Server, add the padding-exact preflight for duplicate rows and invalid derivative types with its diagnostics, add insert and update conflict result variants plus their frontend `409` mappings and frontend-level coverage, and cover upgrade behavior and CMS tests. |
 | `39-snapshot-read-replica-runtime-routing.md` | DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the bounded derivative validation caches and pooled-data-source eviction, and cover both relational backends. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
 | `40-snapshot-problem-details.md` | Snapshot ProblemDetails | Add the snapshot `405` factory and `Allow: GET`, emit the missing-snapshot `404` from the existing not-found factory, add the backend-neutral connection-unavailable exception at all seven enumerated read-path connection-open seams including both document hydrators, keep provisioning and query defects on their existing contracts, and log safely. |
 | `41-snapshot-openapi-surface.md` | OpenAPI surface | Re-add MetaEd/ApiSchema snapshot components and apply them to resource, descriptor, profile, and Change Query operations, defining the referenced components in every independently served document including the standalone Change Queries document; add DMS document-assembly and reference-resolution tests. Does not touch the backend authoritative fixture inputs. |

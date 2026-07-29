@@ -16,7 +16,8 @@ The validation must distinguish primary and snapshot data, exercise every Publis
 - The validation records the DMS, Ed-Fi API, and API Publisher versions and all required configuration so the result is reproducible.
 - With a configured snapshot, Publisher runs without `--ignoreIsolation=true` and its `Use-Snapshot: true` source requests are served only from that snapshot.
 - A write committed to the primary after snapshot creation does not appear during the Publisher extraction.
-- GET-many, GET-by-id, `/deletes`, `/keyChanges`, and `/availableChangeVersions` all use the same snapshot target within one extraction.
+- GET-many, GET-by-id, `/deletes`, `/keyChanges`, and `/availableChangeVersions` all use the same snapshot target within one extraction, given that the derivative configuration and the underlying snapshot are held unchanged for the extraction's duration.
+- The operator workflow states that a `Snapshot` derivative must not be replaced, re-pointed, removed, or recreated at the same connection string while an extraction is reading from it, and distinguishes the outcomes: re-pointing the derivative row silently serves later pages from the replacement image once the configuration cache refreshes; recreating the database at the unchanged connection string does the same once a later connection reaches it, with no configuration change to detect; removing the row or making the database unreachable instead interrupts the extraction with Snapshot Not Found `404`.
 - A resource or descriptor mutation carrying `Use-Snapshot: true` returns the snapshot `405` ProblemDetails and `Allow: GET`.
 - No configured snapshot returns the expected Snapshot Not Found `404`.
 - Retiring or making the configured snapshot unreachable returns the same Snapshot Not Found `404`.
@@ -27,6 +28,7 @@ The validation must distinguish primary and snapshot data, exercise every Publis
 - The workflow explains that read replicas may be eventually consistent and that operators requiring a fixed extraction boundary should use a prepared snapshot.
 - Release notes call out that `Use-Snapshot: true` changes from ignored in DMS v1.0 to selecting a configured snapshot or returning `404`.
 - Release notes explain that Publisher operators must configure a snapshot or continue to opt out explicitly with `--ignoreIsolation=true`.
+- Release notes warn that a `Snapshot` derivative must not be replaced, re-pointed, removed, or recreated at the same connection string while an extraction is reading from it, and state that DMS selects the target per request, so re-pointing the row or recreating the database at the unchanged connection string silently serves later pages from the replacement image, while removal or unreachability instead interrupts the extraction with Snapshot Not Found `404`.
 - Release notes call out that valid existing CMS `ReadReplica` rows become active routing configuration, and advise operators to verify or remove stale derivative configuration before upgrading.
 - The validation is included in an appropriate automated suite or has a documented repeatable command, expected results, and troubleshooting guidance suitable for release validation.
 
