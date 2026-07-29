@@ -1108,25 +1108,32 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
             .Contain(
                 "CREATE ROLE \"edfi_dms_enqueue_owner\" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
             );
-        _ddl.Should()
-            .Contain(
-                "ALTER ROLE \"edfi_dms_enqueue_owner\" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
-            );
-        _ddl.Should().Contain("WHERE membership.member = 'edfi_dms_enqueue_owner'::pg_catalog.regrole");
+        _ddl.Should().Contain("WHERE membership.member = _owner_role");
         _ddl.Should()
             .Contain("AND (membership.admin_option OR membership.inherit_option OR membership.set_option)");
+        _ddl.Should().Contain("AND NOT membership.admin_option");
+        _ddl.Should().Contain("AND NOT membership.inherit_option");
+        _ddl.Should().Contain("AND membership.set_option");
+        _ddl.Should().Contain("IF NOT EXISTS (");
         _ddl.Should()
             .Contain(
                 "GRANT \"edfi_dms_enqueue_owner\" TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;"
             );
+        _ddl.Should().Contain("GRANT CREATE ON SCHEMA \"dms\" TO \"edfi_dms_enqueue_owner\"");
+        _ddl.Should().Contain("REVOKE CREATE ON SCHEMA \"dms\" FROM \"edfi_dms_enqueue_owner\"");
+        _ddl.Should().Contain("SET ROLE \"edfi_dms_enqueue_owner\"");
+        _ddl.Should().Contain("RESET ROLE;");
+        _ddl.Should().NotContain("ALTER ROLE \"edfi_dms_enqueue_owner\"");
+        _ddl.Should().NotContain("WITH ADMIN OPTION");
+        _ddl.Should().NotContain("pg_catalog.pg_has_role");
 
         _ddl.Should()
             .Contain(
-                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() OWNER TO \"edfi_dms_enqueue_owner\";"
+                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() OWNER TO \"edfi_dms_enqueue_owner\""
             );
         _ddl.Should()
             .Contain(
-                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() OWNER TO \"edfi_dms_enqueue_owner\";"
+                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() OWNER TO \"edfi_dms_enqueue_owner\""
             );
         _ddl.Should()
             .Contain(

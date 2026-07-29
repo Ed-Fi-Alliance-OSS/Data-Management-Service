@@ -603,6 +603,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("_session_role oid;");
             writer.AppendLine("_session_is_superuser boolean;");
             writer.AppendLine("_session_can_create_role boolean;");
+            writer.AppendLine("_has_required_direct_membership boolean;");
         }
         writer.AppendLine("BEGIN");
         using (writer.Indent())
@@ -687,14 +688,25 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             }
             writer.AppendLine("END IF;");
             writer.AppendLine();
+            writer.AppendLine("_has_required_direct_membership := EXISTS (");
+            using (writer.Indent())
+            {
+                writer.AppendLine("SELECT 1");
+                writer.AppendLine("FROM pg_catalog.pg_auth_members membership");
+                writer.AppendLine("WHERE membership.roleid = _owner_role");
+                writer.AppendLine("AND membership.member = _session_role");
+                writer.AppendLine("AND NOT membership.admin_option");
+                writer.AppendLine("AND NOT membership.inherit_option");
+                writer.AppendLine("AND membership.set_option");
+            }
+            writer.AppendLine(");");
+            writer.AppendLine();
             writer.AppendLine("IF NOT COALESCE(_session_is_superuser, false)");
-            writer.AppendLine(
-                "AND NOT pg_catalog.pg_has_role(SESSION_USER, _owner_role, 'MEMBER WITH ADMIN OPTION') THEN"
-            );
+            writer.AppendLine("AND NOT _has_required_direct_membership THEN");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'PostgreSQL provisioning principal must be SUPERUSER or hold ADMIN membership in edfi_dms_enqueue_owner to refresh existing enqueue-owner role.';"
+                    "RAISE EXCEPTION 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.';"
                 );
             }
             writer.AppendLine("END IF;");

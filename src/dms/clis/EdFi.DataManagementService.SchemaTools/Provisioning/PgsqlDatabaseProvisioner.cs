@@ -99,11 +99,19 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
             AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
         )
         UNION ALL
-        SELECT 'PostgreSQL provisioning principal must be SUPERUSER or hold ADMIN membership in edfi_dms_enqueue_owner to refresh existing enqueue-owner role.'
+        SELECT 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.'
         FROM owner_role, session_role
         WHERE owner_role.oid IS NOT NULL
         AND NOT session_role.rolsuper
-        AND NOT pg_catalog.pg_has_role(SESSION_USER, owner_role.oid, 'MEMBER WITH ADMIN OPTION')
+        AND NOT EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_auth_members membership
+            WHERE membership.roleid = owner_role.oid
+            AND membership.member = session_role.oid
+            AND NOT membership.admin_option
+            AND NOT membership.inherit_option
+            AND membership.set_option
+        )
         """,
         ResourceKeySelectSql: @"SELECT ""ResourceKeyId"", ""ProjectName"", ""ResourceName"", ""ResourceVersion"" FROM dms.""ResourceKey"" ORDER BY ""ResourceKeyId""",
         SchemaComponentSelectSql: @"SELECT ""ProjectEndpointName"", ""ProjectName"", ""ProjectVersion"", ""IsExtensionProject"" FROM dms.""SchemaComponent"" WHERE ""EffectiveSchemaHash"" = @hash ORDER BY ""ProjectEndpointName""",

@@ -343,7 +343,11 @@ public class DatabaseProvisionerTests
             _dialect.ProviderPrerequisiteSql.Should().Contain("edfi_dms_enqueue_owner");
             _dialect.ProviderPrerequisiteSql.Should().Contain("pg_catalog.pg_auth_members");
             _dialect.ProviderPrerequisiteSql.Should().Contain("SET TRUE, INHERIT FALSE, ADMIN FALSE");
-            _dialect.ProviderPrerequisiteSql.Should().Contain("MEMBER WITH ADMIN OPTION");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("AND NOT membership.admin_option");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("AND NOT membership.inherit_option");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("AND membership.set_option");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("WITH ADMIN OPTION");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("pg_catalog.pg_has_role");
             _dialect.ProviderPrerequisiteSql.Should().NotContain("CREATE ROLE");
             _dialect.ProviderPrerequisiteSql.Should().NotContain("ALTER ROLE");
             _dialect.ProviderPrerequisiteSql.Should().NotContain("GRANT");

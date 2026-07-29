@@ -155,6 +155,11 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
                         'dms',
                         'USAGE'
                     )
+                    AND NOT pg_catalog.has_schema_privilege(
+                        'edfi_dms_enqueue_owner',
+                        'dms',
+                        'CREATE'
+                    )
                     AND pg_catalog.has_table_privilege(
                         'edfi_dms_enqueue_owner',
                         '"dms"."DocumentCacheState"',
@@ -329,6 +334,151 @@ public class Given_Provisioning_Rerun_On_Same_Database
     public void It_preserves_document_cache_mutable_rows_on_second_run()
     {
         _afterRerun.Should().Be(_beforeRerun);
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_Postgresql_Provisioning_Rerun_As_Direct_Enqueue_Owner_Member
+{
+    private string _databaseName = null!;
+    private string _roleName = null!;
+    private const string Password = "Dms_Rerun_1!";
+    private int _firstExitCode;
+    private int _secondExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        _roleName = $"dms_rerun_{Guid.NewGuid():N}"[..30];
+
+        try
+        {
+            ExecuteAdminCommand(
+                $"""CREATE ROLE "{_roleName}" LOGIN PASSWORD '{Password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;"""
+            );
+            ExecuteAdminCommand(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'edfi_dms_enqueue_owner') THEN
+                        CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+                    END IF;
+
+                    ALTER ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+                END $$;
+                """
+            );
+            ExecuteAdminCommand(
+                $"""GRANT "edfi_dms_enqueue_owner" TO "{_roleName}" WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;"""
+            );
+            ExecuteAdminCommand($"""CREATE DATABASE "{_databaseName}" OWNER "{_roleName}";""");
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InsufficientPrivilege)
+        {
+            Assert.Ignore(
+                "PostgreSQL admin connection cannot create test roles for non-superuser rerun coverage."
+            );
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(
+            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        )
+        {
+            Username = _roleName,
+            Password = Password,
+        };
+
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            builder.ConnectionString
+        );
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            builder.ConnectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (!string.IsNullOrEmpty(_databaseName))
+        {
+            PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+
+        if (string.IsNullOrEmpty(_roleName))
+        {
+            return;
+        }
+
+        ExecuteAdminCommand(
+            $"""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{_roleName}') THEN
+                    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'edfi_dms_enqueue_owner') THEN
+                        EXECUTE 'REVOKE "edfi_dms_enqueue_owner" FROM "{_roleName}"';
+                    END IF;
+
+                    EXECUTE 'DROP OWNED BY "{_roleName}"';
+                    EXECUTE 'DROP ROLE "{_roleName}"';
+                END IF;
+            END $$;
+            """
+        );
+    }
+
+    [Test]
+    public void It_completes_first_run_without_role_management_capability()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_completes_compatible_rerun_without_role_management_capability()
+    {
+        _secondExitCode.Should().Be(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+    }
+
+    [Test]
+    public void It_uses_the_required_direct_membership_options()
+    {
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT membership.set_option
+                AND NOT membership.inherit_option
+                AND NOT membership.admin_option
+                AND NOT session_role.rolsuper
+                AND NOT session_role.rolcreaterole
+            FROM pg_catalog.pg_auth_members membership
+            INNER JOIN pg_catalog.pg_roles owner_role
+                ON owner_role.oid = membership.roleid
+            INNER JOIN pg_catalog.pg_roles session_role
+                ON session_role.oid = membership.member
+            WHERE owner_role.rolname = 'edfi_dms_enqueue_owner'
+            AND session_role.rolname = '{_roleName}';
+            """;
+
+        ((bool)command.ExecuteScalar()!).Should().BeTrue();
+    }
+
+    private static void ExecuteAdminCommand(string commandText)
+    {
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.ExecuteNonQuery();
     }
 }
 

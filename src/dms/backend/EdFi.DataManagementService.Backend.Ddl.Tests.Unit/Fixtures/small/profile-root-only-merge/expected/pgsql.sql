@@ -95,6 +95,7 @@ DECLARE
     _session_role oid;
     _session_is_superuser boolean;
     _session_can_create_role boolean;
+    _has_required_direct_membership boolean;
 BEGIN
     SELECT oid, rolsuper, rolcreaterole
     INTO _session_role, _session_is_superuser, _session_can_create_role
@@ -136,9 +137,19 @@ BEGIN
         RAISE EXCEPTION 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.';
     END IF;
 
+    _has_required_direct_membership := EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT membership.admin_option
+        AND NOT membership.inherit_option
+        AND membership.set_option
+    );
+
     IF NOT COALESCE(_session_is_superuser, false)
-    AND NOT pg_catalog.pg_has_role(SESSION_USER, _owner_role, 'MEMBER WITH ADMIN OPTION') THEN
-        RAISE EXCEPTION 'PostgreSQL provisioning principal must be SUPERUSER or hold ADMIN membership in edfi_dms_enqueue_owner to refresh existing enqueue-owner role.';
+    AND NOT _has_required_direct_membership THEN
+        RAISE EXCEPTION 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.';
     END IF;
 END $$;
 
@@ -684,6 +695,29 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
     FOR EACH ROW
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+    _session_role oid;
+BEGIN
+    SELECT oid INTO _session_role
+    FROM pg_catalog.pg_roles
+    WHERE rolname = SESSION_USER;
+
+    IF _owner_role IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT membership.admin_option
+        AND NOT membership.inherit_option
+        AND membership.set_option
+    ) THEN
+        EXECUTE 'GRANT CREATE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner"';
+        EXECUTE 'SET ROLE "edfi_dms_enqueue_owner"';
+    END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -776,6 +810,15 @@ BEGIN
 END;
 $func$;
 
+RESET ROLE;
+
+DO $$
+BEGIN
+    IF pg_catalog.to_regrole('edfi_dms_enqueue_owner') IS NOT NULL THEN
+        EXECUTE 'REVOKE CREATE ON SCHEMA "dms" FROM "edfi_dms_enqueue_owner"';
+    END IF;
+END $$;
+
 DROP TRIGGER IF EXISTS "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
 CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
     AFTER INSERT ON "dms"."Document"
@@ -818,27 +861,90 @@ CREATE TRIGGER "TR_DocumentCache_ValidateDocumentUuid"
 -- ==========================================================
 
 DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+    _session_role oid;
+    _session_is_superuser boolean;
+    _session_can_create_role boolean;
+    _created_owner_role boolean := false;
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'edfi_dms_enqueue_owner') THEN
+    SELECT oid, rolsuper, rolcreaterole
+    INTO _session_role, _session_is_superuser, _session_can_create_role
+    FROM pg_catalog.pg_roles
+    WHERE rolname = SESSION_USER;
+
+    IF _owner_role IS NULL THEN
+        IF NOT COALESCE(_session_is_superuser OR _session_can_create_role, false) THEN
+            RAISE EXCEPTION 'PostgreSQL provisioning principal must be SUPERUSER or CREATEROLE to create edfi_dms_enqueue_owner before provisioning.';
+        END IF;
         CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+        _owner_role := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+        _created_owner_role := true;
     END IF;
 
-    ALTER ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles owner_role WHERE owner_role.oid = _owner_role
+    AND (owner_role.rolcanlogin OR owner_role.rolinherit OR owner_role.rolsuper OR owner_role.rolcreatedb OR owner_role.rolcreaterole OR owner_role.rolreplication OR owner_role.rolbypassrls)) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before provisioning.';
+    END IF;
 
     IF EXISTS (
         SELECT 1
         FROM pg_catalog.pg_auth_members membership
-        WHERE membership.member = 'edfi_dms_enqueue_owner'::pg_catalog.regrole
+        WHERE membership.member = _owner_role
         AND (membership.admin_option OR membership.inherit_option OR membership.set_option)
     ) THEN
         RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships.';
     END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members membership
+        WHERE membership.roleid = _owner_role
+        AND membership.member = _session_role
+        AND NOT membership.admin_option
+        AND NOT membership.inherit_option
+        AND membership.set_option
+    ) THEN
+        IF NOT COALESCE(_session_is_superuser OR (_created_owner_role AND _session_can_create_role), false) THEN
+            RAISE EXCEPTION 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.';
+        END IF;
+        GRANT "edfi_dms_enqueue_owner" TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;
+    END IF;
 END $$;
 
-GRANT "edfi_dms_enqueue_owner" TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;
-
-ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() OWNER TO "edfi_dms_enqueue_owner";
-ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() OWNER TO "edfi_dms_enqueue_owner";
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+BEGIN
+    IF _owner_role IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_proc p
+        INNER JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'dms'
+        AND p.proname IN ('TF_Document_EnqueueProjectionInsert', 'TF_Document_EnqueueProjectionUpdate')
+        AND p.proowner <> _owner_role
+    ) THEN
+        EXECUTE 'GRANT CREATE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner"';
+        BEGIN
+            EXECUTE 'ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() OWNER TO "edfi_dms_enqueue_owner"';
+            EXECUTE 'ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() OWNER TO "edfi_dms_enqueue_owner"';
+        EXCEPTION WHEN OTHERS THEN
+            EXECUTE 'REVOKE CREATE ON SCHEMA "dms" FROM "edfi_dms_enqueue_owner"';
+            RAISE;
+        END;
+        EXECUTE 'REVOKE CREATE ON SCHEMA "dms" FROM "edfi_dms_enqueue_owner"';
+    END IF;
+END $$;
 
 REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;

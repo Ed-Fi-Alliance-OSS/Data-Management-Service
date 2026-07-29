@@ -993,8 +993,12 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
         _sql.Should()
             .Contain("membership.admin_option OR membership.inherit_option OR membership.set_option");
         _sql.Should().Contain("SET TRUE, INHERIT FALSE, ADMIN FALSE");
-        _sql.Should()
-            .Contain("pg_catalog.pg_has_role(SESSION_USER, _owner_role, 'MEMBER WITH ADMIN OPTION')");
+        _sql.Should().Contain("AND NOT membership.admin_option");
+        _sql.Should().Contain("AND NOT membership.inherit_option");
+        _sql.Should().Contain("AND membership.set_option");
+        _sql.Should().Contain("AND NOT _has_required_direct_membership THEN");
+        _sql.Should().NotContain("WITH ADMIN OPTION");
+        _sql.Should().NotContain("pg_catalog.pg_has_role");
     }
 
     [Test]
