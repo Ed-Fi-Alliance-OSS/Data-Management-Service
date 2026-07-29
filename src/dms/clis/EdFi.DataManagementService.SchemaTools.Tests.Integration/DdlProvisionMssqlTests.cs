@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.SchemaTools.Introspection;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -1524,6 +1525,43 @@ public class Given_Mssql_DocumentProjectionSafety
     }
 
     [Test]
+    public void It_rolls_back_document_dml_when_lifecycle_state_is_padded_disabled()
+    {
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        var initialDocumentCount = ProvisionTestHelper.GetDmsTableCount(connection, "mssql", "Document");
+        var initialWorkCount = ProvisionTestHelper.GetDmsTableCount(
+            connection,
+            "mssql",
+            "DocumentProjectionWork"
+        );
+
+        MssqlDocumentProjectionTestSupport.BypassLifecycleConstraintAndSetLifecycle(connection, "Disabled ");
+
+        using var transaction = connection.BeginTransaction();
+        using var command = MssqlDocumentProjectionTestSupport.CreateInsertDocumentCommand(connection);
+        command.Transaction = transaction;
+
+        Action insertDocument = () => command.ExecuteNonQuery();
+        var exception = insertDocument.Should().Throw<SqlException>().Which;
+        exception
+            .Message.Should()
+            .Contain(
+                "ProjectionLifecycleState has unsupported value",
+                "padded lifecycle values must not be treated as exact Disabled"
+            );
+        transaction.Rollback();
+
+        ProvisionTestHelper
+            .GetDmsTableCount(connection, "mssql", "Document")
+            .Should()
+            .Be(initialDocumentCount, "the failed canonical document insert should roll back");
+        ProvisionTestHelper
+            .GetDmsTableCount(connection, "mssql", "DocumentProjectionWork")
+            .Should()
+            .Be(initialWorkCount, "the failed enqueue should not leave work rows behind");
+    }
+
+    [Test]
     public void It_rolls_back_document_dml_when_enqueue_work_write_fails()
     {
         using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
@@ -1807,6 +1845,20 @@ internal static class MssqlDocumentProjectionTestSupport
             WHERE [StateId] = 1
             """;
         command.Parameters.AddWithValue("lifecycle", lifecycle);
+        command.ExecuteNonQuery();
+    }
+
+    internal static void BypassLifecycleConstraintAndSetLifecycle(SqlConnection connection, string lifecycle)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            ALTER TABLE [dms].[DocumentCacheState] NOCHECK CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+
+            UPDATE [dms].[DocumentCacheState]
+            SET [ProjectionLifecycleState] = @lifecycle
+            WHERE [StateId] = 1
+            """;
+        command.Parameters.Add("lifecycle", SqlDbType.VarChar, 16).Value = lifecycle;
         command.ExecuteNonQuery();
     }
 

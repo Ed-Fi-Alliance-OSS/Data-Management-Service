@@ -591,12 +591,17 @@ BEGIN
         THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;
     END
 
-    IF @lifecycleState COLLATE Latin1_General_100_BIN2 NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')
+    IF NOT (
+        (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@lifecycleState) = 9)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@lifecycleState) = 10)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@lifecycleState) = 8)
+    )
     BEGIN
         THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;
     END
 
-    IF @lifecycleState = 'Disabled'
+    IF @lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8
     BEGIN
         RETURN;
     END

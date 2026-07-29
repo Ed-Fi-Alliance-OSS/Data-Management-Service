@@ -2172,17 +2172,37 @@ public class Given_CoreDdlEmitter_With_MssqlDialect_Enqueue
             .Contain(
                 "THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;"
             );
+        triggerBody.Should().Contain("IF NOT (");
         triggerBody
             .Should()
             .Contain(
-                "IF @lifecycleState COLLATE Latin1_General_100_BIN2 NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')"
+                "(@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8)"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@lifecycleState) = 9)"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@lifecycleState) = 10)"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@lifecycleState) = 8)"
             );
         triggerBody
             .Should()
             .Contain(
                 "THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;"
             );
-        triggerBody.Should().Contain("IF @lifecycleState = 'Disabled'");
+        triggerBody
+            .Should()
+            .Contain(
+                "IF @lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8"
+            );
         triggerBody.Should().Contain("RETURN;");
     }
 

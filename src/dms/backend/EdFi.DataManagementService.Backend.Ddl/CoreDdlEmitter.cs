@@ -1371,9 +1371,23 @@ public sealed class CoreDdlEmitter
             }
             writer.AppendLine("END");
             writer.AppendLine();
-            writer.AppendLine(
-                "IF @lifecycleState COLLATE Latin1_General_100_BIN2 NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')"
-            );
+            writer.AppendLine("IF NOT (");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "(@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8)"
+                );
+                writer.AppendLine(
+                    "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@lifecycleState) = 9)"
+                );
+                writer.AppendLine(
+                    "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@lifecycleState) = 10)"
+                );
+                writer.AppendLine(
+                    "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@lifecycleState) = 8)"
+                );
+            }
+            writer.AppendLine(")");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
@@ -1383,7 +1397,9 @@ public sealed class CoreDdlEmitter
             }
             writer.AppendLine("END");
             writer.AppendLine();
-            writer.AppendLine("IF @lifecycleState = 'Disabled'");
+            writer.AppendLine(
+                "IF @lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8"
+            );
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
