@@ -20,7 +20,6 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
 {
     private static readonly DialectSql _dialect = new(
         EffectiveSchemaTableExistsSql: "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'",
-        EffectiveSchemaHashSql: """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""",
         SeedTableCheckSql: "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME IN ('ResourceKey', 'SchemaComponent')",
         EffectiveSchemaFingerprintSql: EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(
             SqlDialect.Mssql

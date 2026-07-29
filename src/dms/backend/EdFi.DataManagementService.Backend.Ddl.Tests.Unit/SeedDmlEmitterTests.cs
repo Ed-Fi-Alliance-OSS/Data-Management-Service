@@ -393,7 +393,7 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     [Test]
     public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("Preflight: validate EffectiveSchema");
         _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
     }
 
@@ -585,7 +585,7 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     [Test]
     public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("Preflight: validate EffectiveSchema");
         _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
     }
 
@@ -947,7 +947,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
     [Test]
     public void It_should_emit_preflight_comment()
     {
-        _sql.Should().Contain("Preflight: fail fast");
+        _sql.Should().Contain("Preflight: validate EffectiveSchema hash compatibility");
     }
 
     [Test]
@@ -1036,7 +1036,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     [Test]
     public void It_should_emit_preflight_comment()
     {
-        _sql.Should().Contain("Preflight: fail fast");
+        _sql.Should().Contain("Preflight: validate EffectiveSchema hash compatibility");
     }
 
     [Test]

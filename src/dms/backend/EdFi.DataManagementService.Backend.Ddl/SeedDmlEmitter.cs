@@ -61,8 +61,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     /// <summary>
-    /// Emits only the preflight hash-check SQL (Phase 0), without the Phase 7 seed DML.
-    /// Used by <see cref="FullDdlEmitter"/> to place the preflight before core DDL.
+    /// Emits only the bounded create-only provisioning guard SQL (Phase 0), without
+    /// the Phase 7 seed DML. Used by <see cref="FullDdlEmitter"/> to place preflight
+    /// validation before core DDL.
     /// </summary>
     public string EmitPreflightOnly(string effectiveSchemaHash)
     {
@@ -128,7 +129,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits a preflight check that fails fast when the database is provisioned for a different effective schema hash.
+    /// Emits the EffectiveSchema hash compatibility portion of the bounded preflight.
     /// </summary>
     private void EmitEffectiveSchemaHashPreflight(SqlWriter writer, string effectiveSchemaHash)
     {
@@ -136,7 +137,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
         var tableObjectIdLiteral = RenderTableObjectIdLiteral(_effectiveSchemaTable);
 
-        writer.AppendLine("-- Preflight: fail fast if database is provisioned for a different schema hash");
+        writer.AppendLine("-- Preflight: validate EffectiveSchema hash compatibility");
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {

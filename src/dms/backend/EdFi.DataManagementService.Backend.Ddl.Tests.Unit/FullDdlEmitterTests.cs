@@ -121,7 +121,7 @@ public class Given_FullDdlEmitter_With_Bounded_Preflight_Guards(SqlDialect diale
     [Test]
     public void It_should_emit_guard_reads_before_the_first_mutating_statement()
     {
-        var hashGuard = _sql.IndexOf("Preflight: fail fast", StringComparison.Ordinal);
+        var hashGuard = _sql.IndexOf("Preflight: validate EffectiveSchema", StringComparison.Ordinal);
         var singletonGuard = _sql.IndexOf("Preflight: protect completed", StringComparison.Ordinal);
         var legacyGuard = _sql.IndexOf("Preflight: reject known legacy", StringComparison.Ordinal);
         var firstMutation =

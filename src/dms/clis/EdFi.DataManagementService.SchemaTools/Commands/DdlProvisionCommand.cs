@@ -151,9 +151,9 @@ public static class DdlProvisionCommand
                 // master independently of the target DB connection.
                 provisioner.CheckOrConfigureMvcc(connectionString, databaseWasCreated);
 
-                // Fail-fast preflight: verify schema hash and seed data integrity before
-                // executing any DDL. PreflightSeedValidation validates the schema hash
-                // internally, so a separate PreflightSchemaHashCheck call is not needed.
+                // Fail-fast preflight: run bounded create-only provisioning guards,
+                // including schema hash, seed data, singleton state, legacy artifact,
+                // and provider-prerequisite validation before executing any DDL.
                 //
                 // Defense-in-depth: the in-SQL validation in SeedDmlEmitter also checks
                 // the hash inside the DDL transaction as an ultimate safety net.

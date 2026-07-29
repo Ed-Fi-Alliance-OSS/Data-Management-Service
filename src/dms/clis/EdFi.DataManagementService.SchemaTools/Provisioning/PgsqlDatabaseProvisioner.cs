@@ -20,7 +20,6 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
 {
     private static readonly DialectSql _dialect = new(
         EffectiveSchemaTableExistsSql: "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'EffectiveSchema'",
-        EffectiveSchemaHashSql: """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1""",
         SeedTableCheckSql: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'dms' AND table_name IN ('ResourceKey', 'SchemaComponent')",
         EffectiveSchemaFingerprintSql: EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(
             SqlDialect.Pgsql

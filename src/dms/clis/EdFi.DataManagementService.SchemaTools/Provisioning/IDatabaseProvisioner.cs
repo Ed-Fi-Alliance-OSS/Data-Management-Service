@@ -42,20 +42,6 @@ public interface IDatabaseProvisioner
     void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
 
     /// <summary>
-    /// Performs a lightweight preflight check against the dms.EffectiveSchema table.
-    /// </summary>
-    /// <remarks>
-    /// Outcomes:
-    /// <list type="bullet">
-    ///   <item>Table does not exist (new database) — returns normally.</item>
-    ///   <item>Table exists and stored hash matches <paramref name="expectedHash"/> — returns normally.</item>
-    ///   <item>Table exists but the singleton row is missing (partial/corrupt state) — throws <see cref="InvalidOperationException"/>.</item>
-    ///   <item>Table exists and stored hash differs from <paramref name="expectedHash"/> — throws <see cref="InvalidOperationException"/>.</item>
-    /// </list>
-    /// </remarks>
-    void PreflightSchemaHashCheck(string connectionString, string expectedHash);
-
-    /// <summary>
     /// Validates that the contents of dms.ResourceKey and dms.SchemaComponent match
     /// the expected seed data from <paramref name="expectedSchema"/>, and runs the bounded
     /// create-only E18 provisioning guards. If dms.EffectiveSchema does not exist (new database),

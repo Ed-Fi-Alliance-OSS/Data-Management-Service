@@ -16,9 +16,6 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// <param name="EffectiveSchemaTableExistsSql">
 /// Query that returns a non-null scalar if the dms.EffectiveSchema table exists.
 /// </param>
-/// <param name="EffectiveSchemaHashSql">
-/// Query that selects EffectiveSchemaHash from the singleton row.
-/// </param>
 /// <param name="SeedTableCheckSql">
 /// Query that returns table_name rows for ResourceKey and SchemaComponent in the dms schema.
 /// </param>
@@ -64,7 +61,6 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// </param>
 public sealed record DialectSql(
     string EffectiveSchemaTableExistsSql,
-    string EffectiveSchemaHashSql,
     string SeedTableCheckSql,
     string EffectiveSchemaFingerprintSql,
     string DataStoreIdentityTableExistsSql,
@@ -85,8 +81,8 @@ public sealed record DialectSql(
 /// Abstract base class for database provisioners that extracts shared preflight logic
 /// using ADO.NET's <see cref="DbConnection"/>/<see cref="DbCommand"/> abstractions.
 /// Concrete classes provide dialect-specific SQL strings and connection creation;
-/// the base class handles the common algorithm for <see cref="IDatabaseProvisioner.PreflightSchemaHashCheck"/>
-/// and <see cref="IDatabaseProvisioner.PreflightSeedValidation"/>.
+/// the base class handles the bounded create-only provisioning guard algorithm for
+/// <see cref="IDatabaseProvisioner.PreflightSeedValidation"/>.
 /// </summary>
 public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisioner
 {
@@ -116,37 +112,6 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
     );
 
     public abstract void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
-
-    public void PreflightSchemaHashCheck(string connectionString, string expectedHash)
-    {
-        using var connection = CreateConnection(connectionString);
-        connection.Open();
-
-        // Check if the dms.EffectiveSchema table exists
-        using var existsCommand = connection.CreateCommand();
-        existsCommand.CommandText = Dialect.EffectiveSchemaTableExistsSql;
-        if (existsCommand.ExecuteScalar() is null)
-        {
-            return; // New database — no table yet, proceed with provisioning
-        }
-
-        // Table exists — check the stored hash
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText = Dialect.EffectiveSchemaHashSql;
-        var storedHash = hashCommand.ExecuteScalar() as string;
-
-        // Table exists but singleton row is missing — partial/corrupt state
-        if (storedHash is null)
-        {
-            throw new InvalidOperationException(
-                "The dms.EffectiveSchema table exists but contains no singleton row. "
-                    + "This indicates a partial or corrupt provisioning state. "
-                    + "Drop and recreate the database before re-provisioning."
-            );
-        }
-
-        SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
-    }
 
     public void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema)
     {

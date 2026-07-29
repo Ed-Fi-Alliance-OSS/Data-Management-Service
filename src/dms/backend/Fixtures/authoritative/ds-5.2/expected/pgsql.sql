@@ -1,8 +1,8 @@
 -- ==========================================================
--- Phase 0: Preflight (fail fast on schema hash mismatch)
+-- Phase 0: Bounded Provisioning Guards
 -- ==========================================================
 
--- Preflight: fail fast if database is provisioned for a different schema hash
+-- Preflight: validate EffectiveSchema hash compatibility
 DO $$
 DECLARE
     _stored_hash text;
