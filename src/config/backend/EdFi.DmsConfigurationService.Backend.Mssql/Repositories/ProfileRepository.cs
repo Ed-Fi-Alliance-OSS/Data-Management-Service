@@ -29,7 +29,7 @@ public class ProfileRepository(
         {
             string sql =
                 @"INSERT INTO dmscs.Profile (ProfileName, Definition, CreatedBy) OUTPUT INSERTED.Id VALUES (@Name, @Definition, @CreatedBy);";
-            var id = await connection.ExecuteScalarAsync<long>(
+            var id = await connection.ExecuteScalarAsync<int>(
                 sql,
                 new
                 {
@@ -105,7 +105,7 @@ public class ProfileRepository(
         }
     }
 
-    public async Task<ProfileGetResult> GetProfile(long id)
+    public async Task<ProfileGetResult> GetProfile(int id)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -218,7 +218,7 @@ public class ProfileRepository(
         return results;
     }
 
-    public async Task<ProfileDeleteResult> DeleteProfile(long id)
+    public async Task<ProfileDeleteResult> DeleteProfile(int id)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();

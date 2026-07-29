@@ -329,7 +329,7 @@ UPDATE dmscs.OpenIddictApplication
                 transaction
             );
 
-            var dataStoreIds = await connection.QueryAsync<long>(
+            var dataStoreIds = await connection.QueryAsync<int>(
                 """
                 SELECT DISTINCT acd.DataStoreId
                 FROM dmscs.ApiClient ac
