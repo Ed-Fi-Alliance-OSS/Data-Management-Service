@@ -676,6 +676,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine("WHERE membership.roleid = _owner_role");
                 writer.AppendLine("AND membership.member = _session_role");
                 writer.AppendLine(
+                    "AND NOT (membership.admin_option AND NOT membership.inherit_option AND NOT membership.set_option AND COALESCE(_session_can_create_role, false))"
+                );
+                writer.AppendLine(
                     "AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)"
                 );
             }

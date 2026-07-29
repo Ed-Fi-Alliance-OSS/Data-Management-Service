@@ -119,77 +119,7 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
         );
         connection.Open();
 
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                SELECT COUNT(*)
-                FROM pg_catalog.pg_proc p
-                INNER JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'dms'
-                AND p.proname IN ('TF_Document_EnqueueProjectionInsert', 'TF_Document_EnqueueProjectionUpdate')
-                AND p.prosecdef
-                AND p.proowner = 'edfi_dms_enqueue_owner'::pg_catalog.regrole
-                AND COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=pg_catalog']::text[]
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) acl
-                    WHERE acl.grantee = 0
-                    AND acl.privilege_type = 'EXECUTE'
-                )
-                """;
-            Convert
-                .ToInt64(command.ExecuteScalar())
-                .Should()
-                .Be(
-                    2,
-                    "both enqueue functions should be SECURITY DEFINER with the locked owner and no PUBLIC execute"
-                );
-        }
-
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                SELECT
-                    pg_catalog.has_schema_privilege(
-                        'edfi_dms_enqueue_owner',
-                        'dms',
-                        'USAGE'
-                    )
-                    AND NOT pg_catalog.has_schema_privilege(
-                        'edfi_dms_enqueue_owner',
-                        'dms',
-                        'CREATE'
-                    )
-                    AND pg_catalog.has_table_privilege(
-                        'edfi_dms_enqueue_owner',
-                        '"dms"."DocumentCacheState"',
-                        'SELECT'
-                    )
-                    AND pg_catalog.has_table_privilege(
-                        'edfi_dms_enqueue_owner',
-                        '"dms"."DocumentProjectionWork"',
-                        'SELECT, INSERT, UPDATE'
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM pg_catalog.pg_class table_info
-                        INNER JOIN pg_catalog.pg_namespace namespace_info
-                            ON namespace_info.oid = table_info.relnamespace
-                        CROSS JOIN LATERAL pg_catalog.aclexplode(
-                            COALESCE(table_info.relacl, pg_catalog.acldefault('r', table_info.relowner))
-                        ) acl
-                        WHERE namespace_info.nspname = 'dms'
-                        AND table_info.relname = 'DocumentProjectionWork'
-                        AND acl.grantee = 0
-                        AND acl.privilege_type IN ('INSERT', 'UPDATE', 'DELETE')
-                    )
-                """;
-            ((bool)command.ExecuteScalar()!)
-                .Should()
-                .BeTrue(
-                    "the enqueue owner should have only the local privileges needed by the definer functions"
-                );
-        }
+        ProvisionTestHelper.AssertPostgresqlEnqueueFunctionSecurity(connection);
     }
 
     [Test]
@@ -340,6 +270,7 @@ public class Given_Provisioning_Rerun_On_Same_Database
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
+[NonParallelizable]
 public class Given_Postgresql_Provisioning_Rerun_As_Direct_Enqueue_Owner_Member
 {
     private string _databaseName = null!;
@@ -470,6 +401,262 @@ public class Given_Postgresql_Provisioning_Rerun_As_Direct_Enqueue_Owner_Member
             """;
 
         ((bool)command.ExecuteScalar()!).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_leaves_enqueue_functions_private_under_the_locked_owner()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+        _secondExitCode.Should().Be(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+
+        using var connection = new NpgsqlConnection(
+            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        ProvisionTestHelper.AssertPostgresqlEnqueueFunctionSecurity(connection);
+    }
+
+    private static void ExecuteAdminCommand(string commandText)
+    {
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.ExecuteNonQuery();
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_Postgresql_Provisioning_As_NonSuper_Createrole_Principal
+{
+    private string _databaseName = null!;
+    private string _roleName = null!;
+    private const string Password = "Dms_CreateRole_1!";
+    private int _firstExitCode;
+    private int _secondExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        _roleName = $"dms_createrole_{Guid.NewGuid():N}"[..30];
+
+        try
+        {
+            DropDocumentEnqueueOwnerRoleForCreationTest();
+            ExecuteAdminCommand(
+                $"""CREATE ROLE "{_roleName}" LOGIN PASSWORD '{Password}' NOSUPERUSER NOCREATEDB CREATEROLE NOINHERIT;"""
+            );
+            ExecuteAdminCommand($"""CREATE DATABASE "{_databaseName}" OWNER "{_roleName}";""");
+        }
+        catch (PostgresException ex) when (IsRoleSetupUnsupported(ex))
+        {
+            Assert.Ignore(
+                "PostgreSQL admin connection cannot reset role state for non-superuser CREATEROLE provisioning coverage."
+            );
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(
+            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        )
+        {
+            Username = _roleName,
+            Password = Password,
+        };
+
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            builder.ConnectionString
+        );
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            builder.ConnectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (!string.IsNullOrEmpty(_databaseName))
+        {
+            PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+
+        if (string.IsNullOrEmpty(_roleName))
+        {
+            return;
+        }
+
+        try
+        {
+            DropDocumentEnqueueOwnerRoleForCreationTest();
+            ExecuteAdminCommand(
+                $"""
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{_roleName}') THEN
+                        EXECUTE 'DROP OWNED BY "{_roleName}"';
+                        EXECUTE 'DROP ROLE "{_roleName}"';
+                    END IF;
+                END $$;
+                """
+            );
+        }
+        catch (PostgresException ex) when (IsRoleSetupUnsupported(ex))
+        {
+            // Leave shared cluster role state intact if this environment has external dependencies.
+        }
+    }
+
+    [Test]
+    public void It_completes_first_run_without_superuser()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_completes_compatible_rerun_without_superuser()
+    {
+        _secondExitCode.Should().Be(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+    }
+
+    [Test]
+    public void It_creates_locked_owner_with_required_set_membership()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH role_state AS (
+                SELECT owner_role.oid AS owner_role_id,
+                    session_role.oid AS session_role_id,
+                    owner_role.rolcanlogin = false
+                        AND owner_role.rolinherit = false
+                        AND owner_role.rolsuper = false
+                        AND owner_role.rolcreatedb = false
+                        AND owner_role.rolcreaterole = false
+                        AND owner_role.rolreplication = false
+                        AND owner_role.rolbypassrls = false
+                        AND NOT session_role.rolsuper
+                        AND session_role.rolcreaterole AS roles_are_expected
+                FROM pg_catalog.pg_roles owner_role
+                CROSS JOIN pg_catalog.pg_roles session_role
+                WHERE owner_role.rolname = 'edfi_dms_enqueue_owner'
+                AND session_role.rolname = '{_roleName}'
+            )
+            SELECT roles_are_expected
+                AND EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_auth_members membership
+                    WHERE membership.roleid = role_state.owner_role_id
+                    AND membership.member = role_state.session_role_id
+                    AND membership.set_option
+                    AND NOT membership.inherit_option
+                    AND NOT membership.admin_option
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_auth_members membership
+                    WHERE membership.roleid = role_state.owner_role_id
+                    AND membership.member = role_state.session_role_id
+                    AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
+                    AND NOT (
+                        membership.admin_option
+                        AND NOT membership.inherit_option
+                        AND NOT membership.set_option
+                    )
+                )
+            FROM role_state;
+            """;
+
+        ((bool)command.ExecuteScalar()!).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_leaves_enqueue_functions_private_under_the_created_owner()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+        _secondExitCode.Should().Be(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+
+        using var connection = new NpgsqlConnection(
+            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        ProvisionTestHelper.AssertPostgresqlEnqueueFunctionSecurity(connection);
+    }
+
+    private static void DropDocumentEnqueueOwnerRoleForCreationTest()
+    {
+        ExecuteAdminCommand(
+            """
+            DO $$
+            DECLARE
+                _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+                _membership record;
+            BEGIN
+                IF _owner_role IS NULL THEN
+                    RETURN;
+                END IF;
+
+                FOR _membership IN
+                    SELECT member_role.rolname AS member_role_name,
+                        grantor_role.rolname AS grantor_role_name
+                    FROM pg_catalog.pg_auth_members membership
+                    INNER JOIN pg_catalog.pg_roles member_role
+                        ON member_role.oid = membership.member
+                    INNER JOIN pg_catalog.pg_roles grantor_role
+                        ON grantor_role.oid = membership.grantor
+                    WHERE membership.roleid = _owner_role
+                LOOP
+                    EXECUTE pg_catalog.format(
+                        'REVOKE %I FROM %I GRANTED BY %I CASCADE',
+                        'edfi_dms_enqueue_owner',
+                        _membership.member_role_name,
+                        _membership.grantor_role_name
+                    );
+                END LOOP;
+
+                FOR _membership IN
+                    SELECT role_role.rolname AS role_name,
+                        grantor_role.rolname AS grantor_role_name
+                    FROM pg_catalog.pg_auth_members membership
+                    INNER JOIN pg_catalog.pg_roles role_role
+                        ON role_role.oid = membership.roleid
+                    INNER JOIN pg_catalog.pg_roles grantor_role
+                        ON grantor_role.oid = membership.grantor
+                    WHERE membership.member = _owner_role
+                LOOP
+                    EXECUTE pg_catalog.format(
+                        'REVOKE %I FROM %I GRANTED BY %I CASCADE',
+                        _membership.role_name,
+                        'edfi_dms_enqueue_owner',
+                        _membership.grantor_role_name
+                    );
+                END LOOP;
+            END $$;
+
+            DROP ROLE IF EXISTS "edfi_dms_enqueue_owner";
+            """
+        );
+    }
+
+    private static bool IsRoleSetupUnsupported(PostgresException ex)
+    {
+        return ex.SqlState == PostgresErrorCodes.InsufficientPrivilege
+            || ex.SqlState == "2BP01"
+            || ex.SqlState == "55006";
     }
 
     private static void ExecuteAdminCommand(string commandText)

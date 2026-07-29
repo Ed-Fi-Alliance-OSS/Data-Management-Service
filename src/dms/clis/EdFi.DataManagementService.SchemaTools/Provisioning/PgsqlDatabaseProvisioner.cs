@@ -96,6 +96,12 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
             FROM pg_catalog.pg_auth_members membership
             WHERE membership.roleid = owner_role.oid
             AND membership.member = session_role.oid
+            AND NOT (
+                membership.admin_option
+                AND NOT membership.inherit_option
+                AND NOT membership.set_option
+                AND session_role.rolcreaterole
+            )
             AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
         )
         UNION ALL

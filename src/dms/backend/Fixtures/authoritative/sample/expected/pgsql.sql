@@ -132,6 +132,7 @@ BEGIN
         FROM pg_catalog.pg_auth_members membership
         WHERE membership.roleid = _owner_role
         AND membership.member = _session_role
+        AND NOT (membership.admin_option AND NOT membership.inherit_option AND NOT membership.set_option AND COALESCE(_session_can_create_role, false))
         AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
     ) THEN
         RAISE EXCEPTION 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.';
@@ -713,6 +714,7 @@ BEGIN
         AND NOT membership.inherit_option
         AND membership.set_option
     ) THEN
+        EXECUTE 'GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner"';
         EXECUTE 'GRANT CREATE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner"';
         EXECUTE 'SET ROLE "edfi_dms_enqueue_owner"';
     END IF;
@@ -810,6 +812,8 @@ BEGIN
 END;
 $func$;
 
+GRANT EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() TO SESSION_USER;
+GRANT EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() TO SESSION_USER;
 RESET ROLE;
 
 DO $$
@@ -901,6 +905,7 @@ BEGIN
         FROM pg_catalog.pg_auth_members membership
         WHERE membership.roleid = _owner_role
         AND membership.member = _session_role
+        AND NOT (membership.admin_option AND NOT membership.inherit_option AND NOT membership.set_option AND COALESCE(_session_can_create_role, false))
         AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
     ) THEN
         RAISE EXCEPTION 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.';
@@ -946,11 +951,15 @@ BEGIN
     END IF;
 END $$;
 
+GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
+SET ROLE "edfi_dms_enqueue_owner";
 REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM SESSION_USER;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM SESSION_USER;
+RESET ROLE;
 REVOKE INSERT, UPDATE, DELETE ON TABLE "dms"."DocumentProjectionWork" FROM PUBLIC;
 
-GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
 GRANT SELECT ON TABLE "dms"."DocumentCacheState" TO "edfi_dms_enqueue_owner";
 GRANT SELECT, INSERT, UPDATE ON TABLE "dms"."DocumentProjectionWork" TO "edfi_dms_enqueue_owner";
 

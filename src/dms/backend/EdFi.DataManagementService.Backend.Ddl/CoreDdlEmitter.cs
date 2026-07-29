@@ -1135,7 +1135,11 @@ public sealed class CoreDdlEmitter
         EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleSetup(writer);
         EmitPgsqlDocumentProjectionEnqueueFunction(writer, insertFunctionName, isUpdate: false);
         EmitPgsqlDocumentProjectionEnqueueFunction(writer, updateFunctionName, isUpdate: true);
-        EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleReset(writer);
+        EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleReset(
+            writer,
+            insertFunctionName,
+            updateFunctionName
+        );
 
         writer.AppendLine(
             _dialect.DropTriggerIfExists(_documentTable, DocumentEnqueueProjectionInsertTriggerName)
@@ -1199,6 +1203,7 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(") THEN");
             using (writer.Indent())
             {
+                writer.AppendLine($"EXECUTE 'GRANT USAGE ON SCHEMA {dmsSchema} TO {ownerRole}';");
                 writer.AppendLine($"EXECUTE 'GRANT CREATE ON SCHEMA {dmsSchema} TO {ownerRole}';");
                 writer.AppendLine($"EXECUTE 'SET ROLE {ownerRole}';");
             }
@@ -1208,11 +1213,17 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
-    private void EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleReset(SqlWriter writer)
+    private void EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleReset(
+        SqlWriter writer,
+        string insertFunctionName,
+        string updateFunctionName
+    )
     {
         var ownerRole = Quote(PgsqlDocumentEnqueueOwnerRoleName);
         var dmsSchema = Quote(DmsTableNames.DmsSchema.Value);
 
+        writer.AppendLine($"GRANT EXECUTE ON FUNCTION {insertFunctionName}() TO SESSION_USER;");
+        writer.AppendLine($"GRANT EXECUTE ON FUNCTION {updateFunctionName}() TO SESSION_USER;");
         writer.AppendLine("RESET ROLE;");
         writer.AppendLine();
         writer.AppendLine("DO $$");
@@ -2029,6 +2040,9 @@ public sealed class CoreDdlEmitter
                 writer.AppendLine("WHERE membership.roleid = _owner_role");
                 writer.AppendLine("AND membership.member = _session_role");
                 writer.AppendLine(
+                    "AND NOT (membership.admin_option AND NOT membership.inherit_option AND NOT membership.set_option AND COALESCE(_session_can_create_role, false))"
+                );
+                writer.AppendLine(
                     "AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)"
                 );
             }
@@ -2125,14 +2139,18 @@ public sealed class CoreDdlEmitter
         writer.AppendLine("END $$;");
         writer.AppendLine();
 
+        writer.AppendLine($"GRANT USAGE ON SCHEMA {dmsSchema} TO {ownerRole};");
+        writer.AppendLine($"SET ROLE {ownerRole};");
         writer.AppendLine($"REVOKE EXECUTE ON FUNCTION {insertFunctionName}() FROM PUBLIC;");
         writer.AppendLine($"REVOKE EXECUTE ON FUNCTION {updateFunctionName}() FROM PUBLIC;");
+        writer.AppendLine($"REVOKE EXECUTE ON FUNCTION {insertFunctionName}() FROM SESSION_USER;");
+        writer.AppendLine($"REVOKE EXECUTE ON FUNCTION {updateFunctionName}() FROM SESSION_USER;");
+        writer.AppendLine("RESET ROLE;");
         writer.AppendLine(
             $"REVOKE INSERT, UPDATE, DELETE ON TABLE {documentProjectionWorkTable} FROM PUBLIC;"
         );
         writer.AppendLine();
 
-        writer.AppendLine($"GRANT USAGE ON SCHEMA {dmsSchema} TO {ownerRole};");
         writer.AppendLine($"GRANT SELECT ON TABLE {documentCacheStateTable} TO {ownerRole};");
         writer.AppendLine(
             $"GRANT SELECT, INSERT, UPDATE ON TABLE {documentProjectionWorkTable} TO {ownerRole};"

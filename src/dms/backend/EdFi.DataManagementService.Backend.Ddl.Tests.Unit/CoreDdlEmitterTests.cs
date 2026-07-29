@@ -1122,6 +1122,14 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
         _ddl.Should().Contain("GRANT CREATE ON SCHEMA \"dms\" TO \"edfi_dms_enqueue_owner\"");
         _ddl.Should().Contain("REVOKE CREATE ON SCHEMA \"dms\" FROM \"edfi_dms_enqueue_owner\"");
         _ddl.Should().Contain("SET ROLE \"edfi_dms_enqueue_owner\"");
+        _ddl.Should()
+            .Contain(
+                "GRANT EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() TO SESSION_USER;"
+            );
+        _ddl.Should()
+            .Contain(
+                "GRANT EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() TO SESSION_USER;"
+            );
         _ddl.Should().Contain("RESET ROLE;");
         _ddl.Should().NotContain("ALTER ROLE \"edfi_dms_enqueue_owner\"");
         _ddl.Should().NotContain("WITH ADMIN OPTION");
@@ -1135,13 +1143,19 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
             .Contain(
                 "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() OWNER TO \"edfi_dms_enqueue_owner\""
             );
-        _ddl.Should()
+        _ddl[_ddl.IndexOf("-- Phase 9: Security and Grants", StringComparison.Ordinal)..]
+            .Should()
             .Contain(
-                "REVOKE EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() FROM PUBLIC;"
-            );
-        _ddl.Should()
-            .Contain(
-                "REVOKE EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() FROM PUBLIC;"
+                """
+                GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
+                SET ROLE "edfi_dms_enqueue_owner";
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM SESSION_USER;
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM SESSION_USER;
+                RESET ROLE;
+                REVOKE INSERT, UPDATE, DELETE ON TABLE "dms"."DocumentProjectionWork" FROM PUBLIC;
+                """
             );
         _ddl.Should()
             .Contain(

@@ -87,6 +87,87 @@ internal static partial class ProvisionTestHelper
         }
     }
 
+    internal static void AssertPostgresqlEnqueueFunctionSecurity(NpgsqlConnection connection)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT COUNT(*)
+                FROM pg_catalog.pg_proc p
+                INNER JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'dms'
+                AND p.proname IN ('TF_Document_EnqueueProjectionInsert', 'TF_Document_EnqueueProjectionUpdate')
+                AND p.prosecdef
+                AND p.proowner = 'edfi_dms_enqueue_owner'::pg_catalog.regrole
+                AND COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=pg_catalog']::text[]
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) acl
+                    WHERE acl.grantee = 0
+                    AND acl.privilege_type = 'EXECUTE'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) acl
+                    WHERE acl.grantee <> p.proowner
+                    AND acl.privilege_type = 'EXECUTE'
+                )
+                """;
+            Convert
+                .ToInt64(command.ExecuteScalar())
+                .Should()
+                .Be(
+                    2,
+                    "both enqueue functions should be SECURITY DEFINER with the locked owner and no non-owner execute"
+                );
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT
+                    pg_catalog.has_schema_privilege(
+                        'edfi_dms_enqueue_owner',
+                        'dms',
+                        'USAGE'
+                    )
+                    AND NOT pg_catalog.has_schema_privilege(
+                        'edfi_dms_enqueue_owner',
+                        'dms',
+                        'CREATE'
+                    )
+                    AND pg_catalog.has_table_privilege(
+                        'edfi_dms_enqueue_owner',
+                        '"dms"."DocumentCacheState"',
+                        'SELECT'
+                    )
+                    AND pg_catalog.has_table_privilege(
+                        'edfi_dms_enqueue_owner',
+                        '"dms"."DocumentProjectionWork"',
+                        'SELECT, INSERT, UPDATE'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM pg_catalog.pg_class table_info
+                        INNER JOIN pg_catalog.pg_namespace namespace_info
+                            ON namespace_info.oid = table_info.relnamespace
+                        CROSS JOIN LATERAL pg_catalog.aclexplode(
+                            COALESCE(table_info.relacl, pg_catalog.acldefault('r', table_info.relowner))
+                        ) acl
+                        WHERE namespace_info.nspname = 'dms'
+                        AND table_info.relname = 'DocumentProjectionWork'
+                        AND acl.grantee = 0
+                        AND acl.privilege_type IN ('INSERT', 'UPDATE', 'DELETE')
+                    )
+                """;
+            ((bool)command.ExecuteScalar()!)
+                .Should()
+                .BeTrue(
+                    "the enqueue owner should have only the local privileges needed by the definer functions"
+                );
+        }
+    }
+
     internal static long GetDmsTableCount(DbConnection connection, string dialect, string tableName)
     {
         using var command = connection.CreateCommand();
