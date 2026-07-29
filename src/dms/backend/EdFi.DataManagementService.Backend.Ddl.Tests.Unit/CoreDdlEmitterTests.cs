@@ -275,9 +275,9 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     [Test]
     public void It_should_emit_content_version_column_on_document_cache_table()
     {
-        // Schema-only column added for the cached-vs-canonical freshness check
-        // (cached.ContentVersion == dms.Document.ContentVersion AND
-        //  cached.LastModifiedAt == dms.Document.ContentLastModifiedAt).
+        // Schema-only column for row-level cache freshness. A row in this table
+        // is fresh when its ContentVersion matches dms.Document.ContentVersion.
+        // LastModifiedAt remains projected payload metadata.
         // Runtime cache reader/writer lands in a follow-on ticket.
         _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL");
     }
@@ -1348,7 +1348,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_emit_content_version_column_on_document_cache_table()
     {
-        // Schema-only column added for the cached-vs-canonical freshness check.
+        // Schema-only column for row-level cache freshness. A row in this table
+        // is fresh when its ContentVersion matches dms.Document.ContentVersion.
+        // LastModifiedAt remains projected payload metadata.
         // Runtime cache reader/writer lands in a follow-on ticket.
         _ddl.Should().Contain("[ContentVersion] bigint NOT NULL");
     }
