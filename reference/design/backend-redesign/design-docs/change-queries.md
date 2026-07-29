@@ -2082,13 +2082,15 @@ If DMS keeps a runtime feature flag for Change Queries, requests to Change Queri
 
 Snapshot support is deferred for DMS v1.0. The `Use-Snapshot` header is therefore not part of the DMS v1.0 Change Queries contract, and DMS v1.0 should not emit ODS snapshot-specific ProblemDetails for Change Queries.
 
-As with § "Snapshot support is deferred", this subsection is normative for DMS v1.0 only. The shapes below are the preserved ODS contract, not the post-v1.0 DMS contract: `29-snapshot-support.md` narrows the `405` from any non-`GET` request to resource and descriptor mutations, requires a successfully parsed `true` rather than mere header presence, and specifies which failures may and may not be translated to the `404`. Implementers of the rollout use that document; this table records only what DMS v1.0 must not emit.
+As with § "Snapshot support is deferred", this subsection is normative for DMS v1.0 only, where its whole content is the prohibition above: DMS v1.0 emits none of these responses.
 
-DMS should preserve the ODS response shapes below whenever snapshot support gets added:
+The table below is historical context — the ODS shapes that motivated deferral and were recorded so the contract would not be lost. It is not the post-v1.0 DMS contract and must not be implemented from. `29-snapshot-support.md` § Snapshot ProblemDetails and § Response precedence are authoritative for the rollout, and they deliberately differ from this table: the `405` is narrowed from any non-`GET` request to resource and descriptor mutations, a successfully parsed `true` is required rather than mere header presence, and only connection-open failures may translate to the `404` while query, mapping, provisioning, and application defects keep their existing contracts. Implementers building snapshot support use that document and not this one.
+
+Recorded ODS shapes, for reference only:
 
 | Scenario | Type | Title | Status | Detail |
 |---|---|---|---|---|
 | `Use-Snapshot: true` is supplied on a non-`GET` request | `urn:ed-fi:api:snapshots:method-not-allowed` | `Method Not Allowed with Snapshots` | `405` | `An attempt was made to modify data in a Snapshot, but this data is read-only.` |
 | `Use-Snapshot: true` is supplied but no snapshot connection string is configured, or the snapshot database cannot be reached | `urn:ed-fi:api:not-found` | `Not Found` | `404` | `Snapshot not found.` |
 
-For the `405` case, the response must include an `Allow: GET` header.
+In the ODS shapes above, the `405` case carries an `Allow: GET` header. The post-v1.0 DMS contract retains that header; see `29-snapshot-support.md` for its exact scope.

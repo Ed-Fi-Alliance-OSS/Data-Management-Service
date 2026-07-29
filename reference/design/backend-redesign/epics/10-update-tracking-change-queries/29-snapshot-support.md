@@ -106,7 +106,9 @@ An undecryptable derivative connection string is therefore a configuration defec
 - a derivative whose connection string cannot be decrypted is unusable and is treated as not configured, joining the missing-row and null/empty/whitespace cases;
 - the parent data store still loads with its primary connection and its remaining usable derivatives;
 - the failure is logged as an error identifying the tenant, parent `DataStoreId`, and derivative type, and never the ciphertext, the partial plaintext, the encryption key, or a connection string;
-- primary connection-string decryption failure remains fatal for that data store and is unchanged. A data store with an unreadable primary has no usable target at all, whereas a derivative is optional by construction.
+- primary connection-string decryption behavior is unchanged, and that existing behavior is tenant-wide rather than per-data-store. Because the primary is decrypted inside the same `FetchDataStores` projection, an undecryptable primary throws out of the enclosing `ToList()` and fails the whole tenant's data-store load, not merely the one data store that owns the bad value. This design does not narrow that blast radius.
+
+The asymmetry is deliberate and is a scope boundary, not an oversight. Per-data-store isolation of primary decryption failures would be a change to existing behavior that no part of the snapshot contract requires: an unreadable primary leaves that data store with no usable target at all, so isolating it would convert a startup-visible tenant-load failure into a set of individually broken data stores discovered one request at a time. Introducing derivative fault isolation does not create the primary case and does not depend on fixing it. Narrowing primary decryption failure to a single data store is therefore explicitly out of scope for this rollout; if it is wanted, it is separate work with its own justification, and it should be raised as its own ticket rather than folded into the derivative change.
 
 This follows the precedent already set for an unrecognized `DerivativeType`, which is ignored with an error log rather than failing the load, and it keeps a `Snapshot` defect safe by default: an unusable snapshot is not configured, so a snapshot-eligible read returns Snapshot Not Found `404` and never silently reads current data.
 
@@ -125,7 +127,7 @@ Derivative targets require different validation- and pool-cache semantics from t
 
 - Primary-target cache behavior is unchanged.
 - Derivative validation results are never cached for the process lifetime.
-- Failed, missing, or malformed derivative validation results are evicted immediately or retained only under a short retry TTL.
+- Failed, missing, or malformed derivative validation results are evicted immediately and are not cached; there is no retry TTL.
 - Successful derivative fingerprint and resource-key validations are time-bounded by an independent derivative validation TTL, specified below.
 - Recreating a snapshot at the same connection string recovers without restarting DMS, once that TTL has elapsed.
 - Replacing or removing derivative configuration eventually evicts and disposes obsolete pooled data sources without disrupting in-flight requests.
@@ -141,14 +143,33 @@ No derivative-specific startup health check is added. A derivative is optional a
 
 The derivative validation TTL is its own bounded setting and is not derived from the data-store configuration cache interval. Deriving it would reintroduce exactly the process-lifetime caching this design rejects, because the data-store cache is permitted to be non-expiring: `CacheSettings.DataStoreCacheRefreshEnabled` can be `false`, and `DataStoreCacheExpirationSeconds` is documented to keep the cached configuration until the next explicit reload when set to zero or a negative value. A derivative TTL defined as "no longer than the data-store configuration cache interval" is unbounded under either of those settings, so an operator who disables data-store refresh would silently latch a snapshot `503` or a stale successful validation until restart.
 
-The rules are therefore:
+The setting is `CacheSettings.DerivativeValidationCacheExpirationSeconds`, named and expressed in seconds to match the existing `CacheSettings` members:
 
-- a new `CacheSettings` value bounds successful derivative fingerprint and resource-key validation results. It has a positive default on the order of the current data-store default, and it is expressed in seconds for consistency with the existing settings;
-- the value is always positive. A zero, negative, or absent value falls back to the default rather than meaning "no expiration", which is the opposite of the existing `DataStoreCacheExpirationSeconds` convention and must be called out in the setting's documentation and validated at startup;
-- an upper bound is enforced so no configuration can make derivative validation effectively process-lifetime;
-- when the data-store configuration cache is enabled and bounded, the effective TTL is the smaller of the two, so a shorter data-store refresh still shortens derivative validation;
+| Property | Value | Rationale |
+| --- | --- | --- |
+| Default | `600` (10 minutes) | Matches the existing `DataStoreCacheExpirationSeconds` default, so the out-of-the-box behavior is the coupling the reviewers expected, without inheriting its disable-able semantics. |
+| Minimum accepted | `1` | Any positive value is honored. Operators running short extraction cycles may set it low; the cost is repeated fingerprint and resource-key reads against the derivative. |
+| Maximum accepted | `3600` (1 hour) | Bounds worst-case recovery for a snapshot recreated at the same connection string. An hour is far longer than any expected provisioning gap and far shorter than a process lifetime, which is the property that must hold. |
+
+Out-of-range and absent handling, which must be validated at startup rather than at first use:
+
+- a zero, negative, or absent value resolves to the default. It does **not** mean "no expiration". This inverts the `DataStoreCacheExpirationSeconds` convention, where a non-positive value means "hold until explicit reload", so the inversion is documented on the setting itself and in the operator-facing configuration reference;
+- a value above the maximum resolves to the maximum;
+- both out-of-range cases log a startup warning naming the configured value and the value actually in effect, so a clamped setting is discoverable without reading code;
+- startup does not fail on an out-of-range value. Clamping matches the existing `CacheSettings` members, none of which fail startup, and a cache-tuning value is not worth making a deployment fatal. The bound is what protects the invariant, not the failure.
+
+Interaction with the data-store configuration cache:
+
+- when the data-store configuration cache is enabled and bounded, the effective TTL is the smaller of the two values, so a shorter data-store refresh still shortens derivative validation;
 - when the data-store configuration cache is disabled or non-expiring, the derivative TTL stands alone and remains bounded. Derivative routing does not require data-store refresh to be enabled;
 - the operator-facing guidance to allow for a cache interval before beginning extraction refers to the data-store configuration cache, which is what governs when a newly registered derivative becomes visible. The derivative validation TTL governs only how long a validation verdict for an already-visible derivative is reused.
+
+Failed, missing, and malformed derivative validation results are evicted immediately and are not cached at all. There is no retry TTL:
+
+- the next request that selects that derivative revalidates from scratch;
+- this is the simplest behavior that satisfies the recovery requirement, and it is strictly more responsive than any retry TTL, so recovery after a snapshot is recreated is bounded by the successful-result TTL alone;
+- the cost is that a persistently unreachable derivative is retried once per request rather than once per interval. That is accepted: the failure path already opens no usable connection, the request is failing regardless, and a snapshot target's failure is terminal for the request rather than retried internally;
+- if load against a hard-down derivative later proves to be a real problem, a short negative TTL can be added without changing any other rule here. It is deliberately not specified now, because an unmeasured retry interval is a second tunable that would have to be reasoned about alongside the first.
 
 Requiring data-store refresh to be enabled was considered and rejected: it would turn an unrelated performance setting into a hard prerequisite for snapshot routing, and it would still leave the TTL coupled to a value an operator may set arbitrarily high.
 
@@ -196,6 +217,36 @@ Hoisting that trio ahead of `ValidateDatabaseFingerprintMiddleware` in the route
 
 Because this reordering changes the response for a request that is both unroutable and against an unprovisioned or unreachable database, from the fingerprint `503` to the endpoint `404`, it is a deliberate, test-visible precedence change rather than a refactor, and must be covered as such.
 
+#### Per-pipeline insertion points
+
+"After endpoint validation" is not a usable rule for every pipeline, because two of the eight do not perform endpoint validation at all and one performs an additional write-only validation that must also precede selection. The insertion point is therefore specified per pipeline rather than as one generic rule. In every case the constraint that actually matters is unchanged: selection runs after all validation that can reject the request without a database, and before the first step that opens a connection.
+
+| Pipeline | Snapshot / replica eligibility | Selection inserted | Notes |
+| --- | --- | --- | --- |
+| `CreateGetByIdPipeline`, `CreateQueryPipeline` | `Allowed` / `Allowed` | After `ValidateEndpointMiddleware`, before `ValidateDatabaseFingerprintMiddleware` | The base case. |
+| `CreateUpsertPipeline`, `CreateUpdatePipeline`, `CreateDeleteByIdPipeline` | `RejectedAsMutation` / `NotApplicable` | After `ValidateRouteSemanticsMiddleware`, before `ValidateDatabaseFingerprintMiddleware` | Route semantics must precede selection; see below. |
+| `CreateGetTrackedChangesPipeline` | `Allowed` / `Allowed` | After `ValidateEndpointMiddleware`, before `ValidateDatabaseFingerprintMiddleware` | Requires the same hoist as the routed pipelines. `ResolveMappingSetMiddleware`, currently ahead of the ApiSchema steps here, stays after fingerprint validation. |
+| `CreateGetAvailableChangeVersionsPipeline` | `Allowed` / `Allowed` | Immediately after `GetCommonInitialSteps()`, before `ValidateDatabaseFingerprintMiddleware` | No endpoint validation exists on this route and none is added; see below. |
+| `CreateGetTokenInfoPipeline` | `NotApplicable` / `NotApplicable` | Immediately after `GetCommonInitialSteps()`, before `ValidateDatabaseFingerprintMiddleware` | Always resolves to `Primary`, but the step still runs; see below. |
+
+**`/availableChangeVersions` is a fixed route with no endpoint validation to follow.** `CreateGetAvailableChangeVersionsPipeline` is intentionally minimal: it is `GetCommonInitialSteps()`, then `ValidateDatabaseFingerprintMiddleware`, then `AvailableChangeVersionsHandler`. It has no `ParsePathMiddleware`, no `ApiSchemaValidationMiddleware`, no `ProvideApiSchemaMiddleware`, no `ValidateEndpointMiddleware`, and no `ValidateResourceKeySeedMiddleware`. That is delivered contract, not an accident: `21-available-change-versions-endpoint.md` specifies the endpoint as a fixed DMS route that is not generated from `ApiSchema.json` and not gated by OpenAPI path presence, and requires that route availability not depend on either. Selection is inserted directly after the common steps resolve tenant, authentication, and the parent data store.
+
+None of those steps may be added to this pipeline in order to satisfy the generic rule. There is no unknown-resource or unknown-namespace case on a fixed route, so there is no `404` for a snapshot response to preempt, and adding ApiSchema or resource-key validation would reintroduce exactly the ApiSchema coupling that route was built to avoid — a regression against delivered contract, in exchange for nothing.
+
+**Token introspection still runs the selection step.** Its eligibility is `NotApplicable` on both axes, so selection is a foregone conclusion: `Primary`. The step is not skipped, because the effective target is a write-once value that repositories read through a distinct accessor, and reading it before assignment is an error. A pipeline that reaches the fingerprint reader or a repository without having assigned the effective target would fail on that contract rather than quietly defaulting to the primary. Running the step and having it resolve `Primary` is what keeps "every database operation in the request uses the selected target" true without a fallback path. The same reasoning applies to any future pipeline that resolves a data store: assigning `Primary` explicitly is the cheap, uniform behavior, and the absence of a silent default is the point.
+
+**Route semantics must precede selection on mutation pipelines.** `ValidateRouteSemanticsMiddleware` runs after `ValidateEndpointMiddleware` in the three mutation pipelines and rejects a collection `DELETE`, a collection `PUT`, and an item `POST`. It returns `405` itself, through `FailureResponse.ForMethodNotAllowed` with content type `application/json; charset=utf-8` and no `Allow` header.
+
+That makes the collision a same-status one, which is why it is easy to miss. For `DELETE /ed-fi/students` carrying `Use-Snapshot: true`, inserting selection immediately after endpoint validation would emit the snapshot `405` — type `urn:ed-fi:api:snapshots:method-not-allowed`, `application/problem+json`, `Allow: GET` — in place of the existing generic `405` and its route-semantics detail. The status code is identical, so any test asserting only the status would still pass while the type, title, detail, content type, and headers all changed. Selection is therefore inserted after route-semantics validation, and an invalid mutation route keeps its existing response whether or not it carries the header.
+
+The ordering among the three write-path validations is fixed in both directions, and each edge preserves an existing behavior:
+
+1. `ValidateEndpointMiddleware` before `ValidateRouteSemanticsMiddleware`, as today, so `DELETE /ed-fi/nonexistentThings` keeps returning the unknown-resource `404` rather than a route-semantics `405`. Route semantics reads only `Method` and `PathComponents.HasDocumentUuidSegment` and could technically run earlier, but moving it ahead of endpoint validation would flip that response and is not permitted.
+2. `ValidateRouteSemanticsMiddleware` before selection, so an invalid mutation route keeps its existing `405` shape.
+3. Selection before `ValidateDatabaseFingerprintMiddleware`, so the snapshot `405` and `404` are still emitted without opening any database.
+
+If the implementation hoists `ValidateRouteSemanticsMiddleware` into shared initial steps to keep one insertion point across all routed pipelines, that is behavior-preserving for the read pipelines: its switch matches only `(DELETE, false)`, `(PUT, false)`, and `(POST, true)`, so every `GET` falls through to `null` and the step is a no-op. This is an option, not a requirement.
+
 ### Selection matrix
 
 Snapshot eligibility:
@@ -224,9 +275,11 @@ Snapshot eligibility and automatic read-replica selection both apply to the data
 - resource and descriptor GET-many;
 - resource and descriptor GET-by-id;
 - profile-shaped resource and descriptor reads, which flow through the same GET-many and GET-by-id pipelines and inherit the same behavior;
-- resource and descriptor `/deletes`;
-- resource and descriptor `/keyChanges`;
+- resource and descriptor `/deletes`, including their profile-shaped variants;
+- resource and descriptor `/keyChanges`, including their profile-shaped variants;
 - `/changeQueries/v1/availableChangeVersions`.
+
+Profile `/deletes` and `/keyChanges` are in scope for the same reason the profile-shaped live reads are: they are served paths that flow through the tracked-changes pipeline, so they inherit its eligibility rather than needing their own rule. `20-openapi-change-query-surface.md` establishes that profile OpenAPI documents preserve `/deletes` and `/keyChanges` for readable profiled resources, so these are real endpoints a Publisher extraction can read, not a hypothetical surface. Excluding them would leave a profiled extraction able to read live data from a snapshot while reading its tombstones and key changes from current data — precisely the mixed-point-in-time outcome this feature exists to prevent. Profile filtering does not change the routing decision: those responses carry identity-key payloads rather than profile-filtered bodies, and the target is selected before any body is shaped.
 
 GET-by-id is in snapshot scope on direct evidence rather than by analogy: the ODS-derived ApiSchema documents the `Use-Snapshot` header parameter on the by-id GET operation and omits it from the collection GET, while referencing the snapshot-aware `404` response from both. Including GET-by-id also keeps dependent point reads inside the same source-isolation boundary as the extraction that triggered them.
 
@@ -289,7 +342,9 @@ Authentication, tenant validation, client data-store authorization, and parent r
 
 Path-level validation also precedes snapshot policy, matching ODS route precedence: malformed paths, malformed identifiers, unknown namespaces, and unknown resources return their existing `400` or `404` even when the request carries `Use-Snapshot: true`.
 
-After the parent is resolved and the endpoint is known to be valid:
+Write-path route-semantics validation likewise precedes snapshot policy. A collection `DELETE`, a collection `PUT`, or an item `POST` returns its existing generic `405` with the route-semantics detail and `application/json; charset=utf-8`, not the snapshot `405`. Because both responses are `405`, this precedence is invisible to a status-only assertion and must be asserted on the type, detail, content type, and the absence of `Allow`.
+
+After the parent is resolved and the endpoint and route semantics are known to be valid:
 
 - a resource or descriptor mutation with `Use-Snapshot: true` returns `405` before fingerprint validation and without opening the primary or derivative database;
 - a snapshot-eligible read with `Use-Snapshot: true` and no usable snapshot returns `404`;
@@ -345,7 +400,7 @@ Snapshot metadata is re-added at the MetaEd/ApiSchema source, and the served doc
 
 - define a reusable boolean `Use-Snapshot` header parameter with default `false`;
 - reference it from resource, descriptor, and profile GET-many and GET-by-id operations;
-- reference it from `/deletes`, `/keyChanges`, and `/availableChangeVersions`;
+- reference it from `/deletes` and `/keyChanges`, in the profile documents as well as the resource and descriptor documents, and from `/availableChangeVersions`;
 - document the Snapshot Not Found `404` on those GET operations;
 - document the snapshot `405`, its exact ProblemDetails contract, and its `Allow: GET` response header on resource and descriptor mutation operations;
 - use the exact ProblemDetails types, titles, status codes, and details above, served as `application/problem+json`.
@@ -398,7 +453,8 @@ Implementation coverage should include:
 - CMS PostgreSQL and SQL Server integration tests for the unique and check constraints, the new insert and update conflict repository results, preflight diagnostics for both duplicate rows and invalid derivative types, rejection of case variants such as `SNAPSHOT` and whitespace variants such as `Snapshot ` in both engines, tenant isolation, and derivative inclusion in data-store responses.
 - CMS frontend unit or E2E coverage asserting that both the insert duplicate and the update duplicate return HTTP `409`. The integration tests above prove the repository conflict result, not the response mapping.
 - DMS configuration-provider unit tests for derivative deserialization, decryption, unknown types, null and blank connection strings, tenant caches, and cache refresh.
-- DMS configuration-provider tests for an undecryptable derivative connection string — invalid Base64, a payload at or below the IV length, and a valid Base64 payload encrypted under a different key — proving each of the three failure modes leaves the parent data store loaded with its primary and its other usable derivatives, marks only the affected derivative unusable, and logs an error without the ciphertext or any connection string. Include a data store whose sibling derivative is valid and a second data store in the same CMS response, so fault isolation is proven at both the derivative and the response level. Also prove an undecryptable primary connection string keeps its existing fatal behavior.
+- DMS configuration-provider tests for an undecryptable derivative connection string — invalid Base64, a payload at or below the IV length, and a valid Base64 payload encrypted under a different key — proving each of the three failure modes leaves the parent data store loaded with its primary and its other usable derivatives, marks only the affected derivative unusable, and logs an error without the ciphertext or any connection string. Include a data store whose sibling derivative is valid and a second data store in the same CMS response, so fault isolation is proven at both the derivative and the response level.
+- A characterization test pinning the unchanged primary behavior: an undecryptable primary connection string fails the whole tenant data-store load, including the other data stores in the same response. This records existing behavior so the derivative change is visibly not narrowing it, and so a later decision to isolate it is a deliberate edit to this test rather than a silent drift.
 - End-to-end behavior of an unusable derivative: an undecryptable `Snapshot` yields Snapshot Not Found `404` for a snapshot-eligible read, and an undecryptable `ReadReplica` serves the request from the primary with an error log distinguishable from the no-replica-configured path.
 - Core routing unit tests for every row in both eligibility matrices, snapshot precedence over read replica, absence of fallback, header parsing, response precedence, and rejection of a second effective-target assignment within one request.
 - Frontend or E2E coverage for blank and multi-valued `Use-Snapshot` headers, which core cannot observe because the frontend normalizes them.
@@ -406,10 +462,16 @@ Implementation coverage should include:
 - Snapshot-unavailable tests at every read-path connection-open seam: fingerprint acquisition, resource-key validation, normal repository connection acquisition, and document-hydration connection acquisition. Hydration coverage must be explicit rather than folded into generic repository coverage, and must include the case where fingerprint and resource-key results are already cached so the hydrator open is the first failure in the request.
 - Tests proving a reachable but unprovisioned or fingerprint-incompatible snapshot returns the existing `503`, not Snapshot Not Found, and that an ordinary query failure against a snapshot is not translated either.
 - Tests proving a snapshot recreated at the same connection string recovers after the derivative validation TTL without a service restart, and that a removed or replaced derivative eventually releases its pooled data source without disrupting in-flight requests.
-- Tests proving the derivative validation TTL remains bounded when data-store cache refresh is disabled or its interval is non-positive, that a non-positive or absent derivative TTL falls back to the positive default rather than to no expiration, and that the enforced upper bound cannot be exceeded.
+- Tests proving the derivative validation TTL remains bounded when data-store cache refresh is disabled or its interval is non-positive, and that a shorter data-store interval shortens the effective TTL.
+- Settings-resolution tests for `DerivativeValidationCacheExpirationSeconds` at zero, negative, absent, `1`, `3600`, and above `3600`, asserting the effective value and the startup warning on each out-of-range case, and confirming a non-positive value resolves to the default rather than to no expiration.
+- Tests proving failed, missing, and malformed derivative validation results are not cached, so the next request revalidates instead of reusing the failure.
 - Tests proving authorization and route-context selection are still based on the parent data store and that all authorization SQL for a request uses the selected target.
 - Tests proving an unknown resource path with `Use-Snapshot: true` returns its existing `404` rather than the snapshot `405`.
-- OpenAPI document-assembly tests for resource, descriptor, profile, and Change Query documents, including a check that every `$ref` resolves within its own served document.
+- Tests proving an invalid mutation route with `Use-Snapshot: true` — collection `DELETE`, collection `PUT`, and item `POST` — returns the existing route-semantics `405` rather than the snapshot `405`, asserted on type, title, detail, content type, and absence of `Allow`, since both responses share the status code.
+- Pipeline-composition tests asserting the selection step's position in all eight pipelines, that `/availableChangeVersions` gains selection but gains no path, ApiSchema, endpoint, or resource-key step, and that token introspection runs selection and resolves `Primary`.
+- Tests proving `/availableChangeVersions` honors `Use-Snapshot: true` against a configured snapshot and selects a configured read replica for a normal read, with both fingerprint validation and the handler running against the selected target.
+- OpenAPI document-assembly tests for resource, descriptor, profile, and Change Query documents, including a check that every `$ref` resolves within its own served document, and explicit enumeration of the profile document's `/deletes` and `/keyChanges` operations so their snapshot coverage cannot be satisfied by the unprofiled operations alone.
+- Runtime coverage that a profile-shaped `/deletes` and `/keyChanges` read honors `Use-Snapshot: true` and read-replica selection identically to its unprofiled counterpart, so a profiled extraction cannot mix snapshot live reads with current-data tombstones.
 - DMS E2E coverage for GET-many, GET-by-id, `/deletes`, `/keyChanges`, `/availableChangeVersions`, `405` plus `Allow: GET`, missing snapshot, and snapshot precedence over read replica.
 - API Publisher interoperability coverage as described above.
 
@@ -448,12 +510,12 @@ No database document or Change Query DDL changes are required in the DMS data st
 
 Reviewed and resolved during this spike:
 
-1. **Read-replica routing follows ODS parity.** All resource and descriptor GET-many and GET-by-id requests, profile-shaped reads, `/deletes`, `/keyChanges`, and `/availableChangeVersions` are replica-eligible. The derivative row is the opt-in; no additional flag is added. Snapshot outranks replica; writes stay on the primary; token introspection and non-data-management surfaces stay on the primary.
+1. **Read-replica routing follows ODS parity.** All resource and descriptor GET-many and GET-by-id requests, profile-shaped reads, `/deletes`, `/keyChanges`, their profile-shaped variants, and `/availableChangeVersions` are replica-eligible. The derivative row is the opt-in; no additional flag is added. Snapshot outranks replica; writes stay on the primary; token introspection and non-data-management surfaces stay on the primary.
 2. **Derivative validation and pool caches are time-bounded by an independent TTL.** Primary behavior is unchanged; derivative results are never cached for the process lifetime, and recreating a snapshot at the same connection string recovers without a restart. The TTL is its own bounded `CacheSettings` value rather than the data-store configuration cache interval, because that interval may be disabled or non-expiring; derivative routing does not require data-store refresh to be enabled.
 3. **Snapshot-unavailable `404` is broad at the connection-open boundary.** Catalog absence, authentication failure, network failure, timeout, and firewall rejection all return Snapshot Not Found for a snapshot target, while ordinary SQL, mapping, authorization, fingerprint-shape, and application errors do not. Coverage is all seven read-path connection-open seams, including both document hydrators.
 4. **The snapshot `405` is scoped to resource and descriptor mutations,** and triggers only on a successfully parsed `true`. This intentionally narrows the acceptance criterion's "non-`GET`" wording to the data-management surface, and intentionally diverges from ODS's header-presence filter.
 5. **The CMS uniqueness migration hard-stops on duplicates,** reports the offending rows, and documents deletion through the derivative endpoint as remediation.
-6. **Path validation precedes snapshot policy,** so an unknown resource still returns its existing `400` or `404`; the mutation `405` is still emitted before any database connection is opened.
+6. **Path validation precedes snapshot policy,** so an unknown resource still returns its existing `400` or `404`; the mutation `405` is still emitted before any database connection is opened. The insertion point is specified per pipeline rather than as one generic rule, because `/availableChangeVersions` and token introspection perform no endpoint validation to follow and the mutation pipelines additionally require `ValidateRouteSemanticsMiddleware` to run first so an invalid mutation route keeps its existing `405` shape. `/availableChangeVersions` does not gain ApiSchema, endpoint, path, or resource-key validation in order to satisfy the rule.
 7. **The OpenAPI surface is re-added, not normalized,** including a reusable `Use-Snapshot` parameter applied to GET-many as well as GET-by-id, and a new snapshot-specific `405` ProblemDetails factory. The components are authored upstream in MetaEd and reach DMS only through published ApiSchema packages, so the surface is split into an upstream MetaEd ticket and a DMS story that bumps `src/Directory.Packages.props` and serves the result. No served OpenAPI content is authored in this repository.
 8. **Extraction-wide snapshot stability is an operator obligation, not a DMS binding.** Target selection stays per request because DMS has no extraction identity to pin to. Operators must not replace, re-point, remove, or recreate a `Snapshot` derivative while an extraction against it is in progress. Re-pointing and same-connection-string recreation are silent, and the latter is undetectable by DMS even in principle; removal and unreachability surface as the existing Snapshot Not Found `404`. The obligation and the distinction between those outcomes are stated in the design, the operator workflow, and the release notes.
 
@@ -464,7 +526,7 @@ Create and link the following implementation tickets only after this proposal is
 | Story | Area | Scope |
 | --- | --- | --- |
 | `38-cms-data-store-derivative-invariants.md` | CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and a `DerivativeType` check constraint requiring ordinal equality including length for PostgreSQL and SQL Server, add the padding-exact preflight for duplicate rows and invalid derivative types with its diagnostics, add insert and update conflict result variants plus their frontend `409` mappings and frontend-level coverage, and cover upgrade behavior and CMS tests. |
-| `39-snapshot-read-replica-runtime-routing.md` | DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them in per-derivative fault boundaries so an undecryptable optional derivative cannot fail the data-store load, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the independent bounded derivative validation TTL and pooled-data-source eviction, and cover both relational backends. Reorder the routed-resource and tracked-changes pipelines so `ApiSchemaValidationMiddleware`, `ProvideApiSchemaMiddleware`, and `ValidateEndpointMiddleware` precede fingerprint and resource-key validation, then insert target selection between them. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
+| `39-snapshot-read-replica-runtime-routing.md` | DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them in per-derivative fault boundaries so an undecryptable optional derivative cannot fail the data-store load, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the independent bounded derivative validation TTL and pooled-data-source eviction, and cover both relational backends. Reorder the routed-resource and tracked-changes pipelines so `ApiSchemaValidationMiddleware`, `ProvideApiSchemaMiddleware`, and `ValidateEndpointMiddleware` precede fingerprint and resource-key validation, then insert target selection at the per-pipeline points tabulated in § Per-pipeline insertion points — after route-semantics validation on the mutation pipelines, and directly after the common steps on `/availableChangeVersions` and token introspection, which gain no new validation steps. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
 | `40-snapshot-problem-details.md` | Snapshot ProblemDetails | Add the snapshot `405` factory and `Allow: GET`, emit the missing-snapshot `404` from the existing not-found factory, add the backend-neutral connection-unavailable exception at all seven enumerated read-path connection-open seams including both document hydrators, keep provisioning and query defects on their existing contracts, and log safely. |
 | `41-snapshot-openapi-surface.md` | OpenAPI surface (DMS half) | Bump the ApiSchema packages carrying the upstream snapshot components, then serve them from resource, descriptor, profile, and Change Query operations with every referenced component defined in each independently served document including the standalone Change Queries document; add DMS document-assembly and reference-resolution tests and confirm the bump is hash- and golden-neutral. Depends on the upstream MetaEd ticket below and does not touch the backend authoritative fixture inputs. |
 | *(upstream, separate repository)* | MetaEd/ApiSchema snapshot components | Author the reusable `Use-Snapshot` parameter and the snapshot `404`/`405` response components and reference them from the resource, descriptor, profile, and standalone Change Queries base documents, then publish the ApiSchema packages. Tracked as its own MetaEd ticket, created and linked before `41-snapshot-openapi-surface.md` is scheduled. Not a DMS ticket. |

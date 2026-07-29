@@ -18,7 +18,7 @@ This split follows the precedent in `20-openapi-change-query-surface.md` (DMS-11
 The following is MetaEd/ApiSchema work in the upstream repository, not DMS implementation work in this story. It is the input contract this story consumes.
 
 - MetaEd defines a reusable boolean `Use-Snapshot` header parameter with default `false`.
-- MetaEd references the parameter from resource, descriptor, and profile GET-many and GET-by-id operations, from resource and descriptor `/deletes` and `/keyChanges`, and from `/changeQueries/v1/availableChangeVersions`.
+- MetaEd references the parameter from resource, descriptor, and profile GET-many and GET-by-id operations, from resource and descriptor `/deletes` and `/keyChanges`, from the profile-shaped `/deletes` and `/keyChanges` operations that `20-openapi-change-query-surface.md` requires profile documents to preserve, and from `/changeQueries/v1/availableChangeVersions`.
 - MetaEd documents Snapshot Not Found `404` on snapshot-eligible GET operations, and the snapshot-specific `405` with its exact ProblemDetails schema, `application/problem+json`, and `Allow: GET` response header on resource and descriptor `POST`, `PUT`, and `DELETE`.
 - MetaEd emits the reusable parameter and the snapshot response components into the `components` block of every independently served base document that references them: resources, descriptors, profiles, and the standalone `projectSchema.openApiBaseDocuments.changeQueries` document. The Change Queries document ships today with empty `parameters` and `responses` collections and no `$ref` of any kind, so it must be populated rather than assumed to inherit.
 - MetaEd advertises the header on GET-many as well as GET-by-id, deliberately diverging from the older ODS-derived fixture shape that advertises it only for by-id.
@@ -44,6 +44,7 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
 
 - Resource, descriptor, and profile GET-many and GET-by-id operations serve the `Use-Snapshot` parameter.
 - Resource and descriptor `/deletes` and `/keyChanges` operations serve the parameter.
+- Profile `/deletes` and `/keyChanges` operations serve the parameter and the Snapshot Not Found `404`, matching their unprofiled counterparts. `20-openapi-change-query-surface.md` requires profile documents to preserve those paths for readable profiled resources, and `29-snapshot-support.md` routes them through the same snapshot-eligible tracked-changes pipeline, so omitting them here would advertise a contract narrower than the runtime's.
 - `/changeQueries/v1/availableChangeVersions` serves the parameter.
 - Snapshot-eligible GET operations serve Snapshot Not Found `404` with the exact runtime ProblemDetails contract from `40-snapshot-problem-details.md`.
 - Resource and descriptor `POST`, `PUT`, and `DELETE` operations serve the snapshot-specific `405`, its exact ProblemDetails schema, `application/problem+json`, and the `Allow: GET` response header.
@@ -58,6 +59,7 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
 - DMS document-assembly tests cover resource, descriptor, profile, and Change Queries documents.
 - Tests resolve every local `$ref` within each independently served document and fail for missing sibling-only components. This check is written so it fails on the pre-bump packages, proving it detects the gap rather than passing vacuously.
 - Tests verify the parameter type/default, operation coverage, exact ProblemDetails metadata, response content type, and `Allow` header declaration.
+- Operation-coverage tests enumerate the profile document's `/deletes` and `/keyChanges` paths explicitly, so a profile document that preserves those paths without the snapshot parameter fails rather than passing on the unprofiled operations alone.
 - A test asserts the served snapshot response metadata matches the runtime contract in `40-snapshot-problem-details.md` exactly, so the two cannot drift independently.
 - Effective-schema hash and golden-stability coverage confirms the package bump is OpenAPI-only.
 

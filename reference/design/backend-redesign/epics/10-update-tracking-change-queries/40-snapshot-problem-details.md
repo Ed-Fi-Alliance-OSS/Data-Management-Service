@@ -28,6 +28,8 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
 - Authentication, tenant validation, client data-store authorization, parent route resolution, and non-database path validation retain precedence over snapshot failures.
 - The snapshot mutation `405` is emitted after path validation but before fingerprint validation and without opening the primary, snapshot, or read-replica database.
 - This precedence depends on the pipeline reordering delivered by `39-snapshot-read-replica-runtime-routing.md`, which moves endpoint validation ahead of `ValidateDatabaseFingerprintMiddleware` and `ValidateResourceKeySeedMiddleware`. This story asserts the resulting responses; it does not re-implement the reordering. If that reordering is absent, an unknown resource carrying `Use-Snapshot: true` cannot return its existing `404` before snapshot policy runs.
+- The snapshot `405` does not displace the existing route-semantics `405`. A collection `DELETE`, a collection `PUT`, or an item `POST` carrying `Use-Snapshot: true` keeps the response `ValidateRouteSemanticsMiddleware` already produces through `FailureResponse.ForMethodNotAllowed`: its own type, title, and detail, content type `application/json; charset=utf-8`, and no `Allow` header. Only a route-valid mutation reaches the snapshot `405`.
+- Because both are `405`, tests distinguishing them assert type, title, detail, content type, and the presence or absence of `Allow`. A status-code assertion alone cannot tell the two apart and does not satisfy this criterion.
 
 ### Connection failure classification
 
@@ -53,6 +55,7 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
 
 - Unit and integration tests verify the exact `404` and `405` ProblemDetails bodies, content type, correlation identifier, and `Allow: GET`.
 - An unknown resource with `Use-Snapshot: true` retains its existing `404` rather than returning the snapshot mutation `405`.
+- An invalid mutation route with `Use-Snapshot: true` — collection `DELETE`, collection `PUT`, and item `POST` — retains the route-semantics `405` body, content type, and lack of `Allow`, asserted field by field rather than by status code.
 - PostgreSQL and SQL Server tests cover snapshot-unavailable behavior at every applicable connection-open seam.
 - Document-hydrator tests include a request whose fingerprint and resource-key validations are already cached so hydration is the first failing connection open.
 - Tests prove a reachable but unprovisioned or fingerprint-incompatible snapshot returns the existing `503`.
