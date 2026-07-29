@@ -343,8 +343,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                     request.WritePlan.Model.Resource,
                     postTargetRequest.ReferentialId,
                     postTargetRequest.CandidateDocumentUuid,
-                    writeSession.Connection,
-                    writeSession.Transaction,
+                    writeSession.CreateCommandExecutor(),
                     cancellationToken
                 )
                 .ConfigureAwait(false);

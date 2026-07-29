@@ -185,10 +185,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             var referenceResolver = new ReferenceResolver(
-                _referenceResolverAdapterFactory.CreateSessionAdapter(
-                    writeSession.Connection,
-                    writeSession.Transaction
-                )
+                _referenceResolverAdapterFactory.CreateSessionAdapter(writeSession.CreateCommandExecutor())
             );
             var resolvedReferences = await referenceResolver
                 .ResolveAsync(executionRequest.ReferenceResolutionRequest, cancellationToken)

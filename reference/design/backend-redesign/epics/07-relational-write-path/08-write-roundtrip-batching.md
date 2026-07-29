@@ -39,13 +39,64 @@ excluding the provider's BEGIN and COMMIT.**
 
 ### Estimate Versus Measured
 
-Every count in the "current state" tables below is a **code-inspected estimate**. It is derived by
-reading the call graph, not by observing a live provider.
+Every count in the "current state" tables below is a **code-inspected estimate** derived by reading
+the call graph, except the scenarios listed under "Measured baseline", which have been observed on
+live PostgreSQL and SQL Server.
 
-These numbers may not be described as measured until the write session's command recorder observes
-every in-session command (see "Instrumentation gap" below) and live characterization tests on
-PostgreSQL and SQL Server confirm them. This document is updated at that point, and again at the end
-of the story with the final measured matrix.
+An estimate may not be described as measured until the write session's command recorder observes
+every in-session command (see "Instrumentation gap" below) and live characterization tests on both
+providers confirm it. The recorder became complete under DMS-1332; the remaining variants are
+promoted as their characterization coverage lands, and the final matrix is recorded at the end of
+the story.
+
+### Measured Baseline
+
+Observed on live PostgreSQL and SQL Server through the write-session command recorder, using the
+`focused/stable-key-update-semantics` fixture (an `Ed-Fi.School` with an `addresses` child collection
+and no document or descriptor references), with no authorization strategies configured and no etag
+precondition. **Both providers produced identical counts for every row.**
+
+| Scenario | Session commands | BEGIN | COMMIT | ROLLBACK | In-session `dms.ReferentialIdentity` reads | Hydration batches |
+| --- | --- | --- | --- | --- | --- | --- |
+| POST create, 2 collection rows | 6 | 1 | 1 | 0 | 1 | 0 |
+| PUT changed, 2 rows to 3 | 4 | 1 | 1 | 0 | 0 | 1 |
+| POST resolving to an existing document, 2 rows to 3 | 4 | 1 | 1 | 0 | 0 | 1 |
+
+Reading these numbers:
+
+- They count commands **issued on the write session**. Each also pays one pre-session target-lookup
+  command, issued on a separate connection outside the write transaction, which the session recorder
+  cannot see. Total DB commands per request are therefore one higher than the session count.
+- The POST create stream is: in-session target lookup, `dms.Document` insert, root insert,
+  `CollectionItemId` reservation, collection insert, `ContentVersion` read.
+- The PUT and POST-as-update streams are: hydration batch, `CollectionItemId` reservation, collection
+  insert for the single added row, `ContentVersion` read. The root row is unchanged so it is not
+  rewritten.
+- **POST-as-update issues no in-session target lookup.** The executor re-resolves a POST target
+  in-session only when the incoming target context is `CreateNew` or the request carries an etag
+  precondition; here the pre-session lookup already resolved an existing document. So the only target
+  resolution for that request happened outside the write transaction.
+- Reference resolution issues no command in these scenarios because the fixture body carries no
+  references; the resolver skips the adapter when every lookup is already satisfied. Its routing
+  through the session is covered by unit-level assertions rather than by these counts.
+
+Reproduce with:
+
+```powershell
+# PostgreSQL
+$env:ConnectionStrings__DatabaseConnection = "host=localhost;port=5432;username=postgres;database=edfi_dms_backend_integration"
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration `
+  --filter "FullyQualifiedName~Write_Session_Command_Stream"
+
+# SQL Server 2025, per AGENTS.md
+$env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=<password>;TrustServerCertificate=true"
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration `
+  --filter "FullyQualifiedName~Write_Session_Command_Stream"
+```
+
+Still estimates, because no live characterization covers them yet: DELETE, the guarded no-op path,
+GET-by-id, descriptor writes, every authorization and precondition variant, and the counts that scale
+with collection-table count.
 
 ## Measurement Method
 
@@ -57,21 +108,26 @@ Assertions are on **exact** command counts and the ordered logical-statement kin
 An upper-bound assertion would not catch a regression back to a per-table N+1, which is the specific
 failure this story exists to prevent.
 
-### Instrumentation Gap
+### Instrumentation Gap (Closed)
 
-Three in-session call sites bypass `IRelationalWriteSession.CreateCommand` and are therefore invisible
-to that recorder today:
+Three in-session call sites originally bypassed `IRelationalWriteSession.CreateCommand` and were
+invisible to the recorder: reference resolution
+(`IReferenceResolverAdapterFactory.CreateSessionAdapter`), the in-session POST target lookup
+(`IRelationalWriteTargetLookupResolver.ResolveForPostAsync`), and current-state hydration
+(`ISessionDocumentHydrator.HydrateAsync`). Each took a raw `DbConnection`/`DbTransaction` pair, so a
+count assertion written against the recorder would have measured a subset and passed silently.
 
-- `DefaultRelationalWriteExecutor` builds its reference resolver with
-  `IReferenceResolverAdapterFactory.CreateSessionAdapter(writeSession.Connection, writeSession.Transaction)`.
-- `RelationalWriteTargetLookupResolver.ResolveForPostAsync` constructs
-  `new SessionRelationalCommandExecutor(connection, transaction)`.
-- `RelationalWriteCurrentStateLoader` calls
-  `ISessionDocumentHydrator.HydrateAsync(writeSession.Connection, writeSession.Transaction, ...)`.
+All three now take the session or the session's command executor. Consumers that hold an
+`IRelationalCommandExecutor` are covered because the default
+`IRelationalWriteSession.CreateCommandExecutor` binds to the instance it is invoked on, so a session
+decorator sees their commands too. Hydration is created through `CreateCommand` by way of a
+command-factory overload on `HydrationExecutor`; its keyset parameters are still bound by the plan
+layer after creation, so the recorder captures that one command's text with an empty declared
+parameter list.
 
-A count assertion written against the recorder as it stands would measure a subset and pass silently.
-Routing every in-session command through the session is a prerequisite for promoting the estimates
-below to measured numbers.
+`RelationalWriteSessionCommandRecorder` in `Backend.Tests.Common` is the shared recorder, and
+`WriteSessionCommandStreamScenarios` holds the provider-neutral expectations each engine adapter
+asserts against.
 
 ## Current State
 

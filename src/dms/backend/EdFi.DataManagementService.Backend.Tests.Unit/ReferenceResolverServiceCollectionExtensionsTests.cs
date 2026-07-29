@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -318,10 +317,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     {
         public IReferenceResolverAdapter CreateAdapter() => new TestReferenceResolverAdapter();
 
-        public IReferenceResolverAdapter CreateSessionAdapter(
-            DbConnection connection,
-            DbTransaction transaction
-        ) => new TestReferenceResolverAdapter();
+        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor) =>
+            new TestReferenceResolverAdapter();
     }
 
     private sealed class TestReferenceResolverAdapter : IReferenceResolverAdapter
@@ -347,14 +344,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             return new ExecutorBackedReferenceResolverAdapter(CommandExecutor);
         }
 
-        public IReferenceResolverAdapter CreateSessionAdapter(
-            DbConnection connection,
-            DbTransaction transaction
-        )
+        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
         {
-            return new ExecutorBackedReferenceResolverAdapter(
-                new SessionRelationalCommandExecutor(connection, transaction)
-            );
+            return new ExecutorBackedReferenceResolverAdapter(commandExecutor);
         }
     }
 
@@ -398,8 +390,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     private sealed class TestSessionDocumentHydrator : ISessionDocumentHydrator
     {
         public Task<HydratedPage> HydrateAsync(
-            DbConnection connection,
-            DbTransaction transaction,
+            IRelationalWriteSession writeSession,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,

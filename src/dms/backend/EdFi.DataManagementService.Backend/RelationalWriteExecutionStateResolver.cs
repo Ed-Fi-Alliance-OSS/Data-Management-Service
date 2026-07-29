@@ -231,8 +231,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 request.WritePlan.Model.Resource,
                 referentialId,
                 candidateDocumentUuid,
-                writeSession.Connection,
-                writeSession.Transaction,
+                writeSession.CreateCommandExecutor(),
                 cancellationToken
             )
             .ConfigureAwait(false);

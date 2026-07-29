@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -77,11 +76,11 @@ internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalComma
         return new PostgresqlReferenceResolverAdapter(_commandExecutor);
     }
 
-    public IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction)
+    public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
     {
-        return new PostgresqlReferenceResolverAdapter(
-            new SessionRelationalCommandExecutor(connection, transaction)
-        );
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+
+        return new PostgresqlReferenceResolverAdapter(commandExecutor);
     }
 }
 
@@ -115,20 +114,22 @@ internal sealed class PostgresqlDocumentHydrator(NpgsqlDataSourceProvider dataSo
 internal sealed class PostgresqlSessionDocumentHydrator : ISessionDocumentHydrator
 {
     public Task<HydratedPage> HydrateAsync(
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalWriteSession writeSession,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
         HydrationExecutionOptions executionOptions,
         CancellationToken cancellationToken = default
-    ) =>
-        HydrationExecutor.ExecuteAsync(
-            connection,
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writeSession);
+
+        return HydrationExecutor.ExecuteAsync(
+            batchSql => writeSession.CreateCommand(new RelationalCommand(batchSql)),
             plan,
             keyset,
             SqlDialect.Pgsql,
-            transaction,
             executionOptions,
             cancellationToken
         );
+    }
 }

@@ -116,7 +116,7 @@ public static class HydrationExecutor
     /// <param name="executionOptions">Controls optional projection work in the hydration batch.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
-    public static async Task<HydratedPage> ExecuteAsync(
+    public static Task<HydratedPage> ExecuteAsync(
         DbConnection connection,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
@@ -127,14 +127,56 @@ public static class HydrationExecutor
     )
     {
         ArgumentNullException.ThrowIfNull(connection);
+
+        return ExecuteAsync(
+            batchSql =>
+            {
+                var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = batchSql;
+                return command;
+            },
+            plan,
+            keyset,
+            dialect,
+            executionOptions,
+            ct
+        );
+    }
+
+    /// <summary>
+    /// Executes the hydration batch through a caller-supplied command factory.
+    /// </summary>
+    /// <remarks>
+    /// The factory receives the assembled batch SQL and returns a command already bound to the
+    /// caller's connection and transaction. This lets a write session create the hydration command
+    /// through its own command-creation seam, so a session decorator observes the hydration batch
+    /// alongside every other in-session command. Keyset parameters are added to the returned
+    /// command here, so factories must not assume the command they return is already complete.
+    /// </remarks>
+    /// <param name="createCommand">Builds a command bound to the caller's connection/transaction.</param>
+    /// <param name="plan">The compiled resource read plan.</param>
+    /// <param name="keyset">The page keyset specification.</param>
+    /// <param name="dialect">The SQL dialect.</param>
+    /// <param name="executionOptions">Controls optional projection work in the hydration batch.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
+    public static async Task<HydratedPage> ExecuteAsync(
+        Func<string, DbCommand> createCommand,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        HydrationExecutionOptions executionOptions,
+        CancellationToken ct
+    )
+    {
+        ArgumentNullException.ThrowIfNull(createCommand);
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(keyset);
 
         var batchSql = HydrationBatchBuilder.Build(plan, keyset, dialect, executionOptions);
 
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = batchSql;
+        await using var command = createCommand(batchSql);
         HydrationBatchBuilder.AddParameters(command, keyset);
 
         await using var reader = await command.ExecuteReaderAsync(ct);

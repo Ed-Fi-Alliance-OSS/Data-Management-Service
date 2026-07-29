@@ -136,11 +136,8 @@ public class Given_Default_Relational_Write_Executor
         _referenceResolverAdapterFactory.CreateAdapterCallCount.Should().Be(0);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _referenceResolverAdapterFactory
-            .CapturedConnection.Should()
-            .BeSameAs(_writeSessionFactory.Session.Connection);
-        _referenceResolverAdapterFactory
-            .CapturedTransaction.Should()
-            .BeSameAs(_writeSessionFactory.Session.Transaction);
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
         _referenceResolverAdapterFactory.Adapter.Requests.Should().ContainSingle();
         _referenceResolverAdapterFactory.Adapter.Requests[0].Lookups.Should().HaveCount(2);
         _writeFlattener.FlattenCallCount.Should().Be(1);
@@ -176,13 +173,9 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(request.WritePlan);
         _noProfileMergeSynthesizer.CapturedRequest!.CurrentState.Should().BeNull();
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
         _targetLookupResolver
-            .CapturedWriteSession!.Connection.Should()
-            .BeSameAs(_writeSessionFactory.Session.Connection);
-        _targetLookupResolver
-            .CapturedWriteSession!.Transaction.Should()
-            .BeSameAs(_writeSessionFactory.Session.Transaction);
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -630,7 +623,8 @@ public class Given_Default_Relational_Write_Executor
                     )
                 )
             );
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        // Stored authorization plus reference resolution, both now on the session's executor.
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(2);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -1018,7 +1012,11 @@ public class Given_Default_Relational_Write_Executor
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
+        // POST resolves its target inside the stored-authorization boundary and that lookup now runs
+        // on the session's command executor; PUT takes no in-session lookup on this path.
+        _writeSessionFactory
+            .Session.CreateCommandExecutorCallCount.Should()
+            .Be(operationKind is RelationalWriteOperationKind.Post ? 1 : 0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -1062,7 +1060,9 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        // In-session POST target lookup, stored authorization, and reference resolution, all now on
+        // the session's executor.
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -1131,7 +1131,7 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer
             .CapturedRequest!.CurrentState.Should()
             .BeSameAs(_currentStateLoader.ResultToReturn);
-        _targetLookupResolver.CapturedWriteSession.Should().BeNull();
+        _targetLookupResolver.CapturedCommandExecutor.Should().BeNull();
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -1210,13 +1210,9 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
         _targetLookupResolver
-            .CapturedWriteSession!.Connection.Should()
-            .BeSameAs(_writeSessionFactory.Session.Connection);
-        _targetLookupResolver
-            .CapturedWriteSession!.Transaction.Should()
-            .BeSameAs(_writeSessionFactory.Session.Transaction);
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _currentStateLoader.CapturedRequest.Should().NotBeNull();
         _currentStateLoader.CapturedRequest!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
@@ -1690,13 +1686,9 @@ public class Given_Default_Relational_Write_Executor
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
         _targetLookupResolver
-            .CapturedWriteSession!.Connection.Should()
-            .BeSameAs(_writeSessionFactory.Session.Connection);
-        _targetLookupResolver
-            .CapturedWriteSession!.Transaction.Should()
-            .BeSameAs(_writeSessionFactory.Session.Transaction);
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
@@ -1879,7 +1871,6 @@ public class Given_Default_Relational_Write_Executor
             .CapturedWriteSessions.Should()
             .OnlyContain(writeSession => ReferenceEquals(writeSession, _writeSessionFactory.Session));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
         _currentStateLoader
             .CapturedRequests[1]
             .TargetContext.Should()
@@ -1892,11 +1883,8 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 45L)
             );
         _targetLookupResolver
-            .CapturedWriteSession!.Connection.Should()
-            .BeSameAs(_writeSessionFactory.Session.Connection);
-        _targetLookupResolver
-            .CapturedWriteSession!.Transaction.Should()
-            .BeSameAs(_writeSessionFactory.Session.Transaction);
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -3215,7 +3203,11 @@ public class Given_Default_Relational_Write_Executor
                 throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
         }
 
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        // Stored authorization and reference resolution for both verbs, plus the in-session POST
+        // target lookup for POST — all now on the session's executor.
+        _writeSessionFactory
+            .Session.CreateCommandExecutorCallCount.Should()
+            .Be(operationKind is RelationalWriteOperationKind.Post ? 3 : 2);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
@@ -3307,7 +3299,9 @@ public class Given_Default_Relational_Write_Executor
                 throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
         }
 
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
+        // No authorization executor is created on this path; the one call is reference resolution,
+        // which now runs on the session's executor.
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().BeEmpty();
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
@@ -6239,7 +6233,8 @@ public class Given_Default_Relational_Write_Executor
             .ExistingDocumentUuid.Should()
             .Be(new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")));
         updateSuccess.ETag.Should().Be(ComposedWriteResultEtag(77L));
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        // Stored authorization plus reference resolution, both now on the session's executor.
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(2);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         GetSubjectRuntimeValue(
@@ -8219,9 +8214,7 @@ public class Given_Default_Relational_Write_Executor
     {
         public RecordingReferenceResolverAdapter Adapter { get; } = new();
 
-        public DbConnection? CapturedConnection { get; private set; }
-
-        public DbTransaction? CapturedTransaction { get; private set; }
+        public IRelationalCommandExecutor? CapturedCommandExecutor { get; private set; }
 
         public int CreateAdapterCallCount { get; private set; }
 
@@ -8233,14 +8226,10 @@ public class Given_Default_Relational_Write_Executor
             return Adapter;
         }
 
-        public IReferenceResolverAdapter CreateSessionAdapter(
-            DbConnection connection,
-            DbTransaction transaction
-        )
+        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
         {
             CreateSessionAdapterCallCount++;
-            CapturedConnection = connection;
-            CapturedTransaction = transaction;
+            CapturedCommandExecutor = commandExecutor;
             return Adapter;
         }
     }
@@ -8360,7 +8349,7 @@ public class Given_Default_Relational_Write_Executor
     {
         public int ResolveForPostCallCount { get; private set; }
 
-        public IRelationalWriteSession? CapturedWriteSession { get; private set; }
+        public IRelationalCommandExecutor? CapturedCommandExecutor { get; private set; }
 
         public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
 
@@ -8369,40 +8358,19 @@ public class Given_Default_Relational_Write_Executor
             QualifiedResourceName resource,
             ReferentialId referentialId,
             DocumentUuid candidateDocumentUuid,
-            DbConnection connection,
-            DbTransaction transaction,
+            IRelationalCommandExecutor commandExecutor,
             CancellationToken cancellationToken = default
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
             ResolveForPostCallCount++;
-            CapturedWriteSession = new CapturedRelationalWriteSession(connection, transaction);
+            CapturedCommandExecutor = commandExecutor;
 
             return Task.FromResult(
                 PostResults.Count > 0
                     ? PostResults.Dequeue()
                     : new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
             );
-        }
-
-        private sealed class CapturedRelationalWriteSession(
-            DbConnection connection,
-            DbTransaction transaction
-        ) : IRelationalWriteSession
-        {
-            public DbConnection Connection { get; } = connection;
-
-            public DbTransaction Transaction { get; } = transaction;
-
-            public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
-
-            public Task CommitAsync(CancellationToken cancellationToken = default) =>
-                throw new NotSupportedException();
-
-            public Task RollbackAsync(CancellationToken cancellationToken = default) =>
-                throw new NotSupportedException();
-
-            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
 
@@ -8764,6 +8732,12 @@ public class Given_Default_Relational_Write_Executor
                 ),
             };
 
+        /// <summary>
+        /// Counts every in-session consumer that asked the session for a command executor: stored and
+        /// proposed authorization, bulk reference resolution, and the in-session POST target lookup.
+        /// It is no longer an authorization-only signal — assertions that care specifically about
+        /// authorization should read <see cref="RelationshipAuthorizationCommands"/>.
+        /// </summary>
         public int CreateCommandExecutorCallCount { get; private set; }
 
         public int CommitCallCount { get; private set; }

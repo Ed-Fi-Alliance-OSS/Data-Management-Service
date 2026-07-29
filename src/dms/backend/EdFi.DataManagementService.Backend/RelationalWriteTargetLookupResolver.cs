@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -29,13 +28,17 @@ public interface IRelationalWriteTargetLookupService
 
 public interface IRelationalWriteTargetLookupResolver
 {
+    /// <summary>
+    /// Resolves the POST target inside an open write session. Takes the session's command executor
+    /// rather than a raw connection/transaction pair so the lookup stays on the session's single
+    /// command-creation seam and a session decorator observes it.
+    /// </summary>
     Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     );
 }
@@ -88,16 +91,14 @@ internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTarg
         QualifiedResourceName resource,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(connection);
-        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(commandExecutor);
 
         return RelationalWriteTargetLookupSupport.ResolveForPostAsync(
-            new SessionRelationalCommandExecutor(connection, transaction),
+            commandExecutor,
             mappingSet,
             resource,
             referentialId,

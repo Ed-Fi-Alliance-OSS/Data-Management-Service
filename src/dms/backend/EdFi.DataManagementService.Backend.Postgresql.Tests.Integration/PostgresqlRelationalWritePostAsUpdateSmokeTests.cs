@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -72,8 +71,7 @@ internal sealed class BlockingPostTargetLookupResolver(ConcurrentPostCreateRaceC
         QualifiedResourceName resource,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     )
     {
@@ -84,8 +82,7 @@ internal sealed class BlockingPostTargetLookupResolver(ConcurrentPostCreateRaceC
             resource,
             referentialId,
             candidateDocumentUuid,
-            connection,
-            transaction,
+            commandExecutor,
             cancellationToken
         );
     }

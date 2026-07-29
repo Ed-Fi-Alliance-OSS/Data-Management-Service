@@ -1,0 +1,362 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+
+/// <summary>
+/// Characterizes the complete ordered command stream a write request issues on its relational write
+/// session. These counts are the observed baseline that the DMS-1332 verification document reports;
+/// they are deliberately exact so a later change to the command stream is a visible diff.
+/// </summary>
+file static class WriteSessionCommandStreamTestSupport
+{
+    public const string FixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
+
+    public static readonly ResourceInfo SchoolResourceInfo = new(
+        ProjectName: new ProjectName("Ed-Fi"),
+        ResourceName: new ResourceName("School"),
+        IsDescriptor: false,
+        ResourceVersion: new SemVer("1.0.0"),
+        AllowIdentityUpdates: false
+    );
+
+    public static ServiceProvider CreateServiceProvider()
+    {
+        ServiceCollection services = [];
+
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddSingleton<RelationalWriteSessionCommandRecorder>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddTestReadableProfileProjector();
+        services.AddScoped<RelationalDocumentStoreRepository>();
+        services.AddPostgresqlReferenceResolver();
+
+        // Decorate the provider's own session factory so the recorder observes the real production
+        // session, including BEGIN/COMMIT, rather than a substitute.
+        services.AddScoped<IRelationalWriteSessionFactory>(
+            serviceProvider => new RecordingRelationalWriteSessionFactory(
+                ActivatorUtilities.CreateInstance<PostgresqlRelationalWriteSessionFactory>(serviceProvider),
+                serviceProvider.GetRequiredService<RelationalWriteSessionCommandRecorder>()
+            )
+        );
+
+        return services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+    }
+
+    public static JsonNode CreateRequestBody(int addressCount) =>
+        NoProfileMultiBatchCollectionScenarios.CreateCollectionRequestBody(addressCount);
+
+    private static DocumentInfo CreateSchoolDocumentInfo()
+    {
+        var schoolIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+        ]);
+
+        return new DocumentInfo(
+            DocumentIdentity: schoolIdentity,
+            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            DocumentReferences: [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
+        );
+    }
+
+    public static UpsertRequest CreateUpsertRequest(
+        MappingSet mappingSet,
+        JsonNode edfiDoc,
+        DocumentUuid documentUuid,
+        string traceId
+    ) =>
+        new(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(),
+            MappingSet: mappingSet,
+            EdfiDoc: edfiDoc,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid
+        );
+
+    public static UpdateRequest CreateUpdateRequest(
+        MappingSet mappingSet,
+        JsonNode edfiDoc,
+        DocumentUuid documentUuid,
+        string traceId
+    ) =>
+        new(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(),
+            MappingSet: mappingSet,
+            EdfiDoc: edfiDoc,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid
+        );
+
+    /// <summary>
+    /// Classifies recorded PostgreSQL command text into the provider-neutral summary the shared
+    /// contract asserts over. Dialect text stays in this adapter, never in Tests.Common.
+    /// </summary>
+    public static WriteSessionCommandStreamSummary Summarize(
+        RelationalWriteSessionCommandRecorder recorder
+    ) =>
+        new(
+            TotalCommandCount: recorder.CommandCount,
+            BeginCount: recorder.BeginCount,
+            CommitCount: recorder.CommitCount,
+            RollbackCount: recorder.RollbackCount,
+            ReferentialIdentityLookupCount: recorder.Commands.Count(command =>
+                command.CommandText.Contains("dms.\"ReferentialIdentity\"", StringComparison.Ordinal)
+            ),
+            // The hydration batch is the only command that touches the root table and its child
+            // collection together; every persist command targets exactly one table. The same rule is
+            // used by the SQL Server adapter so the two classifications stay comparable.
+            HydrationBatchCount: recorder.Commands.Count(command =>
+                command.CommandText.Contains("\"edfi\".\"School\"", StringComparison.Ordinal)
+                && command.CommandText.Contains("\"edfi\".\"SchoolAddress\"", StringComparison.Ordinal)
+            )
+        );
+}
+
+public abstract class PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private protected MappingSet _mappingSet = null!;
+    private protected PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private protected ServiceProvider _serviceProvider = null!;
+    private protected RelationalWriteSessionCommandRecorder _recorder = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            WriteSessionCommandStreamTestSupport.FixtureRelativePath
+        );
+        _mappingSet = fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+    }
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _database.ResetAsync();
+        _serviceProvider = WriteSessionCommandStreamTestSupport.CreateServiceProvider();
+        _recorder = _serviceProvider.GetRequiredService<RelationalWriteSessionCommandRecorder>();
+        await SetUpTestAsync();
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    protected abstract Task SetUpTestAsync();
+
+    private protected IServiceScope CreateSelectedScope()
+    {
+        var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
+                    Id: 1,
+                    DataStoreType: "test",
+                    Name: "PostgresqlWriteSessionCommandStream",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        return scope;
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_Create
+    : PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("1a1a1a1a-0000-0000-0000-000000000001")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                _mappingSet,
+                WriteSessionCommandStreamTestSupport.CreateRequestBody(2),
+                _schoolDocumentUuid,
+                "pg-write-session-stream-create"
+            )
+        );
+    }
+
+    [Test]
+    public void It_creates_the_document() => _result.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+    [Test]
+    public void It_observes_the_in_session_target_lookup_that_the_recorder_previously_could_not_see() =>
+        WriteSessionCommandStreamScenarios.AssertCreateStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder),
+            expectedTotalCommandCount: 6
+        );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Put_Update
+    : PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("1a1a1a1a-0000-0000-0000-000000000002")
+    );
+
+    private UpdateResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using (var createScope = CreateSelectedScope())
+        {
+            var createRepository =
+                createScope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+            await createRepository.UpsertDocument(
+                WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                    _mappingSet,
+                    WriteSessionCommandStreamTestSupport.CreateRequestBody(2),
+                    _schoolDocumentUuid,
+                    "pg-write-session-stream-update-seed"
+                )
+            );
+        }
+
+        // Only the update's own command stream is under characterization.
+        _recorder.Reset();
+
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpdateDocumentById(
+            WriteSessionCommandStreamTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                WriteSessionCommandStreamTestSupport.CreateRequestBody(3),
+                _schoolDocumentUuid,
+                "pg-write-session-stream-update"
+            )
+        );
+    }
+
+    [Test]
+    public void It_updates_the_document() => _result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+
+    [Test]
+    public void It_observes_the_hydration_batch_that_the_recorder_previously_could_not_see() =>
+        WriteSessionCommandStreamScenarios.AssertUpdateStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder),
+            expectedTotalCommandCount: 4
+        );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_As_Update
+    : PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("1a1a1a1a-0000-0000-0000-000000000003")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using (var createScope = CreateSelectedScope())
+        {
+            var createRepository =
+                createScope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+            await createRepository.UpsertDocument(
+                WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                    _mappingSet,
+                    WriteSessionCommandStreamTestSupport.CreateRequestBody(2),
+                    _schoolDocumentUuid,
+                    "pg-write-session-stream-post-as-update-seed"
+                )
+            );
+        }
+
+        _recorder.Reset();
+
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                _mappingSet,
+                WriteSessionCommandStreamTestSupport.CreateRequestBody(3),
+                new DocumentUuid(Guid.Parse("1a1a1a1a-0000-0000-0000-0000000000ff")),
+                "pg-write-session-stream-post-as-update"
+            )
+        );
+    }
+
+    [Test]
+    public void It_updates_the_existing_document() => _result.Should().BeOfType<UpsertResult.UpdateSuccess>();
+
+    [Test]
+    public void It_observes_the_hydration_batch_and_pins_the_absent_in_session_target_lookup() =>
+        WriteSessionCommandStreamScenarios.AssertPostAsUpdateStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder),
+            expectedTotalCommandCount: 4
+        );
+}

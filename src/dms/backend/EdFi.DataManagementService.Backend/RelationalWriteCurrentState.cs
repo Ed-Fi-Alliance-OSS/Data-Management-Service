@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -60,11 +59,16 @@ internal interface IRelationalWriteCurrentStateLoader
     );
 }
 
+/// <summary>
+/// Hydrates a document inside an open write session. Takes the session rather than a raw
+/// connection/transaction pair so the hydration batch is created through
+/// <see cref="IRelationalWriteSession.CreateCommand(RelationalCommand)"/> and a session decorator
+/// observes it alongside every other in-session command.
+/// </summary>
 internal interface ISessionDocumentHydrator
 {
     Task<HydratedPage> HydrateAsync(
-        DbConnection connection,
-        DbTransaction transaction,
+        IRelationalWriteSession writeSession,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
         HydrationExecutionOptions executionOptions,
@@ -93,8 +97,7 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
 
         var hydratedPage = await _sessionDocumentHydrator
             .HydrateAsync(
-                writeSession.Connection,
-                writeSession.Transaction,
+                writeSession,
                 request.ReadPlan,
                 new PageKeysetSpec.Single(request.TargetContext.DocumentId),
                 new HydrationExecutionOptions(
