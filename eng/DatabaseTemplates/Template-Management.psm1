@@ -567,6 +567,43 @@ function New-DatabaseTemplateCsproj {
     Write-Host (Get-ChildItem $csprojPath).FullName
 }
 
+function Initialize-PostgresqlTemplateRestoreGlobalRole {
+    param (
+        [string]$ContainerName
+    )
+
+    $enqueueOwnerRoleSql = @'
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+BEGIN
+    IF _owner_role IS NULL THEN
+        CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_roles roles
+        WHERE roles.oid = _owner_role
+          AND (roles.rolcanlogin OR roles.rolinherit OR roles.rolsuper OR roles.rolcreatedb OR roles.rolcreaterole OR roles.rolreplication OR roles.rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before restoring template packages.';
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members memberships
+        WHERE memberships.member = _owner_role
+          AND (memberships.admin_option OR memberships.inherit_option OR memberships.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before restoring template packages.';
+    END IF;
+END
+$$;
+'@
+
+    & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c $enqueueOwnerRoleSql | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to ensure PostgreSQL role 'edfi_dms_enqueue_owner' exists in container '$ContainerName'."
+    }
+}
+
 <#
 .SYNOPSIS
     Builds a NuGet package from the .csproj.
@@ -922,6 +959,8 @@ function Restore-TemplatePackage {
         if ($null -eq $sqlFile) {
             throw "No .sql dump found inside package '$($package.Name)'."
         }
+
+        Initialize-PostgresqlTemplateRestoreGlobalRole -ContainerName $ContainerName
 
         # A connected session blocks DROP DATABASE; terminate any lingering ones as defense in
         # depth (restores target freshly created verification databases, so nothing should be

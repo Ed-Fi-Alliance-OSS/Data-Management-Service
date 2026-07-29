@@ -778,7 +778,7 @@ Describe "Restore-TemplatePackage" {
     }
 
     Context "when -DatabaseEngine is postgresql (the default)" {
-        It "drops and recreates the database, copies the dump in, and restores via psql -f" {
+        It "creates restore-global roles, drops and recreates the database, copies the dump in, and restores via psql -f" {
             New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "dump.sql" -PackageFileName "MyPgTemplate.nupkg" | Out-Null
 
             $calls = [System.Collections.Generic.List[object]]::new()
@@ -790,12 +790,31 @@ Describe "Restore-TemplatePackage" {
             $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine postgresql -ContainerName "dms-postgresql"
 
             $result | Should -Be "MyPgTemplate.nupkg"
-            $calls.Count | Should -Be 5
-            ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'testdb' AND pid <> pg_backend_pid();") -join '|')
-            ($calls[1] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'DROP DATABASE IF EXISTS testdb;') -join '|')
-            ($calls[2] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE DATABASE testdb;') -join '|')
-            $calls[3][0] | Should -Be 'cp'
-            ($calls[4] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-v', 'ON_ERROR_STOP=1', '-f', '/tmp/template-restore.sql') -join '|')
+            $calls.Count | Should -Be 6
+            ($calls[0][0..9] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c') -join '|')
+            $calls[0][10] | Should -Match 'CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;'
+            $calls[0][10] | Should -Match 'pg_catalog.pg_auth_members memberships'
+            ($calls[1] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'testdb' AND pid <> pg_backend_pid();") -join '|')
+            ($calls[2] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'DROP DATABASE IF EXISTS testdb;') -join '|')
+            ($calls[3] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE DATABASE testdb;') -join '|')
+            $calls[4][0] | Should -Be 'cp'
+            ($calls[5] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-v', 'ON_ERROR_STOP=1', '-f', '/tmp/template-restore.sql') -join '|')
+        }
+
+        It "fails before dropping the database when restore-global role setup fails" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "dump.sql" -PackageFileName "MyPgTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $global:LASTEXITCODE = 1
+            }
+
+            { Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine postgresql -ContainerName "dms-postgresql" } |
+                Should -Throw "*Failed to ensure PostgreSQL role 'edfi_dms_enqueue_owner' exists*"
+
+            $calls.Count | Should -Be 1
+            ($calls[0][0..9] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c') -join '|')
         }
 
         It "produces byte-identical restore arguments whether or not -DatabaseEngine is supplied" {
