@@ -14,7 +14,7 @@ Use a file-backed startup status signal that is written before HTTP route bindin
 Contract:
 
 - `State`: `Starting`, `Completed`, `Failed`, or `Ready`
-- `Phase`: one of `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeDatabase`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, or `Ready`
+- `Phase`: one of `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, or `Ready`
 - `Summary`: short human-readable phase summary
 - `ErrorType` / `ErrorMessage`: populated only for failures
 - `UpdatedAtUtc`: last write timestamp
@@ -36,9 +36,27 @@ This keeps fatal startup semantics unchanged: fatal phases still terminate the p
 3. On success, overwrite the file with `Completed`.
 4. On failure, overwrite the file with `Failed`, then invoke the existing process-exit behavior.
 
-The current startup sequence writes these phase names in order: `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeDatabase`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, and `Ready`.
+The current startup sequence writes these phase names in order: `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, and `Ready`.
+
+There is no database-provisioning phase in this list. Schema provisioning is owned by the bootstrap provisioning phase (`provision-dms-schema.ps1`) and never runs inside DMS startup — see `reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md`, which lists running inside DMS startup under that phase's "Must NOT do" and states that "Schema provisioning is entirely owned by this phase; DMS startup never performs it."
 
 Bootstrap phases before the app host exists (`ConfigureServices`, `BuildApplication`) use the same status contract, but rethrow after writing the failure because the process has not yet built the DI graph used by the runtime exit hook. After the host exists, `ConfigureEndpoints` is written immediately before routing and endpoint registration, and `Ready` is written after middleware and endpoint mapping complete successfully.
+
+`ConfigureEndpoints` bypasses `RunFatalAsync`. On success it transitions `Starting` -> `Ready` and writes no `Completed` state, because `Ready` is the success signal for endpoint configuration and would immediately overwrite it. On failure the phase name covers three distinct routes, told apart by `Summary`:
+
+| `Summary` begins with | Cause | Preceding state | `Critical` log event | Process |
+|---|---|---|---|---|
+| `Middleware and endpoint configuration failed` | Routing, middleware, or endpoint mapping threw | `Starting` (`ConfigureEndpoints`) | Yes | Terminates by rethrow |
+| `Configuration could not be read or bound` | A configured value could not be converted to its target type, or an options service could not be resolved | `Completed` (`BuildApplication`) | Yes | Terminates by rethrow |
+| `Configuration validation failed` | An options validator rejected the configuration | `Completed` (`BuildApplication`) | No | Stays up; every request is short-circuited by invalid-configuration middleware |
+
+The two terminating routes write the failure and rethrow instead of invoking the process-exit hook, so the unhandled exception terminates the process. Both are recorded through `StartupPhaseExecutor`, so both emit the same phase-labelled `Critical` log event as the phases that exit via the hook: every fatal failure from `LoadDataStores` onward is findable by a log search on the failing phase name.
+
+Two ranges are the exception. The two pre-host phases run before the DI graph the executor depends on exists, so they write the status file but emit no `Critical` event, and their log evidence is the runtime's unhandled-exception output. The statements between the `BuildApplication` phase and the first fatal phase — resolving the phase executor, the path-base call, and the middleware registrations that precede configuration reporting — write no phase transition and emit no `Critical` event either, so a failure there leaves a collected file reading `Completed` (`BuildApplication`) on a process that is already gone. They are left unguarded deliberately: they fail on a missing DI registration or a malformed middleware type, which breaks in every environment rather than on one deployment's configuration values. The configuration read at the end of that range is the exception within it and is guarded — it is the `Configuration could not be read or bound` route above. A statement added to that range that a configuration value can break needs its own guard.
+
+The validation route is deliberately non-fatal, which is why it emits no `Critical` event: DMS stays up so callers receive a reportable error instead of a refused connection. Two consequences when reading a collected status file. First, a `Failed` document on this phase does not by itself mean the process is gone — read `Summary` to tell which route ran. Second, only the endpoint-mapping route is preceded by `Starting`; both configuration routes are reached before `Starting` is written, so the file transitions straight from `Completed` (`BuildApplication`) to `Failed`.
+
+`Ready` means every startup phase completed. It is written before the host binds its listeners, so it does not by itself confirm that the process is accepting connections: a `Ready` file alongside a refused connection points at host startup, such as port binding, rather than at any startup phase.
 
 ## CI and local usage
 

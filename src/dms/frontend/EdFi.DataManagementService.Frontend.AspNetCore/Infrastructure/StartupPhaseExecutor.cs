@@ -52,9 +52,37 @@ internal sealed class StartupPhaseExecutor(
         _startupStatusSignal.WriteCompleted(phase, summary);
     }
 
+    /// <summary>
+    /// Records a phase failure that does not terminate the process, and deliberately emits no
+    /// Critical event: its one caller is the configuration-validation route, which leaves the host
+    /// up serving short-circuited requests rather than dying. A terminating path must use
+    /// <see cref="WriteFatalFailure"/> instead, or it silently drops the phase-labelled Critical
+    /// event that every fatal phase emits. Despite the name, this is not the general case.
+    /// </summary>
     public void WriteFailed(string phase, string summary, Exception exception)
     {
         _startupStatusSignal.WriteFailed(phase, summary, exception);
+    }
+
+    /// <summary>
+    /// Records a phase failure that is terminating the process, for phases that are not routed
+    /// through <see cref="RunFatalAsync"/> and terminate by rethrow rather than the exit hook.
+    /// Emits the same phase-labelled Critical event as the fatal phases so a log search by phase
+    /// name covers every fatal phase uniformly. Callers rethrow; this method does not exit.
+    /// Non-terminating failures use <see cref="WriteFailed"/>, which emits no Critical event.
+    /// </summary>
+    public void WriteFatalFailure(string phase, string failureSummary, Exception exception)
+    {
+        // The status file is written first because it is the artifact CI collects; nothing that
+        // can fail should precede it.
+        _startupStatusSignal.WriteFailed(phase, failureSummary, exception);
+
+        _logger.LogCritical(
+            exception,
+            "Fatal startup failure in phase {StartupPhase}. {FailureSummary}",
+            phase,
+            failureSummary
+        );
     }
 
     public async Task RunFatalAsync(
@@ -94,14 +122,7 @@ internal sealed class StartupPhaseExecutor(
 
     private void HandleFatalFailure(string phase, string failureSummary, int exitCode, Exception exception)
     {
-        _startupStatusSignal.WriteFailed(phase, failureSummary, exception);
-
-        _logger.LogCritical(
-            exception,
-            "Fatal startup failure in phase {StartupPhase}. {FailureSummary}",
-            phase,
-            failureSummary
-        );
+        WriteFatalFailure(phase, failureSummary, exception);
 
         _startupProcessExit.Exit(exitCode);
     }

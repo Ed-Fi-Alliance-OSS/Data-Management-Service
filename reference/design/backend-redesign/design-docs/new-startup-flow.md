@@ -89,17 +89,19 @@ In `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`,
 becomes:
 
 1. `InitializeDataStores(app)` (already present)
-2. Optional DB deploy (`InitializeDatabase(app)`; already present)
-3. **New**: `InitializeApiSchemas(app)` (Core)
-4. **New**: `InitializeBackendMappings(app)` (backend-specific)
-5. Initialize configured projection/CDC contexts using the authoritative design; resume
+2. **New**: `InitializeApiSchemas(app)` (Core)
+3. **New**: `InitializeBackendMappings(app)` (backend-specific)
+4. Initialize configured projection/CDC contexts using the authoritative design; resume
    durable queued work only for lifecycle-eligible targets and perform no startup
    source/cache full scan or implicit tracking activation
-6. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
-7. Start request routing
+5. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
+6. Start request routing
 
-ApiSchema loading can occur before or after DB deploy. Mapping initialization must occur after instances are
-loaded and after DBs are provisioned (if provisioning is done on startup).
+There is no database-provisioning step in this ordering. Schema provisioning is owned by the bootstrap
+provisioning phase and never runs inside DMS startup — see
+[`bootstrap/command-boundaries.md`](bootstrap/command-boundaries.md). Mapping initialization must occur
+after data stores are loaded and against databases that are already provisioned; startup validates that
+provisioning rather than performing it.
 
 ## Core Changes (ApiSchema as a Startup Contract)
 
