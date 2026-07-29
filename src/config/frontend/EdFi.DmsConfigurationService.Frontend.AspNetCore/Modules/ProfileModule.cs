@@ -104,7 +104,7 @@ public class ProfileModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IProfileRepository repository,
         ILogger<ProfileModule> logger
@@ -130,7 +130,7 @@ public class ProfileModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         ProfileUpdateCommand command,
         ProfileUpdateCommand.Validator validator,
         HttpContext httpContext,
@@ -167,7 +167,7 @@ public class ProfileModule : IEndpointModule
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IProfileRepository repository,
         ILogger<ProfileModule> logger

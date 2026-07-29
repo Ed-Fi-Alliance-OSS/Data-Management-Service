@@ -270,7 +270,7 @@ public class ApiClientModule : IEndpointModule
     }
 
     private static async Task<IResult> UpdateApiClient(
-        long id,
+        int id,
         ApiClientUpdateCommand command,
         ApiClientUpdateCommand.Validator validator,
         HttpContext httpContext,
@@ -911,7 +911,7 @@ public class ApiClientModule : IEndpointModule
         first.ToHashSet().SetEquals(second);
 
     private static async Task<IResult> DeleteApiClient(
-        long id,
+        int id,
         HttpContext httpContext,
         IApiClientRepository apiClientRepository,
         IIdentityProviderRepository identityProviderRepository,
@@ -1094,7 +1094,7 @@ public class ApiClientModule : IEndpointModule
     }
 
     private async Task<IResult> ResetCredential(
-        long id,
+        int id,
         HttpContext httpContext,
         IApiClientRepository apiClientRepository,
         IIdentityProviderRepository identityProviderRepository,

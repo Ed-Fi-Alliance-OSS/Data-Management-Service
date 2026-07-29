@@ -215,7 +215,7 @@ public class ApplicationModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
         ILogger<ApplicationModule> logger
@@ -245,7 +245,7 @@ public class ApplicationModule : IEndpointModule
     /// infrastructure errors, and returns null when the request is valid.
     /// </summary>
     private static async Task<IResult?> ValidateDataStoreIdsExist(
-        long[] dataStoreIds,
+        int[] dataStoreIds,
         IDataStoreRepository dataStoreRepository,
         HttpContext httpContext,
         ILogger<ApplicationModule> logger
@@ -287,7 +287,7 @@ public class ApplicationModule : IEndpointModule
     /// existence check mirrors the repository's foreign-key validation exactly.
     /// </summary>
     private static async Task<IResult?> ValidateProfileIdsExist(
-        long[] profileIds,
+        int[] profileIds,
         IProfileRepository profileRepository,
         HttpContext httpContext,
         ILogger<ApplicationModule> logger
@@ -318,7 +318,7 @@ public class ApplicationModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         ApplicationUpdateCommand.Validator validator,
         ApplicationUpdateCommand command,
         HttpContext httpContext,
@@ -871,7 +871,7 @@ public class ApplicationModule : IEndpointModule
     private static bool SetEquals(long[] first, long[] second) => first.ToHashSet().SetEquals(second);
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IApplicationRepository repository,
         IIdentityProviderRepository clientRepository,
@@ -989,7 +989,7 @@ public class ApplicationModule : IEndpointModule
     }
 
     private static async Task<IResult> ResetCredential(
-        long id,
+        int id,
         HttpContext httpContext,
         IApplicationRepository repository,
         IIdentityProviderRepository clientRepository,
