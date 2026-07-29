@@ -910,19 +910,15 @@ public class ApiClientModule : IEndpointModule
         long id,
         HttpContext httpContext,
         IApiClientRepository apiClientRepository,
-        IApplicationRepository applicationRepository,
-        IVendorRepository vendorRepository,
         IIdentityProviderRepository identityProviderRepository,
         IApplicationLockManager lockManager,
-        IOptions<IdentitySettings> identitySettings,
         ILogger<ApiClientModule> logger
     )
     {
         logger.LogDebug("Entering DeleteApiClient for id: {Id}", SanitizeForLog(id.ToString()));
 
-        // The lock is held across the provider deletion, the database delete, and any
-        // rollback recreation, and the client is reread under it so a stale UUID is never
-        // targeted.
+        // The lock is held across the provider deletion, the database delete, and any outcome
+        // resolution, and the client is reread under it so a stale UUID is never targeted.
         var (lockFailure, lockedApiClient, heldLocks) = await AcquireApiClientLocksAsync(
             id,
             null,
@@ -939,56 +935,19 @@ public class ApiClientModule : IEndpointModule
         ApiClientResponse apiClient = lockedApiClient!;
         try
         {
-            // Get application and vendor details for potential rollback
-            ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
-                apiClient.ApplicationId
-            );
-            ApplicationResponse? application = null;
-            string? namespacePrefixes = null;
-
-            if (applicationResult is ApplicationGetResult.Success applicationSuccess)
-            {
-                application = applicationSuccess.ApplicationResponse;
-                var vendorResult = await vendorRepository.GetVendor(application.VendorId);
-                if (vendorResult is VendorGetResult.Success vendorSuccess)
-                {
-                    namespacePrefixes = vendorSuccess.VendorResponse.NamespacePrefixes;
-                }
-            }
-
-            // Delete from identity provider FIRST. The compensation below must know whether this
-            // request actually removed the provider client; an already-missing client is an
-            // idempotent cleanup success that must never be "restored".
-            bool providerClientDeleted = false;
+            // Delete from the identity provider first. A provider client this workflow deletes
+            // stays deleted: the original secret is unrecoverable, so restoring the client could
+            // not restore service and would only leave an active orphaned credential. On any
+            // failure the database is untouched, so the surviving row remains the authoritative
+            // work list and a retried delete converges — an already-missing provider client is
+            // an idempotent cleanup success.
+            ClientDeleteResult clientDeleteResult;
             try
             {
                 logger.LogInformation("Deleting client {ClientId}", SanitizeForLog(apiClient.ClientId));
-                var clientDeleteResult = await identityProviderRepository.DeleteClientAsync(
+                clientDeleteResult = await identityProviderRepository.DeleteClientAsync(
                     apiClient.ClientUuid.ToString()
                 );
-
-                switch (clientDeleteResult)
-                {
-                    case ClientDeleteResult.FailureUnknown failureUnknown:
-                        logger.LogError(
-                            "Error deleting client {ClientId} {ClientUuid}: {FailureMessage}",
-                            SanitizeForLog(apiClient.ClientId),
-                            SanitizeForLog(apiClient.ClientUuid.ToString()),
-                            SanitizeForLog(failureUnknown.FailureMessage)
-                        );
-                        return FailureResults.Unknown(httpContext.TraceIdentifier);
-                    case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
-                        logger.LogError(
-                            "Error deleting client from identity provider: {FailureMessage}",
-                            SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
-                        );
-                        return FailureResults.BadGateway(
-                            "Identity provider error during client deletion",
-                            httpContext.TraceIdentifier
-                        );
-                }
-
-                providerClientDeleted = clientDeleteResult is ClientDeleteResult.Success;
             }
             catch (Exception ex)
             {
@@ -1002,86 +961,126 @@ public class ApiClientModule : IEndpointModule
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             }
 
-            // Delete from database SECOND - attempt rollback if this fails
-            ApiClientDeleteResult deleteResult = await apiClientRepository.DeleteApiClient(id);
+            switch (clientDeleteResult)
+            {
+                case ClientDeleteResult.Success:
+                    break;
+                case ClientDeleteResult.FailureClientNotFound:
+                    logger.LogInformation(
+                        "Client {ClientId} {ClientUuid} is already absent from the identity provider",
+                        SanitizeForLog(apiClient.ClientId),
+                        SanitizeForLog(apiClient.ClientUuid.ToString())
+                    );
+                    break;
+                case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
+                    logger.LogError(
+                        "Error deleting client from identity provider: {FailureMessage}",
+                        SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
+                    );
+                    return FailureResults.BadGateway(
+                        "Identity provider error during client deletion",
+                        httpContext.TraceIdentifier
+                    );
+                case ClientDeleteResult.FailureUnknown failureUnknown:
+                    logger.LogError(
+                        "Error deleting client {ClientId} {ClientUuid}: {FailureMessage}",
+                        SanitizeForLog(apiClient.ClientId),
+                        SanitizeForLog(apiClient.ClientUuid.ToString()),
+                        SanitizeForLog(failureUnknown.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError(
+                        "Unexpected result deleting client {ClientId} {ClientUuid}",
+                        SanitizeForLog(apiClient.ClientId),
+                        SanitizeForLog(apiClient.ClientUuid.ToString())
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            // Delete from the database second. A thrown repository failure enters the same
+            // authoritative outcome resolution as a returned unknown failure.
+            ApiClientDeleteResult deleteResult;
+            try
+            {
+                deleteResult = await apiClientRepository.DeleteApiClient(id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Repository delete threw for ApiClient {Id}", id);
+                deleteResult = new ApiClientDeleteResult.FailureUnknown(
+                    "The repository delete threw an exception."
+                );
+            }
+
+            // An unknown or thrown repository outcome is resolved with the authoritative
+            // row-locking read, which waits out any in-flight commit before classifying the
+            // state.
+            async Task<IResult> ResolveAmbiguousDeleteOutcomeAsync()
+            {
+                ApiClientResolutionResult resolution;
+                try
+                {
+                    resolution = await apiClientRepository.GetApiClientResolutionState(id);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Could not resolve the outcome of the failed delete for ApiClient {Id}",
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                }
+
+                switch (resolution)
+                {
+                    case ApiClientResolutionResult.FailureNotExists:
+                        // The ambiguous delete committed; the provider client and the row are
+                        // both gone, which is the requested end state.
+                        return Results.NoContent();
+                    case ApiClientResolutionResult.Success:
+                        logger.LogError(
+                            "Database delete failed for ApiClient {Id}; the row survives as the retry marker while the stored provider client may already be deleted. Retry the delete to converge",
+                            id
+                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    case ApiClientResolutionResult.FailureUnknown resolutionFailure:
+                        logger.LogError(
+                            "Could not resolve the outcome of the failed delete for ApiClient {Id}: {Message}",
+                            id,
+                            SanitizeForLog(resolutionFailure.FailureMessage)
+                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    default:
+                        logger.LogError(
+                            "Could not resolve the outcome of the failed delete for ApiClient {Id}",
+                            id
+                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                }
+            }
 
             switch (deleteResult)
             {
                 case ApiClientDeleteResult.Success:
                     return Results.NoContent();
                 case ApiClientDeleteResult.FailureNotFound:
-                case ApiClientDeleteResult.FailureUnknown:
-                    if (!providerClientDeleted)
-                    {
-                        // This request removed nothing from the identity provider, so there is
-                        // nothing to restore regardless of why the database delete failed.
-                        if (deleteResult is ApiClientDeleteResult.FailureUnknown)
-                        {
-                            logger.LogError(
-                                "Database delete failed for ApiClient {Id}; the identity provider client was already absent, so no compensation applies.",
-                                id
-                            );
-                            return FailureResults.Unknown(httpContext.TraceIdentifier);
-                        }
-
-                        return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
-                    }
-
-                    // Attempt to rollback by recreating client in identity provider
-                    if (application != null && namespacePrefixes != null)
-                    {
-                        logger.LogError(
-                            "Database delete failed for ApiClient {Id} after identity provider deletion succeeded. Attempting to recreate client in identity provider.",
-                            id
-                        );
-                        try
-                        {
-                            await identityProviderRepository.CreateClientAsync(
-                                apiClient.ClientId,
-                                "ROLLBACK_PLACEHOLDER_SECRET", // Cannot recover original secret
-                                identitySettings.Value.ClientRole,
-                                application.ApplicationName,
-                                application.ClaimSetName,
-                                namespacePrefixes,
-                                string.Join(",", application.EducationOrganizationIds),
-                                [.. apiClient.DataStoreIds],
-                                apiClient.IsApproved
-                            );
-                            logger.LogWarning(
-                                "Successfully recreated client {ClientId} in identity provider after database delete failure. CLIENT SECRET HAS BEEN CHANGED - manual intervention required.",
-                                SanitizeForLog(apiClient.ClientId)
-                            );
-                        }
-                        catch (Exception rollbackEx)
-                        {
-                            logger.LogCritical(
-                                rollbackEx,
-                                "CRITICAL: Failed to rollback identity provider after database delete failure for ApiClient {Id}. Client {ClientId} exists in identity provider but not in database. Manual cleanup required. Error: {Error}",
-                                id,
-                                SanitizeForLog(apiClient.ClientId),
-                                SanitizeForLog(rollbackEx.Message)
-                            );
-                        }
-                    }
-                    else
-                    {
-                        logger.LogCritical(
-                            "CRITICAL: Database delete failed for ApiClient {Id} after identity provider deletion succeeded. Cannot rollback - missing application or vendor data. Client {ClientId} deleted from identity provider but still in database. Manual cleanup required.",
-                            id,
-                            SanitizeForLog(apiClient.ClientId)
-                        );
-                    }
-
-                    return deleteResult is ApiClientDeleteResult.FailureNotFound
-                        ? FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier)
-                        : FailureResults.Unknown(httpContext.TraceIdentifier);
-                default:
-                    logger.LogCritical(
-                        "CRITICAL: Unexpected delete result for ApiClient {Id} after identity provider deletion. Client {ClientId} may be in inconsistent state.",
+                    // The repository's tenant-scoped existence precheck found no row inside its
+                    // transaction — authoritative absence, so the requested end state already
+                    // holds and no provider client is created for it.
+                    logger.LogWarning("ApiClient {Id} was already absent from the database", id);
+                    return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+                case ApiClientDeleteResult.FailureUnknown deleteFailure:
+                    logger.LogError(
+                        "Database delete failed for ApiClient {Id}: {Message}",
                         id,
-                        SanitizeForLog(apiClient.ClientId)
+                        SanitizeForLog(deleteFailure.FailureMessage)
                     );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    return await ResolveAmbiguousDeleteOutcomeAsync();
+                default:
+                    logger.LogError("Unexpected database delete result for ApiClient {Id}", id);
+                    return await ResolveAmbiguousDeleteOutcomeAsync();
             }
         }
         finally

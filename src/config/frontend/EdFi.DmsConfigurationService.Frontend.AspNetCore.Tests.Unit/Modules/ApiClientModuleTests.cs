@@ -2180,7 +2180,7 @@ public class ApiClientModuleTests
             _dependencyCalls.Should().BeEmpty();
     }
 
-    public abstract class DeleteWithMissingProviderClientTestBase : ApiClientModuleTests
+    public abstract class DeleteWorkflowTestBase : ApiClientModuleTests
     {
         protected Guid _providerClientUuid;
         protected HttpResponseMessage _deleteResponse = null!;
@@ -2212,38 +2212,10 @@ public class ApiClientModuleTests
                     )
                 );
 
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
-                .Returns(
-                    new ApplicationGetResult.Success(
-                        new ApplicationResponse
-                        {
-                            Id = 1,
-                            ApplicationName = "Test Application",
-                            ClaimSetName = "TestClaimSet",
-                            VendorId = 1,
-                            EducationOrganizationIds = [1],
-                            DataStoreIds = [1],
-                        }
-                    )
-                );
+            ArrangeProviderDelete(new ClientDeleteResult.FailureClientNotFound("Client not found"));
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
-                .Returns(
-                    new VendorGetResult.Success(
-                        new VendorResponse
-                        {
-                            Company = "Test",
-                            ContactName = "Test",
-                            ContactEmailAddress = "test@test.com",
-                            NamespacePrefixes = "uri://test",
-                        }
-                    )
-                );
-
-            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.FailureClientNotFound("Client not found"));
-
+            // Tripwire: the delete workflow must never create a provider client, so every
+            // fixture can assert this recorder stays empty.
             A.CallTo(() =>
                     _identityProviderRepository.CreateClientAsync(
                         A<string>.Ignored,
@@ -2264,12 +2236,27 @@ public class ApiClientModuleTests
         [TearDown]
         public void TearDownResponse() => _deleteResponse?.Dispose();
 
+        protected void ArrangeProviderDelete(ClientDeleteResult result)
+        {
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Returns(result);
+        }
+
         protected void ArrangeDatabaseDelete(ApiClientDeleteResult result)
         {
             A.CallTo(() => _apiClientRepository.DeleteApiClient(A<long>.Ignored))
                 .Invokes(call => _databaseDeletes.Add(call.GetArgument<long>(0)))
                 .Returns(result);
         }
+
+        protected void ArrangeResolutionState(ApiClientResolutionResult result)
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored)).Returns(result);
+        }
+
+        protected ApiClientResolutionState SurvivingRowState() =>
+            new(1, "Test", true, "test-client", _providerClientUuid, [1]);
 
         protected async Task ActDeleteAsync()
         {
@@ -2280,7 +2267,7 @@ public class ApiClientModuleTests
 
     [TestFixture]
     public class Given_an_api_client_delete_whose_identity_provider_client_is_already_missing
-        : DeleteWithMissingProviderClientTestBase
+        : DeleteWorkflowTestBase
     {
         [SetUp]
         public async Task Act()
@@ -2306,7 +2293,7 @@ public class ApiClientModuleTests
 
     [TestFixture]
     public class Given_an_api_client_delete_whose_provider_client_and_database_row_are_already_gone
-        : DeleteWithMissingProviderClientTestBase
+        : DeleteWorkflowTestBase
     {
         [SetUp]
         public async Task Act()
@@ -2338,7 +2325,7 @@ public class ApiClientModuleTests
 
     [TestFixture]
     public class Given_an_api_client_delete_whose_provider_client_is_missing_and_the_database_delete_fails
-        : DeleteWithMissingProviderClientTestBase
+        : DeleteWorkflowTestBase
     {
         private const string Sentinel = "SENTINEL_DB_DELETE_5c8a_must_not_leak";
 
@@ -2346,6 +2333,7 @@ public class ApiClientModuleTests
         public async Task Act()
         {
             ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureUnknown(Sentinel));
+            ArrangeResolutionState(new ApiClientResolutionResult.Success(SurvivingRowState()));
             await ActDeleteAsync();
         }
 
@@ -2372,6 +2360,377 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_does_not_recreate_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_provider_deletion_fails_at_the_identity_provider
+        : DeleteWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_PROVIDER_DELETE_502_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.Success());
+            ArrangeProviderDelete(
+                new ClientDeleteResult.FailureIdentityProvider(new IdentityProviderError(Sentinel))
+            );
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            _deleteResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _deleteResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The request could not be processed. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:bad-gateway",
+                  "title": "Bad Gateway",
+                  "status": 502,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": ["The identity provider returned an unexpected response."]
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_does_not_delete_the_database_row() => _databaseDeletes.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_provider_deletion_fails_unknown : DeleteWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_PROVIDER_DELETE_500_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.Success());
+            ArrangeProviderDelete(new ClientDeleteResult.FailureUnknown(Sentinel));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await _deleteResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_does_not_delete_the_database_row() => _databaseDeletes.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_provider_deletion_throws : DeleteWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_PROVIDER_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.Success());
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await _deleteResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_does_not_delete_the_database_row() => _databaseDeletes.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_provider_deletion_returns_an_unrecognized_result
+        : DeleteWorkflowTestBase
+    {
+        private sealed record UnrecognizedClientDeleteResult() : ClientDeleteResult;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.Success());
+            ArrangeProviderDelete(new UnrecognizedClientDeleteResult());
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+
+        [Test]
+        public void It_does_not_delete_the_database_row() => _databaseDeletes.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_database_row_was_already_absent : DeleteWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderDelete(new ClientDeleteResult.Success());
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureNotFound());
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ApiClient not found"
+            );
+
+        [Test]
+        public void It_deletes_the_provider_client() =>
+            _providerDeletes.Should().Equal(_providerClientUuid.ToString());
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_synchronize_a_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<long>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_ambiguous_database_delete_committed : DeleteWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderDelete(new ClientDeleteResult.Success());
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureUnknown("connection dropped"));
+            ArrangeResolutionState(new ApiClientResolutionResult.FailureNotExists());
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public void It_returns_no_content() =>
+            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_database_delete_fails_with_a_surviving_row
+        : DeleteWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_DB_DELETE_500_must_not_leak";
+        private RecordingLockManager _recordingLockManager = null!;
+        private bool _lockDisposedDuringResolution;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            ArrangeProviderDelete(new ClientDeleteResult.Success());
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureUnknown(Sentinel));
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    _lockDisposedDuringResolution = _recordingLockManager.Handles.Exists(handle =>
+                        handle.Disposed
+                    );
+                    return Task.FromResult<ApiClientResolutionResult>(
+                        new ApiClientResolutionResult.Success(SurvivingRowState())
+                    );
+                });
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await _deleteResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_holds_the_lock_through_the_outcome_resolution()
+        {
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _lockDisposedDuringResolution.Should().BeFalse();
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_database_delete_throws : DeleteWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_DB_DELETE_THROWN_must_not_leak";
+        private List<long> _resolutionReads = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _resolutionReads = [];
+            ArrangeProviderDelete(new ClientDeleteResult.Success());
+            A.CallTo(() => _apiClientRepository.DeleteApiClient(A<long>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel));
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Invokes(call => _resolutionReads.Add(call.GetArgument<long>(0)))
+                .Returns(new ApiClientResolutionResult.Success(SurvivingRowState()));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await _deleteResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_resolves_the_outcome_before_answering() => _resolutionReads.Should().Equal(1L);
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_outcome_resolution_fails : DeleteWorkflowTestBase
+    {
+        private const string DeleteSentinel = "SENTINEL_APICLIENT_DB_DELETE_must_not_leak";
+        private const string ResolutionSentinel = "SENTINEL_APICLIENT_RESOLUTION_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderDelete(new ClientDeleteResult.Success());
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureUnknown(DeleteSentinel));
+            ArrangeResolutionState(new ApiClientResolutionResult.FailureUnknown(ResolutionSentinel));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            string responseBody = await _deleteResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(DeleteSentinel);
+            responseBody.Should().NotContain(ResolutionSentinel);
+        }
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_outcome_resolution_throws : DeleteWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_RESOLUTION_THROWN_must_not_leak";
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            ArrangeProviderDelete(new ClientDeleteResult.Success());
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureUnknown("database delete failed"));
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await _deleteResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_releases_the_aggregate_lock()
+        {
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        }
+
+        [Test]
+        public void It_does_not_create_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
     }
 
     private sealed class RecordingLockHandle : IAsyncDisposable
