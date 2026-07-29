@@ -326,7 +326,7 @@
       "Run `rg -n \"Phase 0: Bounded Provisioning Guards\" docs/RELATIONAL-BACKEND.md src/dms/backend/EdFi.DataManagementService.Backend.Ddl/FullDdlEmitter.cs` and confirm the documentation matches the emitted header.",
       "Review the `docs/RELATIONAL-BACKEND.md` provisioning section to confirm it still distinguishes Phase 0 preflight from Phase 7 seed validation."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "20-review-schematools-readme-provision-order",
