@@ -30,11 +30,30 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class ApiClientModuleTests
 {
     private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
+    private IApplicationLockManager _lockManager = A.Fake<IApplicationLockManager>();
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
     private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IIdentityProviderRepository _identityProviderRepository =
         A.Fake<IIdentityProviderRepository>();
+
+    public ApiClientModuleTests()
+    {
+        A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+            .ReturnsLazily(_ =>
+                Task.FromResult<ApplicationLockResult>(
+                    new ApplicationLockResult.Acquired(A.Fake<IAsyncDisposable>())
+                )
+            );
+
+        A.CallTo(() =>
+                _apiClientRepository.SyncApiClientUuid(A<long>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+            )
+            .Returns(new ApiClientUuidSyncResult.Success());
+
+        A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+            .Returns(new ApiClientUuidReferenceResult.None());
+    }
 
     private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
     {
@@ -66,6 +85,7 @@ public class ApiClientModuleTests
 
                 collection
                     .AddTransient((_) => _apiClientRepository)
+                    .AddTransient((_) => _lockManager)
                     .AddTransient((_) => _applicationRepository)
                     .AddTransient((_) => _vendorRepository)
                     .AddTransient((_) => _dataStoreRepository)
@@ -935,9 +955,25 @@ public class ApiClientModuleTests
         public async Task It_syncs_rollback_client_uuid_when_database_update_fails()
         {
             // Arrange
+            var existingUuid = Guid.NewGuid();
             var updatedClientUuid = Guid.NewGuid();
             var rollbackClientUuid = Guid.NewGuid();
-            List<ApiClientUpdateCommand> updateCommands = [];
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = existingUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
 
             A.CallTo(() =>
                     _identityProviderRepository.UpdateClientAsync(
@@ -956,14 +992,27 @@ public class ApiClientModuleTests
                 );
 
             A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
-                .Invokes(call =>
-                {
-                    updateCommands.Add(call.GetArgument<ApiClientUpdateCommand>(0)!);
-                })
-                .ReturnsNextFromSequence(
-                    new ApiClientUpdateResult.FailureUnknown("Database error"),
-                    new ApiClientUpdateResult.Success()
+                .Returns(new ApiClientUpdateResult.FailureUnknown("Database error"));
+
+            // The ambiguous outcome resolves to the exact original state, so the update
+            // provably did not commit and compensation runs.
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Returns(
+                    new ApiClientResolutionResult.Success(
+                        new ApiClientResolutionState(1, "Test", true, "test-client", existingUuid, [1])
+                    )
                 );
+
+            List<(long Id, Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<long>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Invokes(call =>
+                    syncCalls.Add(
+                        (call.GetArgument<long>(0), call.GetArgument<Guid>(1), call.GetArgument<Guid>(2))
+                    )
+                )
+                .Returns(new ApiClientUuidSyncResult.Success());
 
             using var client = SetUpClient();
 
@@ -987,9 +1036,7 @@ public class ApiClientModuleTests
 
             // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            updateCommands.Should().HaveCount(2);
-            updateCommands[0].ClientUuid.Should().Be(updatedClientUuid);
-            updateCommands[1].ClientUuid.Should().Be(rollbackClientUuid);
+            syncCalls.Should().Equal((1L, existingUuid, rollbackClientUuid));
         }
 
         [Test]
@@ -1081,8 +1128,9 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_not_found_and_rolls_back_when_update_target_vanishes_at_repository()
+        public async Task It_returns_not_found_and_deletes_the_recreated_client_when_update_target_vanishes_at_repository()
         {
+            var updatedClientUuid = Guid.NewGuid();
             List<string> updateClientUuidsCalled = [];
             A.CallTo(() =>
                     _identityProviderRepository.UpdateClientAsync(
@@ -1096,10 +1144,15 @@ public class ApiClientModuleTests
                     )
                 )
                 .Invokes(call => updateClientUuidsCalled.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+                .Returns(new ClientUpdateResult.Success(updatedClientUuid));
 
             A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
                 .Returns(new ApiClientUpdateResult.FailureNotFound());
+
+            List<string> deletedClientUuids = [];
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.Success());
 
             using var client = SetUpClient();
 
@@ -1127,7 +1180,8 @@ public class ApiClientModuleTests
                 "Not Found",
                 "ApiClient with ID 1 not found."
             );
-            updateClientUuidsCalled.Should().HaveCount(2);
+            updateClientUuidsCalled.Should().HaveCount(1);
+            deletedClientUuids.Should().Equal(updatedClientUuid.ToString());
         }
 
         [Test]
@@ -2318,5 +2372,1193 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_does_not_recreate_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    private sealed class RecordingLockHandle : IAsyncDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingLockManager : IApplicationLockManager
+    {
+        public List<RecordingLockHandle> Handles { get; } = [];
+        public List<long> AcquiredApplicationIds { get; } = [];
+
+        public Task<ApplicationLockResult> AcquireAsync(
+            long applicationId,
+            CancellationToken cancellationToken
+        )
+        {
+            AcquiredApplicationIds.Add(applicationId);
+            var handle = new RecordingLockHandle();
+            Handles.Add(handle);
+            return Task.FromResult<ApplicationLockResult>(new ApplicationLockResult.Acquired(handle));
+        }
+    }
+
+    private static async Task AssertSanitizedInternalServerError(
+        HttpResponseMessage response,
+        params string[] sentinels
+    )
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        string responseBody = await response.Content.ReadAsStringAsync();
+        foreach (string sentinel in sentinels)
+        {
+            responseBody.Should().NotContain(sentinel);
+        }
+    }
+
+    private static async Task AssertLockConflictContract(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        string responseBody = await response.Content.ReadAsStringAsync();
+        JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+        string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+        correlationId.Should().NotBeNullOrWhiteSpace();
+        JsonNode expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
+              "type": "urn:ed-fi:api:conflict",
+              "title": "Conflict",
+              "status": 409,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{correlationId}", correlationId)
+        )!;
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
+
+    public abstract class UpdateUnderLockTestBase : ApiClientModuleTests
+    {
+        protected Guid _existingUuid;
+        protected HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public void SetUpUpdateDefaults()
+        {
+            _existingUuid = Guid.NewGuid();
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test",
+                            ContactName = "Test",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test",
+                        }
+                    )
+                );
+
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .ReturnsLazily(call =>
+                {
+                    long[] ids = call.GetArgument<long[]>(0) ?? [];
+                    return Task.FromResult<DataStoreIdsExistResult>(
+                        new DataStoreIdsExistResult.Success([.. ids])
+                    );
+                });
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.Success());
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _updateResponse?.Dispose();
+
+        protected async Task ActUpdateAsync(long applicationId = 1)
+        {
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(
+                    $$"""
+                    {
+                      "id": 1,
+                      "applicationId": {{applicationId}},
+                      "name": "Updated",
+                      "isApproved": true,
+                      "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_when_the_aggregate_lock_times_out : UpdateUnderLockTestBase
+    {
+        private List<string> _dependencyCalls = null!;
+        private List<string> _databaseUpdates = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _dependencyCalls = [];
+            _databaseUpdates = [];
+            A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+                .Returns(new ApplicationLockResult.FailureTimeout());
+            A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_vendorRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_dataStoreRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Invokes(_ => _databaseUpdates.Add("UpdateApiClient"))
+                .Returns(new ApiClientUpdateResult.Success());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_updateResponse);
+
+        [Test]
+        public void It_calls_nothing_beyond_the_pre_read()
+        {
+            _dependencyCalls.Should().BeEmpty();
+            _databaseUpdates.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_moving_to_a_higher_application_id : UpdateUnderLockTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            await ActUpdateAsync(applicationId: 2);
+        }
+
+        [Test]
+        public void It_returns_no_content() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_acquires_both_locks_in_ascending_order() =>
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L, 2L);
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_moving_to_a_lower_application_id : UpdateUnderLockTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 5,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            await ActUpdateAsync(applicationId: 2);
+        }
+
+        [Test]
+        public void It_returns_no_content() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_acquires_both_locks_in_ascending_order() =>
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(2L, 5L);
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_whose_second_lock_times_out : UpdateUnderLockTestBase
+    {
+        private RecordingLockHandle _firstLockHandle = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _firstLockHandle = new RecordingLockHandle();
+            A.CallTo(() => _lockManager.AcquireAsync(1, A<CancellationToken>.Ignored))
+                .Returns(new ApplicationLockResult.Acquired(_firstLockHandle));
+            A.CallTo(() => _lockManager.AcquireAsync(2, A<CancellationToken>.Ignored))
+                .Returns(new ApplicationLockResult.FailureTimeout());
+
+            await ActUpdateAsync(applicationId: 2);
+        }
+
+        [TearDown]
+        public async Task TearDownHandle() => await _firstLockHandle.DisposeAsync();
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_updateResponse);
+
+        [Test]
+        public void It_releases_the_first_lock() => _firstLockHandle.Disposed.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_whose_parent_keeps_moving : UpdateUnderLockTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            int reads = 0;
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    reads++;
+                    long applicationId = reads % 2 == 1 ? 1 : 2;
+                    return Task.FromResult<ApiClientGetResult>(
+                        new ApiClientGetResult.Success(
+                            new ApiClientResponse
+                            {
+                                Id = 1,
+                                ApplicationId = applicationId,
+                                ClientId = "test-client",
+                                ClientUuid = _existingUuid,
+                                Name = "Test",
+                                IsApproved = true,
+                                DataStoreIds = [1],
+                            }
+                        )
+                    );
+                });
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_updateResponse);
+
+        [Test]
+        public void It_retries_the_bounded_number_of_times() =>
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L, 1L, 1L);
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_whose_original_application_is_missing : UpdateUnderLockTestBase
+    {
+        private List<string> _providerCalls = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _providerCalls = [];
+            A.CallTo(_identityProviderRepository).Invokes(call => _providerCalls.Add(call.Method.Name));
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 3,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _applicationRepository.GetApplication(3))
+                .Returns(new ApplicationGetResult.FailureNotFound());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_internal_server_error() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_never_mutates_the_identity_provider() => _providerCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_whose_original_application_read_fails : UpdateUnderLockTestBase
+    {
+        private const string Sentinel = "SENTINEL_ORIGINAL_APP_must_not_leak";
+        private List<string> _providerCalls = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _providerCalls = [];
+            A.CallTo(_identityProviderRepository).Invokes(call => _providerCalls.Add(call.Method.Name));
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 3,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _applicationRepository.GetApplication(3))
+                .Returns(new ApplicationGetResult.FailureUnknown(Sentinel));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_never_mutates_the_identity_provider() => _providerCalls.Should().BeEmpty();
+    }
+
+    public abstract class ThrownApiClientRepositoryExceptionTestBase : UpdateUnderLockTestBase
+    {
+        protected const string Sentinel = "SENTINEL_THROWN_APICLIENT_REPO_must_not_leak";
+
+        protected Guid _updatedUuid;
+        protected Guid _rollbackUuid;
+        protected List<string> _updatedClientUuids = null!;
+        protected List<string> _deletedClientIds = null!;
+        protected List<(long Id, Guid ExpectedUuid, Guid NewUuid)> _syncCalls = null!;
+
+        [SetUp]
+        public void SetUpThrownDefaults()
+        {
+            _updatedUuid = Guid.NewGuid();
+            _rollbackUuid = Guid.NewGuid();
+            _updatedClientUuids = [];
+            _deletedClientIds = [];
+            _syncCalls = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.Success());
+
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<long>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Invokes(call =>
+                    _syncCalls.Add(
+                        (call.GetArgument<long>(0), call.GetArgument<Guid>(1), call.GetArgument<Guid>(2))
+                    )
+                )
+                .Returns(new ApiClientUuidSyncResult.Success());
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel));
+        }
+
+        protected ApiClientResolutionState CommandMatchingState() =>
+            new(1, "Updated", true, "test-client", _updatedUuid, [1]);
+
+        protected ApiClientResolutionState OriginalState() =>
+            new(1, "Test", true, "test-client", _existingUuid, [1]);
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_api_client_repository_exception_whose_transaction_committed
+        : ThrownApiClientRepositoryExceptionTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(CommandMatchingState()));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_recovered_success()
+        {
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_performs_no_compensation_or_cleanup()
+        {
+            _updatedClientUuids.Should().HaveCount(1);
+            _syncCalls.Should().BeEmpty();
+            _deletedClientIds.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_api_client_repository_exception_whose_transaction_did_not_commit
+        : ThrownApiClientRepositoryExceptionTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(OriginalState()));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_compensates_the_identity_provider()
+        {
+            _updatedClientUuids.Should().HaveCount(2);
+            _updatedClientUuids[1].Should().Be(_updatedUuid.ToString());
+            _syncCalls.Should().Equal((1L, _existingUuid, _rollbackUuid));
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_api_client_repository_exception_whose_outcome_resolution_fails
+        : ThrownApiClientRepositoryExceptionTestBase
+    {
+        private const string ResolutionSentinel = "SENTINEL_APICLIENT_RESOLUTION_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Returns(new ApiClientResolutionResult.FailureUnknown(ResolutionSentinel));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel, ResolutionSentinel);
+
+        [Test]
+        public void It_performs_no_compensation_or_cleanup()
+        {
+            _updatedClientUuids.Should().HaveCount(1);
+            _syncCalls.Should().BeEmpty();
+            _deletedClientIds.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_api_client_repository_exception_resolving_to_a_partial_state
+        : ThrownApiClientRepositoryExceptionTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Returns(
+                    new ApiClientResolutionResult.Success(
+                        CommandMatchingState() with
+                        {
+                            ClientUuid = Guid.NewGuid(),
+                        }
+                    )
+                );
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_performs_no_compensation_or_cleanup()
+        {
+            _updatedClientUuids.Should().HaveCount(1);
+            _syncCalls.Should().BeEmpty();
+            _deletedClientIds.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_api_client_whose_recreated_client_is_still_referenced
+        : UpdateUnderLockTestBase
+    {
+        private List<string> _deletedClientIds = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _deletedClientIds = [];
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.Success());
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureNotFound());
+
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Returns(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_internal_server_error() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_using_the_uuid_read_under_the_lock : ApiClientModuleTests
+    {
+        private Guid _staleUuid;
+        private Guid _freshUuid;
+        private List<string> _deletedClientUuids = null!;
+        private HttpResponseMessage _deleteResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _staleUuid = Guid.NewGuid();
+            _freshUuid = Guid.NewGuid();
+            _deletedClientUuids = [];
+
+            int reads = 0;
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    reads++;
+                    return Task.FromResult<ApiClientGetResult>(
+                        new ApiClientGetResult.Success(
+                            new ApiClientResponse
+                            {
+                                Id = 1,
+                                ApplicationId = 1,
+                                ClientId = "test-client",
+                                ClientUuid = reads == 1 ? _staleUuid : _freshUuid,
+                                Name = "Test",
+                                IsApproved = true,
+                                DataStoreIds = [1],
+                            }
+                        )
+                    );
+                });
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.Success());
+
+            A.CallTo(() => _apiClientRepository.DeleteApiClient(A<long>.Ignored))
+                .Returns(new ApiClientDeleteResult.Success());
+
+            using var client = SetUpClient();
+            _deleteResponse = await client.DeleteAsync("/v3/apiClients/1");
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _deleteResponse?.Dispose();
+
+        [Test]
+        public void It_returns_no_content() =>
+            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_targets_the_uuid_read_under_the_lock() =>
+            _deletedClientUuids.Should().Equal(_freshUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_reset_credential_using_the_uuid_read_under_the_lock
+        : ApiClientModuleTests
+    {
+        private Guid _staleUuid;
+        private Guid _freshUuid;
+        private List<string> _resetClientUuids = null!;
+        private HttpResponseMessage _resetResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _staleUuid = Guid.NewGuid();
+            _freshUuid = Guid.NewGuid();
+            _resetClientUuids = [];
+
+            int reads = 0;
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    reads++;
+                    return Task.FromResult<ApiClientGetResult>(
+                        new ApiClientGetResult.Success(
+                            new ApiClientResponse
+                            {
+                                Id = 1,
+                                ApplicationId = 1,
+                                ClientId = "test-client",
+                                ClientUuid = reads == 1 ? _staleUuid : _freshUuid,
+                                Name = "Test",
+                                IsApproved = true,
+                                DataStoreIds = [1],
+                            }
+                        )
+                    );
+                });
+
+            A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Invokes(call => _resetClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientResetResult.Success("NEW_SECRET"));
+
+            using var client = SetUpClient();
+            _resetResponse = await client.PutAsync("/v3/apiClients/1/reset-credential", null);
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _resetResponse?.Dispose();
+
+        [Test]
+        public void It_returns_the_new_credentials() =>
+            _resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_targets_the_uuid_read_under_the_lock() =>
+            _resetClientUuids.Should().Equal(_freshUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_when_the_aggregate_lock_times_out : ApiClientModuleTests
+    {
+        private List<string> _dependencyCalls = null!;
+        private HttpResponseMessage _deleteResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _dependencyCalls = [];
+            A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+                .Returns(new ApplicationLockResult.FailureTimeout());
+            A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            using var client = SetUpClient();
+            _deleteResponse = await client.DeleteAsync("/v3/apiClients/1");
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _deleteResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_deleteResponse);
+
+        [Test]
+        public void It_calls_nothing_beyond_the_pre_read() => _dependencyCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_whose_second_lock_acquisition_is_cancelled
+        : UpdateUnderLockTestBase
+    {
+        private RecordingLockHandle _firstLockHandle = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _firstLockHandle = new RecordingLockHandle();
+            A.CallTo(() => _lockManager.AcquireAsync(1, A<CancellationToken>.Ignored))
+                .Returns(new ApplicationLockResult.Acquired(_firstLockHandle));
+            A.CallTo(() => _lockManager.AcquireAsync(2, A<CancellationToken>.Ignored))
+                .Throws(new OperationCanceledException());
+
+            await ActUpdateAsync(applicationId: 2);
+        }
+
+        [TearDown]
+        public async Task TearDownHandle() => await _firstLockHandle.DisposeAsync();
+
+        [Test]
+        public void It_returns_a_server_error() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_releases_the_first_lock() => _firstLockHandle.Disposed.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_whose_under_lock_reread_throws : UpdateUnderLockTestBase
+    {
+        private const string Sentinel = "SENTINEL_REREAD_THROW_must_not_leak";
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            int reads = 0;
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .ReturnsLazily(_ =>
+                {
+                    reads++;
+                    if (reads > 1)
+                    {
+                        throw new InvalidOperationException(Sentinel);
+                    }
+
+                    return Task.FromResult<ApiClientGetResult>(
+                        new ApiClientGetResult.Success(
+                            new ApiClientResponse
+                            {
+                                Id = 1,
+                                ApplicationId = 1,
+                                ClientId = "test-client",
+                                ClientUuid = _existingUuid,
+                                Name = "Test",
+                                IsApproved = true,
+                                DataStoreIds = [1],
+                            }
+                        )
+                    );
+                });
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_releases_every_lock()
+        {
+            _recordingLockManager.Handles.Should().NotBeEmpty();
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        }
+    }
+
+    public abstract class CompensationSyncTestBase : UpdateUnderLockTestBase
+    {
+        protected Guid _updatedUuid;
+        protected Guid _rollbackUuid;
+        protected List<string> _deletedClientIds = null!;
+
+        [SetUp]
+        public void SetUpCompensationDefaults()
+        {
+            _updatedUuid = Guid.NewGuid();
+            _rollbackUuid = Guid.NewGuid();
+            _deletedClientIds = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.Success());
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureApplicationNotFound());
+        }
+
+        protected void ArrangeSyncResult(ApiClientUuidSyncResult result) =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<long>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(result);
+    }
+
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_rollback_was_already_synchronized
+        : CompensationSyncTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSyncResult(new ApiClientUuidSyncResult.AlreadyApplied());
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_the_unresolved_reference_conflict() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_failed_api_client_update_that_vanishes_during_rollback : CompensationSyncTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSyncResult(new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete());
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_internal_server_error() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_the_client_recreated_by_the_rollback() =>
+            _deletedClientIds.Should().Equal(_rollbackUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_a_failed_api_client_update_with_a_stale_stored_client : CompensationSyncTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSyncResult(new ApiClientUuidSyncResult.FailureStaleState());
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_internal_server_error() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_rollback_client_is_still_referenced
+        : CompensationSyncTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSyncResult(new ApiClientUuidSyncResult.FailureNotExists());
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_internal_server_error() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_rollback_sync_fails : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_SYNC_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSyncResult(new ApiClientUuidSyncResult.FailureUnknown(Sentinel));
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_api_client_whose_reference_check_fails : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_REFERENCE_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureNotFound());
+
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Returns(new ApiClientUuidReferenceResult.FailureUnknown(Sentinel));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_provider_rollback_throws : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_ROLLBACK_THROW_must_not_leak";
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            int providerCalls = 0;
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .ReturnsLazily(_ =>
+                {
+                    providerCalls++;
+                    if (providerCalls == 1)
+                    {
+                        return Task.FromResult<ClientUpdateResult>(
+                            new ClientUpdateResult.Success(_updatedUuid)
+                        );
+                    }
+
+                    throw new InvalidOperationException(Sentinel);
+                });
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    [TestFixture]
+    public class Given_a_vanished_api_client_whose_client_cleanup_throws : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_CLEANUP_THROW_must_not_leak";
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureNotFound());
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_resolution_read_throws : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_RESOLUTION_THROW_must_not_leak";
+        private RecordingLockManager _recordingLockManager = null!;
+        private List<string> _providerUpdateUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            _providerUpdateUuids = [];
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientUpdateResult.Success(_updatedUuid));
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureUnknown("Database error"));
+
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<long>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_performs_no_speculative_action()
+        {
+            _providerUpdateUuids.Should().HaveCount(1);
+            _deletedClientIds.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
     }
 }
