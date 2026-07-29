@@ -441,7 +441,8 @@ public class ApiClientModule : IEndpointModule
                     );
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
                 case ClientUpdateResult.Success updateSuccess:
-                    // Persist the new UUID issued by the identity provider after delete-and-recreate
+                    // Persist the client UUID the provider reports: unchanged when it updated the
+                    // client in place, or a replacement when it recreated the client.
                     command.ClientUuid = updateSuccess.ClientUuid;
 
                     ApiClientUpdateResult repositoryResult;
@@ -460,8 +461,11 @@ public class ApiClientModule : IEndpointModule
                     }
 
                     // Restores the identity provider to the client's original state and persists
-                    // the new UUID its delete-and-recreate update issues, guarded by the expected
-                    // prior UUID so newer committed data is never overwritten.
+                    // whatever client UUID the rollback reports, guarded by the expected prior
+                    // UUID so newer committed data is never overwritten. Providers that preserve
+                    // the client's identity report the stored UUID unchanged, which the guard
+                    // treats as already applied; providers that replace the client report a new
+                    // one that must be persisted.
                     async Task<bool> TryCompensateAsync()
                     {
                         logger.LogWarning(
@@ -510,7 +514,7 @@ public class ApiClientModule : IEndpointModule
                             case ApiClientUuidSyncResult.Success or ApiClientUuidSyncResult.AlreadyApplied:
                                 return true;
                             case ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
-                                // The client vanished during the rollback and the recreated
+                                // The client vanished during the rollback and the rolled-back
                                 // client is provably unreferenced, so it is deleted rather
                                 // than kept.
                                 await TryDeleteRecreatedClientAsync(rollbackSuccess.ClientUuid);
@@ -543,8 +547,8 @@ public class ApiClientModule : IEndpointModule
                         }
                     }
 
-                    // Removes the identity provider client recreated for a vanished ApiClient.
-                    // A client that is already gone is the same end state.
+                    // Removes the identity provider client left by the update of a vanished
+                    // ApiClient. A client that is already gone is the same end state.
                     async Task<bool> TryDeleteRecreatedClientAsync(Guid clientUuid)
                     {
                         ClientDeleteResult cleanupResult;
@@ -580,7 +584,7 @@ public class ApiClientModule : IEndpointModule
                         return false;
                     }
 
-                    // No compensation deletion of a recreated provider client without a
+                    // No compensation deletion of the update's provider client without a
                     // definitive reference check.
                     async Task<bool> TryDeleteRecreatedClientCheckedAsync(Guid clientUuid)
                     {
@@ -588,7 +592,7 @@ public class ApiClientModule : IEndpointModule
                         if (referenceResult is ApiClientUuidReferenceResult.FailureUnknown referenceFailure)
                         {
                             logger.LogError(
-                                "Could not verify the recreated identity provider client for ApiClient {Id} is unreferenced: {Message}; leaving it in place",
+                                "Could not verify the identity provider client for ApiClient {Id} is unreferenced: {Message}; leaving it in place",
                                 id,
                                 SanitizeForLog(referenceFailure.FailureMessage)
                             );
@@ -598,7 +602,7 @@ public class ApiClientModule : IEndpointModule
                         if (referenceResult is not ApiClientUuidReferenceResult.None)
                         {
                             logger.LogError(
-                                "Cannot prove the recreated identity provider client for ApiClient {Id} is unreferenced; leaving it in place",
+                                "Cannot prove the identity provider client for ApiClient {Id} is unreferenced; leaving it in place",
                                 id
                             );
                             return false;
@@ -671,7 +675,7 @@ public class ApiClientModule : IEndpointModule
                         case ApiClientUpdateResult.Success:
                             return Results.NoContent();
                         case ApiClientUpdateResult.FailureNotFound:
-                            // The ApiClient row is gone, so the recreated identity provider
+                            // The ApiClient row is gone, so the update's identity provider
                             // client is deleted rather than restored, once the reference check
                             // proves that is safe.
                             if (!await TryDeleteRecreatedClientCheckedAsync(updateSuccess.ClientUuid))
@@ -1100,8 +1104,8 @@ public class ApiClientModule : IEndpointModule
     {
         logger.LogDebug("Entering ResetCredential for id: {Id}", SanitizeForLog(id.ToString()));
 
-        // The reset targets the UUID reread under the aggregate lock, so a concurrent
-        // delete-and-recreate cannot leave it aimed at a stale client.
+        // The reset targets the UUID reread under the aggregate lock, so a concurrent workflow
+        // that replaces the provider client cannot leave it aimed at a stale client.
         var (lockFailure, lockedApiClient, heldLocks) = await AcquireApiClientLocksAsync(
             id,
             null,

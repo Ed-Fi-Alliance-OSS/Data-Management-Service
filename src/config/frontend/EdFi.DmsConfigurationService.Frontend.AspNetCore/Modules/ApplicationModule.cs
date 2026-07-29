@@ -482,9 +482,11 @@ public class ApplicationModule : IEndpointModule
                             }
 
                             // Restores the identity provider to the original state and persists
-                            // the new client UUID its delete-and-recreate update issues, guarded
-                            // by the expected prior UUID so newer committed data is never
-                            // overwritten.
+                            // whatever client UUID the rollback reports, guarded by the expected
+                            // prior UUID so newer committed data is never overwritten. Providers
+                            // that preserve the client's identity report the stored UUID
+                            // unchanged, which the guard treats as already applied; providers that
+                            // replace the client report a new one that must be persisted.
                             async Task<bool> TryCompensateAsync()
                             {
                                 logger.LogWarning(
@@ -536,7 +538,7 @@ public class ApplicationModule : IEndpointModule
                                         return true;
                                     case ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
                                         // The application vanished during the rollback and the
-                                        // recreated client is provably unreferenced, so it is
+                                        // rolled-back client is provably unreferenced, so it is
                                         // deleted rather than kept.
                                         await TryDeleteRecreatedClientAsync(rollbackSuccess.ClientUuid);
                                         return false;
@@ -568,7 +570,7 @@ public class ApplicationModule : IEndpointModule
                                 }
                             }
 
-                            // Removes the identity provider client recreated for a vanished
+                            // Removes the identity provider client left by the update of a vanished
                             // application; a client that is already gone is the same end state.
                             async Task<bool> TryDeleteRecreatedClientAsync(Guid clientUuid)
                             {
@@ -605,7 +607,7 @@ public class ApplicationModule : IEndpointModule
                                 return false;
                             }
 
-                            // No compensation deletion of a recreated provider client without a
+                            // No compensation deletion of the update's provider client without a
                             // definitive reference check.
                             async Task<bool> TryDeleteRecreatedClientCheckedAsync(Guid clientUuid)
                             {
@@ -618,7 +620,7 @@ public class ApplicationModule : IEndpointModule
                                 )
                                 {
                                     logger.LogError(
-                                        "Could not verify the recreated identity provider client for Application {Id} is unreferenced: {Message}; leaving it in place",
+                                        "Could not verify the identity provider client for Application {Id} is unreferenced: {Message}; leaving it in place",
                                         id,
                                         SanitizeForLog(referenceFailure.FailureMessage)
                                     );
@@ -628,7 +630,7 @@ public class ApplicationModule : IEndpointModule
                                 if (referenceResult is not ApiClientUuidReferenceResult.None)
                                 {
                                     logger.LogError(
-                                        "Cannot prove the recreated identity provider client for Application {Id} is unreferenced; leaving it in place",
+                                        "Cannot prove the identity provider client for Application {Id} is unreferenced; leaving it in place",
                                         id
                                     );
                                     return false;
@@ -770,7 +772,7 @@ public class ApplicationModule : IEndpointModule
                                         ),
                                     ]);
                                 case ApplicationUpdateResult.FailureNotExists:
-                                    // The application row is gone, so the recreated identity
+                                    // The application row is gone, so the update's identity
                                     // provider client is deleted rather than restored, once the
                                     // reference check proves that is safe.
                                     if (!await TryDeleteRecreatedClientCheckedAsync(updateSuccess.ClientUuid))
