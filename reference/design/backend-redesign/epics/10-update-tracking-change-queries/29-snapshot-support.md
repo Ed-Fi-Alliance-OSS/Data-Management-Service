@@ -98,6 +98,22 @@ A missing derivative row and a row with a null, empty, or whitespace connection 
 
 The DMS `DataStore` configuration model gains a typed, read-only derivative map populated from the `dataStoreDerivatives` collection CMS already returns. DMS decrypts each derivative connection string through the same service used for the primary connection string.
 
+Decryption of a derivative must be individually fault-isolated, which the current loading shape does not provide. `ConfigurationServiceDataStoreProvider.FetchDataStores` decrypts inline inside the projection that builds each `DataStore`, and `ConnectionStringDecryptionService.DecryptFromBase64` throws `InvalidOperationException` on a value that is not valid Base64, is no longer than the 16-byte IV, or fails AES decryption under the configured key. Decrypting derivatives the same way would let one unreadable optional derivative abort that projection and fail the tenant's entire data-store load, so every data store in the response — including their primaries and their healthy derivatives — would be unavailable because of one bad optional row.
+
+An undecryptable derivative connection string is therefore a configuration defect scoped to that derivative:
+
+- each derivative's decryption is attempted independently, and a failure is caught per derivative rather than per data store or per response;
+- a derivative whose connection string cannot be decrypted is unusable and is treated as not configured, joining the missing-row and null/empty/whitespace cases;
+- the parent data store still loads with its primary connection and its remaining usable derivatives;
+- the failure is logged as an error identifying the tenant, parent `DataStoreId`, and derivative type, and never the ciphertext, the partial plaintext, the encryption key, or a connection string;
+- primary connection-string decryption failure remains fatal for that data store and is unchanged. A data store with an unreadable primary has no usable target at all, whereas a derivative is optional by construction.
+
+This follows the precedent already set for an unrecognized `DerivativeType`, which is ignored with an error log rather than failing the load, and it keeps a `Snapshot` defect safe by default: an unusable snapshot is not configured, so a snapshot-eligible read returns Snapshot Not Found `404` and never silently reads current data.
+
+The `ReadReplica` case is the one that degrades quietly, and the error log is the only signal. An unusable read replica means eligible reads are served by the primary, which is correct data from the wrong target. That is accepted rather than escalated, because failing every eligible read on a corrupt optional replica string is a worse outcome than serving the primary, and because escalating would make an optional derivative able to disable a working data store. The log must therefore be emitted at error level and be distinguishable from the normal no-replica-configured path, which is not an error and is not logged as one.
+
+This is a configuration-time defect and is distinct from the runtime rule that a configured but failing derivative never falls back. That rule governs a derivative DMS could read and select but cannot reach; an undecryptable string is never selectable in the first place.
+
 The primary connection and its derivatives are one cached configuration unit:
 
 - they refresh atomically on the existing per-tenant data-store cache schedule;
@@ -110,8 +126,8 @@ Derivative targets require different validation- and pool-cache semantics from t
 - Primary-target cache behavior is unchanged.
 - Derivative validation results are never cached for the process lifetime.
 - Failed, missing, or malformed derivative validation results are evicted immediately or retained only under a short retry TTL.
-- Successful derivative fingerprint and resource-key validations are time-bounded by a TTL no longer than the data-store configuration cache interval.
-- Recreating a snapshot at the same connection string recovers without restarting DMS, once the bounded cache interval has elapsed.
+- Successful derivative fingerprint and resource-key validations are time-bounded by an independent derivative validation TTL, specified below.
+- Recreating a snapshot at the same connection string recovers without restarting DMS, once that TTL has elapsed.
 - Replacing or removing derivative configuration eventually evicts and disposes obsolete pooled data sources without disrupting in-flight requests.
 - The scoped PostgreSQL data-source provider keys by the effective target or connection, or drops its redundant scoped dictionary in favor of the singleton data-source cache. The parent `DataStore.Id` is no longer a valid connection identity, because one parent id can now front more than one connection string.
 
@@ -120,6 +136,21 @@ Without these rules, a single request that reaches a snapshot mid-provisioning w
 Connection strings must never be included in logs. Logs may include the tenant, primary `DataStoreId`, selected target kind, and trace identifier.
 
 No derivative-specific startup health check is added. A derivative is optional and may be intentionally offline between extraction windows. It is validated when selected by a request.
+
+#### Derivative validation TTL
+
+The derivative validation TTL is its own bounded setting and is not derived from the data-store configuration cache interval. Deriving it would reintroduce exactly the process-lifetime caching this design rejects, because the data-store cache is permitted to be non-expiring: `CacheSettings.DataStoreCacheRefreshEnabled` can be `false`, and `DataStoreCacheExpirationSeconds` is documented to keep the cached configuration until the next explicit reload when set to zero or a negative value. A derivative TTL defined as "no longer than the data-store configuration cache interval" is unbounded under either of those settings, so an operator who disables data-store refresh would silently latch a snapshot `503` or a stale successful validation until restart.
+
+The rules are therefore:
+
+- a new `CacheSettings` value bounds successful derivative fingerprint and resource-key validation results. It has a positive default on the order of the current data-store default, and it is expressed in seconds for consistency with the existing settings;
+- the value is always positive. A zero, negative, or absent value falls back to the default rather than meaning "no expiration", which is the opposite of the existing `DataStoreCacheExpirationSeconds` convention and must be called out in the setting's documentation and validated at startup;
+- an upper bound is enforced so no configuration can make derivative validation effectively process-lifetime;
+- when the data-store configuration cache is enabled and bounded, the effective TTL is the smaller of the two, so a shorter data-store refresh still shortens derivative validation;
+- when the data-store configuration cache is disabled or non-expiring, the derivative TTL stands alone and remains bounded. Derivative routing does not require data-store refresh to be enabled;
+- the operator-facing guidance to allow for a cache interval before beginning extraction refers to the data-store configuration cache, which is what governs when a newly registered derivative becomes visible. The derivative validation TTL governs only how long a validation verdict for an already-visible derivative is reused.
+
+Requiring data-store refresh to be enabled was considered and rejected: it would turn an unrelated performance setting into a hard prerequisite for snapshot routing, and it would still leave the TTL coupled to a value an operator may set arbitrarily high.
 
 ## Request-scoped Routing
 
@@ -150,7 +181,20 @@ The scoped selection becomes a two-phase contract rather than a single setter:
 
 The parent resolver keeps resolving the parent, and a following request-scoped connection-selection step applies the derivative policy. Access intent and eligibility are supplied by pipeline construction, because DMS builds a separate pipeline per operation and the HTTP method alone cannot distinguish GET-by-id, GET-many, tracked changes, available change versions, and token introspection from one another. Repositories and endpoint handlers therefore need no endpoint-policy awareness.
 
-Selection must run before any database connection is opened, which in the current pipelines means before fingerprint validation. It must also run after the non-database endpoint validation in step 3, so an unknown resource still receives its existing `404` rather than a snapshot `405`. Satisfying both may require a lightweight endpoint-validation phase that precedes target selection; the design deliberately does not fix a single insertion point that would force fingerprint access ahead of endpoint validation.
+Selection must run before any database connection is opened, which in the current pipelines means before fingerprint validation. It must also run after the non-database endpoint validation in step 3, so an unknown resource still receives its existing `404` rather than a snapshot `405`.
+
+The current pipelines do not satisfy both, so satisfying them is concrete work rather than an insertion-point choice. `ApiService.GetRoutedResourceInitialSteps` places `ValidateDatabaseFingerprintMiddleware` and `ValidateResourceKeySeedMiddleware` — both of which open a database connection — ahead of the per-operation steps, while `ValidateEndpointMiddleware` is added by each operation pipeline after them. The tracked-changes pipeline has the same ordering. An unknown project namespace or unknown resource is therefore rejected only after the database has already been read, so inserting target selection before fingerprint validation without reordering would emit a snapshot `405` or `404` for a path that must return `404`.
+
+The reordering is bounded, because the steps that produce the endpoint verdict do not use the database:
+
+- `ParsePathMiddleware` is already ahead of fingerprint validation and supplies `PathComponents`, so malformed paths and malformed identifiers are the one part of step 3 that is already correctly ordered.
+- `ApiSchemaValidationMiddleware` reads only `IApiSchemaProvider.IsSchemaValid`.
+- `ProvideApiSchemaMiddleware` attaches the startup-built effective schema documents.
+- `ValidateEndpointMiddleware` resolves the project namespace and resource from those documents and `PathComponents`.
+
+Hoisting that trio ahead of `ValidateDatabaseFingerprintMiddleware` in the routed-resource initial steps and in the tracked-changes pipeline therefore establishes the required precedence without granting endpoint validation any database dependency. `ResolveMappingSetMiddleware` depends on the validated fingerprint and stays where it is. The design fixes the ordering requirement and this bounded means of meeting it; the exact factoring — hoisting the existing three steps versus extracting a shared endpoint-validation phase they both call — is left to the implementation ticket.
+
+Because this reordering changes the response for a request that is both unroutable and against an unprovisioned or unreachable database, from the fingerprint `503` to the endpoint `404`, it is a deliberate, test-visible precedence change rather than a refactor, and must be covered as such.
 
 ### Selection matrix
 
@@ -267,7 +311,7 @@ Operators are responsible for:
 
 This matches ODS ownership, avoids granting the DMS runtime database-creation privileges, and avoids pretending that SQL Server snapshots and PostgreSQL backup/restore or replication have one portable lifecycle.
 
-Reusing one connection string across successive snapshots is supported between extraction windows, not during one. Because derivative validation results are time-bounded rather than cached for the process lifetime, a snapshot recreated at the same connection string becomes usable again after the bounded cache interval without restarting DMS. Within an extraction window that same reuse is a hazard rather than a convenience, because the unchanged connection string leaves DMS nothing to detect; § Extraction-window stability constrains when the recreation may happen. Operators who instead give each snapshot a distinct name should still remove the retired derivative configuration, so obsolete pooled connections can be released.
+Reusing one connection string across successive snapshots is supported between extraction windows, not during one. Because derivative validation results are time-bounded rather than cached for the process lifetime, a snapshot recreated at the same connection string becomes usable again after the derivative validation TTL without restarting DMS. Within an extraction window that same reuse is a hazard rather than a convenience, because the unchanged connection string leaves DMS nothing to detect; § Extraction-window stability constrains when the recreation may happen. Operators who instead give each snapshot a distinct name should still remove the retired derivative configuration, so obsolete pooled connections can be released.
 
 A read replica may be eventually consistent. DMS does not measure replica lag or guarantee that `/availableChangeVersions` on a read replica has caught up with the primary. Operators that require a fixed extraction boundary should request a prepared `Snapshot` rather than rely on `ReadReplica`.
 
@@ -318,6 +362,20 @@ Read-replica selection is deployment configuration and adds no request parameter
 
 DMS-side document-assembly tests cover the resource, descriptor, profile, and Change Query documents.
 
+### The OpenAPI work crosses a repository boundary
+
+Because the components are authored upstream and no fixture in this repository can produce them, the OpenAPI surface is not deliverable inside a DMS-only ticket. DMS consumes ApiSchema as NuGet packages pinned in `src/Directory.Packages.props` — the `EdFi.DataStandard52.*` and `EdFi.DataStandard61.*` ApiSchema packages, including the TPDM, Homograph, and Sample variants. The served resource, descriptor, profile, and Change Queries documents come from those packages.
+
+The rollout therefore has an explicit, ordered dependency:
+
+1. an upstream MetaEd/ApiSchema ticket adds the `Use-Snapshot` parameter and the snapshot response components to every independently served base document, and is created and linked before the DMS story is scheduled;
+2. the ApiSchema packages are published;
+3. the DMS story bumps every affected package version in `src/Directory.Packages.props` and delivers the document-assembly and reference-resolution work and its tests.
+
+`41-snapshot-openapi-surface.md` records the upstream contract as a prerequisite rather than as its own acceptance criteria, matching how `20-openapi-change-query-surface.md` separated the delivered MetaEd contract from the DMS continuation. The DMS assembly and reference-resolution work may land against a test fixture ahead of the package bump, but the served-surface criteria cannot be satisfied by a hand-edited document, and the story is not complete until DMS serves the contract from published packages.
+
+The package bump is expected to be hash-neutral, because DMS-1183 established that `projectSchema.openApiBaseDocuments` is stripped before effective-schema hashing, model derivation, DDL generation, and mapping-pack selection. An OpenAPI-only bump should therefore need no `apiSchemaVersion` change and should not churn DDL, plan, or mapping-set goldens. The DMS story verifies this rather than assuming it: a hash or golden change indicates the package carried more than the OpenAPI contract and must be investigated before the bump is accepted.
+
 ## API Publisher Interoperability
 
 Interoperability validation must prove that a Publisher extraction can use DMS without `--ignoreIsolation=true` when a snapshot is configured:
@@ -327,11 +385,11 @@ Interoperability validation must prove that a Publisher extraction can use DMS w
 - live GET-many, GET-by-id, `/deletes`, `/keyChanges`, and `/availableChangeVersions` all carry `Use-Snapshot: true` within one extraction, which follows from Publisher setting the header on the source client's default headers rather than on a single probe. Those requests resolve to the same snapshot database only while the derivative configuration and the underlying snapshot are unchanged: the default header proves every request asks for the snapshot, not that the snapshot is the same database on every request;
 - the operator constraint from § Extraction-window stability is documented, distinguishing its two silent outcomes — a re-pointed derivative row, and a database recreated at the unchanged connection string — from removal or unreachability, which instead interrupts the extraction with the `404` covered below;
 - a mutation carrying `Use-Snapshot: true` returns the snapshot `405` with `Allow: GET`;
-- no configured snapshot produces the expected `404`;
+- when no snapshot is configured, a snapshot-eligible read carrying `Use-Snapshot: true` produces the expected `404`;
 - retiring or making the configured snapshot unreachable produces the same `404`;
 - `Use-Snapshot: false` does not select the snapshot.
 
-Validation records the API and Publisher versions used so future changes to Publisher's isolation behavior can be evaluated reproducibly.
+Validation records the DMS, Ed-Fi API, and Publisher versions used, along with the configuration required to reproduce the run, so future changes to Publisher's isolation behavior can be evaluated reproducibly. The DMS version is recorded because Publisher keys its isolation probe on the advertised API major version, which does not identify the DMS build that served the request.
 
 ## Test Expectations
 
@@ -340,12 +398,15 @@ Implementation coverage should include:
 - CMS PostgreSQL and SQL Server integration tests for the unique and check constraints, the new insert and update conflict repository results, preflight diagnostics for both duplicate rows and invalid derivative types, rejection of case variants such as `SNAPSHOT` and whitespace variants such as `Snapshot ` in both engines, tenant isolation, and derivative inclusion in data-store responses.
 - CMS frontend unit or E2E coverage asserting that both the insert duplicate and the update duplicate return HTTP `409`. The integration tests above prove the repository conflict result, not the response mapping.
 - DMS configuration-provider unit tests for derivative deserialization, decryption, unknown types, null and blank connection strings, tenant caches, and cache refresh.
+- DMS configuration-provider tests for an undecryptable derivative connection string — invalid Base64, a payload at or below the IV length, and a valid Base64 payload encrypted under a different key — proving each of the three failure modes leaves the parent data store loaded with its primary and its other usable derivatives, marks only the affected derivative unusable, and logs an error without the ciphertext or any connection string. Include a data store whose sibling derivative is valid and a second data store in the same CMS response, so fault isolation is proven at both the derivative and the response level. Also prove an undecryptable primary connection string keeps its existing fatal behavior.
+- End-to-end behavior of an unusable derivative: an undecryptable `Snapshot` yields Snapshot Not Found `404` for a snapshot-eligible read, and an undecryptable `ReadReplica` serves the request from the primary with an error log distinguishable from the no-replica-configured path.
 - Core routing unit tests for every row in both eligibility matrices, snapshot precedence over read replica, absence of fallback, header parsing, response precedence, and rejection of a second effective-target assignment within one request.
 - Frontend or E2E coverage for blank and multi-valued `Use-Snapshot` headers, which core cannot observe because the frontend normalizes them.
 - PostgreSQL and SQL Server integration tests using distinct primary, read-replica, and snapshot databases with distinguishable data. The SQL Server path requires the SQL Server 2025 integration environment described in `AGENTS.md`, and a three-database fixture is a meaningful fixture-cost increase for the runtime-routing ticket.
 - Snapshot-unavailable tests at every read-path connection-open seam: fingerprint acquisition, resource-key validation, normal repository connection acquisition, and document-hydration connection acquisition. Hydration coverage must be explicit rather than folded into generic repository coverage, and must include the case where fingerprint and resource-key results are already cached so the hydrator open is the first failure in the request.
 - Tests proving a reachable but unprovisioned or fingerprint-incompatible snapshot returns the existing `503`, not Snapshot Not Found, and that an ordinary query failure against a snapshot is not translated either.
-- Tests proving a snapshot recreated at the same connection string recovers after the bounded cache interval without a service restart, and that a removed or replaced derivative eventually releases its pooled data source without disrupting in-flight requests.
+- Tests proving a snapshot recreated at the same connection string recovers after the derivative validation TTL without a service restart, and that a removed or replaced derivative eventually releases its pooled data source without disrupting in-flight requests.
+- Tests proving the derivative validation TTL remains bounded when data-store cache refresh is disabled or its interval is non-positive, that a non-positive or absent derivative TTL falls back to the positive default rather than to no expiration, and that the enforced upper bound cannot be exceeded.
 - Tests proving authorization and route-context selection are still based on the parent data store and that all authorization SQL for a request uses the selected target.
 - Tests proving an unknown resource path with `Use-Snapshot: true` returns its existing `404` rather than the snapshot `405`.
 - OpenAPI document-assembly tests for resource, descriptor, profile, and Change Query documents, including a check that every `$ref` resolves within its own served document.
@@ -376,6 +437,9 @@ No database document or Change Query DDL changes are required in the DMS data st
 - **Fall back to primary when a selected derivative fails.** Rejected because it silently changes the consistency contract.
 - **Translating every `DbException` raised under a snapshot target to Snapshot Not Found.** Rejected because it would convert ordinary query, mapping, and provisioning defects into a misleading `404`. DMS preserves the ODS client contract through a structural connection-open boundary instead.
 - **Caching derivative validation results for the process lifetime, as the primary does.** Rejected because a snapshot is recreated between extraction windows, so a latched failure would require a service restart to clear.
+- **Bounding derivative validation by the data-store configuration cache interval instead of an independent TTL.** Rejected because that interval is permitted to be disabled or non-expiring through `DataStoreCacheRefreshEnabled` and a non-positive `DataStoreCacheExpirationSeconds`, which would make the derivative TTL unbounded and reintroduce process-lifetime caching under ordinary configuration.
+- **Requiring data-store cache refresh to be enabled as a precondition for derivative routing.** Rejected because it makes an unrelated performance setting a hard prerequisite for snapshot support while still leaving the TTL coupled to an operator-chosen value that may be arbitrarily high.
+- **Failing the data-store load when a derivative connection string cannot be decrypted.** Rejected because an optional derivative would then be able to disable a working data store and every other data store in the same CMS response. The derivative is marked unusable with an error log instead, matching the existing treatment of an unrecognized `DerivativeType`.
 - **Open a transaction with snapshot isolation for each request.** Rejected because Publisher extraction spans many HTTP requests and needs one stable database image across all of them.
 - **Pin the snapshot binding to an extraction, so a mid-extraction replacement cannot move later pages.** Rejected because neither the Ed-Fi API contract nor Publisher supplies an extraction, session, or cursor identity for DMS to bind to. DMS would have to invent that identity, decide when to expire it, and keep a superseded snapshot's connection alive for an unbounded period, which conflicts with the bounded derivative caches and with an operator's ability to retire a snapshot at all. The isolation guarantee is preserved instead by the explicit operator obligation in § Extraction-window stability.
 - **Route derivatives as independent data stores.** Rejected because authorization, tenant, and route context belong to the parent and duplicating them can create isolation gaps.
@@ -385,25 +449,26 @@ No database document or Change Query DDL changes are required in the DMS data st
 Reviewed and resolved during this spike:
 
 1. **Read-replica routing follows ODS parity.** All resource and descriptor GET-many and GET-by-id requests, profile-shaped reads, `/deletes`, `/keyChanges`, and `/availableChangeVersions` are replica-eligible. The derivative row is the opt-in; no additional flag is added. Snapshot outranks replica; writes stay on the primary; token introspection and non-data-management surfaces stay on the primary.
-2. **Derivative validation and pool caches are time-bounded.** Primary behavior is unchanged; derivative results are never cached for the process lifetime, and recreating a snapshot at the same connection string recovers without a restart.
+2. **Derivative validation and pool caches are time-bounded by an independent TTL.** Primary behavior is unchanged; derivative results are never cached for the process lifetime, and recreating a snapshot at the same connection string recovers without a restart. The TTL is its own bounded `CacheSettings` value rather than the data-store configuration cache interval, because that interval may be disabled or non-expiring; derivative routing does not require data-store refresh to be enabled.
 3. **Snapshot-unavailable `404` is broad at the connection-open boundary.** Catalog absence, authentication failure, network failure, timeout, and firewall rejection all return Snapshot Not Found for a snapshot target, while ordinary SQL, mapping, authorization, fingerprint-shape, and application errors do not. Coverage is all seven read-path connection-open seams, including both document hydrators.
 4. **The snapshot `405` is scoped to resource and descriptor mutations,** and triggers only on a successfully parsed `true`. This intentionally narrows the acceptance criterion's "non-`GET`" wording to the data-management surface, and intentionally diverges from ODS's header-presence filter.
 5. **The CMS uniqueness migration hard-stops on duplicates,** reports the offending rows, and documents deletion through the derivative endpoint as remediation.
 6. **Path validation precedes snapshot policy,** so an unknown resource still returns its existing `400` or `404`; the mutation `405` is still emitted before any database connection is opened.
-7. **The OpenAPI surface is re-added, not normalized,** including a reusable `Use-Snapshot` parameter applied to GET-many as well as GET-by-id, and a new snapshot-specific `405` ProblemDetails factory.
+7. **The OpenAPI surface is re-added, not normalized,** including a reusable `Use-Snapshot` parameter applied to GET-many as well as GET-by-id, and a new snapshot-specific `405` ProblemDetails factory. The components are authored upstream in MetaEd and reach DMS only through published ApiSchema packages, so the surface is split into an upstream MetaEd ticket and a DMS story that bumps `src/Directory.Packages.props` and serves the result. No served OpenAPI content is authored in this repository.
 8. **Extraction-wide snapshot stability is an operator obligation, not a DMS binding.** Target selection stays per request because DMS has no extraction identity to pin to. Operators must not replace, re-point, remove, or recreate a `Snapshot` derivative while an extraction against it is in progress. Re-pointing and same-connection-string recreation are silent, and the latter is undetectable by DMS even in principle; removal and unreachability surface as the existing Snapshot Not Found `404`. The obligation and the distinction between those outcomes are stated in the design, the operator workflow, and the release notes.
 
 ## Follow-on Ticket Plan
 
-Create and link the following implementation tickets only after this proposal is approved. The story files are created with Jira placeholders so the ticket keys can be inserted after Jira creation:
+Create and link the following implementation tickets only after this proposal is approved. The story files are created with Jira placeholders so the ticket keys can be inserted after Jira creation, and `EPIC.md` § Follow-on Stories carries the same `TBD` placeholders for the same reason. Filling in the keys is a single step covering both places: each story's `jira` / `jira_url` front matter and the matching `EPIC.md` row. Until then these are approved-design slices, not traceable work items.
 
 | Story | Area | Scope |
 | --- | --- | --- |
 | `38-cms-data-store-derivative-invariants.md` | CMS/admin database shape | Add the named `(DataStoreId, DerivativeType)` unique constraint and a `DerivativeType` check constraint requiring ordinal equality including length for PostgreSQL and SQL Server, add the padding-exact preflight for duplicate rows and invalid derivative types with its diagnostics, add insert and update conflict result variants plus their frontend `409` mappings and frontend-level coverage, and cover upgrade behavior and CMS tests. |
-| `39-snapshot-read-replica-runtime-routing.md` | DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the bounded derivative validation caches and pooled-data-source eviction, and cover both relational backends. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
+| `39-snapshot-read-replica-runtime-routing.md` | DMS configuration and runtime routing | Add derivatives to the configuration response model and `DataStore` record, decrypt them in per-derivative fault boundaries so an undecryptable optional derivative cannot fail the data-store load, introduce the two-phase effective request-scoped connection target, apply snapshot and replica eligibility from pipeline construction, implement the independent bounded derivative validation TTL and pooled-data-source eviction, and cover both relational backends. Reorder the routed-resource and tracked-changes pipelines so `ApiSchemaValidationMiddleware`, `ProvideApiSchemaMiddleware`, and `ValidateEndpointMiddleware` precede fingerprint and resource-key validation, then insert target selection between them. Re-key the scoped PostgreSQL data-source provider by effective target or connection string, or remove the redundant scoped dictionary; never key by parent `DataStore.Id`. Includes updating the integration-test data-store provider double and the configuration-provider unit tests. |
 | `40-snapshot-problem-details.md` | Snapshot ProblemDetails | Add the snapshot `405` factory and `Allow: GET`, emit the missing-snapshot `404` from the existing not-found factory, add the backend-neutral connection-unavailable exception at all seven enumerated read-path connection-open seams including both document hydrators, keep provisioning and query defects on their existing contracts, and log safely. |
-| `41-snapshot-openapi-surface.md` | OpenAPI surface | Re-add MetaEd/ApiSchema snapshot components and apply them to resource, descriptor, profile, and Change Query operations, defining the referenced components in every independently served document including the standalone Change Queries document; add DMS document-assembly and reference-resolution tests. Does not touch the backend authoritative fixture inputs. |
-| `42-api-publisher-snapshot-interoperability.md` | API Publisher interoperability | Add an environment and automated or repeatable validation for Publisher isolation behavior against DMS, and document the operator workflow. |
+| `41-snapshot-openapi-surface.md` | OpenAPI surface (DMS half) | Bump the ApiSchema packages carrying the upstream snapshot components, then serve them from resource, descriptor, profile, and Change Query operations with every referenced component defined in each independently served document including the standalone Change Queries document; add DMS document-assembly and reference-resolution tests and confirm the bump is hash- and golden-neutral. Depends on the upstream MetaEd ticket below and does not touch the backend authoritative fixture inputs. |
+| *(upstream, separate repository)* | MetaEd/ApiSchema snapshot components | Author the reusable `Use-Snapshot` parameter and the snapshot `404`/`405` response components and reference them from the resource, descriptor, profile, and standalone Change Queries base documents, then publish the ApiSchema packages. Tracked as its own MetaEd ticket, created and linked before `41-snapshot-openapi-surface.md` is scheduled. Not a DMS ticket. |
+| `42-api-publisher-snapshot-interoperability.md` | API Publisher interoperability | Add an environment and automated or repeatable validation for Publisher isolation behavior against DMS, and document the operator workflow. Depends on the four preceding slices; the Publisher validation itself is release-validation work rather than DMS product code. |
 
 ## Acceptance Criteria Coverage
 

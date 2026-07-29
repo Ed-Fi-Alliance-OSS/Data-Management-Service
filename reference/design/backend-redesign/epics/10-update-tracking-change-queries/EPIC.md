@@ -75,11 +75,17 @@ Release disposition: none of the follow-ons is must-have for 8.1. Stories 33 and
 
 ## Follow-on Stories (spawned by DMS-1190)
 
+The `TBD` keys below are intentional and are not an incomplete edit. `29-snapshot-support.md` § Follow-on Ticket Plan gates Jira creation on approval of that spike, so the story files ship with placeholder front matter and the keys are filled in — here and in each story's `jira` / `jira_url` front matter — once the tickets exist. Do not treat these rows as traceable work items until they carry real keys.
+
 - `TBD` — `38-cms-data-store-derivative-invariants.md` — Enforce CMS data-store derivative cardinality and type invariants
 - `TBD` — `39-snapshot-read-replica-runtime-routing.md` — Route eligible DMS reads to snapshots and read replicas
 - `TBD` — `40-snapshot-problem-details.md` — Implement snapshot ProblemDetails and connection-unavailable translation
-- `TBD` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents
+- `TBD` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents (DMS half; depends on the upstream MetaEd ticket below)
 - `TBD` — `42-api-publisher-snapshot-interoperability.md` — Validate API Publisher snapshot interoperability and document operator workflow
+
+One prerequisite is not a DMS ticket and has no story file in this epic:
+
+- `TBD` — *upstream MetaEd/ApiSchema* — Author the `Use-Snapshot` parameter and snapshot response components in the served base documents and publish the ApiSchema packages. `41-snapshot-openapi-surface.md` consumes the published packages and cannot be scheduled before this is created and linked.
 
 ## Cross-Epic Prerequisite
 

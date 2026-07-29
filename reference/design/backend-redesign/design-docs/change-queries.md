@@ -1995,6 +1995,8 @@ Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies rem
 
 Snapshot support is deferred and will not be available for DMS v1.0; as such, the `/deletes`, `/keyChanges`, `/availableChangeVersions`, and live resource and descriptors endpoints will not support the `Use-Snapshot` header.
 
+**Scope of this section.** This section is normative for DMS v1.0 only. The post-v1.0 snapshot and read-replica contract — header parsing, target selection, ProblemDetails, OpenAPI surface, and rollout — is owned by `epics/10-update-tracking-change-queries/29-snapshot-support.md` (DMS-1190) and the follow-on stories it spawns. That proposal supersedes this section and § "Snapshot ProblemDetails Are Deferred" below for any release in which those stories have shipped; until then this section is the shipped behavior. Where the two disagree about post-v1.0 behavior, 29-snapshot-support.md governs, and this section is to be replaced rather than amended when the rollout lands.
+
 **DMS v1.0 behavior on receipt of `Use-Snapshot`.** DMS silently ignores the `Use-Snapshot` request header on Change Query and live resource/descriptor GET-many requests. The header has no effect; the request is processed against current data without snapshot isolation. No `Warning` header is set and no error ProblemDetails is emitted.
 
 **Operator guidance — Ed-Fi API Publisher reading from a DMS v1.0 source.** The Ed-Fi API Publisher sends `Use-Snapshot: true` by default when probing snapshot support against a source whose API major version is at least 7 (see `EdFi.Tools.ApiPublisher.Connections.Api/Processing/Source/Isolation/EdFiApiSourceIsolationApplicator.cs`). Because DMS v1.0 silently ignores that header, reads from a DMS v1.0 source are not snapshot-isolated: concurrent writes against the source may be visible mid-publish and can produce inconsistent published data. Operators publishing from a DMS v1.0 source should either accept that risk or run the Publisher with `--ignoreIsolation=true`, which is the explicit acknowledgment that source isolation is unavailable. Snapshot support in DMS is targeted for a later release.
@@ -2079,6 +2081,8 @@ If DMS keeps a runtime feature flag for Change Queries, requests to Change Queri
 #### 4. Snapshot ProblemDetails Are Deferred
 
 Snapshot support is deferred for DMS v1.0. The `Use-Snapshot` header is therefore not part of the DMS v1.0 Change Queries contract, and DMS v1.0 should not emit ODS snapshot-specific ProblemDetails for Change Queries.
+
+As with § "Snapshot support is deferred", this subsection is normative for DMS v1.0 only. The shapes below are the preserved ODS contract, not the post-v1.0 DMS contract: `29-snapshot-support.md` narrows the `405` from any non-`GET` request to resource and descriptor mutations, requires a successfully parsed `true` rather than mere header presence, and specifies which failures may and may not be translated to the `404`. Implementers of the rollout use that document; this table records only what DMS v1.0 must not emit.
 
 DMS should preserve the ODS response shapes below whenever snapshot support gets added:
 

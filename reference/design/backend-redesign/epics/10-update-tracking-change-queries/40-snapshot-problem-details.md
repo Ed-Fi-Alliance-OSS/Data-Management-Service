@@ -27,6 +27,7 @@ Map the routing outcomes from `39-snapshot-read-replica-runtime-routing.md` to t
 - The existing not-found failure factory is reused for the `404`; a snapshot-specific factory supplies the `405`.
 - Authentication, tenant validation, client data-store authorization, parent route resolution, and non-database path validation retain precedence over snapshot failures.
 - The snapshot mutation `405` is emitted after path validation but before fingerprint validation and without opening the primary, snapshot, or read-replica database.
+- This precedence depends on the pipeline reordering delivered by `39-snapshot-read-replica-runtime-routing.md`, which moves endpoint validation ahead of `ValidateDatabaseFingerprintMiddleware` and `ValidateResourceKeySeedMiddleware`. This story asserts the resulting responses; it does not re-implement the reordering. If that reordering is absent, an unknown resource carrying `Use-Snapshot: true` cannot return its existing `404` before snapshot policy runs.
 
 ### Connection failure classification
 

@@ -11,6 +11,8 @@ Add an automated or repeatable interoperability environment proving that an Ed-F
 
 The validation must distinguish primary and snapshot data, exercise every Publisher source-read surface that participates in an extraction, and document the operator-owned snapshot and read-replica lifecycle and upgrade implications from DMS-1190.
 
+This is a release-validation, environment, and documentation ticket rather than DMS product code. It changes no DMS runtime behavior: the behavior it exercises is delivered by stories 38 through 41, and this story proves the composed result against an external Publisher build and writes the operator workflow and release notes. It is scheduled last for that reason, and it depends on an external tool it does not own — the Ed-Fi API Publisher is a separate product whose isolation behavior is an input to this validation, not something this story may change. If Publisher's behavior turns out to differ from what `29-snapshot-support.md` § Verified ODS and Publisher Behavior records, that is a finding to report against the design, not a defect to fix here.
+
 ## Acceptance Criteria
 
 - The validation records the DMS, Ed-Fi API, and API Publisher versions and all required configuration so the result is reproducible.
@@ -19,8 +21,8 @@ The validation must distinguish primary and snapshot data, exercise every Publis
 - GET-many, GET-by-id, `/deletes`, `/keyChanges`, and `/availableChangeVersions` all use the same snapshot target within one extraction, given that the derivative configuration and the underlying snapshot are held unchanged for the extraction's duration.
 - The operator workflow states that a `Snapshot` derivative must not be replaced, re-pointed, removed, or recreated at the same connection string while an extraction is reading from it, and distinguishes the outcomes: re-pointing the derivative row silently serves later pages from the replacement image once the configuration cache refreshes; recreating the database at the unchanged connection string does the same once a later connection reaches it, with no configuration change to detect; removing the row or making the database unreachable instead interrupts the extraction with Snapshot Not Found `404`.
 - A resource or descriptor mutation carrying `Use-Snapshot: true` returns the snapshot `405` ProblemDetails and `Allow: GET`.
-- No configured snapshot returns the expected Snapshot Not Found `404`.
-- Retiring or making the configured snapshot unreachable returns the same Snapshot Not Found `404`.
+- When no snapshot is configured for the data store, a snapshot-eligible read carrying `Use-Snapshot: true` returns the expected Snapshot Not Found `404`.
+- Retiring the configured snapshot or making it unreachable returns the same Snapshot Not Found `404`.
 - `Use-Snapshot: false` does not select the snapshot.
 - Where the environment also configures a read replica, `Use-Snapshot: true` proves snapshot precedence and a normal eligible read proves automatic read-replica selection.
 - The operator workflow documents creation of a SQL Server database snapshot, PostgreSQL point-in-time clone, restored backup, or equivalent read-only source as an external responsibility rather than a DMS or CMS feature.
@@ -37,7 +39,8 @@ The validation must distinguish primary and snapshot data, exercise every Publis
 - `38-cms-data-store-derivative-invariants.md`
 - `39-snapshot-read-replica-runtime-routing.md`
 - `40-snapshot-problem-details.md`
-- `41-snapshot-openapi-surface.md`
+- `41-snapshot-openapi-surface.md`, and transitively the upstream MetaEd/ApiSchema ticket and published packages that story depends on.
+- An external Ed-Fi API Publisher build, whose recorded version is part of the validation result.
 
 ## Out of Scope
 
