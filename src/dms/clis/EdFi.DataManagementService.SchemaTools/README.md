@@ -119,9 +119,9 @@ script manually own any desired transaction wrapper.
 
 ### `ddl provision` — Generate DDL and execute against a database
 
-Generates dialect-specific DDL and executes it against a target database in a
-single transaction. Provisions one database at a time (`--dialect both` is not
-accepted).
+Generates dialect-specific DDL and executes the generated DDL against a target
+database in a single transaction. Provisions one database at a time
+(`--dialect both` is not accepted).
 
 ```bash
 api-schema-tools ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database] [--timeout <seconds>]
@@ -156,9 +156,14 @@ api-schema-tools ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSche
 2. Generates DDL (core tables, relational model, fixed DocumentCache inventory, seed DML)
    for the specified dialect
 3. Optionally creates the database if `--create-database` is set
-4. Executes all DDL in a single transaction against the target database
-5. For SQL Server: configures Read Committed Snapshot Isolation (RCSI) on newly
+4. For SQL Server: configures Read Committed Snapshot Isolation (RCSI) on newly
    created databases; warns if RCSI is disabled on existing databases
+5. Runs bounded preflight checks before any generated DDL
+6. Executes all generated DDL in a single target-database transaction
+7. Prints the provisioned database name and effective schema summary
+
+SQL Server RCSI configuration for newly created databases, and RCSI warnings for
+existing databases, run outside and before the generated DDL transaction.
 
 Provisioning always creates the fixed `dms.DataStoreIdentity`, `dms.DocumentCache`,
 `dms.DocumentProjectionWork`, and `dms.DocumentCacheState` objects. Their physical shape

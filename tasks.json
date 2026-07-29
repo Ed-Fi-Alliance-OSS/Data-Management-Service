@@ -342,7 +342,7 @@
       "Run `rg -n \"Executes all DDL|Read Committed Snapshot|RCSI|bounded\" src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md` and inspect the surrounding prose for ordering accuracy.",
       "Run `git diff --check`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "21-review-full-ddl-phase-numbering",

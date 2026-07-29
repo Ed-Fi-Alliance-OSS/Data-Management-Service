@@ -93,3 +93,8 @@ Decisions: standalone SeedDmlEmitter now emits non-numbered Seed Data section; F
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/{SqlWriter,SeedDmlEmitter,FullDdlEmitter}.cs; Ddl unit tests; DDL expected SQL/manifest fixtures; docs/RELATIONAL-BACKEND.md; tasks.json; progress.txt.
 Verify: csharpier format Ddl + Ddl.Tests.Unit; UPDATE_GOLDENS=1 dotnet test Ddl.Tests.Unit; dotnet test Ddl.Tests.Unit; phase-label rg inspection; stale Phase 7/preflight rg no matches; authoritative input diff check; git diff --check.
 Next: task 20 SchemaTools README provisioning order remains; task 19 appears doc-satisfied by this cleanup but still unmarked.
+2026-07-29 - Completed 20-review-schematools-readme-provision-order for reference/design/backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md.
+Decisions: corrected SchemaTools README behavior order to match DdlProvisionCommand: schema build, optional create, SQL Server MVCC check/configure, bounded preflight, generated DDL transaction, summary. Clarified SQL Server RCSI configuration/warnings run outside and before the generated DDL transaction; no provisioning behavior or generated SQL changes.
+Files changed: src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md; tasks.json; progress.txt.
+Verify: README/DdlProvisionCommand order inspection; rg RCSI/bounded/generated DDL wording; git diff --check.
+Next: task 19 remains incomplete in tasks.json, but docs appear already satisfied by prior phase-numbering cleanup.
