@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FakeItEasy;
 using FluentAssertions;
@@ -340,6 +341,9 @@ public class DatabaseProvisionerTests
         [Test]
         public void It_checks_enqueue_owner_prerequisites_without_dms_mutation()
         {
+            _dialect
+                .ProviderPrerequisiteSql.Should()
+                .Be(PgsqlEnqueueOwnerPrerequisiteSql.ProviderPrerequisiteSql);
             _dialect.ProviderPrerequisiteSql.Should().Contain("edfi_dms_enqueue_owner");
             _dialect.ProviderPrerequisiteSql.Should().Contain("pg_catalog.pg_auth_members");
             _dialect.ProviderPrerequisiteSql.Should().Contain("SET TRUE, INHERIT FALSE, ADMIN FALSE");

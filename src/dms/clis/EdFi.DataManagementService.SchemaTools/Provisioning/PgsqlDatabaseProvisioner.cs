@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -50,75 +51,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
         SELECT 'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt'
         WHERE to_regclass('"dms"."IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt"') IS NOT NULL
         """,
-        ProviderPrerequisiteSql: """
-        WITH owner_role AS (
-            SELECT pg_catalog.to_regrole('edfi_dms_enqueue_owner') AS oid
-        ),
-        session_role AS (
-            SELECT oid, rolsuper, rolcreaterole
-            FROM pg_catalog.pg_roles
-            WHERE rolname = SESSION_USER
-        )
-        SELECT 'PostgreSQL provisioning principal must be SUPERUSER or CREATEROLE to create edfi_dms_enqueue_owner before provisioning.'
-        FROM owner_role, session_role
-        WHERE owner_role.oid IS NULL
-        AND NOT (session_role.rolsuper OR session_role.rolcreaterole)
-        UNION ALL
-        SELECT 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before provisioning.'
-        FROM owner_role
-        INNER JOIN pg_catalog.pg_roles owner_role_attributes ON owner_role_attributes.oid = owner_role.oid
-        WHERE owner_role.oid IS NOT NULL
-        AND (
-            owner_role_attributes.rolcanlogin
-            OR owner_role_attributes.rolinherit
-            OR owner_role_attributes.rolsuper
-            OR owner_role_attributes.rolcreatedb
-            OR owner_role_attributes.rolcreaterole
-            OR owner_role_attributes.rolreplication
-            OR owner_role_attributes.rolbypassrls
-        )
-        UNION ALL
-        SELECT 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before provisioning.'
-        FROM owner_role
-        WHERE owner_role.oid IS NOT NULL
-        AND EXISTS (
-            SELECT 1
-            FROM pg_catalog.pg_auth_members membership
-            WHERE membership.member = owner_role.oid
-            AND (membership.admin_option OR membership.inherit_option OR membership.set_option)
-        )
-        UNION ALL
-        SELECT 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.'
-        FROM owner_role, session_role
-        WHERE owner_role.oid IS NOT NULL
-        AND EXISTS (
-            SELECT 1
-            FROM pg_catalog.pg_auth_members membership
-            WHERE membership.roleid = owner_role.oid
-            AND membership.member = session_role.oid
-            AND NOT (
-                membership.admin_option
-                AND NOT membership.inherit_option
-                AND NOT membership.set_option
-                AND session_role.rolcreaterole
-            )
-            AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)
-        )
-        UNION ALL
-        SELECT 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.'
-        FROM owner_role, session_role
-        WHERE owner_role.oid IS NOT NULL
-        AND NOT session_role.rolsuper
-        AND NOT EXISTS (
-            SELECT 1
-            FROM pg_catalog.pg_auth_members membership
-            WHERE membership.roleid = owner_role.oid
-            AND membership.member = session_role.oid
-            AND NOT membership.admin_option
-            AND NOT membership.inherit_option
-            AND membership.set_option
-        )
-        """,
+        ProviderPrerequisiteSql: PgsqlEnqueueOwnerPrerequisiteSql.ProviderPrerequisiteSql,
         ResourceKeySelectSql: @"SELECT ""ResourceKeyId"", ""ProjectName"", ""ResourceName"", ""ResourceVersion"" FROM dms.""ResourceKey"" ORDER BY ""ResourceKeyId""",
         SchemaComponentSelectSql: @"SELECT ""ProjectEndpointName"", ""ProjectName"", ""ProjectVersion"", ""IsExtensionProject"" FROM dms.""SchemaComponent"" WHERE ""EffectiveSchemaHash"" = @hash ORDER BY ""ProjectEndpointName""",
         MissingTableDataStoreIdentity: "dms.\"DataStoreIdentity\"",

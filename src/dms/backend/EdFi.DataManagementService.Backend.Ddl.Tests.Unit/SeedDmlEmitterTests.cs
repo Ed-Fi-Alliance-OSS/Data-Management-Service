@@ -1100,6 +1100,113 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     }
 }
 
+[TestFixture]
+public class Given_PgsqlEnqueueOwnerPrerequisiteSql
+{
+    private string _providerPrerequisiteSql = null!;
+    private string _standalonePreflightSql = null!;
+    private string _securitySql = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pgsqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        _providerPrerequisiteSql = PgsqlEnqueueOwnerPrerequisiteSql.ProviderPrerequisiteSql;
+        _standalonePreflightSql = new SeedDmlEmitter(pgsqlDialect).EmitPreflightOnly(
+            SeedTestData.ValidEffectiveSchemaHash
+        );
+        _securitySql = new CoreDdlEmitter(pgsqlDialect).Emit();
+    }
+
+    [Test]
+    public void It_should_share_enqueue_owner_diagnostics_across_cli_preflight_and_generated_sql()
+    {
+        string[] sharedDiagnostics =
+        [
+            PgsqlEnqueueOwnerPrerequisiteSql.CreateRoleCapabilityDiagnostic,
+            PgsqlEnqueueOwnerPrerequisiteSql.LockedDownRoleDiagnostic,
+            PgsqlEnqueueOwnerPrerequisiteSql.UnsafeDirectMembershipDiagnostic,
+            PgsqlEnqueueOwnerPrerequisiteSql.MissingRequiredDirectMembershipDiagnostic,
+        ];
+
+        foreach (var diagnostic in sharedDiagnostics)
+        {
+            _providerPrerequisiteSql.Should().Contain(diagnostic);
+            _standalonePreflightSql.Should().Contain($"RAISE EXCEPTION '{diagnostic}';");
+            _securitySql.Should().Contain($"RAISE EXCEPTION '{diagnostic}';");
+        }
+
+        _providerPrerequisiteSql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipPreflightDiagnostic);
+        _standalonePreflightSql
+            .Should()
+            .Contain(
+                $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipPreflightDiagnostic}';"
+            );
+        _securitySql
+            .Should()
+            .Contain(
+                $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipSecurityDiagnostic}';"
+            );
+    }
+
+    [Test]
+    public void It_should_share_enqueue_owner_membership_predicates_across_cli_preflight_and_generated_sql()
+    {
+        _providerPrerequisiteSql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role_attributes"));
+        _standalonePreflightSql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role"));
+        _securitySql
+            .Should()
+            .Contain(PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role"));
+
+        string[] sharedMembershipPredicates =
+        [
+            PgsqlEnqueueOwnerPrerequisiteSql.OutgoingPrivilegeBearingMembershipPredicate("membership"),
+            PgsqlEnqueueOwnerPrerequisiteSql.UnsafeDirectMembershipOptionsPredicate("membership"),
+            "AND NOT membership.admin_option",
+            "AND NOT membership.inherit_option",
+            "AND membership.set_option",
+        ];
+
+        foreach (var predicate in sharedMembershipPredicates)
+        {
+            _providerPrerequisiteSql.Should().Contain(predicate);
+            _standalonePreflightSql.Should().Contain(predicate);
+            _securitySql.Should().Contain(predicate);
+        }
+
+        _providerPrerequisiteSql
+            .Should()
+            .Contain(
+                PgsqlEnqueueOwnerPrerequisiteSql.CreateroleAdminOnlyBootstrapMembershipPredicate(
+                    "membership",
+                    "session_role.rolcreaterole"
+                )
+            );
+        _standalonePreflightSql
+            .Should()
+            .Contain(
+                PgsqlEnqueueOwnerPrerequisiteSql.CreateroleAdminOnlyBootstrapMembershipPredicate(
+                    "membership",
+                    "COALESCE(_session_can_create_role, false)"
+                )
+            );
+        _securitySql
+            .Should()
+            .Contain(
+                PgsqlEnqueueOwnerPrerequisiteSql.CreateroleAdminOnlyBootstrapMembershipPredicate(
+                    "membership",
+                    "COALESCE(_session_can_create_role, false)"
+                )
+            );
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // VALUES chunking tests (SQL Server 1000-row limit)
 // ═══════════════════════════════════════════════════════════════════

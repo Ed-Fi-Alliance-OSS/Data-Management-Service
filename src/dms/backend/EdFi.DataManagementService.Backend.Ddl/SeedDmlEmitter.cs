@@ -36,7 +36,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
-    private const string PgsqlDocumentEnqueueOwnerRoleName = "edfi_dms_enqueue_owner";
     private const string ZeroUuid = "00000000-0000-0000-0000-000000000000";
 
     /// <summary>
@@ -598,7 +597,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine(
-                $"_owner_role oid := pg_catalog.to_regrole('{PgsqlDocumentEnqueueOwnerRoleName}');"
+                $"_owner_role oid := pg_catalog.to_regrole('{PgsqlEnqueueOwnerPrerequisiteSql.RoleName}');"
             );
             writer.AppendLine("_session_role oid;");
             writer.AppendLine("_session_is_superuser boolean;");
@@ -622,7 +621,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 using (writer.Indent())
                 {
                     writer.AppendLine(
-                        "RAISE EXCEPTION 'PostgreSQL provisioning principal must be SUPERUSER or CREATEROLE to create edfi_dms_enqueue_owner before provisioning.';"
+                        $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.CreateRoleCapabilityDiagnostic}';"
                     );
                 }
                 writer.AppendLine("END IF;");
@@ -637,14 +636,14 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine("FROM pg_catalog.pg_roles owner_role");
                 writer.AppendLine("WHERE owner_role.oid = _owner_role");
                 writer.AppendLine(
-                    "AND (owner_role.rolcanlogin OR owner_role.rolinherit OR owner_role.rolsuper OR owner_role.rolcreatedb OR owner_role.rolcreaterole OR owner_role.rolreplication OR owner_role.rolbypassrls)"
+                    $"AND ({PgsqlEnqueueOwnerPrerequisiteSql.UnsafeRoleAttributePredicate("owner_role")})"
                 );
             }
             writer.AppendLine(") THEN");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before provisioning.';"
+                    $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.LockedDownRoleDiagnostic}';"
                 );
             }
             writer.AppendLine("END IF;");
@@ -652,18 +651,16 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("IF EXISTS (");
             using (writer.Indent())
             {
-                writer.AppendLine("SELECT 1");
-                writer.AppendLine("FROM pg_catalog.pg_auth_members membership");
-                writer.AppendLine("WHERE membership.member = _owner_role");
-                writer.AppendLine(
-                    "AND (membership.admin_option OR membership.inherit_option OR membership.set_option)"
+                PgsqlEnqueueOwnerPrerequisiteSql.EmitOutgoingPrivilegeBearingMembershipSelect(
+                    writer,
+                    "_owner_role"
                 );
             }
             writer.AppendLine(") THEN");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before provisioning.';"
+                    $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.OutgoingMembershipPreflightDiagnostic}';"
                 );
             }
             writer.AppendLine("END IF;");
@@ -671,22 +668,18 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("IF EXISTS (");
             using (writer.Indent())
             {
-                writer.AppendLine("SELECT 1");
-                writer.AppendLine("FROM pg_catalog.pg_auth_members membership");
-                writer.AppendLine("WHERE membership.roleid = _owner_role");
-                writer.AppendLine("AND membership.member = _session_role");
-                writer.AppendLine(
-                    "AND NOT (membership.admin_option AND NOT membership.inherit_option AND NOT membership.set_option AND COALESCE(_session_can_create_role, false))"
-                );
-                writer.AppendLine(
-                    "AND (membership.admin_option OR membership.inherit_option OR NOT membership.set_option)"
+                PgsqlEnqueueOwnerPrerequisiteSql.EmitUnsafeDirectMembershipSelect(
+                    writer,
+                    "_owner_role",
+                    "_session_role",
+                    "COALESCE(_session_can_create_role, false)"
                 );
             }
             writer.AppendLine(") THEN");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'PostgreSQL provisioning principal has an unsafe direct membership in edfi_dms_enqueue_owner; required options are SET TRUE, INHERIT FALSE, ADMIN FALSE.';"
+                    $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.UnsafeDirectMembershipDiagnostic}';"
                 );
             }
             writer.AppendLine("END IF;");
@@ -694,13 +687,11 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("_has_required_direct_membership := EXISTS (");
             using (writer.Indent())
             {
-                writer.AppendLine("SELECT 1");
-                writer.AppendLine("FROM pg_catalog.pg_auth_members membership");
-                writer.AppendLine("WHERE membership.roleid = _owner_role");
-                writer.AppendLine("AND membership.member = _session_role");
-                writer.AppendLine("AND NOT membership.admin_option");
-                writer.AppendLine("AND NOT membership.inherit_option");
-                writer.AppendLine("AND membership.set_option");
+                PgsqlEnqueueOwnerPrerequisiteSql.EmitRequiredDirectMembershipSelect(
+                    writer,
+                    "_owner_role",
+                    "_session_role"
+                );
             }
             writer.AppendLine(");");
             writer.AppendLine();
@@ -709,7 +700,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'PostgreSQL provisioning principal must have direct SET TRUE, INHERIT FALSE, ADMIN FALSE membership in existing edfi_dms_enqueue_owner before provisioning.';"
+                    $"RAISE EXCEPTION '{PgsqlEnqueueOwnerPrerequisiteSql.MissingRequiredDirectMembershipDiagnostic}';"
                 );
             }
             writer.AppendLine("END IF;");
