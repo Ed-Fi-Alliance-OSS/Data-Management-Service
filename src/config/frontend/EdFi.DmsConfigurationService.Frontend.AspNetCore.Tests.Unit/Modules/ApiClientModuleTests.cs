@@ -3802,6 +3802,66 @@ public class ApiClientModuleTests
                 .Returns(result);
     }
 
+    /// <summary>
+    /// An identity-preserving provider update returns the stored UUID unchanged, so guarded
+    /// synchronization is asked to replace a UUID with itself. It must recognize that as applied
+    /// rather than as stale state, and compensation must still return the domain contract.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_provider_preserves_the_uuid : UpdateUnderLockTestBase
+    {
+        private List<(Guid Expected, Guid New)> _syncCalls = null!;
+        private List<string> _deletedClientIds = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _syncCalls = [];
+            _deletedClientIds = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(_existingUuid));
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.Success());
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureApplicationNotFound());
+
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<long>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Invokes(call => _syncCalls.Add((call.GetArgument<Guid>(1), call.GetArgument<Guid>(2))))
+                // The relational repositories answer AlreadyApplied when the stored UUID already
+                // equals the new one, which is always the case for a stable-identity provider.
+                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_the_unresolved_reference_conflict() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_synchronizes_the_unchanged_uuid_against_itself() =>
+            _syncCalls.Should().Equal((_existingUuid, _existingUuid));
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+    }
+
     [TestFixture]
     public class Given_a_failed_api_client_update_whose_rollback_was_already_synchronized
         : CompensationSyncTestBase
