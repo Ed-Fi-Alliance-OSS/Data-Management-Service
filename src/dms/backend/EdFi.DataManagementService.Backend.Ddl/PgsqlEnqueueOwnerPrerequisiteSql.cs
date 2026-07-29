@@ -230,9 +230,24 @@ public static class PgsqlEnqueueOwnerPrerequisiteSql
                     EmitRaiseException(writer, CreateRoleCapabilityDiagnostic);
                 }
                 writer.AppendLine("END IF;");
-                writer.AppendLine($"CREATE ROLE {ownerRole} WITH {LockedDownRoleOptions};");
-                EmitOwnerRoleAssignment(writer);
-                writer.AppendLine("_created_owner_role := true;");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"CREATE ROLE {ownerRole} WITH {LockedDownRoleOptions};");
+                    EmitOwnerRoleAssignment(writer);
+                    writer.AppendLine("_created_owner_role := true;");
+                }
+                writer.AppendLine("EXCEPTION");
+                using (writer.Indent())
+                {
+                    writer.AppendLine("WHEN duplicate_object OR unique_violation THEN");
+                    using (writer.Indent())
+                    {
+                        EmitOwnerRoleAssignment(writer);
+                        writer.AppendLine("_created_owner_role := true;");
+                    }
+                }
+                writer.AppendLine("END;");
             }
             writer.AppendLine("END IF;");
             writer.AppendLine();

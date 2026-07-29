@@ -506,9 +506,14 @@ internal static class PeopleRelationshipGetManyStudentScenario
     {
         string sql = IsMssql(connection)
             ? """
+                DECLARE @inserted TABLE ([DocumentId] BIGINT);
+
                 INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-                OUTPUT INSERTED.[DocumentId]
+                OUTPUT INSERTED.[DocumentId] INTO @inserted
                 VALUES (@documentUuid, @resourceKeyId);
+
+                SELECT [DocumentId]
+                FROM @inserted;
                 """
             : """
                 INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")

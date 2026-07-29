@@ -1108,6 +1108,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
             .Contain(
                 "CREATE ROLE \"edfi_dms_enqueue_owner\" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
             );
+        _ddl.Should().Contain("WHEN duplicate_object OR unique_violation THEN");
         _ddl.Should().Contain("WHERE membership.member = _owner_role");
         _ddl.Should()
             .Contain("AND (membership.admin_option OR membership.inherit_option OR membership.set_option)");

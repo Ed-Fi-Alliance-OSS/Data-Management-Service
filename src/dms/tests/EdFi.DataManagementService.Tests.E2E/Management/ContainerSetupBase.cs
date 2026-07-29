@@ -42,7 +42,7 @@ public abstract class ContainerSetupBase
               AND schemaname !~ '^pg_'
               AND NOT (
                   schemaname = 'dms'
-                  AND tablename = ANY (ARRAY['EffectiveSchema', 'ResourceKey', 'SchemaComponent'])
+                  AND tablename = ANY (ARRAY['DataStoreIdentity', 'DocumentCacheState', 'EffectiveSchema', 'ResourceKey', 'SchemaComponent'])
               );
 
             IF truncate_sql IS NOT NULL THEN

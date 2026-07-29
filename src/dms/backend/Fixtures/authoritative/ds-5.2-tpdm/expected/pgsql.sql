@@ -883,9 +883,15 @@ BEGIN
         IF NOT COALESCE(_session_is_superuser OR _session_can_create_role, false) THEN
             RAISE EXCEPTION 'PostgreSQL provisioning principal must be SUPERUSER or CREATEROLE to create edfi_dms_enqueue_owner before provisioning.';
         END IF;
-        CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-        _owner_role := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
-        _created_owner_role := true;
+        BEGIN
+            CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+            _owner_role := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+            _created_owner_role := true;
+        EXCEPTION
+            WHEN duplicate_object OR unique_violation THEN
+                _owner_role := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+                _created_owner_role := true;
+        END;
     END IF;
 
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles owner_role WHERE owner_role.oid = _owner_role
