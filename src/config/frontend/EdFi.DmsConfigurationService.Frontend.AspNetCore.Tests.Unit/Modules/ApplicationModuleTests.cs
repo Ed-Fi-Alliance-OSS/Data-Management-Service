@@ -2594,6 +2594,79 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
+    public class Given_an_application_update_with_mismatched_route_and_body_ids : ApplicationModuleTests
+    {
+        private List<string> _dependencyCalls = null!;
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _dependencyCalls = [];
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_clientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_vendorRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_dataStoreRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_profileRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "Id": 9999,
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_id_mismatch_validation_contract()
+        {
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Id": [
+                      "Request body id must match the id in the url."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_calls_no_repository_or_identity_provider_dependency() =>
+            _dependencyCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
     public class ResetCredentialEndpointEnabledTests : ApplicationModuleTests
     {
         /// <summary>

@@ -14,6 +14,8 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
+using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -282,9 +284,14 @@ public class ApiClientModule : IEndpointModule
     {
         logger.LogDebug("Entering UpdateApiClient for id: {Id}", SanitizeForLog(id.ToString()));
 
-        // Set the ID from the route parameter
-        command.Id = id;
         await validator.GuardAsync(command);
+
+        if (command.Id != id)
+        {
+            throw new ValidationException([
+                new ValidationFailure("Id", "Request body id must match the id in the url."),
+            ]);
+        }
 
         // Get existing API client
         ApiClientGetResult existingResult = await apiClientRepository.GetApiClientById(id);

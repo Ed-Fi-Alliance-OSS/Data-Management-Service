@@ -890,3 +890,41 @@ Feature: Applications endpoints
                         ]
                   }
                   """
+
+        Scenario: 28 Verify PUT request with mismatched IDs
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Mismatch Test Application",
+                   "claimSetName": "ClaimScenario28",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/applications/{applicationId}" with
+                  """
+                  {
+                      "id": 999999,
+                      "vendorId": {vendorId},
+                      "applicationName": "Mismatch Test Application",
+                      "claimSetName": "ClaimScenario28",
+                      "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "Id": [
+                                "Request body id must match the id in the url."
+                            ]
+                        },
+                        "errors": []
+                    }
+                  """

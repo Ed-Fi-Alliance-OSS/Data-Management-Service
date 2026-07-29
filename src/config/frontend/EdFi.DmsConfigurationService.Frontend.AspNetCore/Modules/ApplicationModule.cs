@@ -332,6 +332,13 @@ public class ApplicationModule : IEndpointModule
     {
         await validator.GuardAsync(command);
 
+        if (command.Id != id)
+        {
+            throw new ValidationException([
+                new ValidationFailure("Id", "Request body id must match the id in the url."),
+            ]);
+        }
+
         // Resolve the application before validating references so a request for a
         // missing or foreign-tenant application is answered with 404 regardless of
         // what references the request body carries.
