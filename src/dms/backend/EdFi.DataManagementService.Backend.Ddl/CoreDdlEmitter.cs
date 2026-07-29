@@ -114,6 +114,13 @@ public sealed class CoreDdlEmitter
         $"{_dialect.Rules.ScalarTypeDefaults.StringType}({maxLength})";
 
     /// <summary>
+    /// Gets the fixed ASCII stream-etag type. SQL Server uses varchar here instead of the
+    /// generic Unicode string default.
+    /// </summary>
+    private string StreamEtagType =>
+        _dialect.Rules.Dialect == SqlDialect.Mssql ? "varchar(64)" : StringType(64);
+
+    /// <summary>
     /// Gets the exact ASCII lifecycle-token type. SQL Server intentionally uses varchar plus
     /// binary collation so DATALENGTH checks match the fixed token byte lengths.
     /// </summary>
@@ -490,7 +497,7 @@ public sealed class CoreDdlEmitter
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("ContentVersion"), "bigint", false)},");
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("StreamEtag"), StringType(64), false)},"
+                $"{_dialect.RenderColumnDefinition(Col("StreamEtag"), StreamEtagType, false)},"
             );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("LastModifiedAt"), DateTimeType, false)},"

@@ -3084,7 +3084,7 @@
       "table_name": "DocumentCache",
       "column_name": "StreamEtag",
       "ordinal_position": 7,
-      "data_type": "nvarchar(64)",
+      "data_type": "varchar(64)",
       "is_nullable": false,
       "default_expression": null,
       "is_computed": false

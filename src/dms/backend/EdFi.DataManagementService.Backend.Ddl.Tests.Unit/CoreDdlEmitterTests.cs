@@ -1342,8 +1342,16 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_emit_stream_etag_column_on_document_cache_table()
     {
-        _ddl.Should().Contain("[StreamEtag] nvarchar(64) NOT NULL");
+        _ddl.Should().Contain("[StreamEtag] varchar(64) NOT NULL");
         _ddl.Should().NotContain("[Etag] nvarchar(64) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_keep_other_document_cache_string_columns_unicode()
+    {
+        _ddl.Should().Contain("[ProjectName] nvarchar(256) NOT NULL");
+        _ddl.Should().Contain("[ResourceName] nvarchar(256) NOT NULL");
+        _ddl.Should().Contain("[ResourceVersion] nvarchar(32) NOT NULL");
     }
 
     [Test]
