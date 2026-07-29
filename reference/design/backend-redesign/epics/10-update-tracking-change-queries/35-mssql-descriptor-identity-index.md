@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1359
+jira_url: https://edfi.atlassian.net/browse/DMS-1359
 ---
 
 # Story: Emit the SQL Server Descriptor Identity Index

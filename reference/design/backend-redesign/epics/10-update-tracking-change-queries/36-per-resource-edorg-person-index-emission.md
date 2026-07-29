@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1360
+jira_url: https://edfi.atlassian.net/browse/DMS-1360
 ---
 
 # Story: Emit Per-Resource EdOrg and Person Tracked-Change Indexes

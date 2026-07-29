@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1362
+jira_url: https://edfi.atlassian.net/browse/DMS-1362
 ---
 
 # Story: Make Namespace Authorization Indexes Serve Prefix `LIKE` on PostgreSQL

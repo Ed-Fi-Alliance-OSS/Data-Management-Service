@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1357
+jira_url: https://edfi.atlassian.net/browse/DMS-1357
 ---
 
 # Story: Evaluate and Conditionally Emit Tier-1 Auth-Check Indexes on `tracked_changes_*` Tables
