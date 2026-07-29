@@ -83,3 +83,9 @@ The ceiling values and their rationale live in the protocol section and are not 
 - Unit, golden, and integration coverage matches the recorded category dispositions on both providers: adopted categories present and rejected categories absent across inventory, generated DDL, and manifests, including strict/default behavior, deterministic ordering, identifier shortening, and regenerated goldens. The concrete test and fixture inventory is owned by this ticket's tasking.
 - When a category is adopted, this ticket merges the adopted design from `22-spike-findings.md` § "Indexes on the `tracked_changes*` tables" into the normative docs: the index specification and test assertions into `change-queries.md`, and the `DbIndexInfo` contract notes into `compiled-mapping-set.md`.
 - After emitting a category, verify that its exact generated DDL is semantically identical to the pinned candidate overlay, then rerun the complete applicable matrix against that generated DDL. A mismatch or failed post-implementation gate blocks acceptance rather than being described as run-to-run noise.
+
+## Tasking Input
+
+Review-derived notes recorded at spike approval; this ticket's tasking adopts each into acceptance criteria or rejects it with recorded rationale. These are input, not acceptance criteria.
+
+- Cross the shared-descriptor matrix cells with both descriptor authorization shapes on both providers: `NoFurtherAuthorizationRequired` (no row-level predicate) and `NamespaceBased` (adds the `OldNamespace` residual), across the five window shapes and both page and count statements.

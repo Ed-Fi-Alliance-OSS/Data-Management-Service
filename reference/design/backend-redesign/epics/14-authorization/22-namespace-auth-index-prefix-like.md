@@ -30,3 +30,9 @@ The dedicated Change Queries tracked-namespace story consumes that decision and 
 - EXPLAIN-based integration fixture on PostgreSQL asserting the `NamespaceBased` predicate produces index boundary conditions rather than a filter over the full index, exercised under generic-plan conditions (or with the plan mode explicitly pinned by the chosen design) so the assertion reflects steady-state prepared-statement behavior.
 - Upgrade consideration recorded: already-provisioned databases carry the old index definition, and the provisioning path must replace them (or the decision to leave existing deployments as-is must be explicit). If the selected mechanism changes index definitions, the `RelationalMappingVersion` bump this physical change requires is deferred to a dedicated mapping-version ticket rather than owned here; the first such ticket is filed with the follow-on tickets after spike approval and must land no later than the first story that ships a physical index change, and each later independently released batch of physical index changes requires its own bump ticket for that release.
 - Golden regeneration for changed index DDL and manifests on PostgreSQL.
+
+## Tasking Input
+
+Review-derived notes recorded at spike approval; this ticket's tasking adopts each into acceptance criteria or rejects it with recorded rationale. These are input, not acceptance criteria.
+
+- If the documented C-collation deployment requirement is selected, this ticket owns either changing the supported new-database provisioning/default contract and validating it, or a fail-fast compatibility check that prevents a nonconforming database from being treated as seek-capable, plus an explicit disposition for existing `en_US.utf8` databases; a collation-only change triggers no `RelationalMappingVersion` bump, so version mismatch does not cover it. In-place migration is not required: the normative DDL contract supports new/empty databases only.

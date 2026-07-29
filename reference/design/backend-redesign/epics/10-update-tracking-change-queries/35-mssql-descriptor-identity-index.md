@@ -25,3 +25,9 @@ This story implements that SQL-only decision without expanding the unrelated tra
 - Measure the new index's used storage independently and require it to remain at or below 50% of the baseline `dms.Descriptor` table's used storage.
 - A failed seek-shape, read, write, storage, or exact-DDL gate returns the implementation for design review; it does not silently defer or waive the spike's decision.
 - PostgreSQL behavior is unchanged.
+
+## Tasking Input
+
+Review-derived notes recorded at spike approval; this ticket's tasking adopts each into acceptance criteria or rejects it with recorded rationale. These are input, not acceptance criteria.
+
+- Cross the two probe shapes with the five `ChangeVersion` window shapes and measure the separate `totalCount` count statement as its own shape; the count and page statements differ in ordering and limiting envelope and can select different anti-join plans.
