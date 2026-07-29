@@ -91,6 +91,12 @@ app.UseMiddleware<FrameworkErrorResponseMiddleware>();
 app.UseCors("AllowSwaggerUI");
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Reject JSON requests declaring an unsupported charset with the Ed-Fi 415 contract before body
+// binding reads them. Placed after authorization so authentication and authorization failures keep
+// their 401/403 responses.
+app.UseMiddleware<JsonCharsetValidationMiddleware>();
+
 app.MapRouteEndpoints();
 app.MapOpenApi();
 await app.RunAsync();
