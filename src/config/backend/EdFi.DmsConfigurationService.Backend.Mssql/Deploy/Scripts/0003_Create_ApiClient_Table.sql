@@ -6,8 +6,8 @@
 IF OBJECT_ID('dmscs.ApiClient', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ApiClient (
-        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_ApiClient PRIMARY KEY,
-        ApplicationId BIGINT NOT NULL,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_ApiClient PRIMARY KEY,
+        ApplicationId INT NOT NULL,
         Name NVARCHAR(50) NOT NULL,
         IsApproved BIT NOT NULL DEFAULT 0,
         ClientId NVARCHAR(36) NOT NULL,

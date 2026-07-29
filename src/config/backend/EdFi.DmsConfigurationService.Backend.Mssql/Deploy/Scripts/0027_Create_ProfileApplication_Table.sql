@@ -10,8 +10,8 @@ GO
 IF OBJECT_ID('dmscs.ApplicationProfile', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ApplicationProfile (
-        ApplicationId BIGINT NOT NULL,
-        ProfileId BIGINT NOT NULL,
+        ApplicationId INT NOT NULL,
+        ProfileId INT NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),
         CONSTRAINT PK_ApplicationProfile PRIMARY KEY (ApplicationId, ProfileId),

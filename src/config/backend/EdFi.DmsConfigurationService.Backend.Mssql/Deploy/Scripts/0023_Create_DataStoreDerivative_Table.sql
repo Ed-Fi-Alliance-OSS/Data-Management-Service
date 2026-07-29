@@ -6,8 +6,8 @@
 IF OBJECT_ID('dmscs.DataStoreDerivative', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.DataStoreDerivative (
-        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_DataStoreDerivative PRIMARY KEY,
-        DataStoreId BIGINT NOT NULL,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_DataStoreDerivative PRIMARY KEY,
+        DataStoreId INT NOT NULL,
         DerivativeType NVARCHAR(50) NOT NULL,
         ConnectionString VARBINARY(MAX),
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
