@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
@@ -322,10 +323,12 @@ public class ApplicationModule : IEndpointModule
         ApplicationUpdateCommand command,
         HttpContext httpContext,
         IApplicationRepository repository,
+        IApiClientRepository apiClientRepository,
         IVendorRepository vendorRepository,
         IDataStoreRepository dataStoreRepository,
         IProfileRepository profileRepository,
         IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
         IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
     )
@@ -338,6 +341,16 @@ public class ApplicationModule : IEndpointModule
                 new ValidationFailure("Id", "Request body id must match the id in the url."),
             ]);
         }
+
+        // Every read this workflow relies on happens under the aggregate lock, so acquisition
+        // precedes them all; invalid input above never consumes a lock.
+        var lockResult = await lockManager.AcquireAsync(id, httpContext.RequestAborted);
+        if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
+        {
+            return lockFailure;
+        }
+
+        await using var applicationLock = ((ApplicationLockResult.Acquired)lockResult).Handle;
 
         // Resolve the application before validating references so a request for a
         // missing or foreign-tenant application is answered with 404 regardless of
@@ -403,20 +416,21 @@ public class ApplicationModule : IEndpointModule
                         return profileFailure;
                     }
 
-                    // A failed repository update is compensated from the application's original
-                    // state, so the update is refused when that state cannot be read.
-                    ApplicationResponse originalApplication;
-                    switch (await repository.GetApplication(id))
+                    // A failed repository update is compensated from the aggregate's exact
+                    // current state, read under a row lock, so the update is refused when
+                    // that state cannot be read.
+                    ApplicationUpdateState originalState;
+                    switch (await repository.GetApplicationUpdateState(id, client.ClientId))
                     {
-                        case ApplicationGetResult.Success originalSuccess:
-                            originalApplication = originalSuccess.ApplicationResponse;
+                        case ApplicationUpdateStateResult.Success originalSuccess:
+                            originalState = originalSuccess.State;
                             break;
-                        case ApplicationGetResult.FailureNotFound:
+                        case ApplicationUpdateStateResult.FailureNotExists:
                             return FailureResults.NotFound(
                                 "Application not found",
                                 httpContext.TraceIdentifier
                             );
-                        case ApplicationGetResult.FailureUnknown originalFailure:
+                        case ApplicationUpdateStateResult.FailureUnknown originalFailure:
                             logger.LogError(
                                 "Error reading the original state of Application {Id}: {Message}",
                                 id,
@@ -431,46 +445,75 @@ public class ApplicationModule : IEndpointModule
                             return FailureResults.Unknown(httpContext.TraceIdentifier);
                     }
 
-                    logger.LogInformation("Updating client {ClientId}", client.ClientId);
+                    logger.LogInformation("Updating client {ClientId}", originalState.ClientId);
                     var clientUpdateResult = await clientRepository.UpdateClientAsync(
-                        client.ClientUuid.ToString(),
+                        originalState.ClientUuid.ToString(),
                         command.ApplicationName,
                         command.ClaimSetName,
                         string.Join(",", command.EducationOrganizationIds),
                         command.DataStoreIds,
-                        client.IsApproved,
+                        originalState.IsApproved,
                         identitySettings.Value.ClientRole
                     );
                     switch (clientUpdateResult)
                     {
                         case ClientUpdateResult.Success updateSuccess:
-                            var applicationUpdateResult = await repository.UpdateApplication(
-                                command,
-                                new()
-                                {
-                                    ClientId = client.ClientId,
-                                    ClientUuid = updateSuccess.ClientUuid,
-                                    DataStoreIds = command.DataStoreIds,
-                                }
-                            );
+                            ApplicationUpdateResult applicationUpdateResult;
+                            try
+                            {
+                                applicationUpdateResult = await repository.UpdateApplication(
+                                    command,
+                                    new()
+                                    {
+                                        ClientId = originalState.ClientId,
+                                        ClientUuid = updateSuccess.ClientUuid,
+                                        DataStoreIds = command.DataStoreIds,
+                                    }
+                                );
+                            }
+                            catch (Exception ex)
+                            {
+                                // A thrown repository failure enters the same authoritative
+                                // outcome resolution as a returned unknown failure.
+                                logger.LogError(ex, "Repository update threw for Application {Id}", id);
+                                applicationUpdateResult = new ApplicationUpdateResult.FailureUnknown(
+                                    "The repository update threw an exception."
+                                );
+                            }
 
-                            // Restores the identity provider to the original application state and
-                            // persists the new client UUID its delete-and-recreate update issues.
-                            async Task<bool> TryRollbackAsync()
+                            // Restores the identity provider to the original state and persists
+                            // the new client UUID its delete-and-recreate update issues, guarded
+                            // by the expected prior UUID so newer committed data is never
+                            // overwritten.
+                            async Task<bool> TryCompensateAsync()
                             {
                                 logger.LogWarning(
                                     "Repository update failed for Application {Id}; rolling back the identity provider",
                                     id
                                 );
-                                var rollbackResult = await clientRepository.UpdateClientAsync(
-                                    updateSuccess.ClientUuid.ToString(),
-                                    originalApplication.ApplicationName,
-                                    originalApplication.ClaimSetName,
-                                    string.Join(",", originalApplication.EducationOrganizationIds),
-                                    [.. originalApplication.DataStoreIds],
-                                    client.IsApproved,
-                                    identitySettings.Value.ClientRole
-                                );
+                                ClientUpdateResult rollbackResult;
+                                try
+                                {
+                                    rollbackResult = await clientRepository.UpdateClientAsync(
+                                        updateSuccess.ClientUuid.ToString(),
+                                        originalState.ApplicationName,
+                                        originalState.ClaimSetName,
+                                        string.Join(",", originalState.EducationOrganizationIds),
+                                        originalState.ClientDataStoreIds,
+                                        originalState.IsApproved,
+                                        identitySettings.Value.ClientRole
+                                    );
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger.LogError(
+                                        ex,
+                                        "Identity provider rollback threw for Application {Id}; stored client state is inconsistent",
+                                        id
+                                    );
+                                    return false;
+                                }
+
                                 if (rollbackResult is not ClientUpdateResult.Success rollbackSuccess)
                                 {
                                     logger.LogError(
@@ -480,54 +523,72 @@ public class ApplicationModule : IEndpointModule
                                     return false;
                                 }
 
-                                var syncResult = await repository.UpdateApplication(
-                                    new ApplicationUpdateCommand
-                                    {
-                                        Id = id,
-                                        ApplicationName = originalApplication.ApplicationName,
-                                        ClaimSetName = originalApplication.ClaimSetName,
-                                        VendorId = originalApplication.VendorId,
-                                        EducationOrganizationIds =
-                                        [
-                                            .. originalApplication.EducationOrganizationIds,
-                                        ],
-                                        DataStoreIds = [.. originalApplication.DataStoreIds],
-                                        ProfileIds = [.. originalApplication.ProfileIds],
-                                    },
-                                    new()
-                                    {
-                                        ClientId = client.ClientId,
-                                        ClientUuid = rollbackSuccess.ClientUuid,
-                                        DataStoreIds = [.. originalApplication.DataStoreIds],
-                                    }
+                                var syncResult = await repository.SyncApplicationApiClientUuid(
+                                    id,
+                                    originalState.ClientId,
+                                    originalState.ClientUuid,
+                                    rollbackSuccess.ClientUuid
                                 );
-                                if (syncResult is ApplicationUpdateResult.FailureNotExists)
+                                switch (syncResult)
                                 {
-                                    // The application vanished during the rollback, so the client
-                                    // the rollback recreated is deleted rather than kept.
-                                    await TryDeleteRecreatedClientAsync(rollbackSuccess.ClientUuid);
-                                    return false;
+                                    case ApiClientUuidSyncResult.Success
+                                    or ApiClientUuidSyncResult.AlreadyApplied:
+                                        return true;
+                                    case ApiClientUuidSyncResult.FailureNotExistsSafeToDelete:
+                                        // The application vanished during the rollback and the
+                                        // recreated client is provably unreferenced, so it is
+                                        // deleted rather than kept.
+                                        await TryDeleteRecreatedClientAsync(rollbackSuccess.ClientUuid);
+                                        return false;
+                                    case ApiClientUuidSyncResult.FailureStaleState:
+                                        logger.LogError(
+                                            "The stored client state for Application {Id} changed outside the aggregate lock; nothing was deleted",
+                                            id
+                                        );
+                                        return false;
+                                    case ApiClientUuidSyncResult.FailureNotExists:
+                                        logger.LogError(
+                                            "The rollback client for Application {Id} is still referenced although the target row is missing; nothing was deleted",
+                                            id
+                                        );
+                                        return false;
+                                    case ApiClientUuidSyncResult.FailureUnknown syncFailure:
+                                        logger.LogError(
+                                            "Failed to persist the rolled-back client UUID for Application {Id}: {Message}; stored client state is inconsistent",
+                                            id,
+                                            SanitizeForLog(syncFailure.FailureMessage)
+                                        );
+                                        return false;
+                                    default:
+                                        logger.LogError(
+                                            "Failed to persist the rolled-back client UUID for Application {Id}; stored client state is inconsistent",
+                                            id
+                                        );
+                                        return false;
                                 }
-
-                                if (syncResult is not ApplicationUpdateResult.Success)
-                                {
-                                    logger.LogError(
-                                        "Failed to persist the rolled-back client UUID for Application {Id}; stored client state is inconsistent",
-                                        id
-                                    );
-                                    return false;
-                                }
-
-                                return true;
                             }
 
                             // Removes the identity provider client recreated for a vanished
                             // application; a client that is already gone is the same end state.
                             async Task<bool> TryDeleteRecreatedClientAsync(Guid clientUuid)
                             {
-                                var cleanupResult = await clientRepository.DeleteClientAsync(
-                                    clientUuid.ToString()
-                                );
+                                ClientDeleteResult cleanupResult;
+                                try
+                                {
+                                    cleanupResult = await clientRepository.DeleteClientAsync(
+                                        clientUuid.ToString()
+                                    );
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger.LogError(
+                                        ex,
+                                        "Failed to delete the identity provider client for the missing Application {Id}; stored client state is inconsistent",
+                                        id
+                                    );
+                                    return false;
+                                }
+
                                 if (
                                     cleanupResult
                                     is ClientDeleteResult.Success
@@ -544,97 +605,193 @@ public class ApplicationModule : IEndpointModule
                                 return false;
                             }
 
-                            if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
+                            // No compensation deletion of a recreated provider client without a
+                            // definitive reference check.
+                            async Task<bool> TryDeleteRecreatedClientCheckedAsync(Guid clientUuid)
                             {
-                                if (!await TryRollbackAsync())
+                                var referenceResult = await apiClientRepository.HasApiClientUuidReference(
+                                    clientUuid
+                                );
+                                if (
+                                    referenceResult
+                                    is ApiClientUuidReferenceResult.FailureUnknown referenceFailure
+                                )
                                 {
-                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    logger.LogError(
+                                        "Could not verify the recreated identity provider client for Application {Id} is unreferenced: {Message}; leaving it in place",
+                                        id,
+                                        SanitizeForLog(referenceFailure.FailureMessage)
+                                    );
+                                    return false;
                                 }
 
-                                return Results.Json(
-                                    FailureResponse.ForUnresolvedReference(
-                                        "Reference 'VendorId' does not exist.",
+                                if (referenceResult is not ApiClientUuidReferenceResult.None)
+                                {
+                                    logger.LogError(
+                                        "Cannot prove the recreated identity provider client for Application {Id} is unreferenced; leaving it in place",
+                                        id
+                                    );
+                                    return false;
+                                }
+
+                                return await TryDeleteRecreatedClientAsync(clientUuid);
+                            }
+
+                            bool MatchesCommand(ApplicationUpdateState resolved) =>
+                                resolved.ApplicationName == command.ApplicationName
+                                && resolved.VendorId == command.VendorId
+                                && resolved.ClaimSetName == command.ClaimSetName
+                                && SetEquals(
+                                    resolved.EducationOrganizationIds,
+                                    command.EducationOrganizationIds
+                                )
+                                && SetEquals(resolved.ProfileIds, command.ProfileIds)
+                                && SetEquals(resolved.ClientDataStoreIds, command.DataStoreIds)
+                                && resolved.ClientId == originalState.ClientId
+                                && resolved.IsApproved == originalState.IsApproved
+                                && resolved.ClientUuid == updateSuccess.ClientUuid;
+
+                            bool MatchesOriginal(ApplicationUpdateState resolved) =>
+                                resolved.ApplicationName == originalState.ApplicationName
+                                && resolved.VendorId == originalState.VendorId
+                                && resolved.ClaimSetName == originalState.ClaimSetName
+                                && SetEquals(
+                                    resolved.EducationOrganizationIds,
+                                    originalState.EducationOrganizationIds
+                                )
+                                && SetEquals(resolved.ProfileIds, originalState.ProfileIds)
+                                && SetEquals(resolved.ClientDataStoreIds, originalState.ClientDataStoreIds)
+                                && resolved.ClientId == originalState.ClientId
+                                && resolved.IsApproved == originalState.IsApproved
+                                && resolved.ClientUuid == originalState.ClientUuid;
+
+                            // An unknown or thrown repository outcome is resolved with the
+                            // authoritative row-locking read, which waits out any in-flight
+                            // commit before classifying the state.
+                            async Task<IResult> ResolveAmbiguousOutcomeAsync()
+                            {
+                                switch (
+                                    await repository.GetApplicationUpdateState(id, originalState.ClientId)
+                                )
+                                {
+                                    case ApplicationUpdateStateResult.Success resolution
+                                        when MatchesCommand(resolution.State):
+                                        // The ambiguous transaction committed completely; the
+                                        // provider and the database already hold the intended
+                                        // state.
+                                        return Results.NoContent();
+                                    case ApplicationUpdateStateResult.Success resolution
+                                        when MatchesOriginal(resolution.State):
+                                        // The transaction provably did not commit; the provider is
+                                        // restored, and the unknown failure stays a server error.
+                                        await TryCompensateAsync();
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    case ApplicationUpdateStateResult.Success:
+                                        logger.LogError(
+                                            "Application {Id} is in a partially matching state after an ambiguous update; no compensation or cleanup was attempted and stored client state may be inconsistent",
+                                            id
+                                        );
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    case ApplicationUpdateStateResult.FailureNotExists:
+                                        await TryDeleteRecreatedClientCheckedAsync(updateSuccess.ClientUuid);
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    case ApplicationUpdateStateResult.FailureUnknown resolutionFailure:
+                                        logger.LogError(
+                                            "Could not resolve the outcome of the failed update for Application {Id}: {Message}; no compensation or cleanup was attempted and stored client state may be inconsistent",
+                                            id,
+                                            SanitizeForLog(resolutionFailure.FailureMessage)
+                                        );
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    default:
+                                        logger.LogError(
+                                            "Could not resolve the outcome of the failed update for Application {Id}; no compensation or cleanup was attempted and stored client state may be inconsistent",
+                                            id
+                                        );
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                }
+                            }
+
+                            switch (applicationUpdateResult)
+                            {
+                                case ApplicationUpdateResult.Success:
+                                    return Results.NoContent();
+                                case ApplicationUpdateResult.FailureVendorNotFound:
+                                    if (!await TryCompensateAsync())
+                                    {
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    }
+
+                                    return Results.Json(
+                                        FailureResponse.ForUnresolvedReference(
+                                            "Reference 'VendorId' does not exist.",
+                                            httpContext.TraceIdentifier
+                                        ),
+                                        contentType: "application/problem+json",
+                                        statusCode: (int)HttpStatusCode.Conflict
+                                    );
+                                case ApplicationUpdateResult.FailureDataStoreNotFound:
+                                    if (!await TryCompensateAsync())
+                                    {
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    }
+
+                                    return Results.Json(
+                                        FailureResponse.ForUnresolvedReference(
+                                            "Data store does not exist.",
+                                            httpContext.TraceIdentifier
+                                        ),
+                                        contentType: "application/problem+json",
+                                        statusCode: (int)HttpStatusCode.Conflict
+                                    );
+                                case ApplicationUpdateResult.FailureProfileNotFound:
+                                    if (!await TryCompensateAsync())
+                                    {
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    }
+
+                                    return Results.Json(
+                                        FailureResponse.ForUnresolvedReference(
+                                            "Profile does not exist.",
+                                            httpContext.TraceIdentifier
+                                        ),
+                                        contentType: "application/problem+json",
+                                        statusCode: (int)HttpStatusCode.Conflict
+                                    );
+                                case ApplicationUpdateResult.FailureDuplicateApplication duplicateApp:
+                                    if (!await TryCompensateAsync())
+                                    {
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    }
+
+                                    throw new ValidationException([
+                                        new ValidationFailure(
+                                            "ApplicationName",
+                                            $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
+                                        ),
+                                    ]);
+                                case ApplicationUpdateResult.FailureNotExists:
+                                    // The application row is gone, so the recreated identity
+                                    // provider client is deleted rather than restored, once the
+                                    // reference check proves that is safe.
+                                    if (!await TryDeleteRecreatedClientCheckedAsync(updateSuccess.ClientUuid))
+                                    {
+                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                                    }
+
+                                    return FailureResults.NotFound(
+                                        "Application not found",
                                         httpContext.TraceIdentifier
-                                    ),
-                                    contentType: "application/problem+json",
-                                    statusCode: (int)HttpStatusCode.Conflict
-                                );
+                                    );
+                                case ApplicationUpdateResult.FailureUnknown updateFailure:
+                                    logger.LogError(
+                                        "Repository update failed for Application {Id}: {Message}",
+                                        id,
+                                        SanitizeForLog(updateFailure.FailureMessage)
+                                    );
+                                    return await ResolveAmbiguousOutcomeAsync();
+                                default:
+                                    return await ResolveAmbiguousOutcomeAsync();
                             }
-
-                            if (applicationUpdateResult is ApplicationUpdateResult.FailureDataStoreNotFound)
-                            {
-                                if (!await TryRollbackAsync())
-                                {
-                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-                                }
-
-                                return Results.Json(
-                                    FailureResponse.ForUnresolvedReference(
-                                        "Data store does not exist.",
-                                        httpContext.TraceIdentifier
-                                    ),
-                                    contentType: "application/problem+json",
-                                    statusCode: (int)HttpStatusCode.Conflict
-                                );
-                            }
-
-                            if (applicationUpdateResult is ApplicationUpdateResult.FailureProfileNotFound)
-                            {
-                                if (!await TryRollbackAsync())
-                                {
-                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-                                }
-
-                                return Results.Json(
-                                    FailureResponse.ForUnresolvedReference(
-                                        "Profile does not exist.",
-                                        httpContext.TraceIdentifier
-                                    ),
-                                    contentType: "application/problem+json",
-                                    statusCode: (int)HttpStatusCode.Conflict
-                                );
-                            }
-
-                            if (
-                                applicationUpdateResult
-                                is ApplicationUpdateResult.FailureDuplicateApplication duplicateApp
-                            )
-                            {
-                                if (!await TryRollbackAsync())
-                                {
-                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-                                }
-
-                                throw new ValidationException([
-                                    new ValidationFailure(
-                                        "ApplicationName",
-                                        $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
-                                    ),
-                                ]);
-                            }
-
-                            if (applicationUpdateResult is ApplicationUpdateResult.Success)
-                            {
-                                return Results.NoContent();
-                            }
-
-                            if (applicationUpdateResult is ApplicationUpdateResult.FailureNotExists)
-                            {
-                                // The application row is gone, so the recreated identity-provider
-                                // client is deleted rather than restored.
-                                if (!await TryDeleteRecreatedClientAsync(updateSuccess.ClientUuid))
-                                {
-                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-                                }
-
-                                return FailureResults.NotFound(
-                                    "Application not found",
-                                    httpContext.TraceIdentifier
-                                );
-                            }
-
-                            await TryRollbackAsync();
-                            return FailureResults.Unknown(httpContext.TraceIdentifier);
 
                         case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                             logger.LogError(
@@ -651,8 +808,8 @@ public class ApplicationModule : IEndpointModule
                         case ClientUpdateResult.FailureUnknown unknownFailure:
                             logger.LogError(
                                 "Error updating client {ClientId} {ClientUuid}: {Message}",
-                                client.ClientId,
-                                client.ClientUuid,
+                                originalState.ClientId,
+                                originalState.ClientUuid,
                                 unknownFailure.FailureMessage
                             );
                             return FailureResults.Unknown(httpContext.TraceIdentifier);
@@ -670,15 +827,61 @@ public class ApplicationModule : IEndpointModule
         return FailureResults.Unknown(httpContext.TraceIdentifier);
     }
 
+    /// <summary>
+    /// Maps a failed lock acquisition: a timeout is a retriable concurrency conflict, and an
+    /// infrastructure failure is a sanitized server error. Returns null when the lock was
+    /// acquired.
+    /// </summary>
+    private static IResult? LockFailureResult(
+        ApplicationLockResult lockResult,
+        HttpContext httpContext,
+        ILogger<ApplicationModule> logger
+    )
+    {
+        switch (lockResult)
+        {
+            case ApplicationLockResult.FailureTimeout:
+                return Results.Json(
+                    FailureResponse.ForConflict(
+                        "Unable to process the request due to a concurrent modification. Retry the request.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
+            case ApplicationLockResult.FailureUnknown failure:
+                logger.LogError(
+                    "Failed to acquire the application lock: {Message}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                return null;
+        }
+    }
+
+    private static bool SetEquals(long[] first, long[] second) => first.ToHashSet().SetEquals(second);
+
     private static async Task<IResult> Delete(
         long id,
         HttpContext httpContext,
         IApplicationRepository repository,
         IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
         ILogger<ApplicationModule> logger
     )
     {
         logger.LogInformation("Deleting Application {Id}", id);
+
+        // The lock is held across every provider client deletion and the database delete, so a
+        // concurrent workflow cannot recreate or mutate a client in between.
+        var lockResult = await lockManager.AcquireAsync(id, httpContext.RequestAborted);
+        if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
+        {
+            return lockFailure;
+        }
+
+        await using var applicationLock = ((ApplicationLockResult.Acquired)lockResult).Handle;
 
         var apiClientsResult = await repository.GetApplicationApiClients(id);
         switch (apiClientsResult)
@@ -744,9 +947,18 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext,
         IApplicationRepository repository,
         IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
         ILogger<ApplicationModule> logger
     )
     {
+        var lockResult = await lockManager.AcquireAsync(id, httpContext.RequestAborted);
+        if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
+        {
+            return lockFailure;
+        }
+
+        await using var applicationLock = ((ApplicationLockResult.Acquired)lockResult).Handle;
+
         var apiClientsResult = await repository.GetApplicationApiClients(id);
         switch (apiClientsResult)
         {
