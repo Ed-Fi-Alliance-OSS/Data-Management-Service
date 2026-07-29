@@ -4,8 +4,8 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS "dmscs"."ApiClient" (
-    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "ApplicationId" BIGINT NOT NULL,
+    "Id" INT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "ApplicationId" INT NOT NULL,
     "Name" VARCHAR(50) NOT NULL,
     "IsApproved" BOOLEAN NOT NULL DEFAULT false,
     "ClientId" VARCHAR(36) NOT NULL,
