@@ -235,6 +235,9 @@ public class ApplicationModuleTests
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.Success("SECRET"));
 
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Returns(new ClientDeleteResult.Success());
+
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
                         A<string>.Ignored,
@@ -2362,35 +2365,35 @@ public class ApplicationModuleTests
                 new StringContent(UpdateRequestBody, Encoding.UTF8, "application/json")
             );
         }
+    }
 
-        protected static async Task AssertSanitizedInternalServerError(
-            HttpResponseMessage response,
-            string? sentinel = null
-        )
+    protected static async Task AssertSanitizedInternalServerError(
+        HttpResponseMessage response,
+        string? sentinel = null
+    )
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        string responseBody = await response.Content.ReadAsStringAsync();
+        if (sentinel is not null)
         {
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            string responseBody = await response.Content.ReadAsStringAsync();
-            if (sentinel is not null)
-            {
-                responseBody.Should().NotContain(sentinel);
-            }
-            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
-            JsonNode expectedResponse = JsonNode.Parse(
-                """
-                {
-                  "detail": "",
-                  "type": "urn:ed-fi:api:internal-server-error",
-                  "title": "Internal Server Error",
-                  "status": 500,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": []
-                }
-                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
-            )!;
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+            responseBody.Should().NotContain(sentinel);
         }
+        JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+        JsonNode expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "",
+              "type": "urn:ed-fi:api:internal-server-error",
+              "title": "Internal Server Error",
+              "status": 500,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+        )!;
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [TestFixture]
@@ -2861,6 +2864,292 @@ public class ApplicationModuleTests
 
         [Test]
         public void It_invokes_the_database_delete() => _databaseDeletes.Should().Equal(1L);
+    }
+
+    public abstract class DeleteProviderFailureTestBase : ApplicationModuleTests
+    {
+        protected Guid _providerClientUuid;
+        protected List<string> _providerDeletes = null!;
+        protected List<long> _databaseDeletes = null!;
+        protected HttpResponseMessage _deleteResponse = null!;
+
+        [SetUp]
+        public void SetUpDeleteDefaults()
+        {
+            _providerClientUuid = Guid.NewGuid();
+            _providerDeletes = [];
+            _databaseDeletes = [];
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([
+                        new ApiClient("clientId", _providerClientUuid, true),
+                    ])
+                );
+
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+                .Invokes(call => _databaseDeletes.Add(call.GetArgument<long>(0)))
+                .Returns(new ApplicationDeleteResult.Success());
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _deleteResponse?.Dispose();
+
+        protected void ArrangeProviderDelete(ClientDeleteResult result)
+        {
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Returns(result);
+        }
+
+        protected async Task ActDeleteAsync()
+        {
+            using var client = SetUpClient();
+            _deleteResponse = await client.DeleteAsync("/v3/applications/1");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_application_delete_whose_provider_deletion_fails_at_the_identity_provider
+        : DeleteProviderFailureTestBase
+    {
+        private const string Sentinel = "SENTINEL_PROVIDER_DELETE_502_must_not_leak";
+
+        private List<string> _callOrder = null!;
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _callOrder = [];
+            _recordingLockManager = new RecordingLockManager(() => _callOrder.Add("lock"));
+            _lockManager = _recordingLockManager;
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Invokes(_ => _callOrder.Add("clients-read"))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([
+                        new ApiClient("clientId", _providerClientUuid, true),
+                    ])
+                );
+
+            ArrangeProviderDelete(
+                new ClientDeleteResult.FailureIdentityProvider(new IdentityProviderError(Sentinel))
+            );
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            _deleteResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _deleteResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The request could not be processed. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:bad-gateway",
+                  "title": "Bad Gateway",
+                  "status": 502,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": ["The identity provider returned an unexpected response."]
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_invokes_the_provider_delete_for_the_stored_client() =>
+            _providerDeletes.Should().Equal(_providerClientUuid.ToString());
+
+        [Test]
+        public void It_does_not_delete_the_database_application() => _databaseDeletes.Should().BeEmpty();
+
+        [Test]
+        public void It_acquires_the_lock_before_the_clients_read()
+        {
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _callOrder.Take(2).Should().Equal("lock", "clients-read");
+        }
+
+        [Test]
+        public void It_releases_the_lock() => _recordingLockManager.Handle.Disposed.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_an_application_delete_whose_provider_deletion_fails_unknown
+        : DeleteProviderFailureTestBase
+    {
+        private const string Sentinel = "SENTINEL_PROVIDER_DELETE_500_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderDelete(new ClientDeleteResult.FailureUnknown(Sentinel));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_deleteResponse, Sentinel);
+
+        [Test]
+        public void It_invokes_the_provider_delete_for_the_stored_client() =>
+            _providerDeletes.Should().Equal(_providerClientUuid.ToString());
+
+        [Test]
+        public void It_does_not_delete_the_database_application() => _databaseDeletes.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_application_delete_whose_provider_deletion_throws : DeleteProviderFailureTestBase
+    {
+        private const string Sentinel = "SENTINEL_PROVIDER_DELETE_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Throws(new InvalidOperationException(Sentinel));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_deleteResponse, Sentinel);
+
+        [Test]
+        public void It_does_not_delete_the_database_application() => _databaseDeletes.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_application_delete_whose_provider_deletion_returns_an_unrecognized_result
+        : DeleteProviderFailureTestBase
+    {
+        private sealed record UnrecognizedClientDeleteResult : ClientDeleteResult;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderDelete(new UnrecognizedClientDeleteResult());
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_deleteResponse);
+
+        [Test]
+        public void It_does_not_delete_the_database_application() => _databaseDeletes.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_application_delete_failing_after_an_earlier_client_deletion
+        : DeleteProviderFailureTestBase
+    {
+        private Guid _secondClientUuid;
+        private Guid _thirdClientUuid;
+        private List<long> _databaseDeletesAfterFailedAttempt = null!;
+        private HttpResponseMessage _retryResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _secondClientUuid = Guid.NewGuid();
+            _thirdClientUuid = Guid.NewGuid();
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([
+                        new ApiClient("clientOne", _providerClientUuid, true),
+                        new ApiClient("clientTwo", _secondClientUuid, true),
+                        new ApiClient("clientThree", _thirdClientUuid, true),
+                    ])
+                );
+
+            // First attempt: the first client is deleted, the second fails at the provider,
+            // and the third must never be attempted.
+            ArrangeProviderDeletePerClient(
+                new ClientDeleteResult.Success(),
+                new ClientDeleteResult.FailureIdentityProvider(
+                    new IdentityProviderError("provider unavailable")
+                ),
+                new ClientDeleteResult.Success()
+            );
+
+            await ActDeleteAsync();
+            _databaseDeletesAfterFailedAttempt = [.. _databaseDeletes];
+
+            // Retry: the client deleted by the failed attempt is already absent (idempotent
+            // cleanup success) and the remaining deletions succeed, so the delete converges.
+            ArrangeProviderDeletePerClient(
+                new ClientDeleteResult.FailureClientNotFound("Client not found"),
+                new ClientDeleteResult.Success(),
+                new ClientDeleteResult.Success()
+            );
+
+            using var client = SetUpClient();
+            _retryResponse = await client.DeleteAsync("/v3/applications/1");
+        }
+
+        [TearDown]
+        public void TearDownRetryResponse() => _retryResponse?.Dispose();
+
+        private void ArrangeProviderDeletePerClient(
+            ClientDeleteResult first,
+            ClientDeleteResult second,
+            ClientDeleteResult third
+        )
+        {
+            A.CallTo(() => _clientRepository.DeleteClientAsync(_providerClientUuid.ToString()))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Returns(first);
+            A.CallTo(() => _clientRepository.DeleteClientAsync(_secondClientUuid.ToString()))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Returns(second);
+            A.CallTo(() => _clientRepository.DeleteClientAsync(_thirdClientUuid.ToString()))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Returns(third);
+        }
+
+        [Test]
+        public void It_returns_bad_gateway_for_the_failed_attempt() =>
+            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+
+        [Test]
+        public void It_stops_at_the_first_failed_client() =>
+            _providerDeletes
+                .Take(2)
+                .Should()
+                .Equal(_providerClientUuid.ToString(), _secondClientUuid.ToString());
+
+        [Test]
+        public void It_does_not_delete_the_database_application_on_the_failed_attempt() =>
+            _databaseDeletesAfterFailedAttempt.Should().BeEmpty();
+
+        [Test]
+        public void It_converges_on_retry()
+        {
+            _retryResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            _databaseDeletes.Should().Equal(1L);
+        }
+
+        [Test]
+        public void It_resumes_the_retry_across_every_client() =>
+            _providerDeletes
+                .Skip(2)
+                .Should()
+                .Equal(
+                    _providerClientUuid.ToString(),
+                    _secondClientUuid.ToString(),
+                    _thirdClientUuid.ToString()
+                );
     }
 
     [TestFixture]

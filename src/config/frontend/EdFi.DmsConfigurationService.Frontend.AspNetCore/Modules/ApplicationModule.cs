@@ -887,34 +887,72 @@ public class ApplicationModule : IEndpointModule
         switch (apiClientsResult)
         {
             case ApplicationApiClientsResult.Success success:
+                // The database application row is deleted only after every provider client is
+                // deleted or proven already absent. Any provider failure returns before the
+                // database is mutated, so the surviving application row and its ApiClient rows
+                // remain the authoritative work list for a retry, which treats clients deleted
+                // by an earlier attempt as idempotent cleanup successes and converges on full
+                // deletion.
                 foreach (var client in success.Clients)
                 {
+                    ClientDeleteResult clientDeleteResult;
                     try
                     {
-                        logger.LogInformation("Deleting client {ClientId}", client.ClientId);
-                        var clientDeleteResult = await clientRepository.DeleteClientAsync(
+                        logger.LogInformation("Deleting client {ClientId}", SanitizeForLog(client.ClientId));
+                        clientDeleteResult = await clientRepository.DeleteClientAsync(
                             client.ClientUuid.ToString()
                         );
-                        if (clientDeleteResult is ClientDeleteResult.FailureUnknown failureUnknown)
-                        {
-                            logger.LogError(
-                                "Error deleting client {ClientId} {ClientUuid}: {FailureMessage}",
-                                client.ClientId,
-                                client.ClientUuid,
-                                failureUnknown.FailureMessage
-                            );
-                        }
                     }
                     catch (Exception ex)
                     {
                         logger.LogError(
                             ex,
                             "Error deleting client {ClientId} {ClientUuid}: {Message}",
-                            client.ClientId,
+                            SanitizeForLog(client.ClientId),
                             client.ClientUuid,
-                            ex.Message
+                            SanitizeForLog(ex.Message)
                         );
                         return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    }
+
+                    switch (clientDeleteResult)
+                    {
+                        case ClientDeleteResult.Success:
+                            break;
+                        case ClientDeleteResult.FailureClientNotFound:
+                            // An already-missing client is idempotent cleanup success: a retried
+                            // delete resumes here after a partial failure.
+                            logger.LogInformation(
+                                "Client {ClientId} {ClientUuid} is already absent from the identity provider",
+                                SanitizeForLog(client.ClientId),
+                                client.ClientUuid
+                            );
+                            break;
+                        case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
+                            logger.LogError(
+                                "Error deleting client {ClientId} from identity provider: {FailureMessage}",
+                                SanitizeForLog(client.ClientId),
+                                SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
+                            );
+                            return FailureResults.BadGateway(
+                                "Identity provider error during client deletion",
+                                httpContext.TraceIdentifier
+                            );
+                        case ClientDeleteResult.FailureUnknown failureUnknown:
+                            logger.LogError(
+                                "Error deleting client {ClientId} {ClientUuid}: {FailureMessage}",
+                                SanitizeForLog(client.ClientId),
+                                client.ClientUuid,
+                                SanitizeForLog(failureUnknown.FailureMessage)
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                        default:
+                            logger.LogError(
+                                "Unexpected result deleting client {ClientId} {ClientUuid}",
+                                SanitizeForLog(client.ClientId),
+                                client.ClientUuid
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
                     }
                 }
 
