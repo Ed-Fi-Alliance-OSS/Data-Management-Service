@@ -182,7 +182,9 @@ public class KeycloakClientRepository(
         catch (FlurlHttpException ex)
         {
             logger.LogError(ex, "Delete client failure");
-            return new ClientDeleteResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+            return ex.StatusCode == 404
+                ? new ClientDeleteResult.FailureClientNotFound($"Client {clientUuid} not found")
+                : new ClientDeleteResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
     }
 

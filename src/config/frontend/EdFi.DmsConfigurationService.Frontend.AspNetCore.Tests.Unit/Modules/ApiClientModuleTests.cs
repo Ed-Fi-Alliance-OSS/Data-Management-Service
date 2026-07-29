@@ -2125,4 +2125,198 @@ public class ApiClientModuleTests
         public void It_calls_no_repository_or_identity_provider_dependency() =>
             _dependencyCalls.Should().BeEmpty();
     }
+
+    public abstract class DeleteWithMissingProviderClientTestBase : ApiClientModuleTests
+    {
+        protected Guid _providerClientUuid;
+        protected HttpResponseMessage _deleteResponse = null!;
+        protected List<string> _providerDeletes = null!;
+        protected List<long> _databaseDeletes = null!;
+        protected List<string> _recreatedClientIds = null!;
+
+        [SetUp]
+        public void SetUpDeleteDefaults()
+        {
+            _providerClientUuid = Guid.NewGuid();
+            _providerDeletes = [];
+            _databaseDeletes = [];
+            _recreatedClientIds = [];
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _providerClientUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test",
+                            ContactName = "Test",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test",
+                        }
+                    )
+                );
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.FailureClientNotFound("Client not found"));
+
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Invokes(call => _recreatedClientIds.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _deleteResponse?.Dispose();
+
+        protected void ArrangeDatabaseDelete(ApiClientDeleteResult result)
+        {
+            A.CallTo(() => _apiClientRepository.DeleteApiClient(A<long>.Ignored))
+                .Invokes(call => _databaseDeletes.Add(call.GetArgument<long>(0)))
+                .Returns(result);
+        }
+
+        protected async Task ActDeleteAsync()
+        {
+            using var client = SetUpClient();
+            _deleteResponse = await client.DeleteAsync("/v3/apiClients/1");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_identity_provider_client_is_already_missing
+        : DeleteWithMissingProviderClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.Success());
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public void It_returns_no_content() =>
+            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_invokes_the_provider_delete_for_the_stored_client() =>
+            _providerDeletes.Should().Equal(_providerClientUuid.ToString());
+
+        [Test]
+        public void It_invokes_the_database_delete() => _databaseDeletes.Should().Equal(1L);
+
+        [Test]
+        public void It_does_not_recreate_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_provider_client_and_database_row_are_already_gone
+        : DeleteWithMissingProviderClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureNotFound());
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ApiClient not found"
+            );
+
+        [Test]
+        public void It_invokes_the_provider_delete_for_the_stored_client() =>
+            _providerDeletes.Should().Equal(_providerClientUuid.ToString());
+
+        [Test]
+        public void It_invokes_the_database_delete() => _databaseDeletes.Should().Equal(1L);
+
+        [Test]
+        public void It_does_not_recreate_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_delete_whose_provider_client_is_missing_and_the_database_delete_fails
+        : DeleteWithMissingProviderClientTestBase
+    {
+        private const string Sentinel = "SENTINEL_DB_DELETE_5c8a_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseDelete(new ApiClientDeleteResult.FailureUnknown(Sentinel));
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _deleteResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            string responseBody = await _deleteResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_invokes_the_provider_delete_for_the_stored_client() =>
+            _providerDeletes.Should().Equal(_providerClientUuid.ToString());
+
+        [Test]
+        public void It_invokes_the_database_delete() => _databaseDeletes.Should().Equal(1L);
+
+        [Test]
+        public void It_does_not_recreate_a_provider_client() => _recreatedClientIds.Should().BeEmpty();
+    }
 }

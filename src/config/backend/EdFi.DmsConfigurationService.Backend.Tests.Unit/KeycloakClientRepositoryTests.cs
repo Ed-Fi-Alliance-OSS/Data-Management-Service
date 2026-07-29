@@ -3,11 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using FakeItEasy;
 using FluentAssertions;
+using Flurl.Http;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.ClientScopes;
 using Microsoft.Extensions.Logging;
@@ -128,6 +130,79 @@ public class KeycloakClientRepositoryTests
 
             result.Should().BeOfType<ClientResetResult.FailureClientNotFound>();
         }
+    }
+
+    public abstract class DeleteClientTestBase : KeycloakClientRepositoryTests
+    {
+        protected string _clientUuid = null!;
+        protected ClientDeleteResult _result = null!;
+
+        protected static FlurlHttpException CreateFlurlHttpException(HttpStatusCode statusCode)
+        {
+            var call = new FlurlCall
+            {
+                Request = new FlurlRequest("http://localhost:8045/admin/realms/edfi/clients/x"),
+                HttpRequestMessage = new HttpRequestMessage(
+                    HttpMethod.Delete,
+                    "http://localhost:8045/admin/realms/edfi/clients/x"
+                ),
+                HttpResponseMessage = new HttpResponseMessage(statusCode),
+            };
+            call.Response = new FlurlResponse(call);
+            return new FlurlHttpException(call);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_client_delete_that_succeeds : DeleteClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _clientUuid = Guid.NewGuid().ToString();
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", _clientUuid)).Returns(true);
+
+            _result = await _repository.DeleteClientAsync(_clientUuid);
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientDeleteResult.Success>();
+    }
+
+    [TestFixture]
+    public class Given_a_client_delete_whose_client_is_already_missing : DeleteClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _clientUuid = Guid.NewGuid().ToString();
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", _clientUuid))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.NotFound));
+
+            _result = await _repository.DeleteClientAsync(_clientUuid);
+        }
+
+        [Test]
+        public void It_returns_failure_client_not_found() =>
+            _result.Should().BeOfType<ClientDeleteResult.FailureClientNotFound>();
+    }
+
+    [TestFixture]
+    public class Given_a_client_delete_that_fails_at_keycloak : DeleteClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _clientUuid = Guid.NewGuid().ToString();
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", _clientUuid))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Forbidden));
+
+            _result = await _repository.DeleteClientAsync(_clientUuid);
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientDeleteResult.FailureIdentityProvider>();
     }
 
     [TestFixture]

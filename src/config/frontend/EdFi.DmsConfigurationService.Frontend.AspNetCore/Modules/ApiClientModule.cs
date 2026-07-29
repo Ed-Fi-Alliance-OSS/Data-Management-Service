@@ -573,7 +573,10 @@ public class ApiClientModule : IEndpointModule
             }
         }
 
-        // Delete from identity provider FIRST
+        // Delete from identity provider FIRST. The compensation below must know whether this
+        // request actually removed the provider client; an already-missing client is an
+        // idempotent cleanup success that must never be "restored".
+        bool providerClientDeleted = false;
         try
         {
             logger.LogInformation("Deleting client {ClientId}", SanitizeForLog(apiClient.ClientId));
@@ -601,6 +604,8 @@ public class ApiClientModule : IEndpointModule
                         httpContext.TraceIdentifier
                     );
             }
+
+            providerClientDeleted = clientDeleteResult is ClientDeleteResult.Success;
         }
         catch (Exception ex)
         {
@@ -623,6 +628,22 @@ public class ApiClientModule : IEndpointModule
                 return Results.NoContent();
             case ApiClientDeleteResult.FailureNotFound:
             case ApiClientDeleteResult.FailureUnknown:
+                if (!providerClientDeleted)
+                {
+                    // This request removed nothing from the identity provider, so there is
+                    // nothing to restore regardless of why the database delete failed.
+                    if (deleteResult is ApiClientDeleteResult.FailureUnknown)
+                    {
+                        logger.LogError(
+                            "Database delete failed for ApiClient {Id}; the identity provider client was already absent, so no compensation applies.",
+                            id
+                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    }
+
+                    return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+                }
+
                 // Attempt to rollback by recreating client in identity provider
                 if (application != null && namespacePrefixes != null)
                 {

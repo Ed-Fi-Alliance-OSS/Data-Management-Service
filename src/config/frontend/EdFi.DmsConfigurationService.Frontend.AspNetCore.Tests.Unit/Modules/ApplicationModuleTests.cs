@@ -2667,6 +2667,161 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
+    public class Given_an_application_delete_whose_identity_provider_client_is_already_missing
+        : ApplicationModuleTests
+    {
+        private Guid _providerClientUuid;
+        private List<string> _providerDeletes = null!;
+        private List<long> _databaseDeletes = null!;
+        private HttpResponseMessage _deleteResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _providerClientUuid = Guid.NewGuid();
+            _providerDeletes = [];
+            _databaseDeletes = [];
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([
+                        new ApiClient("clientId", _providerClientUuid, true),
+                    ])
+                );
+
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.FailureClientNotFound("Client not found"));
+
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+                .Invokes(call => _databaseDeletes.Add(call.GetArgument<long>(0)))
+                .Returns(new ApplicationDeleteResult.Success());
+
+            using var client = SetUpClient();
+            _deleteResponse = await client.DeleteAsync("/v3/applications/1");
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _deleteResponse?.Dispose();
+
+        [Test]
+        public void It_returns_no_content() =>
+            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_invokes_the_provider_delete_for_the_stored_client() =>
+            _providerDeletes.Should().Equal(_providerClientUuid.ToString());
+
+        [Test]
+        public void It_invokes_the_database_delete() => _databaseDeletes.Should().Equal(1L);
+    }
+
+    [TestFixture]
+    public class Given_an_application_insert_whose_cleanup_client_is_already_missing : ApplicationModuleTests
+    {
+        private Guid _createdClientUuid;
+        private List<string> _deletedClientUuids = null!;
+        private HttpResponseMessage _insertResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _createdClientUuid = Guid.NewGuid();
+            _deletedClientUuids = [];
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "Test Prefix",
+                        }
+                    )
+                );
+
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(_createdClientUuid));
+
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApplicationInsertResult.FailureVendorNotFound());
+
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.FailureClientNotFound("Client not found"));
+
+            using var client = SetUpClient();
+            _insertResponse = await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    """
+                    {
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _insertResponse?.Dispose();
+
+        [Test]
+        public async Task It_keeps_the_unresolved_reference_conflict_response()
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            _insertResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Reference 'VendorId' does not exist.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_deletes_the_client_it_created() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+    }
+
+    [TestFixture]
     public class ResetCredentialEndpointEnabledTests : ApplicationModuleTests
     {
         /// <summary>
