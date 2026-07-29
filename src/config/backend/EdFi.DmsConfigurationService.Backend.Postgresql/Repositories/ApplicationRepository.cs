@@ -42,7 +42,7 @@ public class ApplicationRepository(
     private async Task<bool> AllDataStoresInTenant(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        long[] dataStoreIds
+        int[] dataStoreIds
     )
     {
         string sql = $"""
@@ -60,7 +60,7 @@ public class ApplicationRepository(
     private async Task<bool> ApplicationExistsForTenant(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        long id
+        int id
     )
     {
         string sql = $"""
@@ -90,7 +90,7 @@ public class ApplicationRepository(
                 RETURNING "Id";
                 """;
 
-            long? insertedId = await connection.ExecuteScalarAsync<long?>(
+            int? insertedId = await connection.ExecuteScalarAsync<int?>(
                 sql,
                 new
                 {
@@ -110,7 +110,7 @@ public class ApplicationRepository(
                 return new ApplicationInsertResult.FailureVendorNotFound();
             }
 
-            long id = insertedId.Value;
+            int id = insertedId.Value;
 
             sql = """
                 INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId", "CreatedBy")
@@ -133,7 +133,7 @@ public class ApplicationRepository(
                 RETURNING "Id";
                 """;
 
-            long apiClientId = await connection.ExecuteScalarAsync<long>(
+            int apiClientId = await connection.ExecuteScalarAsync<int>(
                 sql,
                 new
                 {
@@ -314,8 +314,8 @@ public class ApplicationRepository(
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
                 long?,
-                long?,
-                long?,
+                int?,
+                int?,
                 ApplicationResponse
             >(
                 sql,
@@ -371,7 +371,7 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationGetResult> GetApplication(long id)
+    public async Task<ApplicationGetResult> GetApplication(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -393,8 +393,8 @@ public class ApplicationRepository(
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
                 long?,
-                long?,
-                long?,
+                int?,
+                int?,
                 ApplicationResponse
             >(
                 sql,
@@ -542,7 +542,7 @@ public class ApplicationRepository(
             // Get ApiClient Id for DataStore relationship update
             sql =
                 "SELECT \"Id\" FROM \"dmscs\".\"ApiClient\" WHERE \"ClientId\" = @ClientId AND \"ApplicationId\" = @ApplicationId;";
-            long apiClientId = await connection.ExecuteScalarAsync<long>(
+            int apiClientId = await connection.ExecuteScalarAsync<int>(
                 sql,
                 new { clientCommand.ClientId, ApplicationId = command.Id },
                 transaction
@@ -646,7 +646,7 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationDeleteResult> DeleteApplication(long id)
+    public async Task<ApplicationDeleteResult> DeleteApplication(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -667,7 +667,7 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationApiClientsResult> GetApplicationApiClients(long id)
+    public async Task<ApplicationApiClientsResult> GetApplicationApiClients(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try

@@ -142,7 +142,7 @@ public class ClaimSetRepository(
                 TenantId,
             };
 
-            long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
+            int id = await connection.ExecuteScalarAsync<int>(sql, parameters);
             await transaction.CommitAsync();
 
             return new ClaimSetInsertResult.Success(id);
@@ -249,7 +249,7 @@ public class ClaimSetRepository(
         }
     }
 
-    public async Task<ClaimSetGetResult> GetClaimSet(long id)
+    public async Task<ClaimSetGetResult> GetClaimSet(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
 
@@ -513,7 +513,7 @@ public class ClaimSetRepository(
         }
     }
 
-    public async Task<ClaimSetDeleteResult> DeleteClaimSet(long id)
+    public async Task<ClaimSetDeleteResult> DeleteClaimSet(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -623,7 +623,7 @@ public class ClaimSetRepository(
         }
     }
 
-    public async Task<ClaimSetExportResult> Export(long id)
+    public async Task<ClaimSetExportResult> Export(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -751,7 +751,7 @@ public class ClaimSetRepository(
                 return new ClaimSetImportResult.FailureDuplicateClaimSetName();
             }
 
-            long claimSetId = claimSet.Id;
+            int claimSetId = claimSet.Id;
 
             var claimsHierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy(transaction);
 
@@ -900,7 +900,7 @@ public class ClaimSetRepository(
         }
     }
 
-    private sealed record ClaimSetImportLookupResult(long Id, bool IsSystemReserved, long? TenantId);
+    private sealed record ClaimSetImportLookupResult(int Id, bool IsSystemReserved, long? TenantId);
 
     public async Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command)
     {
@@ -934,7 +934,7 @@ public class ClaimSetRepository(
                 RETURNING "Id";
                 """;
 
-            long newId = await connection.ExecuteScalarAsync<long>(
+            int newId = await connection.ExecuteScalarAsync<int>(
                 insertSql,
                 new
                 {
@@ -1000,7 +1000,7 @@ public class ClaimSetRepository(
             List<Claim> claims,
             DateTime lastModifiedDate,
             DbTransaction copyTransaction,
-            long copiedId
+            int copiedId
         )
         {
             claimsHierarchyManager.CloneClaimSetInHierarchy(sourceClaimSetName, targetClaimSetName, claims);
