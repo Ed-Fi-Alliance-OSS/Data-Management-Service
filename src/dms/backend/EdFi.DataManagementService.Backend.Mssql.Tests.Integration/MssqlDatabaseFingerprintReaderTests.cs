@@ -92,9 +92,12 @@ public class Given_MssqlDatabaseFingerprintReaderTests_A_Provisioned_Core_Dms_Sc
         _dmsTableNames
             .Should()
             .Equal(
+                "DataStoreIdentity",
                 "Descriptor",
                 "Document",
                 "DocumentCache",
+                "DocumentCacheState",
+                "DocumentProjectionWork",
                 "EffectiveSchema",
                 "ReferentialIdentity",
                 "ResourceKey",

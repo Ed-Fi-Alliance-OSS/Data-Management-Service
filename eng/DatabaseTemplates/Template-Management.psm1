@@ -241,8 +241,8 @@ function Invoke-BulkLoad {
         "-b", $BaseUrl,
         "-d", $SampleDataDirectory,
         "-w", $BulkLoadClientPaths.WorkingDirectory,
-        "-k", $Key,
-        "-s", $Secret,
+        "--key=$Key",
+        "--secret=$Secret",
         "-c", $MaxConcurrentConnections.ToString(),
         "-r", $RetryCount.ToString(),
         "-l", $MaxSimultaneousRequests.ToString(),
@@ -260,7 +260,19 @@ function Invoke-BulkLoad {
 
     $previousColor = $host.UI.RawUI.ForegroundColor
     $host.UI.RawUI.ForegroundColor = "Cyan"
-    Write-Output "Executing: dotnet $($BulkLoadClientPaths.bulkLoadClientExe) $($options -join ' ')"
+    $displayOptions = foreach ($option in $options) {
+        if ($option -like "--key=*") {
+            "--key=<redacted>"
+        }
+        elseif ($option -like "--secret=*") {
+            "--secret=<redacted>"
+        }
+        else {
+            $option
+        }
+    }
+
+    Write-Output "Executing: dotnet $($BulkLoadClientPaths.bulkLoadClientExe) $($displayOptions -join ' ')"
     $host.UI.RawUI.ForegroundColor = $previousColor
 
     # Tee the loader output to a log so a non-zero exit can be classified by failure type.

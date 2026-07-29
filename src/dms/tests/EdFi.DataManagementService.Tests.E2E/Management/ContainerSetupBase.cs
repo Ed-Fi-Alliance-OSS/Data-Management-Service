@@ -11,9 +11,11 @@ namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public abstract class ContainerSetupBase
 {
-    // The three DMS metadata tables preserved (not truncated) across an E2E reset on both engines.
+    // The DMS metadata tables preserved (not truncated) across an E2E reset on both engines.
     private static readonly (string Schema, string Table)[] _mssqlExcludedTables =
     [
+        ("dms", "DataStoreIdentity"),
+        ("dms", "DocumentCacheState"),
         ("dms", "EffectiveSchema"),
         ("dms", "ResourceKey"),
         ("dms", "SchemaComponent"),
@@ -116,7 +118,7 @@ public abstract class ContainerSetupBase
         {
             // Reuse the tested SQL Server reset (disables triggers/constraints, deletes, reseeds
             // identities, restarts sequences, and re-enables constraints/triggers even on error),
-            // preserving exactly the three DMS metadata tables. The SQL is not duplicated here.
+            // preserving exactly the DMS metadata tables. The SQL is not duplicated here.
             return new DatabaseResetPlan(
                 DatabaseResetProvider.SqlServer,
                 connectionString,

@@ -397,9 +397,13 @@ internal static class MssqlProfileSeparateTableMergeSupport
     {
         return await database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([DocumentId] bigint NOT NULL);
+
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId]
+            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
             VALUES (@documentUuid, @resourceKeyId);
+
+            SELECT [DocumentId] FROM @Inserted;
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)

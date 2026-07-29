@@ -14,8 +14,26 @@ public sealed class PostgresqlReferenceResolverTestDatabase : IAsyncDisposable
 {
     private static readonly PgsqlDialect _dialect = new(new PgsqlDialectRules());
     private static readonly string _coreDdl = new CoreDdlEmitter(_dialect).Emit();
+    private static readonly string[] _baselineTables = ["DataStoreIdentity", "DocumentCacheState"];
+    private static readonly string _baselineTablesSql = string.Join(
+        ", ",
+        _baselineTables.Select(static tableName => $"'{tableName}'")
+    );
+    private static readonly string _coreMetadataSeedSql = """
+        INSERT INTO "dms"."DataStoreIdentity" ("DataStoreIdentitySingletonId", "SourceIdentity")
+        VALUES (1, gen_random_uuid())
+        ON CONFLICT ("DataStoreIdentitySingletonId") DO NOTHING;
+
+        INSERT INTO "dms"."DocumentCacheState" (
+            "StateId",
+            "ProjectionLifecycleState",
+            "CacheAheadRecoveryRequired"
+        )
+        VALUES (1, 'Disabled', FALSE)
+        ON CONFLICT ("StateId") DO NOTHING;
+        """;
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
-    private static readonly string _resetTablesSql = """
+    private static readonly string _resetTablesSql = $$"""
         DO $$
         DECLARE
             truncate_sql text;
@@ -34,7 +52,11 @@ public sealed class PostgresqlReferenceResolverTestDatabase : IAsyncDisposable
                 END
             INTO truncate_sql
             FROM pg_tables
-            WHERE schemaname IN ('dms', 'edfi', 'auth');
+            WHERE schemaname IN ('dms', 'edfi', 'auth')
+              AND NOT (
+                  schemaname = 'dms'
+                  AND tablename = ANY (ARRAY[{{_baselineTablesSql}}])
+              );
 
             IF truncate_sql IS NOT NULL THEN
                 EXECUTE truncate_sql;
@@ -164,7 +186,13 @@ public sealed class PostgresqlReferenceResolverTestDatabase : IAsyncDisposable
             GetAdditionalSchemas(mappingSet.Model).Select(_dialect.CreateSchemaIfNotExists)
         );
 
-        var setupSql = string.Join(Environment.NewLine, _coreDdl, additionalSchemaDdl, relationalDdl);
+        var setupSql = string.Join(
+            Environment.NewLine,
+            _coreDdl,
+            additionalSchemaDdl,
+            relationalDdl,
+            _coreMetadataSeedSql
+        );
 
         await using NpgsqlConnection connection = new(connectionString);
         await connection.OpenAsync();
