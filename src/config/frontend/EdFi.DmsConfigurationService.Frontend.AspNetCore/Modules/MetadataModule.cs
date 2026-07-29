@@ -125,7 +125,7 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                         ["name"] = "id",
                         ["in"] = "path",
                         ["required"] = true,
-                        ["schema"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                        ["schema"] = new JsonObject { ["type"] = "integer", ["format"] = "int32" },
                         ["description"] = "Resource identifier",
                     },
                     ["offset"] = new JsonObject
