@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1361
+jira_url: https://edfi.atlassian.net/browse/DMS-1361
 ---
 
 # Story: Adapt Tracked Namespace Authorization and Emit Tracked Namespace Indexes
