@@ -16,10 +16,10 @@ public interface IApiClientRepository
         ApiClientCommand clientCommand
     );
     Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
-    Task<ApiClientDeleteResult> DeleteApiClient(long id);
+    Task<ApiClientDeleteResult> DeleteApiClient(int id);
     Task<ApiClientQueryResult> QueryApiClient(ApiClientQuery query);
     Task<ApiClientGetResult> GetApiClientByClientId(string clientId);
-    Task<ApiClientGetResult> GetApiClientById(long id);
+    Task<ApiClientGetResult> GetApiClientById(int id);
 
     /// <summary>
     /// Reads the complete update-relevant state of an ApiClient inside a row-locking
@@ -130,7 +130,7 @@ public record ApiClientInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : ApiClientInsertResult();
+    public record Success(int Id) : ApiClientInsertResult();
 
     /// <summary>
     /// Referenced application not found exception thrown and caught

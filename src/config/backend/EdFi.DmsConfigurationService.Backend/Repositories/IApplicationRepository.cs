@@ -15,13 +15,13 @@ public interface IApplicationRepository
         ApiClientCommand clientCommand
     );
     Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query);
-    Task<ApplicationGetResult> GetApplication(long id);
+    Task<ApplicationGetResult> GetApplication(int id);
     Task<ApplicationUpdateResult> UpdateApplication(
         ApplicationUpdateCommand command,
         ApiClientCommand clientCommand
     );
-    Task<ApplicationDeleteResult> DeleteApplication(long id);
-    Task<ApplicationApiClientsResult> GetApplicationApiClients(long id);
+    Task<ApplicationDeleteResult> DeleteApplication(int id);
+    Task<ApplicationApiClientsResult> GetApplicationApiClients(int id);
 
     /// <summary>
     /// Reads the complete update-relevant state of an Application and one of its clients inside
@@ -82,7 +82,7 @@ public record ApplicationInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : ApplicationInsertResult();
+    public record Success(int Id) : ApplicationInsertResult();
 
     /// <summary>
     /// Referenced vendor not found exception thrown and caught
