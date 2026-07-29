@@ -2109,6 +2109,139 @@ public class ApiClientModuleTests
     }
 
     [TestFixture]
+    public class Given_an_api_client_update_whose_stored_provider_client_is_missing : ApiClientModuleTests
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_STORED_CLIENT_MISSING_must_not_leak";
+
+        private RecordingLockManager _recordingLockManager = null!;
+        private List<string> _repositoryUpdates = null!;
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _repositoryUpdates = [];
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test",
+                            ContactName = "Test",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test",
+                        }
+                    )
+                );
+
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound(Sentinel));
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Invokes(_ => _repositoryUpdates.Add("update"))
+                .Returns(new ApiClientUpdateResult.Success());
+
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(
+                    """
+                    {
+                      "id": 1,
+                      "applicationId": 1,
+                      "name": "Updated Client",
+                      "isApproved": true,
+                      "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error()
+        {
+            await AssertContract(
+                _updateResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            (await _updateResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_does_not_update_the_database_api_client() => _repositoryUpdates.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_synchronize_the_client_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<long>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_acquires_and_releases_the_aggregate_lock()
+        {
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        }
+    }
+
+    [TestFixture]
     public class Given_an_api_client_update_with_mismatched_route_and_body_ids : ApiClientModuleTests
     {
         private List<string> _dependencyCalls = null!;

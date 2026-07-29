@@ -803,7 +803,13 @@ public class ApplicationModule : IEndpointModule
                                 httpContext.TraceIdentifier
                             );
                         case ClientUpdateResult.FailureNotFound notFound:
-                            logger.LogError(notFound.FailureMessage);
+                            // The stored identity-provider client disappeared: an internal
+                            // consistency failure, not caller input and not an upstream fault.
+                            logger.LogError(
+                                "Client not found in identity provider during Application {Id} update: {Message}",
+                                id,
+                                SanitizeForLog(notFound.FailureMessage)
+                            );
                             return FailureResults.Unknown(httpContext.TraceIdentifier);
                         case ClientUpdateResult.FailureUnknown unknownFailure:
                             logger.LogError(

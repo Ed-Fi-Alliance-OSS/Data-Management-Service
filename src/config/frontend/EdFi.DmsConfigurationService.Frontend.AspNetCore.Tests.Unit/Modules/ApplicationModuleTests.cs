@@ -2742,6 +2742,73 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
+    public class Given_an_application_update_whose_stored_provider_client_is_missing : UpdateRollbackTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_STORED_CLIENT_MISSING_must_not_leak";
+
+        private RecordingLockManager _recordingLockManager = null!;
+        private List<string> _repositoryUpdates = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _repositoryUpdates = [];
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound(Sentinel));
+
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Invokes(_ => _repositoryUpdates.Add("update"))
+                .Returns(new ApplicationUpdateResult.Success());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_does_not_update_the_database_application() => _repositoryUpdates.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_synchronize_the_client_uuid() =>
+            A.CallTo(() =>
+                    _applicationRepository.SyncApplicationApiClientUuid(
+                        A<long>.Ignored,
+                        A<string>.Ignored,
+                        A<Guid>.Ignored,
+                        A<Guid>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_acquires_and_releases_the_aggregate_lock()
+        {
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _recordingLockManager.Handle.Disposed.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
     public class Given_an_application_update_with_mismatched_route_and_body_ids : ApplicationModuleTests
     {
         private List<string> _dependencyCalls = null!;

@@ -12,6 +12,7 @@ using FluentAssertions;
 using Flurl.Http;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.ClientScopes;
+using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -40,6 +41,27 @@ public class KeycloakClientRepositoryTests
             _logger,
             _clientSecretValidationOptionsAccessor
         );
+    }
+
+    /// <summary>
+    /// Builds an exception shaped the way Keycloak.Net raises one: its calls go through Flurl,
+    /// which converts every non-success status into a <see cref="FlurlHttpException"/> carrying
+    /// the response, so a missing client never surfaces as a null return.
+    /// </summary>
+    protected static FlurlHttpException CreateFlurlHttpException(
+        HttpStatusCode statusCode,
+        HttpMethod? method = null,
+        string url = "http://localhost:8045/admin/realms/edfi/clients/x"
+    )
+    {
+        var call = new FlurlCall
+        {
+            Request = new FlurlRequest(url),
+            HttpRequestMessage = new HttpRequestMessage(method ?? HttpMethod.Get, url),
+            HttpResponseMessage = new HttpResponseMessage(statusCode),
+        };
+        call.Response = new FlurlResponse(call);
+        return new FlurlHttpException(call);
     }
 
     [TestFixture]
@@ -136,21 +158,6 @@ public class KeycloakClientRepositoryTests
     {
         protected string _clientUuid = null!;
         protected ClientDeleteResult _result = null!;
-
-        protected static FlurlHttpException CreateFlurlHttpException(HttpStatusCode statusCode)
-        {
-            var call = new FlurlCall
-            {
-                Request = new FlurlRequest("http://localhost:8045/admin/realms/edfi/clients/x"),
-                HttpRequestMessage = new HttpRequestMessage(
-                    HttpMethod.Delete,
-                    "http://localhost:8045/admin/realms/edfi/clients/x"
-                ),
-                HttpResponseMessage = new HttpResponseMessage(statusCode),
-            };
-            call.Response = new FlurlResponse(call);
-            return new FlurlHttpException(call);
-        }
     }
 
     [TestFixture]
@@ -203,6 +210,151 @@ public class KeycloakClientRepositoryTests
         [Test]
         public void It_returns_failure_identity_provider() =>
             _result.Should().BeOfType<ClientDeleteResult.FailureIdentityProvider>();
+    }
+
+    /// <summary>
+    /// Shared arrangement for the stored-client lookup phase of an update. No mutation is
+    /// arranged, so any provider mutation a fixture observes is one the lookup phase should
+    /// never have reached.
+    /// </summary>
+    public abstract class UpdateStoredClientLookupTestBase : KeycloakClientRepositoryTests
+    {
+        protected string _clientUuid = null!;
+        protected ClientUpdateResult _result = null!;
+
+        [SetUp]
+        public void SetUpLookupDefaults() => _clientUuid = Guid.NewGuid().ToString();
+
+        protected async Task ActUpdateAsync() =>
+            _result = await _repository.UpdateClientAsync(
+                _clientUuid,
+                "Updated Client",
+                "test-scope",
+                "200,300",
+                [1, 2],
+                false,
+                "role"
+            );
+
+        protected void AssertNoProviderMutation()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
+                        A<string>.Ignored,
+                        A<Client>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<Client>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.GetUserForServiceAccountAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_update_whose_stored_client_lookup_reports_not_found
+        : UpdateStoredClientLookupTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.NotFound));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_not_found() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+
+        [Test]
+        public void It_does_not_read_realm_roles() =>
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync(A<string>.Ignored)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_an_update_whose_stored_client_lookup_fails_at_keycloak
+        : UpdateStoredClientLookupTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Forbidden));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+    }
+
+    [TestFixture]
+    public class Given_an_update_whose_stored_client_lookup_throws_an_unexpected_error
+        : UpdateStoredClientLookupTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Throws(new InvalidOperationException("transport misconfigured"));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
+    }
+
+    [TestFixture]
+    public class Given_an_update_whose_stored_client_is_absent : UpdateStoredClientLookupTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", _clientUuid))
+                .Returns(Task.FromResult<Client>(null!));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_not_found() =>
+            _result.Should().BeOfType<ClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_performs_no_provider_mutation() => AssertNoProviderMutation();
     }
 
     [TestFixture]

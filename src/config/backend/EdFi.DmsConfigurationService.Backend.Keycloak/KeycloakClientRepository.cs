@@ -303,13 +303,36 @@ public class KeycloakClientRepository(
         string role = ""
     )
     {
+        // The stored-client lookup is classified on its own, before any other phase can fail.
+        // Keycloak answers a missing client with a 404 that Flurl raises as an exception, so
+        // without this phase the disappearance of a stored client would be reported as an
+        // upstream provider fault instead of the internal consistency failure it is.
+        Client client;
         try
         {
-            var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
-            if (client is null)
-            {
-                return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
-            }
+            client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
+        }
+        catch (FlurlHttpException ex)
+        {
+            logger.LogError(ex, "Update client failure while reading the stored client");
+            return ex.StatusCode == 404
+                ? new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found")
+                : new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Update client failure while reading the stored client");
+            return new ClientUpdateResult.FailureUnknown(ex.Message);
+        }
+
+        if (client is null)
+        {
+            logger.LogError("The stored client {ClientUuid} was not found", SanitizeForLog(clientUuid));
+            return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+        }
+
+        try
+        {
             await CheckAndCreateClientScopeAsync(scope);
             var scopeExists = await ClientScopeExistsAsync(scope);
             if (scopeExists)
