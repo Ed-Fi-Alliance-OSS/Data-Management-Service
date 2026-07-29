@@ -56,6 +56,8 @@ public class Given_Container_Setup_Base_Database_Reset
         plan.Sql.Should()
             .Be(
                 MssqlDatabaseResetSql.Build(
+                    ("dms", "DataStoreIdentity"),
+                    ("dms", "DocumentCacheState"),
                     ("dms", "EffectiveSchema"),
                     ("dms", "ResourceKey"),
                     ("dms", "SchemaComponent")
@@ -64,12 +66,14 @@ public class Given_Container_Setup_Base_Database_Reset
     }
 
     [Test]
-    public void It_excludes_exactly_the_three_dms_metadata_tables_on_the_sql_server_reset()
+    public void It_excludes_the_dms_metadata_tables_on_the_sql_server_reset()
     {
         var plan = ContainerSetupBase.BuildResetPlan("mssql", "Server=127.0.0.1,1435;Database=db;", "db");
 
         plan.Sql.Should()
-            .Contain("EffectiveSchema")
+            .Contain("DataStoreIdentity")
+            .And.Contain("DocumentCacheState")
+            .And.Contain("EffectiveSchema")
             .And.Contain("ResourceKey")
             .And.Contain("SchemaComponent");
     }
