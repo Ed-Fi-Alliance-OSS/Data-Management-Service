@@ -49,11 +49,11 @@ public class DataStoreDerivativeModule : IEndpointModule
                 }
             ),
             DataStoreDerivativeInsertResult.FailureForeignKeyViolation => Results.Json(
-                FailureResponse.ForBadRequest(
+                FailureResponse.ForUnresolvedReference(
                     "The specified DataStore does not exist.",
                     httpContext.TraceIdentifier
                 ),
-                statusCode: (int)HttpStatusCode.BadRequest
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -128,11 +128,11 @@ public class DataStoreDerivativeModule : IEndpointModule
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             DataStoreDerivativeUpdateResult.FailureForeignKeyViolation => Results.Json(
-                FailureResponse.ForBadRequest(
+                FailureResponse.ForUnresolvedReference(
                     "The specified DataStore does not exist.",
                     httpContext.TraceIdentifier
                 ),
-                statusCode: (int)HttpStatusCode.BadRequest
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

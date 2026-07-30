@@ -5,7 +5,9 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
@@ -53,14 +55,13 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         )
         {
             logger.LogWarning("Tenant header is missing or empty");
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(
-                new
-                {
-                    error = "Bad Request",
-                    message = $"The '{TenantHeaderName}' header is required when multi-tenancy is enabled",
-                }
+            await FailureResponseWriter.WriteAsync(
+                context,
+                FailureResponse.ForBadRequest(
+                    $"The '{TenantHeaderName}' header is required when multi-tenancy is enabled",
+                    context.TraceIdentifier
+                ),
+                context.RequestAborted
             );
             return;
         }
@@ -73,10 +74,13 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         if (tenantResult is TenantGetByNameResult.FailureNotFound)
         {
             logger.LogWarning("Tenant not found: {TenantName}", sanitizedTenantName);
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(
-                new { error = "Bad Request", message = $"Invalid tenant: {sanitizedTenantName}" }
+            await FailureResponseWriter.WriteAsync(
+                context,
+                FailureResponse.ForBadRequest(
+                    $"Invalid tenant: {sanitizedTenantName}",
+                    context.TraceIdentifier
+                ),
+                context.RequestAborted
             );
             return;
         }
@@ -88,10 +92,10 @@ public class TenantResolutionMiddleware(RequestDelegate next)
                 sanitizedTenantName,
                 SanitizeForLog(failure.FailureMessage)
             );
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(
-                new { error = "Internal Server Error", message = "Failed to validate tenant" }
+            await FailureResponseWriter.WriteAsync(
+                context,
+                FailureResponse.ForUnknown(context.TraceIdentifier),
+                context.RequestAborted
             );
             return;
         }
@@ -114,12 +118,12 @@ public class TenantResolutionMiddleware(RequestDelegate next)
             return;
         }
 
-        // Handle unexpected result type
+        // An unrecognized repository result is a server-side contract failure, not caller input.
         logger.LogError("Unexpected tenant lookup result type: {ResultType}", tenantResult.GetType().Name);
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        context.Response.ContentType = "application/json";
-        await context.Response.WriteAsJsonAsync(
-            new { error = "Bad Request", message = "Failed to validate tenant" }
+        await FailureResponseWriter.WriteAsync(
+            context,
+            FailureResponse.ForUnknown(context.TraceIdentifier),
+            context.RequestAborted
         );
     }
 

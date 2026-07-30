@@ -22,6 +22,58 @@ public interface IApplicationRepository
     );
     Task<ApplicationDeleteResult> DeleteApplication(long id);
     Task<ApplicationApiClientsResult> GetApplicationApiClients(long id);
+
+    /// <summary>
+    /// Reads the complete update-relevant state of an Application and one of its clients inside
+    /// a row-locking transaction. Locking the Application row waits out any in-flight update
+    /// transaction, so the returned snapshot reflects that transaction's final outcome; it also
+    /// carries the selected client's exact data store set, which aggregate reads cannot supply.
+    /// </summary>
+    Task<ApplicationUpdateStateResult> GetApplicationUpdateState(long applicationId, string clientId);
+
+    /// <summary>
+    /// Atomically sets the stored identity-provider client UUID, guarded by its expected current
+    /// value, inside one row-locking transaction. When the target row is missing, the result
+    /// distinguishes whether any row still references the new UUID so the caller can decide
+    /// whether deleting the recreated provider client is safe.
+    /// </summary>
+    Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
+        long applicationId,
+        string clientId,
+        Guid expectedClientUuid,
+        Guid newClientUuid
+    );
+}
+
+/// <summary>
+/// The complete state an Application update mutates: the Application scalars, its mapping sets,
+/// and the selected client's identity, approval, and exact data store set.
+/// </summary>
+public record ApplicationUpdateState(
+    string ApplicationName,
+    long VendorId,
+    string ClaimSetName,
+    long[] EducationOrganizationIds,
+    long[] ProfileIds,
+    string ClientId,
+    Guid ClientUuid,
+    bool IsApproved,
+    long[] ClientDataStoreIds
+);
+
+public record ApplicationUpdateStateResult
+{
+    public record Success(ApplicationUpdateState State) : ApplicationUpdateStateResult();
+
+    /// <summary>
+    /// The application or the selected client no longer exists.
+    /// </summary>
+    public record FailureNotExists() : ApplicationUpdateStateResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApplicationUpdateStateResult();
 }
 
 public record ApplicationInsertResult

@@ -4,10 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreContext;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -117,6 +120,99 @@ public class DataStoreContextModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/dataStoreContexts?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Nonexistent_DataStore_Reference : DataStoreContextModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.InsertDataStoreContext(A<DataStoreContextInsertCommand>.Ignored))
+                .Returns(new DataStoreContextInsertResult.FailureDataStoreNotFound());
+
+            A.CallTo(() => _repository.UpdateDataStoreContext(A<DataStoreContextUpdateCommand>.Ignored))
+                .Returns(new DataStoreContextUpdateResult.FailureDataStoreNotFound());
+        }
+
+        [Test]
+        public async Task It_returns_conflict_on_insert()
+        {
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/dataStoreContexts",
+                new StringContent(
+                    """
+                    {
+                        "dataStoreId": 999,
+                        "contextKey": "schoolYear",
+                        "contextValue": "2022"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string content = await response.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(content)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Reference 'DataStoreId' does not exist.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task It_returns_conflict_on_update()
+        {
+            using var client = SetUpClient();
+            var response = await client.PutAsync(
+                "/v3/dataStoreContexts/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "dataStoreId": 999,
+                        "contextKey": "schoolYear",
+                        "contextValue": "2023"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string content = await response.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(content)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Reference 'DataStoreId' does not exist.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
 }

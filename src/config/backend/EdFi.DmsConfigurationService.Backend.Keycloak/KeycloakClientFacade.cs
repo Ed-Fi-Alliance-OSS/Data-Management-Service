@@ -50,6 +50,18 @@ public class KeycloakClientFacade(KeycloakContext keycloakContext) : IKeycloakCl
     public Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm) =>
         _keycloakClient.GetClientScopesAsync(realm);
 
+    public Task<IEnumerable<ClientScope>> GetDefaultClientScopesAsync(string realm, string clientUuid) =>
+        _keycloakClient.GetDefaultClientScopesAsync(realm, clientUuid);
+
+    public Task<IEnumerable<ClientScope>> GetRealmDefaultClientScopesAsync(string realm) =>
+        _keycloakClient.GetRealmDefaultClientScopesAsync(realm);
+
+    public Task<bool> UpdateDefaultClientScopeAsync(string realm, string clientUuid, string clientScopeId) =>
+        _keycloakClient.UpdateDefaultClientScopeAsync(realm, clientUuid, clientScopeId);
+
+    public Task<bool> DeleteDefaultClientScopeAsync(string realm, string clientUuid, string clientScopeId) =>
+        _keycloakClient.DeleteDefaultClientScopeAsync(realm, clientUuid, clientScopeId);
+
     public Task<User> GetUserForServiceAccountAsync(string realm, string clientUuid) =>
         _keycloakClient.GetUserForServiceAccountAsync(realm, clientUuid);
 
