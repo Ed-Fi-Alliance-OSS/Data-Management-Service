@@ -476,6 +476,71 @@ counts, and not a cold plan inspection. If a regression appears, deterministic r
 be applied within this story. Adopting a provider-specific batch API remains the separate follow-on
 already recorded on DMS-1065.
 
+## Live-Provider Gate Outcomes
+
+Both pre-adoption gates were run against live providers before any production write path consumes a
+composite command. **Both passed on both providers.** PostgreSQL 16.3; SQL Server 2025 RTM-CU7
+(`ProductVersion` 17.0.4065.4), verified from the servers.
+
+```powershell
+# PostgreSQL
+$env:ConnectionStrings__DatabaseConnection = "host=localhost;port=5432;username=postgres;database=edfi_dms_backend_integration"
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration `
+  --filter "FullyQualifiedName~Given_A_Postgresql_Composite_Command_Against_A_Live_Provider"
+
+# SQL Server 2025, per AGENTS.md
+$env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=<password>;TrustServerCertificate=true"
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration `
+  --filter "FullyQualifiedName~Given_A_Mssql_Composite_Command_Against_A_Live_Provider"
+```
+
+Results: PostgreSQL 9 passed, 0 failed. SQL Server 7 passed, 0 failed.
+
+### Gate 1 — Ordered Failure Attribution
+
+A three-statement composite was executed with the failure placed in the **first**, a **middle**, and the
+**last** logical statement. On both providers the reported ordinal and label identified the statement
+that actually failed, and the provider exception arrived unchanged (PostgreSQL SQLSTATE `22012`, SQL
+Server error `8134`).
+
+Two findings the gate produced:
+
+- **The failure stage is provider-dependent and is diagnostic only; the ordinal is the invariant.**
+  Npgsql raises at the reader-open boundary for the first statement and at the result-set advance for
+  later ones. SqlClient instead hands back a reader, lets the advance succeed onto the failing
+  statement's result set, and raises when its rows are read. Nothing may assert the stage as a
+  cross-provider invariant.
+- **Attribution is correct on SQL Server precisely because every logical statement emits exactly one
+  result set.** Without that, advancing could skip past the failing statement onto a later one and
+  misattribute. This is the empirical justification for the sentinel rule rather than an argument for it.
+
+### Gate 2 — Captured-Target Carrier
+
+PostgreSQL: the locking clause is accepted in the capture CTE position; the captured value is published
+to dependent statements in the same command; an absent target is captured as absent, so dependents
+observe no target rather than re-observing the row.
+
+SQL Server: the batch-local declaration is emitted ahead of the capture, the captured value is published
+to dependent statements, and an absent target is captured as absent.
+
+Two findings the gate produced:
+
+- **PostgreSQL `is_local` reverts the captured *value*, not the setting's existence.** After both commit
+  and rollback, and on the next pooled borrower, `current_setting(name, true)` returns the empty string
+  rather than NULL, because referencing a custom GUC defines a session placeholder. The captured document
+  id does not survive, and the carrier's own expressions correctly yield NULL and false, which is what
+  every dependent statement consumes. The spec's phrasing "the carrier is absent after commit and
+  rollback" is satisfied in the sense of *no captured target is observable*, not *the setting is unset*.
+  Tests assert the promise (the derived expressions) rather than the placeholder representation.
+- **SQL Server needs no revert at all.** A batch-local cannot outlive its batch, so a later command on
+  the same transaction fails to compile rather than observing stale state. That is verified directly, and
+  it means neither provider requires a cleanup statement.
+
+One incidental observation, recorded as evidence for the later transaction-state work rather than acted
+on here: after an `XACT_ABORT`-aborted batch, SQL Server may already have rolled the transaction back and
+detached the client-side transaction object, so an unconditional rollback can throw. The gate tolerates
+that case locally; making the shared session narrowly tolerant of it is separate scope.
+
 ## Follow-On Work
 
 - Co-batching the authorized GET-by-id path, including the post-hydration read boundary.
