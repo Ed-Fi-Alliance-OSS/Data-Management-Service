@@ -47,9 +47,36 @@ Describe "Resolve-DatabaseEngineEnvironmentFile" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+
+        # This Describe now consumes AMBIENT values: the composed environment is evaluated with Compose
+        # precedence, so a leftover shell variable can decide the outcome of a test that never mentions
+        # it - and an invalid ambient connection string is deliberately unrepairable, which turns an
+        # unrelated leak into a hard failure. Every name the base/overlay evaluation can consume is
+        # therefore isolated per test. The real overlay's keys are read from the file rather than listed,
+        # so the isolation set cannot drift when the overlay gains a setting.
+        $script:ambientIsolatedNames = @(
+            @(Resolve-DotenvFileSequentially -Path (Join-Path $script:dockerComposeRoot ".env.mssql")).Declarations |
+                ForEach-Object { $_.Key }
+        ) + @(
+            # Topology seam and marker keys, plus the dependency names these tests author themselves.
+            'DMS_CONFIG_DATABASE_NAME', 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE',
+            'POSTGRES_DB_NAME', 'POSTGRES_PASSWORD', 'DATABASE_TEMPLATE_PACKAGE',
+            'CMS_DATABASE_NAME', 'CMS_DB_OVERRIDE_XYZ', 'WHOLE_CONN', 'LATE_ONE'
+        ) | Sort-Object -Unique
     }
 
     BeforeEach {
+        # Snapshot EXISTENCE separately from value: restoring a variable that did not exist by setting it
+        # to "" is not the same thing, and on some platforms an empty variable cannot exist at all.
+        $script:ambientSnapshot = @{}
+        foreach ($name in $script:ambientIsolatedNames) {
+            $script:ambientSnapshot[$name] = @{
+                Existed = [bool](Test-Path -LiteralPath "Env:\$name")
+                Value   = [System.Environment]::GetEnvironmentVariable($name)
+            }
+            Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+        }
+
         $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-engine-env-$([Guid]::NewGuid().ToString('N'))"
         $script:composeRoot = Join-Path $script:work "compose"
         New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
@@ -70,6 +97,18 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
     }
 
     AfterEach {
+        # Restore the EXACT prior state, including on failure. A variable that existed is put back with
+        # its original value; one that did not exist is removed rather than left as an empty string.
+        foreach ($name in $script:ambientIsolatedNames) {
+            $prior = $script:ambientSnapshot[$name]
+            if ($null -ne $prior -and $prior.Existed) {
+                [System.Environment]::SetEnvironmentVariable($name, $prior.Value)
+            }
+            else {
+                Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+            }
+        }
+
         if (Test-Path -LiteralPath $script:work) {
             Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -326,6 +365,116 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         [string]$builder['Server'] | Should -BeExactly $_.expectedHost
         [string]$builder['Database'] | Should -BeExactly $_.expectedDatabase
         [string]$builder['Password'] | Should -BeExactly $_.expectedPassword
+    }
+
+    # THE AUTHORITY MODEL. For an MSSQL run the final Compose-effective environment - after composition
+    # and after ambient precedence - is the only validation authority, and a file rewrite can repair a
+    # file-authored value but never an ambient override. These cases prove the invariant rather than
+    # merely reaching an exception: each asserts what the FINAL effective environment holds, and the
+    # ambient cases additionally assert that no derived file was written and that no credential leaked.
+    Context "final-effective-environment authority (DMS-1270)" {
+        BeforeAll {
+            $script:validMssqlBaseLines = @(
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_DATASTORE=mssql'
+                'DMS_CONFIG_DATASTORE=mssql'
+                'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        }
+
+        It "fails clearly when the ambient environment supplies a non-MSSQL <_>" -ForEach @(
+            'DATABASE_CONNECTION_STRING_ADMIN'
+            'DMS_CONFIG_DATABASE_CONNECTION_STRING'
+        ) {
+            # Ambient wins over every declaration in the file being written, so excluding the file
+            # declaration and re-composing changes nothing: the effective value stays PostgreSQL-shaped.
+            # Before this, the function did exactly that and then wrote a derived file anyway, so an
+            # MSSQL run proceeded with a PostgreSQL connection string.
+            $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+            $localRoot = Join-Path $script:work "ambient-authority-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $localRoot -Force | Out-Null
+            Copy-Item (Join-Path $realComposeRoot ".env.mssql") (Join-Path $localRoot ".env.mssql")
+
+            # The fixture name deliberately avoids the word this test matches on: the diagnostic embeds
+            # the file path, so a filename containing "ambient" would satisfy the assertion by accident
+            # and hide a regression in the explanation itself.
+            $path = Join-Path $script:work ".env.shellset-$([Guid]::NewGuid().ToString('N'))"
+            Set-Content -LiteralPath $path -Value ($script:validMssqlBaseLines -join "`n") -NoNewline
+
+            $secret = 'AmbientSecret1!'
+            [System.Environment]::SetEnvironmentVariable(
+                $_, "host=dms-postgresql;port=5432;username=postgres;password=$secret;database=leaked_db;")
+
+            $failure = $null
+            try { Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $path -DockerComposeRoot $localRoot }
+            catch { $failure = $_.Exception.Message }
+
+            $failure | Should -Not -BeNullOrEmpty -Because "a file rewrite cannot repair an ambient override"
+            $failure | Should -BeLike "*$_*" -Because "the diagnostic must name the offending key"
+            # The explanation must say WHY no rewrite can help, so the operator fixes their shell rather
+            # than editing the env file forever.
+            $failure | Should -BeLike "*the ambient environment sets*"
+            $failure | Should -BeLike "*precedence over every declaration*"
+            $failure | Should -Not -BeLike "*$secret*" -Because "a connection string carries credentials"
+            $failure | Should -Not -BeLike "*leaked_db*"
+            $failure | Should -Not -BeLike "*dms-postgresql*"
+
+            # And nothing may be written: a derived file would change nothing and imply success.
+            Test-Path -LiteralPath (Join-Path $localRoot ".derived") | Should -BeFalse
+        }
+
+        It "accepts a valid MSSQL ambient override" {
+            # Narrowness: ambient precedence is legitimate, and only a NON-MSSQL ambient value is fatal.
+            $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+            $localRoot = Join-Path $script:work "ambient-valid"
+            New-Item -ItemType Directory -Path $localRoot -Force | Out-Null
+            Copy-Item (Join-Path $realComposeRoot ".env.mssql") (Join-Path $localRoot ".env.mssql")
+
+            $path = Join-Path $script:work ".env.ambient-valid"
+            Set-Content -LiteralPath $path -Value ($script:validMssqlBaseLines -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable(
+                'DATABASE_CONNECTION_STRING_ADMIN',
+                'Server=other-admin,1444;Database=master;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;')
+
+            $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $path -DockerComposeRoot $localRoot
+            [string](Get-SequentialEffectiveValue `
+                -Evaluation (Resolve-DotenvFileSequentially -Path $result) `
+                -Name 'DATABASE_CONNECTION_STRING_ADMIN') |
+                Should -BeExactly 'Server=other-admin,1444;Database=master;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        }
+
+        It "proves every overlay-owned connection-string key MSSQL-shaped in the final environment" {
+            # The postcondition's positive side: after repairs, ALL required keys must hold, not just the
+            # CMS one the topology validator happens to inspect.
+            $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+            $path = Join-Path $script:work ".env.all-keys-shaped"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_SA_PASSWORD=abcdefgh1!'
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_DATASTORE=mssql'
+                'DMS_CONFIG_DATASTORE=mssql'
+                # Both file-authored strings are PostgreSQL-shaped, so both are repaired from the overlay.
+                'DATABASE_CONNECTION_STRING_ADMIN=host=dms-postgresql;port=5432;username=postgres;password=pg;database=postgres;'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $path -DockerComposeRoot $realComposeRoot
+            $final = Resolve-DotenvFileSequentially -Path $result
+
+            $overlayConnectionKeys = @(
+                @(Resolve-DotenvFileSequentially -Path (Join-Path $realComposeRoot ".env.mssql")).Declarations |
+                    ForEach-Object { $_.Key } | Where-Object { $_ -match 'CONNECTION_STRING' } | Sort-Object -Unique
+            )
+            $overlayConnectionKeys.Count | Should -BeGreaterThan 1 -Because "both the admin and CMS keys must be covered"
+            foreach ($key in $overlayConnectionKeys) {
+                Test-MssqlConnectionStringValue -ConnectionString ([string](Get-SequentialEffectiveValue -Evaluation $final -Name $key)) |
+                    Should -BeTrue -Because "'$key' must be SQL Server-shaped in the final effective environment"
+            }
+        }
     }
 
     # Preservation is decided per connection-string KEY, not for all of them together. The admin and CMS
