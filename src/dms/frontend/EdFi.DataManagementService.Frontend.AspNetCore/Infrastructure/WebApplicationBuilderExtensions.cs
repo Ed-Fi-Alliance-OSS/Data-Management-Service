@@ -218,6 +218,10 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.PostgresqlDocumentCachePhysicalSourceFingerprintReader
             >();
             webAppBuilder.Services.AddSingleton<
+                IDocumentCacheInventoryValidator,
+                Backend.Postgresql.PostgresqlDocumentCacheInventoryValidator
+            >();
+            webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,
                 Backend.Postgresql.PostgresqlResourceKeyRowReader
             >();
@@ -236,6 +240,10 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddSingleton<
                 IDocumentCachePhysicalSourceFingerprintReader,
                 Backend.Mssql.MssqlDocumentCachePhysicalSourceFingerprintReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheInventoryValidator,
+                Backend.Mssql.MssqlDocumentCacheInventoryValidator
             >();
             webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,

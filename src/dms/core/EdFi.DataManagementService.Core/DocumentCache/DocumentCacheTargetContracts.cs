@@ -203,6 +203,36 @@ public sealed record DocumentCacheEnqueueTriggerValidationResult
     public string Message { get; }
 }
 
+public sealed record DocumentCacheProviderInventoryValidationResult
+{
+    public DocumentCacheProviderInventoryValidationResult(
+        DocumentCacheInventoryValidationResult inventory,
+        DocumentCacheEnqueueTriggerValidationResult enqueueTrigger
+    )
+    {
+        Inventory = inventory;
+        EnqueueTrigger = enqueueTrigger;
+    }
+
+    public DocumentCacheInventoryValidationResult Inventory { get; }
+
+    public DocumentCacheEnqueueTriggerValidationResult EnqueueTrigger { get; }
+
+    public bool IsSatisfied =>
+        Inventory.Status == DocumentCacheInventoryStatus.Satisfied
+        && EnqueueTrigger.Status == DocumentCacheEnqueueTriggerStatus.Satisfied;
+}
+
+public interface IDocumentCacheInventoryValidator
+{
+    RelationalProviderToken ProviderToken { get; }
+
+    Task<DocumentCacheProviderInventoryValidationResult> ValidateInventoryAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    );
+}
+
 public sealed record DocumentCacheProviderPrerequisiteResult
 {
     public DocumentCacheProviderPrerequisiteResult(
