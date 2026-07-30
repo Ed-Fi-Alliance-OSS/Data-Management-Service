@@ -528,7 +528,17 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger is disabled."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger is not enabled for ordinary sessions."
+                )
+            );
+        }
+
+        if (dialect == SqlDialect.Pgsql && !HasExpectedPgsqlDocumentCacheUuidTriggerShape(trigger))
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger shape is invalid."
                 )
             );
         }
@@ -742,7 +752,17 @@ internal static class DocumentCacheInventoryValidatorSupport
             enqueueIssues.Add(
                 new EnqueueIssue(
                     DocumentCacheEnqueueTriggerStatus.Disabled,
-                    $"{triggerName} trigger is disabled."
+                    $"{triggerName} trigger is not enabled for ordinary sessions."
+                )
+            );
+        }
+
+        if (dialect == SqlDialect.Pgsql && !HasExpectedPgsqlDocumentEnqueueTriggerShape(triggerName, trigger))
+        {
+            enqueueIssues.Add(
+                new EnqueueIssue(
+                    DocumentCacheEnqueueTriggerStatus.Invalid,
+                    $"{triggerName} trigger shape is invalid."
                 )
             );
         }
@@ -1466,7 +1486,17 @@ internal static class DocumentCacheInventoryValidatorSupport
         {
             SqlDialect.Pgsql => """
                 SELECT
-                    trigger_info.tgenabled <> 'D' AS IsEnabled,
+                    trigger_info.tgenabled IN ('O', 'A') AS IsEnabled,
+                    trigger_info.tgisinternal AS IsInternal,
+                    (trigger_info.tgtype::int & 1) = 1 AS IsRowLevel,
+                    (trigger_info.tgtype::int & 2) = 2 AS IsBefore,
+                    (trigger_info.tgtype::int & 64) = 64 AS IsInsteadOf,
+                    (trigger_info.tgtype::int & 4) = 4 AS IsInsert,
+                    (trigger_info.tgtype::int & 8) = 8 AS IsDelete,
+                    (trigger_info.tgtype::int & 16) = 16 AS IsUpdate,
+                    (trigger_info.tgtype::int & 32) = 32 AS IsTruncate,
+                    NULLIF(trigger_info.tgoldtable::text, '') AS OldTransitionTable,
+                    NULLIF(trigger_info.tgnewtable::text, '') AS NewTransitionTable,
                     proc_namespace.nspname AS FunctionSchema,
                     proc.proname AS FunctionName,
                     pg_catalog.pg_get_functiondef(proc.oid) AS Definition
@@ -1479,14 +1509,23 @@ internal static class DocumentCacheInventoryValidatorSupport
                     ON proc.oid = trigger_info.tgfoid
                 INNER JOIN pg_catalog.pg_namespace proc_namespace
                     ON proc_namespace.oid = proc.pronamespace
-                WHERE NOT trigger_info.tgisinternal
-                  AND trigger_info.tgname = @triggerName
+                WHERE trigger_info.tgname = @triggerName
                   AND n.nspname = @schema
                   AND rel.relname = @table
                 """,
             SqlDialect.Mssql => """
                 SELECT
                     CASE WHEN triggers.is_disabled = 0 THEN 1 ELSE 0 END AS IsEnabled,
+                    CAST(NULL AS bit) AS IsInternal,
+                    CAST(NULL AS bit) AS IsRowLevel,
+                    CAST(NULL AS bit) AS IsBefore,
+                    CAST(NULL AS bit) AS IsInsteadOf,
+                    CAST(NULL AS bit) AS IsInsert,
+                    CAST(NULL AS bit) AS IsDelete,
+                    CAST(NULL AS bit) AS IsUpdate,
+                    CAST(NULL AS bit) AS IsTruncate,
+                    CAST(NULL AS nvarchar(128)) AS OldTransitionTable,
+                    CAST(NULL AS nvarchar(128)) AS NewTransitionTable,
                     CAST(NULL AS nvarchar(128)) AS FunctionSchema,
                     CAST(NULL AS nvarchar(128)) AS FunctionName,
                     OBJECT_DEFINITION(triggers.object_id) AS Definition
@@ -1512,6 +1551,16 @@ internal static class DocumentCacheInventoryValidatorSupport
                 ],
                 reader => new TriggerSnapshot(
                     ReadBooleanLike(reader, "IsEnabled"),
+                    ReadNullableBooleanLike(reader, "IsInternal"),
+                    ReadNullableBooleanLike(reader, "IsRowLevel"),
+                    ReadNullableBooleanLike(reader, "IsBefore"),
+                    ReadNullableBooleanLike(reader, "IsInsteadOf"),
+                    ReadNullableBooleanLike(reader, "IsInsert"),
+                    ReadNullableBooleanLike(reader, "IsDelete"),
+                    ReadNullableBooleanLike(reader, "IsUpdate"),
+                    ReadNullableBooleanLike(reader, "IsTruncate"),
+                    ReadNullableString(reader, "OldTransitionTable"),
+                    ReadNullableString(reader, "NewTransitionTable"),
                     ReadNullableString(reader, "FunctionSchema"),
                     ReadNullableString(reader, "FunctionName"),
                     ReadNullableString(reader, "Definition")
@@ -1677,6 +1726,61 @@ internal static class DocumentCacheInventoryValidatorSupport
             "RAISEEXCEPTION",
             "RETURNNEW"
         );
+
+    private static bool HasExpectedPgsqlDocumentCacheUuidTriggerShape(TriggerSnapshot trigger) =>
+        trigger.IsInternal == false
+        && trigger.IsRowLevel == true
+        && trigger.IsBefore == true
+        && trigger.IsInsteadOf == false
+        && trigger.IsInsert == true
+        && trigger.IsUpdate == true
+        && trigger.IsDelete == false
+        && trigger.IsTruncate == false
+        && trigger.OldTransitionTable is null
+        && trigger.NewTransitionTable is null;
+
+    private static bool HasExpectedPgsqlDocumentEnqueueTriggerShape(
+        string triggerName,
+        TriggerSnapshot trigger
+    ) =>
+        triggerName switch
+        {
+            DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlInsertTrigger =>
+                HasExpectedPgsqlDocumentEnqueueTriggerShape(
+                    trigger,
+                    expectsInsertEvent: true,
+                    expectsUpdateEvent: false,
+                    expectedOldTransitionTable: null,
+                    expectedNewTransitionTable: "new_rows"
+                ),
+            DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlUpdateTrigger =>
+                HasExpectedPgsqlDocumentEnqueueTriggerShape(
+                    trigger,
+                    expectsInsertEvent: false,
+                    expectsUpdateEvent: true,
+                    expectedOldTransitionTable: "old_rows",
+                    expectedNewTransitionTable: "new_rows"
+                ),
+            _ => false,
+        };
+
+    private static bool HasExpectedPgsqlDocumentEnqueueTriggerShape(
+        TriggerSnapshot trigger,
+        bool expectsInsertEvent,
+        bool expectsUpdateEvent,
+        string? expectedOldTransitionTable,
+        string? expectedNewTransitionTable
+    ) =>
+        trigger.IsInternal == false
+        && trigger.IsRowLevel == false
+        && trigger.IsBefore == false
+        && trigger.IsInsteadOf == false
+        && trigger.IsInsert == expectsInsertEvent
+        && trigger.IsUpdate == expectsUpdateEvent
+        && trigger.IsDelete == false
+        && trigger.IsTruncate == false
+        && string.Equals(trigger.OldTransitionTable, expectedOldTransitionTable, StringComparison.Ordinal)
+        && string.Equals(trigger.NewTransitionTable, expectedNewTransitionTable, StringComparison.Ordinal);
 
     private static bool HasExpectedMssqlDocumentCacheUuidValidationTriggerDefinition(string? definition) =>
         HasNormalizedTokens(
@@ -1874,6 +1978,22 @@ internal static class DocumentCacheInventoryValidatorSupport
         int ordinal = reader.GetOrdinal(columnName);
         object value = reader.GetValue(ordinal);
 
+        return ConvertBooleanLike(value);
+    }
+
+    private static bool? ReadNullableBooleanLike(DbDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        return ConvertBooleanLike(reader.GetValue(ordinal));
+    }
+
+    private static bool ConvertBooleanLike(object value)
+    {
         return value switch
         {
             bool boolValue => boolValue,
@@ -1934,6 +2054,16 @@ internal static class DocumentCacheInventoryValidatorSupport
 
     private sealed record TriggerSnapshot(
         bool IsEnabled,
+        bool? IsInternal,
+        bool? IsRowLevel,
+        bool? IsBefore,
+        bool? IsInsteadOf,
+        bool? IsInsert,
+        bool? IsDelete,
+        bool? IsUpdate,
+        bool? IsTruncate,
+        string? OldTransitionTable,
+        string? NewTransitionTable,
         string? FunctionSchema,
         string? FunctionName,
         string? Definition

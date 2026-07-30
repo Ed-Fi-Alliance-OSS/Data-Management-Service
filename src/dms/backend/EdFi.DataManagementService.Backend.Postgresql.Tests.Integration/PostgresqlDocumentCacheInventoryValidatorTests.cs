@@ -110,6 +110,63 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_accepts_postgresql_documentcache_triggers_enabled_always()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE "dms"."DocumentCache" ENABLE ALWAYS TRIGGER "TR_DocumentCache_ValidateDocumentUuid";
+            ALTER TABLE "dms"."Document" ENABLE ALWAYS TRIGGER "TR_Document_EnqueueProjectionInsert";
+            ALTER TABLE "dms"."Document" ENABLE ALWAYS TRIGGER "TR_Document_EnqueueProjectionUpdate";
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.IsSatisfied.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_rejects_a_uuid_validation_trigger_enabled_replica()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE "dms"."DocumentCache" ENABLE REPLICA TRIGGER "TR_DocumentCache_ValidateDocumentUuid";
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+    }
+
+    [Test]
+    public async Task It_classifies_replica_enqueue_triggers_as_disabled()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE "dms"."Document" ENABLE REPLICA TRIGGER "TR_Document_EnqueueProjectionUpdate";
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Disabled);
+    }
+
+    [Test]
     public async Task It_classifies_missing_enqueue_functions_and_triggers_as_missing()
     {
         await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
@@ -214,6 +271,20 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
             EXECUTE FUNCTION "dms_alt"."TF_Document_EnqueueProjectionInsert"();
             """
         );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+    }
+
+    [TestCaseSource(nameof(InvalidPostgresqlEnqueueTriggerShapes))]
+    public async Task It_rejects_same_named_enqueue_triggers_with_invalid_postgresql_shape(string mutationSql)
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutationSql);
 
         DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
             database.ConnectionString
@@ -333,6 +404,90 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
 
         invalidResult.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
         validResult.IsSatisfied.Should().BeTrue();
+    }
+
+    private static IEnumerable<TestCaseData> InvalidPostgresqlEnqueueTriggerShapes()
+    {
+        yield return new TestCaseData(
+            """
+            DROP TRIGGER "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
+            AFTER UPDATE ON "dms"."Document"
+            REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"();
+            """
+        ).SetName("It_rejects_insert_enqueue_trigger_with_wrong_event");
+
+        yield return new TestCaseData(
+            """
+            DROP TRIGGER "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
+            BEFORE INSERT ON "dms"."Document"
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"();
+            """
+        ).SetName("It_rejects_insert_enqueue_trigger_with_wrong_timing");
+
+        yield return new TestCaseData(
+            """
+            DROP TRIGGER "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
+            AFTER INSERT ON "dms"."Document"
+            FOR EACH ROW
+            EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"();
+            """
+        ).SetName("It_rejects_insert_enqueue_trigger_with_row_level_shape");
+
+        yield return new TestCaseData(
+            """
+            DROP TRIGGER "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
+            AFTER INSERT ON "dms"."Document"
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"();
+            """
+        ).SetName("It_rejects_insert_enqueue_trigger_without_transition_table");
+
+        yield return new TestCaseData(
+            """
+            DROP TRIGGER "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
+            AFTER INSERT ON "dms"."Document"
+            REFERENCING NEW TABLE AS inserted_rows
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"();
+            """
+        ).SetName("It_rejects_insert_enqueue_trigger_with_wrong_transition_alias");
+
+        yield return new TestCaseData(
+            """
+            DROP TRIGGER "TR_Document_EnqueueProjectionUpdate" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionUpdate"
+            AFTER UPDATE ON "dms"."Document"
+            REFERENCING NEW TABLE AS new_rows
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"();
+            """
+        ).SetName("It_rejects_update_enqueue_trigger_without_old_transition_table");
+
+        yield return new TestCaseData(
+            """
+            DROP TRIGGER "TR_Document_EnqueueProjectionUpdate" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionUpdate"
+            AFTER UPDATE ON "dms"."Document"
+            REFERENCING OLD TABLE AS previous_rows NEW TABLE AS changed_rows
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"();
+            """
+        ).SetName("It_rejects_update_enqueue_trigger_with_wrong_transition_aliases");
     }
 
     private Task<PostgresqlGeneratedDdlTestDatabase> CreateDatabaseAsync() =>
