@@ -480,7 +480,13 @@ function Resolve-DotenvFileSequentially {
     #>
     param(
         [Parameter(Mandatory, ParameterSetName = 'Path')] [string]$Path,
-        [Parameter(Mandatory, ParameterSetName = 'Line')] [AllowEmptyCollection()] [string[]]$Line
+        # AllowEmptyString is required in ADDITION to AllowEmptyCollection: a mandatory [string[]]
+        # rejects empty-string ELEMENTS, not merely an empty array, so a blank separator line - which
+        # every composed env file contains - fails parameter binding without it.
+        [Parameter(Mandatory, ParameterSetName = 'Line')]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$Line
     )
 
     # Re-wrap with @(): PowerShell unwraps a single-element array argument to a scalar, and under

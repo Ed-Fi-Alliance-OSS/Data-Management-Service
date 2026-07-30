@@ -799,37 +799,114 @@ function Test-MssqlConnectionStringValue {
     )
 }
 
-function Get-MssqlCompositionTerminalLookup {
+function Get-MssqlComposedEnvContent {
     <#
     .SYNOPSIS
-        Builds a terminal-value lookup over the base env file composed with the .env.mssql overlay, with
-        Docker Compose's precedence: ambient wins, then the caller's base file, then the overlay default.
+        Returns exactly the lines the MSSQL engine composition would write, without writing anything.
 
     .DESCRIPTION
-        Both inputs are sequential evaluations, so declaration order, duplicates, and the full assignment
-        grammar are already accounted for and the values handed back are terminal - they are not resolved
-        a second time. Resolving against a ReadValuesFromEnvFile map instead reintroduced the
-        start/continuation split one level down: that map stores `export KEY=...` under an
-        `export `-prefixed name and collapses duplicates, so a dependency the start path resolves would
-        resolve empty here and a valid dedicated target would be rejected.
+        Validation and the write must be about the SAME artifact. Modelling the composed environment
+        separately - resolving the base file and the overlay independently and preferring the base value -
+        does not describe the file that actually gets produced, and the two disagreed in three ways:
+
+          - a base value that depends on an overlay default (DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}
+            where MSSQL_DB_NAME lives only in .env.mssql) froze EMPTY in the model, while the written
+            file places the preserved value inside the overlay block, after MSSQL_DB_NAME, where it
+            resolves;
+          - an `export `-spelled base declaration was not recognized as an overlay-owned key, so the
+            written file kept it AND appended the overlay's own declaration - two declarations of one
+            key;
+          - an outer-quoted or whole-reference connection string passed the resolved gate and was then
+            dropped by a raw-text shape check, so the written file silently carried the overlay default
+            instead of the caller's value.
+
+        This function is pure and prospective: the caller evaluates these lines sequentially, validates
+        that result, and writes these same lines. Overlay-owned keys are dropped from the base block
+        through the shared assignment grammar (so `export KEY=...` counts), and a preserved caller value
+        is substituted at the overlay's own position - which both guarantees exactly one declaration per
+        overlay key and gives the preserved value the overlay's ordering.
+
+    .PARAMETER PreserveConnectionStrings
+        When false, connection-string keys are not preserved from the base file even if declared. The
+        caller uses this to re-derive after discovering that a preserved connection string does not
+        resolve to an MSSQL-shaped value.
     #>
     param(
-        [Parameter(Mandatory)] $BaseEvaluation,
-        [Parameter(Mandatory)] $OverlayEvaluation
+        [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
+        [Parameter(Mandatory)] [string]$OverlayEnvironmentFile,
+        [switch]$BaseDeclaresMssql,
+        [bool]$PreserveConnectionStrings = $true,
+        [string]$TemplatePackageOverride
     )
 
-    $baseEffective = $BaseEvaluation.Effective
-    $overlayEffective = $OverlayEvaluation.Effective
+    $baseLines = @([System.IO.File]::ReadAllLines($BaseEnvironmentFile))
+    $overlayLines = @([System.IO.File]::ReadAllLines($OverlayEnvironmentFile))
 
-    return {
-        param([string]$name)
+    $overlayKeys = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $overlayLines) {
+        $assignment = Get-DotenvAssignment -Line $line
+        if ($null -ne $assignment -and -not $overlayKeys.Contains($assignment.Key)) {
+            $overlayKeys.Add($assignment.Key)
+        }
+    }
 
-        $ambient = [System.Environment]::GetEnvironmentVariable($name)
-        if ($null -ne $ambient) { return $ambient }
-        if ($baseEffective.ContainsKey($name)) { return [string]$baseEffective[$name] }
-        if ($overlayEffective.ContainsKey($name)) { return [string]$overlayEffective[$name] }
-        return $null
-    }.GetNewClosure()
+    # Caller-authored values for overlay-owned keys are preserved, except the two engine discriminators
+    # which the overlay always owns. The raw value is carried verbatim so authored quoting survives.
+    $preserved = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+    if ($BaseDeclaresMssql) {
+        $baseEvaluation = Resolve-DotenvFileSequentially -Line $baseLines
+        foreach ($key in $overlayKeys) {
+            if ($key -eq 'DMS_DATASTORE' -or $key -eq 'DMS_CONFIG_DATASTORE') { continue }
+            if (-not $PreserveConnectionStrings -and $key -match 'CONNECTION_STRING') { continue }
+
+            $declaration = Get-DotenvLastDeclaration -Evaluation $baseEvaluation -Name $key
+            if ($null -ne $declaration -and -not [string]::IsNullOrWhiteSpace($declaration.RawValue)) {
+                $preserved[$key] = [string]$declaration.RawValue
+            }
+        }
+    }
+
+    $keptBaseLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $baseLines) {
+        $assignment = Get-DotenvAssignment -Line $line
+        if ($null -ne $assignment -and $overlayKeys.Contains($assignment.Key)) { continue }
+        $keptBaseLines.Add($line)
+    }
+
+    $composedOverlayLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $overlayLines) {
+        $assignment = Get-DotenvAssignment -Line $line
+        if ($null -ne $assignment -and $preserved.ContainsKey($assignment.Key)) {
+            $composedOverlayLines.Add("$($assignment.Key)=$($preserved[$assignment.Key])")
+        }
+        else {
+            $composedOverlayLines.Add($line)
+        }
+    }
+
+    $composed = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $keptBaseLines) { $composed.Add($line) }
+    while ($composed.Count -gt 0 -and [string]::IsNullOrWhiteSpace($composed[$composed.Count - 1])) {
+        $composed.RemoveAt($composed.Count - 1)
+    }
+    $composed.Add('')
+    foreach ($line in $composedOverlayLines) { $composed.Add($line) }
+    while ($composed.Count -gt 0 -and [string]::IsNullOrWhiteSpace($composed[$composed.Count - 1])) {
+        $composed.RemoveAt($composed.Count - 1)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($TemplatePackageOverride)) {
+        $replaced = $false
+        for ($index = 0; $index -lt $composed.Count; $index++) {
+            if (Test-DotenvAssignmentLine -Line $composed[$index] -Key 'DATABASE_TEMPLATE_PACKAGE') {
+                $composed[$index] = "DATABASE_TEMPLATE_PACKAGE=$TemplatePackageOverride"
+                $replaced = $true
+            }
+        }
+        if (-not $replaced) { $composed.Add("DATABASE_TEMPLATE_PACKAGE=$TemplatePackageOverride") }
+    }
+
+    return , @($composed)
 }
 
 function Assert-MssqlCmsDatabaseIsShared {
@@ -995,62 +1072,67 @@ function Resolve-DatabaseEngineEnvironmentFile {
         throw "Resolve-DatabaseEngineEnvironmentFile: no MSSQL engine overlay found (expected '$overlayPath')."
     }
 
-    $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
     $overlayValues = ReadValuesFromEnvFile $overlayPath
-    $templatePackage = Get-EnvValue -EnvValues $baseValues -Name "DATABASE_TEMPLATE_PACKAGE"
+    # Every decision below reads the base file through the sequential model, so `export KEY=...`, an
+    # assignment with whitespace around '=', and duplicate declarations all mean here exactly what they
+    # mean to Docker Compose.
+    $baseEvaluation = Resolve-DotenvFileSequentially -Path $BaseEnvironmentFile
+    $templatePackage = [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name "DATABASE_TEMPLATE_PACKAGE")
     $correctedTemplatePackage = Convert-TemplatePackageToken -PackageId $templatePackage -Engine "MsSql"
     $baseDeclaresMssql =
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
+        [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name "DMS_DATASTORE") -eq "mssql" -or
+        [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
 
     # A separate-mode file is out of the shared-mode invariant's scope by construction; see the
-    # -SkipMssqlCmsDatabaseValidation note above. Read raw from the file's own marker, not through
-    # Compose precedence, so an unrelated ambient variable cannot switch the invariant off.
-    $baseDeclaresSeparateTopology =
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -DefaultValue "false") -eq "true"
+    # -SkipMssqlCmsDatabaseValidation note above. Read the marker from its own raw declaration through
+    # the shared assignment model and never from the ambient environment: the exported and quoted marker
+    # spellings are supported everywhere else in this design, and an unrelated ambient variable of the
+    # marker's name must not be able to switch a safety check off.
+    $baseMarkerDeclaration = Get-DotenvLastDeclaration -Evaluation $baseEvaluation -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+    $baseMarkerValue =
+        if ($null -eq $baseMarkerDeclaration) { "false" }
+        else { [string](ConvertFrom-ComposeEnvironmentValue -Value $baseMarkerDeclaration.RawValue) }
+    $baseDeclaresSeparateTopology = [string]::Equals($baseMarkerValue, "true", [System.StringComparison]::Ordinal)
+
+    # The exact lines composition would write, built once and used for validation AND for the write, so
+    # the two can never describe different artifacts. Connection-string preservation is optimistic here
+    # and withdrawn below if the preserved value does not resolve to an MSSQL-shaped connection string.
+    $composedLines = Get-MssqlComposedEnvContent `
+        -BaseEnvironmentFile $BaseEnvironmentFile `
+        -OverlayEnvironmentFile $overlayPath `
+        -BaseDeclaresMssql:$baseDeclaresMssql `
+        -TemplatePackageOverride $(if ($correctedTemplatePackage -ne $templatePackage) { $correctedTemplatePackage } else { $null })
+    $composedEvaluation = Resolve-DotenvFileSequentially -Line $composedLines
+
+    $composedCmsConnectionString = [string](Get-SequentialEffectiveValue `
+        -Evaluation $composedEvaluation `
+        -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
+
+    # A preserved caller connection string that does not resolve to an MSSQL-shaped value must not be
+    # kept: a partially-edited base file would otherwise retain a PostgreSQL-shaped CMS target. The
+    # decision is made on the RESOLVED value, so an outer-quoted or whole-reference string - which only
+    # looks MSSQL-shaped once resolved - is preserved rather than silently replaced by the overlay
+    # default, and the composition is re-derived so the written file matches the validated one.
+    if (-not (Test-MssqlConnectionStringValue -ConnectionString $composedCmsConnectionString)) {
+        $composedLines = Get-MssqlComposedEnvContent `
+            -BaseEnvironmentFile $BaseEnvironmentFile `
+            -OverlayEnvironmentFile $overlayPath `
+            -BaseDeclaresMssql:$baseDeclaresMssql `
+            -PreserveConnectionStrings $false `
+            -TemplatePackageOverride $(if ($correctedTemplatePackage -ne $templatePackage) { $correctedTemplatePackage } else { $null })
+        $composedEvaluation = Resolve-DotenvFileSequentially -Line $composedLines
+        $composedCmsConnectionString = [string](Get-SequentialEffectiveValue `
+            -Evaluation $composedEvaluation `
+            -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
+    }
 
     if ($baseDeclaresMssql -and -not $SkipMssqlCmsDatabaseValidation -and -not $baseDeclaresSeparateTopology) {
-        # Raw value through the shared assignment model, so a supported spelling this gate is expected
-        # to judge is actually visible to it. The legacy parser stores `export KEY=...` under an
-        # `export `-prefixed name and would report no connection string at all, silently skipping both
-        # the reserved-name signal and the shared-mode invariant for a file that has one.
-        # BOTH inputs go through the sequential model, and every referenced name is then resolved
-        # through one terminal lookup with Compose's own precedence: ambient wins, then the caller's
-        # base file, then the overlay's defaults (matching the composition order used below).
-        #
-        # Feeding the resolver a ReadValuesFromEnvFile map instead recreated the very start/continuation
-        # split this gate was just fixed for, one level down: the map mis-keys `export CMS_DB=...` and
-        # collapses duplicates, so a dependency the start path's sequential evaluator resolves would
-        # resolve EMPTY here and the dedicated target would be rejected.
-        $baseEvaluation = Resolve-DotenvFileSequentially -Path $BaseEnvironmentFile
-        $overlayEvaluation = Resolve-DotenvFileSequentially -Path $overlayPath
-        $mssqlCompositionLookup = Get-MssqlCompositionTerminalLookup `
-            -BaseEvaluation $baseEvaluation `
-            -OverlayEvaluation $overlayEvaluation
-
-        $baseConnectionStringDeclaration = Get-DotenvLastDeclaration `
-            -Evaluation $baseEvaluation `
-            -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
-        $baseCmsConnectionString =
-            if ($null -eq $baseConnectionStringDeclaration) { "" }
-            else { [string]$baseConnectionStringDeclaration.RawValue }
-
-        # Resolve ONCE, before anything inspects the value. The MSSQL-shape check used to run on the
-        # raw text, so a legitimate outer-quoted value or a whole-string reference
-        # (DMS_CONFIG_DATABASE_CONNECTION_STRING=${SOME_OTHER_KEY}) did not look MSSQL-shaped and
-        # reached neither the reserved-name signal nor the shared invariant - it was silently skipped.
-        $resolvedCmsConnectionString = ""
-        if (-not [string]::IsNullOrWhiteSpace($baseCmsConnectionString)) {
-            try {
-                $resolvedCmsConnectionString = Resolve-ComposeEnvRawValue `
-                    -EnvironmentValues @{} `
-                    -RawValue $baseCmsConnectionString `
-                    -NameLookup $mssqlCompositionLookup
-            }
-            catch {
-                throw "DMS_CONFIG_DATABASE_CONNECTION_STRING in '$BaseEnvironmentFile' could not be resolved: $($_.Exception.Message)"
-            }
-        }
+        # Validation judges the CONNECTION STRING THE COMPOSED FILE ACTUALLY RENDERS. Judging a
+        # separately-modelled environment instead let three shapes diverge from the written file: a base
+        # value depending on an overlay default froze empty, an `export `-spelled declaration survived
+        # alongside the overlay's own, and an outer-quoted or whole-reference value was dropped by a
+        # raw-text shape check after passing the resolved gate.
+        $resolvedCmsConnectionString = $composedCmsConnectionString
 
         if (Test-MssqlConnectionStringValue -ConnectionString $resolvedCmsConnectionString) {
 
@@ -1080,7 +1162,9 @@ function Resolve-DatabaseEngineEnvironmentFile {
                 }).Count -eq 0
 
             if (-not $targetsDedicatedCmsDatabase) {
-                $expectedSharedDatabaseName = [string](& $mssqlCompositionLookup 'MSSQL_DB_NAME')
+                $expectedSharedDatabaseName = [string](Get-SequentialEffectiveValue `
+                    -Evaluation $composedEvaluation `
+                    -Name "MSSQL_DB_NAME")
                 Assert-MssqlCmsDatabaseIsShared `
                     -ResolvedConnectionString $resolvedCmsConnectionString `
                     -ExpectedDatabaseName $expectedSharedDatabaseName
@@ -1088,16 +1172,18 @@ function Resolve-DatabaseEngineEnvironmentFile {
         }
     }
 
-    # A fixed three-key signal can become stale when .env.mssql gains another required setting.
-    # Prove that every current overlay key exists and is non-blank before treating a file as an
-    # already-composed handoff from an earlier phase.
+    # A fixed three-key signal can become stale when .env.mssql gains another required setting. Prove
+    # that every current overlay key exists and is non-blank in the base file's own SEQUENTIAL
+    # evaluation before treating it as an already-composed handoff from an earlier phase - and for a
+    # connection string, that its RESOLVED value is MSSQL-shaped, matching the decision the composition
+    # itself makes.
     $overlayAlreadyComposed =
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -and
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
+        [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name "DMS_DATASTORE") -eq "mssql" -and
+        [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
     if ($overlayAlreadyComposed) {
         foreach ($overlayKey in $overlayValues.Keys) {
             $overlayKeyName = [string]$overlayKey
-            $baseValue = Get-EnvValue -EnvValues $baseValues -Name $overlayKeyName
+            $baseValue = [string](Get-SequentialEffectiveValue -Evaluation $baseEvaluation -Name $overlayKeyName)
             $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
             if (
                 [string]::IsNullOrWhiteSpace($baseValue) -or
@@ -1122,47 +1208,19 @@ function Resolve-DatabaseEngineEnvironmentFile {
         return $derivedPath
     }
 
-    # Preserve caller-authored MSSQL values when completing a partial MSSQL file. Connection
-    # strings require an MSSQL shape so a base file with only one edited discriminator cannot
-    # retain its PostgreSQL admin/CMS targets. The overlay still owns both engine discriminators.
-    $keyOverrides = @{}
-    if ($baseDeclaresMssql) {
-        foreach ($overlayKey in $overlayValues.Keys) {
-            $overlayKeyName = [string]$overlayKey
-            if ($overlayKeyName -in @("DMS_DATASTORE", "DMS_CONFIG_DATASTORE")) {
-                continue
-            }
-
-            $baseValue = Get-EnvValue -EnvValues $baseValues -Name $overlayKeyName
-            $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
-            if (
-                -not [string]::IsNullOrWhiteSpace($baseValue) -and
-                (-not $isConnectionString -or (Test-MssqlConnectionStringValue -ConnectionString $baseValue))
-            ) {
-                $keyOverrides[$overlayKeyName] = $baseValue
-            }
-        }
+    # Write exactly the lines that were validated above. Re-composing here through a different code
+    # path (base+overlay merge, then a second pass of key overrides decided on raw text) is what let the
+    # written file differ from the validated one.
+    $targetDirectory = Split-Path -Parent $derivedPath
+    if (-not [string]::IsNullOrWhiteSpace($targetDirectory) -and -not (Test-Path -LiteralPath $targetDirectory)) {
+        New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
     }
+    [System.IO.File]::WriteAllText(
+        $derivedPath,
+        (($composedLines -join "`n").TrimEnd("`n") + "`n"),
+        [System.Text.UTF8Encoding]::new($false))
 
-    $composedPath = New-DataStandardDerivedEnvFile `
-        -BaseEnvironmentFile $BaseEnvironmentFile `
-        -OverlayEnvironmentFile $overlayPath `
-        -TargetPath $derivedPath
-
-    # The overlay never carries DATABASE_TEMPLATE_PACKAGE (see .env.mssql's header), so the
-    # composed file's value is still exactly the base file's value at this point.
-    if ($correctedTemplatePackage -ne $templatePackage) {
-        $keyOverrides["DATABASE_TEMPLATE_PACKAGE"] = $correctedTemplatePackage
-    }
-
-    if ($keyOverrides.Count -gt 0) {
-        Write-DerivedEnvFile `
-            -BaseEnvironmentFile $composedPath `
-            -TargetPath $composedPath `
-            -KeyOverrides $keyOverrides
-    }
-
-    return $composedPath
+    return $derivedPath
 }
 
 function ConvertTo-DotenvSafeEnvValue {
