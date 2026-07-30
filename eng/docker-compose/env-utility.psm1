@@ -799,6 +799,39 @@ function Test-MssqlConnectionStringValue {
     )
 }
 
+function Get-MssqlCompositionTerminalLookup {
+    <#
+    .SYNOPSIS
+        Builds a terminal-value lookup over the base env file composed with the .env.mssql overlay, with
+        Docker Compose's precedence: ambient wins, then the caller's base file, then the overlay default.
+
+    .DESCRIPTION
+        Both inputs are sequential evaluations, so declaration order, duplicates, and the full assignment
+        grammar are already accounted for and the values handed back are terminal - they are not resolved
+        a second time. Resolving against a ReadValuesFromEnvFile map instead reintroduced the
+        start/continuation split one level down: that map stores `export KEY=...` under an
+        `export `-prefixed name and collapses duplicates, so a dependency the start path resolves would
+        resolve empty here and a valid dedicated target would be rejected.
+    #>
+    param(
+        [Parameter(Mandatory)] $BaseEvaluation,
+        [Parameter(Mandatory)] $OverlayEvaluation
+    )
+
+    $baseEffective = $BaseEvaluation.Effective
+    $overlayEffective = $OverlayEvaluation.Effective
+
+    return {
+        param([string]$name)
+
+        $ambient = [System.Environment]::GetEnvironmentVariable($name)
+        if ($null -ne $ambient) { return $ambient }
+        if ($baseEffective.ContainsKey($name)) { return [string]$baseEffective[$name] }
+        if ($overlayEffective.ContainsKey($name)) { return [string]$overlayEffective[$name] }
+        return $null
+    }.GetNewClosure()
+}
+
 function Assert-MssqlCmsDatabaseIsShared {
     <#
     .SYNOPSIS
@@ -807,33 +840,30 @@ function Assert-MssqlCmsDatabaseIsShared {
         different databases.
 
     .DESCRIPTION
-        Resolution uses the shared Compose-equivalent resolver, the same semantics as the start path.
-        It previously used a narrow grammar that accepted only a literal or a bare ${NAME} and threw
+        Takes ALREADY-RESOLVED values. Resolution belongs to the caller so the connection string is
+        resolved exactly once, against one composed environment, and the shape check, the reserved-name
+        signal, and this invariant all judge the same text. This function previously resolved the string
+        itself with a narrow grammar that accepted only a literal or a bare ${NAME} and threw
         "unsupported environment expression" on anything else - so a connection string using a
         documented Compose operator, including the ${A:-${B}} form the checked-in .yml fallbacks
-        themselves use, could not be validated at all. The whole string is resolved once and the
-        database segments are read off the resolved text, so operators, nesting, escapes, and ambient
-        precedence all behave as Compose behaves.
+        themselves use, could not be validated at all.
     #>
     param(
         [Parameter(Mandatory)]
-        [string]$ConnectionString,
+        [AllowEmptyString()]
+        [string]$ResolvedConnectionString,
 
         [Parameter(Mandatory)]
-        [hashtable]$EnvValues
+        [AllowEmptyString()]
+        [string]$ExpectedDatabaseName
     )
 
-    $expectedDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "MSSQL_DB_NAME"
+    $expectedDatabaseName = $ExpectedDatabaseName
     if ([string]::IsNullOrWhiteSpace($expectedDatabaseName)) {
         throw "MSSQL_DB_NAME must be non-blank when preserving a caller-authored CMS MSSQL connection string."
     }
 
-    try {
-        $resolvedConnectionString = Resolve-ComposeEnvRawValue -EnvironmentValues $EnvValues -RawValue $ConnectionString
-    }
-    catch {
-        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING could not be resolved: $($_.Exception.Message)"
-    }
+    $resolvedConnectionString = $ResolvedConnectionString
 
     # Validate that the resolved text is a parseable connection string before reading segments from it,
     # so a malformed value still gets its own diagnostic rather than looking like a missing database.
@@ -984,23 +1014,45 @@ function Resolve-DatabaseEngineEnvironmentFile {
         # to judge is actually visible to it. The legacy parser stores `export KEY=...` under an
         # `export `-prefixed name and would report no connection string at all, silently skipping both
         # the reserved-name signal and the shared-mode invariant for a file that has one.
+        # BOTH inputs go through the sequential model, and every referenced name is then resolved
+        # through one terminal lookup with Compose's own precedence: ambient wins, then the caller's
+        # base file, then the overlay's defaults (matching the composition order used below).
+        #
+        # Feeding the resolver a ReadValuesFromEnvFile map instead recreated the very start/continuation
+        # split this gate was just fixed for, one level down: the map mis-keys `export CMS_DB=...` and
+        # collapses duplicates, so a dependency the start path's sequential evaluator resolves would
+        # resolve EMPTY here and the dedicated target would be rejected.
+        $baseEvaluation = Resolve-DotenvFileSequentially -Path $BaseEnvironmentFile
+        $overlayEvaluation = Resolve-DotenvFileSequentially -Path $overlayPath
+        $mssqlCompositionLookup = Get-MssqlCompositionTerminalLookup `
+            -BaseEvaluation $baseEvaluation `
+            -OverlayEvaluation $overlayEvaluation
+
         $baseConnectionStringDeclaration = Get-DotenvLastDeclaration `
-            -Evaluation (Resolve-DotenvFileSequentially -Path $BaseEnvironmentFile) `
+            -Evaluation $baseEvaluation `
             -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
         $baseCmsConnectionString =
             if ($null -eq $baseConnectionStringDeclaration) { "" }
             else { [string]$baseConnectionStringDeclaration.RawValue }
-        if (Test-MssqlConnectionStringValue -ConnectionString $baseCmsConnectionString) {
-            # Overlay values establish defaults; caller values then win, matching the actual
-            # composition order used below. Validate the resulting shared-database identity before
-            # either the idempotent return or partial-value preservation can accept this string.
-            $effectiveMssqlValues = @{}
-            foreach ($entry in $overlayValues.GetEnumerator()) {
-                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
+
+        # Resolve ONCE, before anything inspects the value. The MSSQL-shape check used to run on the
+        # raw text, so a legitimate outer-quoted value or a whole-string reference
+        # (DMS_CONFIG_DATABASE_CONNECTION_STRING=${SOME_OTHER_KEY}) did not look MSSQL-shaped and
+        # reached neither the reserved-name signal nor the shared invariant - it was silently skipped.
+        $resolvedCmsConnectionString = ""
+        if (-not [string]::IsNullOrWhiteSpace($baseCmsConnectionString)) {
+            try {
+                $resolvedCmsConnectionString = Resolve-ComposeEnvRawValue `
+                    -EnvironmentValues @{} `
+                    -RawValue $baseCmsConnectionString `
+                    -NameLookup $mssqlCompositionLookup
             }
-            foreach ($entry in $baseValues.GetEnumerator()) {
-                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
+            catch {
+                throw "DMS_CONFIG_DATABASE_CONNECTION_STRING in '$BaseEnvironmentFile' could not be resolved: $($_.Exception.Message)"
             }
+        }
+
+        if (Test-MssqlConnectionStringValue -ConnectionString $resolvedCmsConnectionString) {
 
             # A CMS connection string targeting the reserved dedicated database name is ALSO a
             # separate-topology declaration - content, not provenance, the same doctrine as the
@@ -1018,31 +1070,20 @@ function Resolve-DatabaseEngineEnvironmentFile {
             #   Database=${DMS_CONFIG_DATABASE_NAME:-${MSSQL_DB_NAME}}
             # - an operator form the checked-in .yml fallbacks themselves use - passed the start
             # phase's topology validation and then threw "unsupported environment expression" here, in
-            # the very manual phases the start script's terminal guidance points to. The whole string
-            # is resolved once with full operator, nesting, escape, and ambient-precedence semantics,
-            # then the database segments are read off the already-resolved text.
-            $targetsDedicatedCmsDatabase = $false
-            try {
-                $resolvedCmsConnectionString = Resolve-ComposeEnvRawValue `
-                    -EnvironmentValues $effectiveMssqlValues `
-                    -RawValue $baseCmsConnectionString
-                $candidateDatabaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $resolvedCmsConnectionString)
-                $targetsDedicatedCmsDatabase =
-                    $candidateDatabaseNames.Count -gt 0 -and
-                    @($candidateDatabaseNames | Where-Object {
-                        -not [string]::Equals($_, "edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)
-                    }).Count -eq 0
-            }
-            catch {
-                # Unparseable string or an interpolation error (a ${VAR:?...} form): let the invariant
-                # below produce its canonical diagnostic instead of masking it here.
-                $targetsDedicatedCmsDatabase = $false
-            }
+            # the very manual phases the start script's terminal guidance points to. Both the signal and
+            # the invariant read the database segments off the single already-resolved value above.
+            $candidateDatabaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $resolvedCmsConnectionString)
+            $targetsDedicatedCmsDatabase =
+                $candidateDatabaseNames.Count -gt 0 -and
+                @($candidateDatabaseNames | Where-Object {
+                    -not [string]::Equals($_, "edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)
+                }).Count -eq 0
 
             if (-not $targetsDedicatedCmsDatabase) {
+                $expectedSharedDatabaseName = [string](& $mssqlCompositionLookup 'MSSQL_DB_NAME')
                 Assert-MssqlCmsDatabaseIsShared `
-                    -ConnectionString $baseCmsConnectionString `
-                    -EnvValues $effectiveMssqlValues
+                    -ResolvedConnectionString $resolvedCmsConnectionString `
+                    -ExpectedDatabaseName $expectedSharedDatabaseName
             }
         }
     }
