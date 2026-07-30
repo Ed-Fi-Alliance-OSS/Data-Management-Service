@@ -167,7 +167,7 @@ public class WebApplicationBuilderExtensionsTests
             {
                 Targets =
                 [
-                    new DocumentCacheTargetOptions { TenantKey = "Tenant\r\nName", DataStoreId = 1 },
+                    new DocumentCacheTargetOptions { TenantKey = "TenantName", DataStoreId = 1 },
                     new DocumentCacheTargetOptions { TenantKey = "", DataStoreId = 2 },
                 ],
                 ReadAcceleration = new DocumentCacheReadAccelerationOptions { Enabled = true },

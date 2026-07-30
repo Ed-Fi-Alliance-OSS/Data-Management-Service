@@ -175,6 +175,13 @@ if (invalidConfigurationException is null)
         () => InitializeBackendMappings(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.InitializeDocumentCacheTargets,
+        "Initializing configured DocumentCache target contexts.",
+        "DocumentCache target context initialization completed successfully.",
+        "DocumentCache target context initialization failed. DMS cannot start with failed projection target initialization.",
+        () => InitializeDocumentCacheTargets(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeAuthMetadata,
         "Initializing authentication metadata caches (OIDC warm-up and claim sets).",
         "Authentication metadata initialization completed successfully.",
@@ -356,12 +363,11 @@ async Task InitializeDataStores(WebApplication app)
     {
         await InitializeDataStoresForSingleTenancy(app, dataStoreProvider);
     }
-
-    await InitializeDocumentCacheTargets(app);
 }
 
 async Task InitializeDocumentCacheTargets(WebApplication app)
 {
+    app.Logger.LogInformation("Initializing DocumentCache target registry at startup");
     IDocumentCacheTargetRegistry targetRegistry =
         app.Services.GetRequiredService<IDocumentCacheTargetRegistry>();
     DocumentCacheTargetRegistrySnapshot snapshot = await targetRegistry.RefreshAsync(
