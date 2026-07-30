@@ -64,7 +64,10 @@ public static class WebApplicationBuilderExtensions
             .Configure<ResourceLinksOptions>(
                 webAppBuilder.Configuration.GetSection("DataManagement:ResourceLinks")
             )
-            .AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
+            .AddOptions<DocumentCacheOptions>()
+            .Bind(webAppBuilder.Configuration.GetSection(DocumentCacheOptions.SectionName))
+            .ValidateOnStart()
+            .Services.AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
             .AddSingleton<IStartupProcessExit, EnvironmentStartupProcessExit>()
             .AddSingleton<StartupPhaseExecutor>()
             .AddSingleton<
@@ -76,6 +79,7 @@ public static class WebApplicationBuilderExtensions
                 ConfigurationServiceSettingsValidator
             >()
             .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
+            .AddSingleton<IValidateOptions<DocumentCacheOptions>, DocumentCacheOptionsValidator>()
             .AddSingleton<IValidateOptions<MappingSetProviderOptions>, MappingSetProviderOptionsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())

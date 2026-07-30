@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
@@ -15,8 +16,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
@@ -81,6 +82,110 @@ public class WebApplicationBuilderExtensionsTests
         descriptor.ImplementationType.Should().Be(typeof(RelationalDocumentStoreRepository));
         descriptor.ImplementationFactory.Should().BeNull();
         descriptor.ImplementationInstance.Should().BeNull();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_DocumentCache_Configuration : WebApplicationBuilderExtensionsTests
+    {
+        [Test]
+        public void It_registers_DocumentCacheOptions_with_startup_validation()
+        {
+            IServiceCollection services = CreateServiceCollection("postgresql");
+
+            services
+                .Should()
+                .ContainSingle(descriptor =>
+                    descriptor.ServiceType == typeof(IValidateOptions<DocumentCacheOptions>)
+                    && descriptor.ImplementationType == typeof(DocumentCacheOptionsValidator)
+                );
+            services
+                .Should()
+                .Contain(descriptor =>
+                    descriptor.ServiceType.FullName == "Microsoft.Extensions.Options.IStartupValidator"
+                );
+        }
+
+        [Test]
+        public void It_binds_DocumentCacheOptions_from_DataManagement_DocumentCache()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = "TenantA",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "7",
+                    ["DataManagement:DocumentCache:ReadAcceleration:Enabled"] = "true",
+                    ["DataManagement:DocumentCache:ReadAcceleration:DirectFillTimeout"] = "00:00:00.125",
+                    ["DataManagement:DocumentCache:Projector:PollInterval"] = "00:00:07",
+                    ["DataManagement:DocumentCache:Projector:PageSize"] = "25",
+                    ["DataManagement:DocumentCache:Projector:MaxConcurrentTargets"] = "4",
+                    ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
+                    ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
+                }
+            );
+
+            DocumentCacheOptions options = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value;
+
+            options.Targets.Should().ContainSingle();
+            options.Targets[0].TenantKey.Should().Be("TenantA");
+            options.Targets[0].DataStoreId.Should().Be(7);
+            options.ReadAcceleration.Enabled.Should().BeTrue();
+            options.ReadAcceleration.DirectFillTimeout.Should().Be(TimeSpan.FromMilliseconds(125));
+            options.Projector.PollInterval.Should().Be(TimeSpan.FromSeconds(7));
+            options.Projector.PageSize.Should().Be(25);
+            options.Projector.MaxConcurrentTargets.Should().Be(4);
+            options
+                .Projector.FailureBackoff.Should()
+                .Be(TimeSpan.FromMinutes(1).Add(TimeSpan.FromSeconds(15)));
+            options.Projector.BaselineHighWaterMark.Should().Be(2500);
+        }
+
+        [Test]
+        public void It_fails_options_validation_for_malformed_DocumentCacheOptions()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["DataManagement:DocumentCache:Projector:PageSize"] = "0" }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Contain("Projector:PageSize must be positive.");
+        }
+
+        [Test]
+        public void It_creates_sanitized_startup_diagnostics()
+        {
+            DocumentCacheOptions options = new()
+            {
+                Targets =
+                [
+                    new DocumentCacheTargetOptions { TenantKey = "Tenant\r\nName", DataStoreId = 1 },
+                    new DocumentCacheTargetOptions { TenantKey = "", DataStoreId = 2 },
+                ],
+                ReadAcceleration = new DocumentCacheReadAccelerationOptions { Enabled = true },
+            };
+
+            DocumentCacheStartupDiagnosticSnapshot snapshot = DocumentCacheStartupDiagnostics.CreateSnapshot(
+                options
+            );
+
+            snapshot.TargetCount.Should().Be(2);
+            snapshot.ConfiguredTargets.Should().Equal("TenantName:1", "(default):2");
+            snapshot.ReadAccelerationEnabled.Should().BeTrue();
+            snapshot.DirectFillTimeout.Should().Be(TimeSpan.FromMilliseconds(250));
+            snapshot.PollInterval.Should().Be(TimeSpan.FromSeconds(5));
+            snapshot.PageSize.Should().Be(100);
+            snapshot.MaxConcurrentTargets.Should().Be(2);
+            snapshot.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
+            snapshot.BaselineHighWaterMark.Should().Be(1000);
+        }
     }
 
     [TestFixture]

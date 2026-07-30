@@ -267,6 +267,10 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<MappingSetProviderOptions>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;
+        DocumentCacheOptions documentCacheOptions = app
+            .Services.GetRequiredService<IOptions<DocumentCacheOptions>>()
+            .Value;
+        DocumentCacheStartupDiagnostics.Log(app.Logger, documentCacheOptions);
     }
     catch (OptionsValidationException ex)
     {
