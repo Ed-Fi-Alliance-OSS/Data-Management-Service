@@ -306,6 +306,70 @@ public class DocumentCacheTargetContractTests
 
             createGeneration.Should().Throw<ArgumentOutOfRangeException>();
         }
+
+        [Test]
+        public void It_should_redact_connection_input_string_output_without_blocking_provider_access()
+        {
+            const string sensitiveConnectionInput =
+                "Host=prod-db.example.com;Database=StudentRecords;Username=dms-api;Password=Secret123;";
+            DocumentCacheTargetConnectionInput connectionInput = new(
+                RelationalProviderToken.Postgresql,
+                sensitiveConnectionInput
+            );
+
+            connectionInput.Value.Should().Be(sensitiveConnectionInput);
+
+            string renderedConnectionInput = connectionInput.ToString();
+
+            renderedConnectionInput.Should().Contain(RelationalProviderToken.Postgresql.Value);
+            renderedConnectionInput.Should().Contain("<redacted>");
+            AssertDoesNotContainSensitiveConnectionInput(renderedConnectionInput, sensitiveConnectionInput);
+        }
+
+        [Test]
+        public void It_should_redact_connection_input_when_execution_context_is_rendered()
+        {
+            const string sensitiveConnectionInput =
+                "Host=prod-db.example.com;Database=StudentRecords;Username=dms-api;Password=Secret123;";
+            DocumentCacheTargetConnectionInput connectionInput = new(
+                RelationalProviderToken.Postgresql,
+                sensitiveConnectionInput
+            );
+            DocumentCacheTargetExecutionContext executionContext = new(
+                TargetKey,
+                Generation(4),
+                EffectiveSettings,
+                new DocumentCacheTargetDataStoreMetadata(7, "Operational"),
+                connectionInput,
+                Fingerprint,
+                TrackingLifecycle,
+                SatisfiedInventory,
+                SatisfiedEnqueueTrigger,
+                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+            );
+
+            string renderedExecutionContext = executionContext.ToString();
+
+            renderedExecutionContext.Should().Contain(RelationalProviderToken.Postgresql.Value);
+            renderedExecutionContext.Should().Contain("<redacted>");
+            AssertDoesNotContainSensitiveConnectionInput(renderedExecutionContext, sensitiveConnectionInput);
+        }
+
+        private static void AssertDoesNotContainSensitiveConnectionInput(
+            string renderedText,
+            string sensitiveConnectionInput
+        )
+        {
+            renderedText.Should().NotContain(sensitiveConnectionInput);
+            renderedText.Should().NotContain("prod-db.example.com");
+            renderedText.Should().NotContain("StudentRecords");
+            renderedText.Should().NotContain("dms-api");
+            renderedText.Should().NotContain("Secret123");
+            renderedText.Should().NotContain("Host=");
+            renderedText.Should().NotContain("Database=");
+            renderedText.Should().NotContain("Username=");
+            renderedText.Should().NotContain("Password=");
+        }
     }
 
     [TestFixture]

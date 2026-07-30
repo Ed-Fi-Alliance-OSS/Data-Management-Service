@@ -27,6 +27,9 @@ public sealed record DocumentCacheTargetConnectionInput
     public RelationalProviderToken ProviderToken { get; }
 
     public string Value { get; }
+
+    public override string ToString() =>
+        $"{nameof(DocumentCacheTargetConnectionInput)} {{ ProviderToken = {ProviderToken}, Value = <redacted> }}";
 }
 
 public sealed record DocumentCacheTargetDataStoreMetadata(long Id, string DataStoreType);
