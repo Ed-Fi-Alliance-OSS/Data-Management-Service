@@ -126,7 +126,7 @@ internal static class DocumentCacheLifecycleReaderSupport
         if (
             lifecycleText is null
             || cacheAheadRecoveryRequired is null
-            || !Enum.TryParse(lifecycleText, ignoreCase: false, out DocumentCacheLifecycleState lifecycle)
+            || !TryParseLifecycle(lifecycleText, out DocumentCacheLifecycleState lifecycle)
         )
         {
             return DocumentCacheLifecycleReadResult.Failure(
@@ -138,6 +138,28 @@ internal static class DocumentCacheLifecycleReaderSupport
         return DocumentCacheLifecycleReadResult.Success(
             new DocumentCacheLifecycleObservation(lifecycle, cacheAheadRecoveryRequired.Value)
         );
+    }
+
+    private static bool TryParseLifecycle(string lifecycleText, out DocumentCacheLifecycleState lifecycle)
+    {
+        switch (lifecycleText)
+        {
+            case nameof(DocumentCacheLifecycleState.Disabled):
+                lifecycle = DocumentCacheLifecycleState.Disabled;
+                return true;
+            case nameof(DocumentCacheLifecycleState.Resetting):
+                lifecycle = DocumentCacheLifecycleState.Resetting;
+                return true;
+            case nameof(DocumentCacheLifecycleState.Rebuilding):
+                lifecycle = DocumentCacheLifecycleState.Rebuilding;
+                return true;
+            case nameof(DocumentCacheLifecycleState.Tracking):
+                lifecycle = DocumentCacheLifecycleState.Tracking;
+                return true;
+            default:
+                lifecycle = default;
+                return false;
+        }
     }
 
     private static async Task<bool> TableExistsAsync(
