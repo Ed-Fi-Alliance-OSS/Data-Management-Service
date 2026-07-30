@@ -159,3 +159,9 @@
 - Key decisions: compare selected resource, physical schema, storage kind, root table, ordered table inventory, and column shape; keep failure as ReadPlanMetadataMismatch and avoid startup/all-resource validation.
 - Files changed: DocumentCacheSourceMetadataReader.cs; DocumentCacheSourceMetadataReaderTests.cs; tasks.json; progress.txt.
 - Verified focused DocumentCacheSourceMetadata unit filter and CSharpier. Next: all tasks complete.
+
+2026-07-30 - Completed target-context correction task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Moved provider-bound materialization connection metadata onto DocumentCacheMaterializationTargetContext construction and removed provider adapter IDataStoreProvider resolution.
+- Key decisions: provider adapters require already-bound target data store and return same request; target replacement after context creation cannot redirect in-flight operations; ambient test data store remains only for explicit harness paths.
+- Files changed: DocumentCacheMaterializerContracts.cs; PostgresqlDocumentCacheMaterializationDataStore.cs; MssqlDocumentCacheMaterializationDataStore.cs; provider data-store unit tests; tasks.json; progress.txt.
+- Verified required target-context/data-store unit filter, provider DI unit filter, provider adapter GetById scan, and CSharpier. Next: all tasks complete.

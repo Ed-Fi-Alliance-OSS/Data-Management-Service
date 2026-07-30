@@ -69,10 +69,11 @@ internal sealed record DocumentCacheMaterializationTargetDataStore
 
 /// <summary>
 /// Resolved target inputs consumed by one materialization call. The materializer uses the supplied
-/// mapping set but does not resolve, validate, or refresh <c>DocumentCache:Targets</c>, re-read
-/// <c>dms.EffectiveSchema</c>, or revalidate <c>dms.ResourceKey</c> seed compatibility per document.
-/// Provider adapters bind database access to <see cref="TargetKey" /> for background projector and
-/// direct-fill contexts that do not have ambient HTTP request data-store selection.
+/// mapping set and target data-store connection metadata but does not resolve, validate, or refresh
+/// <c>DocumentCache:Targets</c>, re-read <c>dms.EffectiveSchema</c>, or revalidate
+/// <c>dms.ResourceKey</c> seed compatibility per document. Provider adapters use the bound target
+/// data-store metadata for background projector and direct-fill contexts that do not have ambient HTTP
+/// request data-store selection.
 /// </summary>
 public sealed record DocumentCacheMaterializationTargetContext
 {
@@ -82,6 +83,19 @@ public sealed record DocumentCacheMaterializationTargetContext
         DocumentCacheMaterializationTargetValidation targetValidation
     )
         : this(targetKey, mappingSet, targetValidation, targetDataStore: null) { }
+
+    public DocumentCacheMaterializationTargetContext(
+        DocumentCacheProjectionTargetKey targetKey,
+        MappingSet mappingSet,
+        DocumentCacheMaterializationTargetValidation targetValidation,
+        string targetConnectionString
+    )
+    {
+        TargetKey = targetKey ?? throw new ArgumentNullException(nameof(targetKey));
+        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        TargetValidation = RequireValidated(targetValidation, nameof(targetValidation));
+        TargetDataStore = new DocumentCacheMaterializationTargetDataStore(targetConnectionString);
+    }
 
     private DocumentCacheMaterializationTargetContext(
         DocumentCacheProjectionTargetKey targetKey,

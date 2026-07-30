@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -16,23 +15,19 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 
 internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCacheMaterializationDataStore
 {
-    private readonly IDataStoreProvider _dataStoreProvider;
     private readonly Func<string, DbConnection> _createConnection;
     private readonly ILogger<MssqlDocumentCacheMaterializationDataStore> _logger;
 
     public MssqlDocumentCacheMaterializationDataStore(
-        IDataStoreProvider dataStoreProvider,
         ILogger<MssqlDocumentCacheMaterializationDataStore> logger
     )
-        : this(dataStoreProvider, connectionString => new SqlConnection(connectionString), logger) { }
+        : this(connectionString => new SqlConnection(connectionString), logger) { }
 
     internal MssqlDocumentCacheMaterializationDataStore(
-        IDataStoreProvider dataStoreProvider,
         Func<string, DbConnection> createConnection,
         ILogger<MssqlDocumentCacheMaterializationDataStore> logger
     )
     {
-        _dataStoreProvider = dataStoreProvider ?? throw new ArgumentNullException(nameof(dataStoreProvider));
         _createConnection = createConnection ?? throw new ArgumentNullException(nameof(createConnection));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -43,15 +38,8 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
         DocumentCacheMaterializationRequest request
     )
     {
-        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
-
-        var dataStore = ResolveTargetDataStore(request);
-
-        return request.WithTargetContext(
-            request.TargetContext.WithTargetDataStore(
-                new DocumentCacheMaterializationTargetDataStore(dataStore.ConnectionString!)
-            )
-        );
+        DocumentCacheMaterializationDataStoreGuards.RequireBoundTargetDataStore(request, Dialect);
+        return request;
     }
 
     public async Task<TResult> ExecuteReaderAsync<TResult>(
@@ -126,36 +114,6 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
 
         return connection;
     }
-
-    private DataStore ResolveTargetDataStore(DocumentCacheMaterializationRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        var targetKey = request.TargetContext.TargetKey;
-        var dataStore = _dataStoreProvider.GetById(
-            targetKey.DataStoreId.Value,
-            NormalizeTenantKey(targetKey.TenantKey)
-        );
-
-        if (dataStore is null)
-        {
-            throw new InvalidOperationException(
-                $"DocumentCache materialization target data store '{targetKey}' was not found."
-            );
-        }
-
-        if (string.IsNullOrWhiteSpace(dataStore.ConnectionString))
-        {
-            throw new InvalidOperationException(
-                $"DocumentCache materialization target data store '{targetKey}' does not have a valid connection string."
-            );
-        }
-
-        return dataStore;
-    }
-
-    private static string? NormalizeTenantKey(string tenantKey) =>
-        string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
 
     private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
     {

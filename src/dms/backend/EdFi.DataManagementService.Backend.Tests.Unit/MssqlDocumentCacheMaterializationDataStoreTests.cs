@@ -7,9 +7,7 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
-using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -24,11 +22,9 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
     public async Task It_opens_connections_from_the_materialization_target_key_data_store()
     {
         const string targetConnectionString = "Server=target;Database=dms;TrustServerCertificate=true";
-        var dataStoreProvider = A.Fake<IDataStoreProvider>();
         var connection = new RecordingDbConnection(new RecordingDbCommand(CreateReader()));
         string? capturedConnectionString = null;
         var sut = new MssqlDocumentCacheMaterializationDataStore(
-            dataStoreProvider,
             connectionString =>
             {
                 capturedConnectionString = connectionString;
@@ -37,18 +33,9 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
             NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
         );
 
-        A.CallTo(() => dataStoreProvider.GetById(7, "tenant-a"))
-            .Returns(
-                new DataStore(
-                    Id: 7,
-                    DataStoreType: "test",
-                    Name: "target",
-                    ConnectionString: targetConnectionString,
-                    RouteContext: []
-                )
-            );
-
-        var request = sut.BindToTargetDataStore(CreateRequest());
+        var request = sut.BindToTargetDataStore(
+            CreateRequest(targetConnectionString: targetConnectionString)
+        );
 
         var result = await sut.ExecuteReaderAsync(
             request,
@@ -64,8 +51,6 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
         capturedConnectionString.Should().Be(targetConnectionString);
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.Command.CommandText.Should().Be("select [Value] from [dms].[TargetProbe]");
-        A.CallTo(() => dataStoreProvider.GetById(7, "tenant-a")).MustHaveHappenedOnceExactly();
-        A.CallTo(() => dataStoreProvider.GetById(8, A<string?>._)).MustNotHaveHappened();
     }
 
     [Test]
@@ -74,15 +59,13 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
         const string initialConnectionString = "Server=initial;Database=dms;TrustServerCertificate=true";
         const string replacementConnectionString =
             "Server=replacement;Database=dms;TrustServerCertificate=true";
-        var dataStoreProvider = A.Fake<IDataStoreProvider>();
         var connections = new Queue<RecordingDbConnection>([
             new RecordingDbConnection(new RecordingDbCommand(CreateReader())),
             new RecordingDbConnection(new RecordingDbCommand(CreateReader())),
         ]);
         List<string> capturedConnectionStrings = [];
-        var providerCallCount = 0;
+        var selectedTargetConnectionString = initialConnectionString;
         var sut = new MssqlDocumentCacheMaterializationDataStore(
-            dataStoreProvider,
             connectionString =>
             {
                 capturedConnectionStrings.Add(connectionString);
@@ -91,22 +74,10 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
             NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
         );
 
-        A.CallTo(() => dataStoreProvider.GetById(7, "tenant-a"))
-            .ReturnsLazily(() =>
-            {
-                var connectionString =
-                    providerCallCount++ == 0 ? initialConnectionString : replacementConnectionString;
-
-                return new DataStore(
-                    Id: 7,
-                    DataStoreType: "test",
-                    Name: "target",
-                    ConnectionString: connectionString,
-                    RouteContext: []
-                );
-            });
-
-        var request = sut.BindToTargetDataStore(CreateRequest());
+        var request = sut.BindToTargetDataStore(
+            CreateRequest(targetConnectionString: selectedTargetConnectionString)
+        );
+        selectedTargetConnectionString = replacementConnectionString;
 
         await sut.ExecuteReaderAsync(
             request,
@@ -132,33 +103,51 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
             .Be(new DocumentCacheMaterializationTargetDataStore(initialConnectionString));
         capturedConnectionStrings.Should().Equal(initialConnectionString, initialConnectionString);
         connections.Should().BeEmpty();
-        providerCallCount.Should().Be(1);
-        A.CallTo(() => dataStoreProvider.GetById(7, "tenant-a")).MustHaveHappenedOnceExactly();
+        selectedTargetConnectionString.Should().Be(replacementConnectionString);
     }
 
     [Test]
-    public async Task It_rejects_mapping_sets_not_selected_for_the_mssql_target_before_resolving_the_data_store()
+    public async Task It_rejects_unbound_target_data_store_contexts()
     {
-        var dataStoreProvider = A.Fake<IDataStoreProvider>();
         var sut = new MssqlDocumentCacheMaterializationDataStore(
-            dataStoreProvider,
             _ => throw new AssertionException("Connection factory should not be called."),
             NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
         );
 
         Func<Task> act = () =>
             sut.ExecuteReaderAsync(
-                CreateRequest(SqlDialect.Pgsql),
+                CreateRequest(),
+                new RelationalCommand("select [Value] from [dms].[TargetProbe]"),
+                (_, _) => Task.FromResult(42)
+            );
+
+        var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Subject.Single();
+        exception.Message.Should().Contain("target data store").And.Contain("bound once");
+    }
+
+    [Test]
+    public async Task It_rejects_mapping_sets_not_selected_for_the_mssql_target()
+    {
+        var sut = new MssqlDocumentCacheMaterializationDataStore(
+            _ => throw new AssertionException("Connection factory should not be called."),
+            NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
+        );
+
+        Func<Task> act = () =>
+            sut.ExecuteReaderAsync(
+                CreateRequest(SqlDialect.Pgsql, targetConnectionString: "Server=target"),
                 new RelationalCommand("select [Value] from [dms].[TargetProbe]"),
                 (_, _) => Task.FromResult(42)
             );
 
         var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Subject.Single();
         exception.Message.Should().Contain("target context dialect").And.Contain("ResourceKey seed");
-        A.CallTo(() => dataStoreProvider.GetById(A<long>._, A<string?>._)).MustNotHaveHappened();
     }
 
-    private static DocumentCacheMaterializationRequest CreateRequest(SqlDialect dialect = SqlDialect.Mssql)
+    private static DocumentCacheMaterializationRequest CreateRequest(
+        SqlDialect dialect = SqlDialect.Mssql,
+        string? targetConnectionString = null
+    )
     {
         var mappingSet = RelationalAccessTestData.CreateMappingSet(
             new QualifiedResourceName("Ed-Fi", "TargetProbe")
@@ -166,13 +155,22 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
         {
             Key = new MappingSetKey("test-hash", dialect, "v1"),
         };
-
-        return new DocumentCacheMaterializationRequest(
-            new DocumentCacheMaterializationTargetContext(
-                new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
+        var targetKey = new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7));
+        var targetContext = targetConnectionString is null
+            ? new DocumentCacheMaterializationTargetContext(
+                targetKey,
                 mappingSet,
                 DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
-            ),
+            )
+            : new DocumentCacheMaterializationTargetContext(
+                targetKey,
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+                targetConnectionString
+            );
+
+        return new DocumentCacheMaterializationRequest(
+            targetContext,
             documentId: 123L,
             selectedRequiredContentVersion: null,
             DocumentCacheMaterializationPurpose.Fixture,

@@ -8,20 +8,16 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
 internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
-    IDataStoreProvider dataStoreProvider,
     NpgsqlDataSourceCache dataSourceCache,
     ILogger<PostgresqlDocumentCacheMaterializationDataStore> logger
 ) : IDocumentCacheMaterializationDataStore
 {
-    private readonly IDataStoreProvider _dataStoreProvider =
-        dataStoreProvider ?? throw new ArgumentNullException(nameof(dataStoreProvider));
     private readonly NpgsqlDataSourceCache _dataSourceCache =
         dataSourceCache ?? throw new ArgumentNullException(nameof(dataSourceCache));
     private readonly ILogger<PostgresqlDocumentCacheMaterializationDataStore> _logger =
@@ -33,15 +29,8 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
         DocumentCacheMaterializationRequest request
     )
     {
-        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
-
-        var dataStore = ResolveTargetDataStore(request);
-
-        return request.WithTargetContext(
-            request.TargetContext.WithTargetDataStore(
-                new DocumentCacheMaterializationTargetDataStore(dataStore.ConnectionString!)
-            )
-        );
+        DocumentCacheMaterializationDataStoreGuards.RequireBoundTargetDataStore(request, Dialect);
+        return request;
     }
 
     public async Task<TResult> ExecuteReaderAsync<TResult>(
@@ -114,36 +103,6 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
 
         return await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
-
-    private DataStore ResolveTargetDataStore(DocumentCacheMaterializationRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        var targetKey = request.TargetContext.TargetKey;
-        var dataStore = _dataStoreProvider.GetById(
-            targetKey.DataStoreId.Value,
-            NormalizeTenantKey(targetKey.TenantKey)
-        );
-
-        if (dataStore is null)
-        {
-            throw new InvalidOperationException(
-                $"DocumentCache materialization target data store '{targetKey}' was not found."
-            );
-        }
-
-        if (string.IsNullOrWhiteSpace(dataStore.ConnectionString))
-        {
-            throw new InvalidOperationException(
-                $"DocumentCache materialization target data store '{targetKey}' does not have a valid connection string."
-            );
-        }
-
-        return dataStore;
-    }
-
-    private static string? NormalizeTenantKey(string tenantKey) =>
-        string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
 
     private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
     {
