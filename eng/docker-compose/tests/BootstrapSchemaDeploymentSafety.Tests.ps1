@@ -3538,6 +3538,55 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabas
             }
         }
 
+        It "configure-local-data-store.ps1 accepts an operator-shaped dedicated-database expression" {
+            # The start phase accepted this shape and this phase then threw "unsupported environment
+            # expression", because the two resolved the database segment with different grammars. The
+            # ${A:-${B}} form is the one the checked-in .yml fallbacks themselves use.
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @([pscustomobject]@{ id = 95; name = "Existing"; dataStoreContexts = @() })
+            }
+
+            $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName '${CMS_DB_OVERRIDE_XYZ:-edfi_configurationservice}'
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore
+
+            $result.SelectedDataStoreIds | Should -Be @([long]95) -Because "the phase must run to completion, not merely avoid the specific rejection"
+        }
+
+        It "provision-dms-schema.ps1 accepts an operator-shaped dedicated-database expression" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "operator-shaped-schema-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 96
+                            name = "OperatorShaped"
+                            connectionString = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName '${CMS_DB_OVERRIDE_XYZ:-edfi_configurationservice}'
+
+                { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(96) -DatabaseEngine mssql } |
+                    Should -Not -Throw
+
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "configure-local-data-store.ps1 accepts the caller-authored file targeting the dedicated CMS database" {
             . $script:repo.ConfigureScript
 
