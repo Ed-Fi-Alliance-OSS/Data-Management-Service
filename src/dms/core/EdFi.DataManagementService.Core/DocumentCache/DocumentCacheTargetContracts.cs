@@ -68,6 +68,7 @@ public enum DocumentCacheProviderPrerequisiteName
 public enum DocumentCacheTargetDiagnosticCategory
 {
     TargetConfigured,
+    TargetNotConfigured,
     TargetUnresolved,
     ProviderMetadataMissing,
     ProviderMetadataUnknown,
@@ -81,6 +82,10 @@ public enum DocumentCacheTargetDiagnosticCategory
     LifecycleObservationFailure,
     TransientCmsRefreshFailure,
     TargetReplaced,
+    LifecycleMismatch,
+    ResettingRequiresExplicitOperatorRecovery,
+    CacheAheadLatchSet,
+    NonemptyGuardedActivationState,
     DownstreamPublicationHistoryPresentOrUnknown,
     ExpectedSourceMismatch,
     UnexpectedProviderFailure,

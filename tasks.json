@@ -221,7 +221,7 @@
       "rg -n \"pg_advisory_lock|sp_getapplock|TABLOCKX|LOCK TABLE|TRUNCATE|DELETE FROM .*DocumentCache|Disabled -> Tracking\" src/dms | rg \"DocumentCache|Projection\"",
       "dotnet csharpier format src/dms/core"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",
