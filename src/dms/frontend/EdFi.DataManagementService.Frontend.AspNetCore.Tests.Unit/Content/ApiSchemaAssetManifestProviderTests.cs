@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
@@ -26,6 +27,11 @@ public class Given_a_valid_manifest_workspace
     {
         _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_workspaceRoot);
+
+        // The provider canonicalizes symbolic links, and macOS exposes TMPDIR under /var, itself a
+        // symlink to /private/var. Canonicalize the fixture root so resolved-path expectations are
+        // not comparing a pre-resolution path against a post-resolution one.
+        _workspaceRoot = new ApiSchemaWorkspacePathResolver(_workspaceRoot).CanonicalWorkspaceRoot;
 
         var manifestJson = """
             {
@@ -819,6 +825,11 @@ public class Given_path_validation_in_manifest_provider
     {
         _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_workspaceRoot);
+
+        // The provider canonicalizes symbolic links, and macOS exposes TMPDIR under /var, itself a
+        // symlink to /private/var. Canonicalize the fixture root so resolved-path expectations are
+        // not comparing a pre-resolution path against a post-resolution one.
+        _workspaceRoot = new ApiSchemaWorkspacePathResolver(_workspaceRoot).CanonicalWorkspaceRoot;
 
         var manifestJson = """
             {
