@@ -245,6 +245,39 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_rejects_a_uuid_validation_function_with_expected_tokens_only_in_comments()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE OR REPLACE FUNCTION "dms"."TF_DocumentCache_ValidateDocumentUuid"()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $func$
+            BEGIN
+                -- _canonical_document_uuid
+                -- dms.Document
+                -- DocumentUuid
+                -- NEW.DocumentId
+                -- NEW.DocumentUuid
+                -- <>
+                -- RAISE EXCEPTION
+                -- RETURN NEW
+                PERFORM 1;
+            END;
+            $func$;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+    }
+
+    [Test]
     public async Task It_rejects_an_enqueue_trigger_bound_to_a_wrong_schema_function()
     {
         await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
@@ -308,6 +341,55 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
             AS $func$
             BEGIN
                 RETURN NULL;
+            END;
+            $func$;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+    }
+
+    [TestCaseSource(nameof(PostgresqlEnqueueFunctionCommentOnlyMutations))]
+    public async Task It_rejects_enqueue_functions_with_expected_tokens_only_in_comments(
+        string functionName,
+        string functionSpecificTokens
+    )
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $$"""
+            CREATE OR REPLACE FUNCTION "dms"."{{functionName}}"()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $func$
+            BEGIN
+                /*
+                    SECURITY DEFINER
+                    DocumentCacheState
+                    ProjectionLifecycleState
+                    StateId = 1
+                    'Disabled'
+                    'Resetting'
+                    'Rebuilding'
+                    'Tracking'
+                    statement_timestamp
+                    DocumentProjectionWork
+                    RequiredContentVersion
+                    FirstEnqueuedAt
+                    LastEnqueuedAt
+                    ON CONFLICT
+                    DO UPDATE
+                    work.RequiredContentVersion < EXCLUDED.RequiredContentVersion
+                    RETURN NULL
+                    {{functionSpecificTokens}}
+                */
+                PERFORM 1;
             END;
             $func$;
             """
@@ -525,6 +607,25 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
             EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"();
             """
         ).SetName("It_rejects_update_enqueue_trigger_with_wrong_transition_aliases");
+    }
+
+    private static IEnumerable<TestCaseData> PostgresqlEnqueueFunctionCommentOnlyMutations()
+    {
+        yield return new TestCaseData(
+            "TF_Document_EnqueueProjectionInsert",
+            """
+            FROM new_rows
+            """
+        ).SetName("It_rejects_insert_enqueue_function_with_expected_tokens_only_in_comments");
+
+        yield return new TestCaseData(
+            "TF_Document_EnqueueProjectionUpdate",
+            """
+            NEW_ROWS
+            OLD_ROWS
+            <>
+            """
+        ).SetName("It_rejects_update_enqueue_function_with_expected_tokens_only_in_comments");
     }
 
     private static IEnumerable<TestCaseData> PermissivePostgresqlCriticalCheckConstraintMutations()

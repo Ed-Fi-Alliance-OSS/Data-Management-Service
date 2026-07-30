@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -1947,7 +1948,8 @@ internal static class DocumentCacheInventoryValidatorSupport
         );
 
     private static bool HasNormalizedTokens(string? definition, params string[] tokens) =>
-        !string.IsNullOrWhiteSpace(definition) && ContainsAll(NormalizeDefinition(definition), tokens);
+        !string.IsNullOrWhiteSpace(definition)
+        && ContainsAll(NormalizeDefinition(StripSqlComments(definition)), tokens);
 
     private static bool ContainsAll(string value, params string[] tokens) =>
         Array.TrueForAll(tokens, token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
@@ -2009,6 +2011,144 @@ internal static class DocumentCacheInventoryValidatorSupport
                 .Select(char.ToUpperInvariant)
                 .ToArray()
         );
+
+    private static string StripSqlComments(string definition)
+    {
+        var uncommented = new StringBuilder(definition.Length);
+
+        bool inSingleQuotedString = false;
+        bool inDoubleQuotedIdentifier = false;
+        bool inBracketedIdentifier = false;
+        int blockCommentDepth = 0;
+
+        int index = 0;
+        while (index < definition.Length)
+        {
+            char character = definition[index];
+            char? nextCharacter = index + 1 < definition.Length ? definition[index + 1] : null;
+
+            if (blockCommentDepth > 0)
+            {
+                if (character == '/' && nextCharacter == '*')
+                {
+                    blockCommentDepth++;
+                    index += 2;
+                    continue;
+                }
+
+                if (character == '*' && nextCharacter == '/')
+                {
+                    blockCommentDepth--;
+                    index += 2;
+                    continue;
+                }
+
+                if (character is '\r' or '\n')
+                {
+                    uncommented.Append(character);
+                }
+
+                index++;
+                continue;
+            }
+
+            if (inSingleQuotedString)
+            {
+                uncommented.Append(character);
+
+                if (character == '\'' && nextCharacter == '\'')
+                {
+                    uncommented.Append(nextCharacter.Value);
+                    index += 2;
+                    continue;
+                }
+
+                if (character == '\'')
+                {
+                    inSingleQuotedString = false;
+                }
+
+                index++;
+                continue;
+            }
+
+            if (inDoubleQuotedIdentifier)
+            {
+                uncommented.Append(character);
+
+                if (character == '"' && nextCharacter == '"')
+                {
+                    uncommented.Append(nextCharacter.Value);
+                    index += 2;
+                    continue;
+                }
+
+                if (character == '"')
+                {
+                    inDoubleQuotedIdentifier = false;
+                }
+
+                index++;
+                continue;
+            }
+
+            if (inBracketedIdentifier)
+            {
+                uncommented.Append(character);
+
+                if (character == ']' && nextCharacter == ']')
+                {
+                    uncommented.Append(nextCharacter.Value);
+                    index += 2;
+                    continue;
+                }
+
+                if (character == ']')
+                {
+                    inBracketedIdentifier = false;
+                }
+
+                index++;
+                continue;
+            }
+
+            if (character == '-' && nextCharacter == '-')
+            {
+                index += 2;
+                while (index < definition.Length && definition[index] is not '\r' and not '\n')
+                {
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (character == '/' && nextCharacter == '*')
+            {
+                blockCommentDepth++;
+                index += 2;
+                continue;
+            }
+
+            if (character == '\'')
+            {
+                inSingleQuotedString = true;
+            }
+            else if (character == '"')
+            {
+                inDoubleQuotedIdentifier = true;
+            }
+            else if (character == '[')
+            {
+                inBracketedIdentifier = true;
+            }
+
+            uncommented.Append(character);
+            index++;
+        }
+
+        return uncommented.ToString();
+    }
 
     private static string Display(DbTableName table) => $"{table.Schema.Value}.{table.Name}";
 

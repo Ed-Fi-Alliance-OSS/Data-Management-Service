@@ -161,6 +161,37 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
     }
 
+    [Test]
+    public async Task It_rejects_a_uuid_validation_trigger_with_expected_tokens_only_in_comments()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]
+            ON [dms].[DocumentCache]
+            AFTER INSERT, UPDATE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                -- INSERTED
+                -- dms.Document
+                -- DocumentId
+                -- DocumentUuid
+                -- <>
+                -- THROW
+                RETURN;
+            END;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+    }
+
     [TestCaseSource(nameof(InvalidMssqlAfterInsertUpdateTriggerShapes))]
     public async Task It_rejects_same_named_uuid_validation_triggers_with_invalid_sqlserver_shape(
         string timingAndEvents
@@ -209,6 +240,51 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             AS
             BEGIN
                 SET NOCOUNT ON;
+                RETURN;
+            END;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+    }
+
+    [Test]
+    public async Task It_rejects_an_enqueue_trigger_with_expected_tokens_only_in_comments()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]
+            ON [dms].[Document]
+            AFTER INSERT, UPDATE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                /*
+                    DocumentCacheState
+                    ProjectionLifecycleState
+                    StateId = 1
+                    'Disabled'
+                    'Resetting'
+                    'Rebuilding'
+                    'Tracking'
+                    inserted
+                    deleted
+                    MAX
+                    GROUP BY i.DocumentId
+                    dms.DocumentProjectionWork
+                    UPDATE work
+                    SET work.RequiredContentVersion = req.RequiredContentVersion
+                    work.RequiredContentVersion < req.RequiredContentVersion
+                    INSERT INTO dms.DocumentProjectionWork
+                    LEFT JOIN dms.DocumentProjectionWork
+                */
                 RETURN;
             END;
             """
