@@ -363,6 +363,20 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
     }
 
+    [TestCaseSource(nameof(PermissivePostgresqlCriticalCheckConstraintMutations))]
+    public async Task It_rejects_permissive_same_named_critical_check_constraints(string mutationSql)
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutationSql);
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [Test]
     public async Task It_rejects_a_wrong_work_paging_index_column_order()
     {
@@ -511,6 +525,53 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
             EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"();
             """
         ).SetName("It_rejects_update_enqueue_trigger_with_wrong_transition_aliases");
+    }
+
+    private static IEnumerable<TestCaseData> PermissivePostgresqlCriticalCheckConstraintMutations()
+    {
+        yield return new TestCaseData(
+            """
+            ALTER TABLE "dms"."DocumentCache"
+            DROP CONSTRAINT "CK_DocumentCache_JsonObject";
+
+            ALTER TABLE "dms"."DocumentCache"
+            ADD CONSTRAINT "CK_DocumentCache_JsonObject"
+            CHECK (jsonb_typeof("DocumentJson") IN ('object', 'array'));
+            """
+        ).SetName("It_rejects_postgresql_documentcache_json_object_check_that_allows_arrays");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE "dms"."DataStoreIdentity"
+            DROP CONSTRAINT "CK_DataStoreIdentity_Singleton";
+
+            ALTER TABLE "dms"."DataStoreIdentity"
+            ADD CONSTRAINT "CK_DataStoreIdentity_Singleton"
+            CHECK ("DataStoreIdentitySingletonId" IN (1, 2));
+            """
+        ).SetName("It_rejects_postgresql_datastoreidentity_singleton_check_that_allows_id_2");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE "dms"."DocumentCacheState"
+            DROP CONSTRAINT "CK_DocumentCacheState_Singleton";
+
+            ALTER TABLE "dms"."DocumentCacheState"
+            ADD CONSTRAINT "CK_DocumentCacheState_Singleton"
+            CHECK ("StateId" IN (1, 2));
+            """
+        ).SetName("It_rejects_postgresql_documentcachestate_singleton_check_that_allows_id_2");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE "dms"."DocumentCacheState"
+            DROP CONSTRAINT "CK_DocumentCacheState_Lifecycle";
+
+            ALTER TABLE "dms"."DocumentCacheState"
+            ADD CONSTRAINT "CK_DocumentCacheState_Lifecycle"
+            CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking', 'Paused'));
+            """
+        ).SetName("It_rejects_postgresql_lifecycle_check_that_allows_extra_state");
     }
 
     private Task<PostgresqlGeneratedDdlTestDatabase> CreateDatabaseAsync() =>

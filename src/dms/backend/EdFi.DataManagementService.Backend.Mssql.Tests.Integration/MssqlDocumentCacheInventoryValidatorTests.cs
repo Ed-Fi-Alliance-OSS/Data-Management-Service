@@ -311,6 +311,20 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
     }
 
+    [TestCaseSource(nameof(PermissiveMssqlCriticalCheckConstraintMutations))]
+    public async Task It_rejects_permissive_same_named_critical_check_constraints(string mutationSql)
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutationSql);
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [Test]
     public async Task It_rejects_a_wrong_work_paging_index_column_order()
     {
@@ -444,6 +458,57 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         yield return new TestCaseData("AFTER INSERT, UPDATE, DELETE").SetName(
             "It_rejects_sqlserver_trigger_with_delete_event"
         );
+    }
+
+    private static IEnumerable<TestCaseData> PermissiveMssqlCriticalCheckConstraintMutations()
+    {
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[DocumentCache]
+            DROP CONSTRAINT [CK_DocumentCache_IsJsonObject];
+
+            ALTER TABLE [dms].[DocumentCache]
+            ADD CONSTRAINT [CK_DocumentCache_IsJsonObject]
+            CHECK (ISJSON([DocumentJson]) = 1 AND LEFT(LTRIM([DocumentJson]), 1) IN ('{', '['));
+            """
+        ).SetName("It_rejects_sqlserver_documentcache_json_object_check_that_allows_arrays");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[DataStoreIdentity]
+            DROP CONSTRAINT [CK_DataStoreIdentity_Singleton];
+
+            ALTER TABLE [dms].[DataStoreIdentity]
+            ADD CONSTRAINT [CK_DataStoreIdentity_Singleton]
+            CHECK ([DataStoreIdentitySingletonId] IN (1, 2));
+            """
+        ).SetName("It_rejects_sqlserver_datastoreidentity_singleton_check_that_allows_id_2");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[DocumentCacheState]
+            DROP CONSTRAINT [CK_DocumentCacheState_Singleton];
+
+            ALTER TABLE [dms].[DocumentCacheState]
+            ADD CONSTRAINT [CK_DocumentCacheState_Singleton]
+            CHECK ([StateId] IN (1, 2));
+            """
+        ).SetName("It_rejects_sqlserver_documentcachestate_singleton_check_that_allows_id_2");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[DocumentCacheState]
+            DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+
+            ALTER TABLE [dms].[DocumentCacheState]
+            ADD CONSTRAINT [CK_DocumentCacheState_Lifecycle]
+            CHECK (([ProjectionLifecycleState] = 'Disabled' AND DATALENGTH([ProjectionLifecycleState]) = 8)
+                OR ([ProjectionLifecycleState] = 'Resetting' AND DATALENGTH([ProjectionLifecycleState]) = 9)
+                OR ([ProjectionLifecycleState] = 'Rebuilding' AND DATALENGTH([ProjectionLifecycleState]) = 10)
+                OR ([ProjectionLifecycleState] = 'Tracking' AND DATALENGTH([ProjectionLifecycleState]) = 8)
+                OR ([ProjectionLifecycleState] = 'Paused' AND DATALENGTH([ProjectionLifecycleState]) = 6));
+            """
+        ).SetName("It_rejects_sqlserver_lifecycle_check_that_allows_extra_state");
     }
 
     private Task<MssqlGeneratedDdlTestDatabase> CreateDatabaseAsync() =>

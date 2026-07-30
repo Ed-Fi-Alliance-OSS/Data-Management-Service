@@ -30,6 +30,15 @@ internal static class DocumentCacheInventoryValidatorSupport
         RelationalProviderToken.SqlServer
     );
 
+    private const string PgsqlDocumentCacheJsonObjectCheckExpression =
+        "JSONB_TYPEOFDOCUMENTJSON='OBJECT'TEXT";
+    private const string MssqlDocumentCacheJsonObjectCheckExpression =
+        "ISJSONDOCUMENTJSON=1ANDLEFTLTRIMDOCUMENTJSON1='{'";
+    private const string PgsqlDocumentCacheStateLifecycleCheckExpression =
+        "PROJECTIONLIFECYCLESTATETEXT=ANYARRAY'DISABLED'CHARACTERVARYING'RESETTING'CHARACTERVARYING'REBUILDING'CHARACTERVARYING'TRACKING'CHARACTERVARYINGTEXT";
+    private const string MssqlDocumentCacheStateLifecycleCheckExpression =
+        "PROJECTIONLIFECYCLESTATE='DISABLED'ANDDATALENGTHPROJECTIONLIFECYCLESTATE=8ORPROJECTIONLIFECYCLESTATE='RESETTING'ANDDATALENGTHPROJECTIONLIFECYCLESTATE=9ORPROJECTIONLIFECYCLESTATE='REBUILDING'ANDDATALENGTHPROJECTIONLIFECYCLESTATE=10ORPROJECTIONLIFECYCLESTATE='TRACKING'ANDDATALENGTHPROJECTIONLIFECYCLESTATE=8";
+
     public static DocumentCacheInventoryValidatorQuery GetQuery(SqlDialect dialect) =>
         dialect switch
         {
@@ -333,10 +342,10 @@ internal static class DocumentCacheInventoryValidatorSupport
                 DataStoreIdentityTableDefinition.Table,
                 DocumentCacheInventoryDefinition.DataStoreIdentityConstraints.Singleton,
                 definition =>
-                    ContainsAll(
+                    HasExpectedSingletonCheck(
                         definition,
                         DataStoreIdentityTableDefinition.DataStoreIdentitySingletonId.Value
-                    ) && ContainsAll(NormalizeDefinition(definition), "DATASTOREIDENTITYSINGLETONID=1"),
+                    ),
                 inventoryIssues,
                 cancellationToken
             )
@@ -359,10 +368,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                 dialect == SqlDialect.Pgsql
                     ? DocumentCacheInventoryDefinition.DocumentCacheConstraints.PgsqlJsonObject
                     : DocumentCacheInventoryDefinition.DocumentCacheConstraints.MssqlJsonObject,
-                definition =>
-                    dialect == SqlDialect.Pgsql
-                        ? ContainsAll(definition, "jsonb_typeof", "DocumentJson", "object")
-                        : ContainsAll(definition, "ISJSON", "DocumentJson", "LTRIM"),
+                definition => HasExpectedDocumentCacheJsonObjectCheck(dialect, definition),
                 inventoryIssues,
                 cancellationToken
             )
@@ -398,10 +404,10 @@ internal static class DocumentCacheInventoryValidatorSupport
                 DocumentCacheInventoryDefinition.DocumentCacheState,
                 DocumentCacheInventoryDefinition.DocumentCacheStateConstraints.Singleton,
                 definition =>
-                    ContainsAll(
+                    HasExpectedSingletonCheck(
                         definition,
                         DocumentCacheInventoryDefinition.DocumentCacheStateColumns.StateId.Value
-                    ) && ContainsAll(NormalizeDefinition(definition), "STATEID=1"),
+                    ),
                 inventoryIssues,
                 cancellationToken
             )
@@ -411,18 +417,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                 dialect,
                 DocumentCacheInventoryDefinition.DocumentCacheState,
                 DocumentCacheInventoryDefinition.DocumentCacheStateConstraints.Lifecycle,
-                definition =>
-                    ContainsAll(
-                        definition,
-                        DocumentCacheInventoryDefinition
-                            .DocumentCacheStateColumns
-                            .ProjectionLifecycleState
-                            .Value,
-                        "Disabled",
-                        "Resetting",
-                        "Rebuilding",
-                        "Tracking"
-                    ) && (dialect == SqlDialect.Pgsql || ContainsAll(definition, "DATALENGTH")),
+                definition => HasExpectedDocumentCacheStateLifecycleCheck(dialect, definition),
                 inventoryIssues,
                 cancellationToken
             )
@@ -1956,6 +1951,49 @@ internal static class DocumentCacheInventoryValidatorSupport
 
     private static bool ContainsAll(string value, params string[] tokens) =>
         Array.TrueForAll(tokens, token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
+
+    private static bool HasExpectedSingletonCheck(string definition, string singletonColumn) =>
+        NormalizeCheckExpression(definition) == $"{NormalizeCheckToken(singletonColumn)}=1";
+
+    private static bool HasExpectedDocumentCacheJsonObjectCheck(SqlDialect dialect, string definition) =>
+        NormalizeCheckExpression(definition)
+        == (
+            dialect == SqlDialect.Pgsql
+                ? PgsqlDocumentCacheJsonObjectCheckExpression
+                : MssqlDocumentCacheJsonObjectCheckExpression
+        );
+
+    private static bool HasExpectedDocumentCacheStateLifecycleCheck(SqlDialect dialect, string definition) =>
+        NormalizeCheckExpression(definition)
+        == (
+            dialect == SqlDialect.Pgsql
+                ? PgsqlDocumentCacheStateLifecycleCheckExpression
+                : MssqlDocumentCacheStateLifecycleCheckExpression
+        );
+
+    private static string NormalizeCheckExpression(string definition)
+    {
+        string normalized = NormalizeCheckToken(definition);
+        return normalized.StartsWith("CHECK", StringComparison.Ordinal)
+            ? normalized["CHECK".Length..]
+            : normalized;
+    }
+
+    private static string NormalizeCheckToken(string definition) =>
+        new(
+            definition
+                .Where(character =>
+                    char.IsLetterOrDigit(character)
+                    || character == '='
+                    || character == '<'
+                    || character == '>'
+                    || character == '_'
+                    || character == '\''
+                    || character == '{'
+                )
+                .Select(char.ToUpperInvariant)
+                .ToArray()
+        );
 
     private static string NormalizeDefinition(string definition) =>
         new(
