@@ -1541,7 +1541,11 @@ function Get-DotenvSequentialLookup {
 
     $declarations = $Evaluation.Declarations
     $effective = $Evaluation.Effective
-    $overrides = $Override
+    # Copy the caller's overrides into an ORDINAL dictionary. A PowerShell hashtable matches keys
+    # case-insensitively, so a case-variant reference could otherwise pick up the topology alias
+    # override that belongs to a different identifier.
+    $overrides = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+    foreach ($key in $Override.Keys) { $overrides[[string]$key] = [string]$Override[$key] }
     $limit = $BeforeLineIndex
 
     return {
@@ -1761,10 +1765,22 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         # " # comment" after the closing quote (Round 11 Blocker 2) does not defeat detection. The
         # wrapper (and any trailing comment) is preserved exactly: only the inner span is scanned, and
         # the replacement is spliced back into the original, still-wrapped string.
-        $closingQuoteIndex = Get-DotenvClosingQuoteIndex -RawValue $currentConnectionString
+        # The raw value is the verbatim text after '=', so with a valid `KEY = "..."` (whitespace
+        # around '=' is accepted by Compose) it BEGINS WITH WHITESPACE and the wrapper quote is not at
+        # index 0. Get-DotenvClosingQuoteIndex requires the quote first, so the scan runs on the
+        # leading-whitespace-trimmed span while the trimmed length is carried as a source offset. Every
+        # splice below still targets the ORIGINAL raw text, so the leading whitespace, the quote
+        # wrapper, and any trailing comment all survive byte for byte. Detecting the quote only at raw
+        # index zero let `export KEY = "host=...;database=${TOKEN};"` through unwrapped, and the
+        # connection-string scanner then mistook the wrapper quote for an ADO.NET value quote and found
+        # no segments to migrate.
+        $leadingWhitespaceLength = $currentConnectionString.Length - $currentConnectionString.TrimStart().Length
+        $unpaddedConnectionString = $currentConnectionString.Substring($leadingWhitespaceLength)
+
+        $closingQuoteIndex = Get-DotenvClosingQuoteIndex -RawValue $unpaddedConnectionString
         $dotenvWrapped = $closingQuoteIndex -ge 0
-        $searchText = if ($dotenvWrapped) { $currentConnectionString.Substring(1, $closingQuoteIndex - 1) } else { $currentConnectionString }
-        $searchOffset = if ($dotenvWrapped) { 1 } else { 0 }
+        $searchText = if ($dotenvWrapped) { $unpaddedConnectionString.Substring(1, $closingQuoteIndex - 1) } else { $unpaddedConnectionString }
+        $searchOffset = $leadingWhitespaceLength + $(if ($dotenvWrapped) { 1 } else { 0 })
 
         # Quote-aware: a plain substring/regex search would mistake a ';' or '=' inside an unrelated
         # quoted segment (a password) for a real segment boundary. See Find-ConnectionStringLegacyTokenSpan.
@@ -1832,7 +1848,9 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
 
     $aliasDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name 'DMS_CONFIG_DATABASE_NAME'
     $connectionDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING'
-    $seamRootLineIndexes = @{}
+    # Ordinal: a case-variant of a seam key is a different identifier and must not be treated as a
+    # seam root (which would exempt it from the transitive check below).
+    $seamRootLineIndexes = [System.Collections.Generic.Dictionary[string, int]]::new([System.StringComparer]::Ordinal)
     if ($null -ne $aliasDeclaration) { $seamRootLineIndexes['DMS_CONFIG_DATABASE_NAME'] = $aliasDeclaration.LineIndex }
     if ($null -ne $connectionDeclaration) { $seamRootLineIndexes['DMS_CONFIG_DATABASE_CONNECTION_STRING'] = $connectionDeclaration.LineIndex }
 
@@ -1878,7 +1896,9 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
             -ReferenceTrace $intendedReferences
 
         foreach ($referencedName in $intendedReferences) {
-            if ($referencedName -eq 'DMS_CONFIG_DATABASE_NAME') {
+            # Ordinal: only the exact alias identifier is healed structurally. A case-variant is a
+            # different variable and must go through the ordinary forward-reference handling below.
+            if ([string]::Equals($referencedName, 'DMS_CONFIG_DATABASE_NAME', [System.StringComparison]::Ordinal)) {
                 # Healed structurally: the writer serializes the alias as a resolved literal and the
                 # Move below places it ahead of the connection string.
                 if ($null -ne $aliasDeclaration -and $connectionDeclaration.LineIndex -lt $aliasDeclaration.LineIndex) {

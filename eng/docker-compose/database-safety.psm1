@@ -439,8 +439,11 @@ function Test-DotenvAssignmentLine {
         [Parameter(Mandatory)] [string]$Key
     )
 
+    # Ordinal: a dotenv identifier is case-sensitive on the Linux CI and runtime path, and PowerShell's
+    # -eq is case-insensitive. A case-insensitive match here would let a lowercase decoy declaration be
+    # mistaken for the uppercase key during replacement or movement.
     $assignment = Get-DotenvAssignment -Line $Line
-    return ($null -ne $assignment -and $assignment.Key -eq $Key)
+    return ($null -ne $assignment -and [string]::Equals($assignment.Key, $Key, [System.StringComparison]::Ordinal))
 }
 
 function Resolve-DotenvFileSequentially {
@@ -480,7 +483,10 @@ function Resolve-DotenvFileSequentially {
         [Parameter(Mandatory, ParameterSetName = 'Line')] [AllowEmptyCollection()] [string[]]$Line
     )
 
-    $lines = if ($PSCmdlet.ParameterSetName -eq 'Path') { [System.IO.File]::ReadAllLines($Path) } else { $Line }
+    # Re-wrap with @(): PowerShell unwraps a single-element array argument to a scalar, and under
+    # Set-StrictMode a scalar string has no .Count, so a one-line file iterated zero times and produced
+    # an empty evaluation instead of its single declaration.
+    $lines = @(if ($PSCmdlet.ParameterSetName -eq 'Path') { [System.IO.File]::ReadAllLines($Path) } else { $Line })
 
     # Terminal values of the declarations seen so far. Never fed back through raw-value resolution:
     # see the NameLookup note on Resolve-ComposeEnvReference.
