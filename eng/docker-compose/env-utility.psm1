@@ -2079,18 +2079,35 @@ function Confirm-CmsDatabaseTopologyAgreement {
         [Parameter(Mandatory)] [ValidateSet("postgresql", "mssql")] [string]$DatabaseEngine
     )
 
-    $envValues = ReadValuesFromEnvFile $EnvironmentFile
     # Sequential evaluation, because that is what Docker Compose does with an --env-file. Resolving
     # against a complete hashtable instead let this validator pass a file where the datastore database
     # and the CMS database genuinely disagreed: with the datastore name declared twice, the hashtable
-    # saw only the last value while Compose froze the first one into the connection string.
+    # saw only the last value while Compose froze the first one into the connection string. Like the
+    # resolver, this function no longer reads through ReadValuesFromEnvFile at all.
     $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
     $datastoreNameKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
     $expectedHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
     $expectedPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
     $nameComparison = if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
 
-    $isSeparate = (Get-EnvValue -EnvValues $envValues -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -DefaultValue "false") -eq "true"
+    # The marker comes from its own raw declaration through the shared assignment model, then through
+    # Compose's value semantics. Read raw and never from the ambient environment: the marker is this
+    # design's internal topology record, so an unrelated shell variable of the same name must not change
+    # which mode this validator believes it is checking.
+    #
+    # Sourcing it from ReadValuesFromEnvFile made this the last seam dependency on the legacy parser,
+    # and the two disagreed: for `export DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"` the resolver
+    # recognized separate mode and could early-return the file unchanged, while this validator saw
+    # neither the key (stored under an `export `-prefixed name) nor the value (quotes left it as
+    # "true"), read shared mode, and rejected a correct separate-mode file.
+    #
+    # The comparison is ordinal: the marker is written by this design as exactly "true" or "false", so a
+    # hand-edited case-variant is not a topology declaration and must not silently redirect CMS.
+    $markerDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+    $markerValue =
+        if ($null -eq $markerDeclaration) { "false" }
+        else { [string](ConvertFrom-ComposeEnvironmentValue -Value $markerDeclaration.RawValue) }
+    $isSeparate = [string]::Equals($markerValue, "true", [System.StringComparison]::Ordinal)
 
     $expectedDatabaseName =
         if ($isSeparate) {
