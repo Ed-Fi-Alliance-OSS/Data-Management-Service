@@ -158,7 +158,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
         Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()

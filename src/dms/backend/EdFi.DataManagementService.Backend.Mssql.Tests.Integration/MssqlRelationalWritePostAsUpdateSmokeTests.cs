@@ -111,7 +111,7 @@ file static class PostAsUpdateIntegrationTestSupport
             services.AddScoped<IRelationalWriteTargetLookupResolver, BlockingPostTargetLookupResolver>();
         }
 
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

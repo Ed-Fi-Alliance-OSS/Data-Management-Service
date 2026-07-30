@@ -133,7 +133,7 @@ file static class RollbackSafetyIntegrationTestSupport
             IRelationalWriteSessionFactory,
             FailOnAlignedExtensionAddressInsertPostgresqlRelationalWriteSessionFactory
         >();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

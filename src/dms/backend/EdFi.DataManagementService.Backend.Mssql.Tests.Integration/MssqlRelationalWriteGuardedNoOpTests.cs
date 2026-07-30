@@ -510,7 +510,7 @@ file static class GuardedNoOpIntegrationTestSupport
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
         configureServices?.Invoke(services);
 
         return services.BuildServiceProvider(
@@ -518,7 +518,7 @@ file static class GuardedNoOpIntegrationTestSupport
         );
     }
 
-    // The seam swaps run after AddMssqlReferenceResolver (inside configureServices) so RemoveAll
+    // These replacements run after AddMssqlBackendIntegrationTestServices so RemoveAll
     // actually removes the TryAdd'd production registration before the test double is added.
     public static ServiceProvider CreateStaleCompareServiceProvider() =>
         CreateServiceProvider(static services =>

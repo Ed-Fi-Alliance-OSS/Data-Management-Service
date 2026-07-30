@@ -139,7 +139,7 @@ file static class RollbackSafetyIntegrationTestSupport
             IRelationalWriteSessionFactory,
             FailOnAlignedExtensionAddressInsertMssqlRelationalWriteSessionFactory
         >();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

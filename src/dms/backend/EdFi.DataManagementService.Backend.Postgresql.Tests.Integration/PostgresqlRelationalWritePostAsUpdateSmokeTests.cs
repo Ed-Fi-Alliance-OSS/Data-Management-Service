@@ -113,7 +113,7 @@ file static class PostAsUpdateIntegrationTestSupport
             services.AddScoped<IRelationalWriteTargetLookupResolver, BlockingPostTargetLookupResolver>();
         }
 
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

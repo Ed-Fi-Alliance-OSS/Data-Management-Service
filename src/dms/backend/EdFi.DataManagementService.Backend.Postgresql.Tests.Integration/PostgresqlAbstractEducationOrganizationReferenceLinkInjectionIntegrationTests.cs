@@ -154,7 +154,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         // Register ONLY the concrete School ResourceKeyId. If reconstitution were wrongly
         // resolving through EducationOrganization's ResourceKeyId, the resolver would throw

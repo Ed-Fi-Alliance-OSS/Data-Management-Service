@@ -615,7 +615,7 @@ public class Given_MssqlDescriptorWriteHandler
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddTestReadableProfileProjector();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

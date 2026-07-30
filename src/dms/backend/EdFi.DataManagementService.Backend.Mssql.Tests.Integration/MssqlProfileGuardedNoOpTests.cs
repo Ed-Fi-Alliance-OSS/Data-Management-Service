@@ -262,7 +262,7 @@ internal abstract class MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
         configureServices?.Invoke(services);
 
         return services.BuildServiceProvider(

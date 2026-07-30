@@ -148,7 +148,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         // The default RelationalReadMaterializer registration needs IDocumentLinkSlugResolver
         // and IOptions<ResourceLinksOptions>. We inject a deterministic resolver keyed by the

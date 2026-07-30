@@ -184,7 +184,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             IRelationalWriteSessionFactory,
             RecordingPostgresqlRelationalWriteSessionFactory
         >();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

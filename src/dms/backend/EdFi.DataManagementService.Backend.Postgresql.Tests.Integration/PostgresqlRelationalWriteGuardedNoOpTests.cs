@@ -415,7 +415,7 @@ file static class GuardedNoOpIntegrationTestSupport
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
         configureServices?.Invoke(services);
 
         return services.BuildServiceProvider(

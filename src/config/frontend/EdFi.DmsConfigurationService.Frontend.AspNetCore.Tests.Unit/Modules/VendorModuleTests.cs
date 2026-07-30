@@ -31,6 +31,10 @@ public class VendorModuleTests
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient()
     {
@@ -65,6 +69,7 @@ public class VendorModuleTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;
@@ -561,7 +566,7 @@ public class VendorModuleTests
         public async Task Should_return_internal_server_error_response()
         {
             // Arrange
-            var client = SetUpClient();
+            using var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
