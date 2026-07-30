@@ -40,9 +40,47 @@ public sealed record DocumentCacheTargetRegistrySnapshot
     }
 }
 
+public sealed record DocumentCacheTargetRuntimeSnapshot
+{
+    public DocumentCacheTargetRuntimeSnapshot(
+        IEnumerable<DocumentCacheTargetExecutionContext> executionContexts,
+        DateTimeOffset observedAt
+    )
+    {
+        ExecutionContexts = executionContexts.ToImmutableArray();
+        ObservedAt = observedAt;
+    }
+
+    public ImmutableArray<DocumentCacheTargetExecutionContext> ExecutionContexts { get; }
+
+    public DateTimeOffset ObservedAt { get; }
+
+    public DocumentCacheTargetExecutionContext? GetExecutionContext(DocumentCacheTargetKey targetKey)
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        return ExecutionContexts.FirstOrDefault(context => context.TargetKey.Equals(targetKey));
+    }
+
+    public DocumentCacheTargetExecutionContext? GetExecutionContext(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetContextGeneration generation
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+        ArgumentNullException.ThrowIfNull(generation);
+
+        return ExecutionContexts.FirstOrDefault(context =>
+            context.TargetKey.Equals(targetKey) && context.Generation == generation
+        );
+    }
+}
+
 public interface IDocumentCacheTargetRegistry
 {
     DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; }
+
+    DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot { get; }
 
     Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
         DocumentCacheTargetRefreshReason reason,
@@ -102,6 +140,8 @@ public sealed class DocumentCacheTargetRegistry(
     );
 
     public DocumentCacheTargetRegistrySnapshot CurrentSnapshot => _currentSnapshot;
+
+    public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot => CreateRuntimeSnapshot(_targetStates);
 
     public async Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
         DocumentCacheTargetRefreshReason reason,
@@ -400,6 +440,16 @@ public sealed class DocumentCacheTargetRegistry(
     ) =>
         new(
             _configuredTargetKeys.Select(targetKey => targetStates[targetKey].SnapshotObservation),
+            timeProvider.GetUtcNow()
+        );
+
+    private DocumentCacheTargetRuntimeSnapshot CreateRuntimeSnapshot(
+        ImmutableDictionary<DocumentCacheTargetKey, TargetState> targetStates
+    ) =>
+        new(
+            _configuredTargetKeys
+                .Select(targetKey => targetStates[targetKey].ExecutionContext)
+                .OfType<DocumentCacheTargetExecutionContext>(),
             timeProvider.GetUtcNow()
         );
 

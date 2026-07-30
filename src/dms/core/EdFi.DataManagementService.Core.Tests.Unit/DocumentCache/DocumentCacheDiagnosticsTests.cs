@@ -367,6 +367,9 @@ public class DocumentCacheDiagnosticsTests
         {
             public DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; } = currentSnapshot;
 
+            public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot { get; } =
+                new([], DateTimeOffset.UtcNow);
+
             public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
                 DocumentCacheTargetRefreshReason reason,
                 CancellationToken cancellationToken = default

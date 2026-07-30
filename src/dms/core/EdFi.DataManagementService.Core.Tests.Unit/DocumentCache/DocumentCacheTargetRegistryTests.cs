@@ -63,6 +63,7 @@ public class DocumentCacheTargetRegistryTests
                 .Targets.Select(target => target.TargetKey)
                 .Should()
                 .Equal(_tenantTargetKey, _defaultTargetKey);
+            fixture.Registry.CurrentRuntimeSnapshot.ExecutionContexts.Should().BeEmpty();
             snapshot
                 .Targets.Should()
                 .AllSatisfy(target =>
@@ -148,6 +149,7 @@ public class DocumentCacheTargetRegistryTests
                 .ContainSingle()
                 .Which.Category.Should()
                 .Be(DocumentCacheTargetDiagnosticCategory.TargetUnresolved);
+            fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
         }
 
         [Test]
@@ -156,6 +158,8 @@ public class DocumentCacheTargetRegistryTests
             RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
             fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
             await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            DocumentCacheTargetExecutionContext initialContext =
+                fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey)!;
             fixture.DataStoreProvider.QueueLoadFailure("TenantA", new InvalidOperationException("boom"));
 
             DocumentCacheTargetRegistrySnapshot snapshot = await fixture.Registry.RefreshAsync(
@@ -171,6 +175,13 @@ public class DocumentCacheTargetRegistryTests
                 .Contain(diagnostic =>
                     diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure
                 );
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(1)
+                )
+                .Should()
+                .BeSameAs(initialContext);
             fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
         }
 
@@ -193,6 +204,7 @@ public class DocumentCacheTargetRegistryTests
                 .Diagnostics.Select(diagnostic => diagnostic.Category)
                 .Should()
                 .NotContain(DocumentCacheTargetDiagnosticCategory.TargetReplaced);
+            fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
         }
     }
 
@@ -214,8 +226,61 @@ public class DocumentCacheTargetRegistryTests
             observation.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Resolved);
             observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
             observation.Generation!.Value.Should().Be(1);
+            DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = fixture.Registry.CurrentRuntimeSnapshot;
+            DocumentCacheTargetExecutionContext? context = runtimeSnapshot.GetExecutionContext(
+                _tenantTargetKey
+            );
+            context.Should().NotBeNull();
+            context!.Generation.Value.Should().Be(1);
+            runtimeSnapshot
+                .GetExecutionContext(_tenantTargetKey, new DocumentCacheTargetContextGeneration(1))
+                .Should()
+                .BeSameAs(context);
+            runtimeSnapshot
+                .GetExecutionContext(_tenantTargetKey, new DocumentCacheTargetContextGeneration(2))
+                .Should()
+                .BeNull();
             fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
             fixture.ContextBuilder.BuildCalls[0].Generation.Value.Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_does_not_expose_a_runtime_context_for_a_resolved_ineligible_target()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.ContextBuilder.MarkIneligible(_tenantTargetKey);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+
+            DocumentCacheTargetRegistrySnapshot snapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.Startup
+            );
+
+            snapshot
+                .Targets.Single()
+                .EligibilityState.Should()
+                .Be(DocumentCacheTargetEligibilityState.Ineligible);
+            fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
+            fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
+        }
+
+        [Test]
+        public async Task It_reads_runtime_contexts_without_refreshing_or_rebuilding_targets()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey)
+                .Should()
+                .NotBeNull();
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey)
+                .Should()
+                .NotBeNull();
+
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().ContainSingle();
+            fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
         }
 
         [Test]
@@ -237,6 +302,13 @@ public class DocumentCacheTargetRegistryTests
             );
 
             snapshot.Targets.Single().Generation!.Value.Should().Be(1);
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(1)
+                )
+                .Should()
+                .NotBeNull();
             fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
         }
 
@@ -260,6 +332,20 @@ public class DocumentCacheTargetRegistryTests
                     diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TargetReplaced
                 );
             fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 2);
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(1)
+                )
+                .Should()
+                .BeNull();
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(2)
+                )
+                .Should()
+                .NotBeNull();
         }
 
         [Test]
@@ -349,7 +435,16 @@ public class DocumentCacheTargetRegistryTests
 
     private sealed class RecordingTargetContextBuilder : IDocumentCacheTargetContextBuilder
     {
+        private readonly HashSet<DocumentCacheTargetKey> _ineligibleTargetKeys = [];
+
         public List<BuildCall> BuildCalls { get; } = [];
+
+        public void MarkIneligible(DocumentCacheTargetKey targetKey)
+        {
+            ArgumentNullException.ThrowIfNull(targetKey);
+
+            _ineligibleTargetKeys.Add(targetKey);
+        }
 
         public Task<DocumentCacheTargetContextBuildResult> BuildAsync(
             DocumentCacheTargetKey targetKey,
@@ -358,7 +453,52 @@ public class DocumentCacheTargetRegistryTests
         )
         {
             BuildCalls.Add(new BuildCall(targetKey, generation));
+            if (_ineligibleTargetKeys.Contains(targetKey))
+            {
+                return Task.FromResult(CreateIneligibleBuildResult(targetKey, generation));
+            }
+
             return Task.FromResult(CreateBuildResult(targetKey, generation));
+        }
+
+        private static DocumentCacheTargetContextBuildResult CreateIneligibleBuildResult(
+            DocumentCacheTargetKey targetKey,
+            DocumentCacheTargetContextGeneration generation
+        )
+        {
+            DocumentCacheInventoryValidationResult invalidInventory = new(
+                DocumentCacheInventoryStatus.Invalid,
+                "Inventory invalid."
+            );
+            DocumentCacheTargetDiagnostic diagnostic = new(
+                targetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                RelationalProviderToken.Postgresql,
+                generation,
+                _fingerprint,
+                _trackingLifecycle,
+                invalidInventory,
+                _satisfiedEnqueueTrigger,
+                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
+                retryState: null,
+                DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+                "Inventory invalid."
+            );
+            DocumentCacheTargetObservation observation = DocumentCacheTargetObservation.ResolvedIneligible(
+                targetKey,
+                _effectiveSettings,
+                generation,
+                RelationalProviderToken.Postgresql,
+                _fingerprint,
+                _trackingLifecycle,
+                invalidInventory,
+                _satisfiedEnqueueTrigger,
+                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
+                retryState: null,
+                [diagnostic]
+            );
+
+            return new DocumentCacheTargetContextBuildResult(observation, ExecutionContext: null);
         }
 
         private static DocumentCacheTargetContextBuildResult CreateBuildResult(

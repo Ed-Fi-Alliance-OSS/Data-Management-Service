@@ -84,6 +84,7 @@ public class Given_DocumentCache_Target_Resolution_Composition
         await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
 
         DocumentCacheDiagnosticSnapshot diagnostics = fixture.Diagnostics.CurrentSnapshot;
+        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = fixture.Registry.CurrentRuntimeSnapshot;
 
         diagnostics.Targets.Select(target => target.TargetKey.DataStoreId).Should().Equal(1, 2, 3, 4, 5, 6);
         diagnostics
@@ -98,6 +99,12 @@ public class Given_DocumentCache_Target_Resolution_Composition
             .Targets.Single(target => target.TargetKey.DataStoreId == 1)
             .EffectiveSettings.ProjectorPageSize.Should()
             .Be(25);
+        runtimeSnapshot.ExecutionContexts.Select(context => context.TargetKey.DataStoreId).Should().Equal(1);
+        runtimeSnapshot
+            .GetExecutionContext(_defaultTargetKey)!
+            .ConnectionInput.Value.Should()
+            .Be("eligible-connection");
+        runtimeSnapshot.GetExecutionContext(DocumentCacheTargetKey.Create("", 2)).Should().BeNull();
 
         AssertSingleDiagnosticCategory(
             diagnostics,
@@ -166,6 +173,10 @@ public class Given_DocumentCache_Target_Resolution_Composition
             .ContainSingle()
             .Which.Category.Should()
             .Be(DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure);
+        fixture
+            .Registry.CurrentRuntimeSnapshot.ExecutionContexts.Select(context => context.TargetKey)
+            .Should()
+            .Equal(_defaultTargetKey);
 
         fixture.DataStoreProvider.QueueLoadResult(
             tenant: null,
@@ -188,6 +199,10 @@ public class Given_DocumentCache_Target_Resolution_Composition
             .Targets.Single(target => target.TargetKey.Equals(_tenantTargetKey))
             .EligibilityState.Should()
             .Be(DocumentCacheTargetEligibilityState.Eligible);
+        fixture
+            .Registry.CurrentRuntimeSnapshot.ExecutionContexts.Select(context => context.TargetKey)
+            .Should()
+            .Equal(_defaultTargetKey, _tenantTargetKey);
         fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("", "TenantA", "", "TenantA");
         fixture.DataStoreProvider.LoadTenantsCallCount.Should().Be(0);
         fixture.DataStoreProvider.TenantExistsCallCount.Should().Be(0);
@@ -231,6 +246,7 @@ public class Given_DocumentCache_Target_Resolution_Composition
             .Contain(diagnostic =>
                 diagnostic.Category == DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
             );
+        fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_defaultTargetKey).Should().BeNull();
 
         fixture.ProviderAdapter.SetObservation(
             "same-connection",
@@ -255,6 +271,7 @@ public class Given_DocumentCache_Target_Resolution_Composition
             .Targets.Single()
             .EligibilityState.Should()
             .Be(DocumentCacheTargetEligibilityState.Ineligible);
+        fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_defaultTargetKey).Should().BeNull();
         fixture.ProviderAdapter.InitializationPrerequisiteCallCount("same-connection").Should().Be(1);
 
         fixture.ProviderAdapter.SetObservation(
@@ -283,6 +300,13 @@ public class Given_DocumentCache_Target_Resolution_Composition
             .Contain(diagnostic =>
                 diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TargetReplaced
             );
+        fixture
+            .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                _defaultTargetKey,
+                new DocumentCacheTargetContextGeneration(2)
+            )!
+            .ConnectionInput.Value.Should()
+            .Be("replacement-connection");
         fixture.ProviderAdapter.InitializationPrerequisiteCallCount("replacement-connection").Should().Be(1);
     }
 
