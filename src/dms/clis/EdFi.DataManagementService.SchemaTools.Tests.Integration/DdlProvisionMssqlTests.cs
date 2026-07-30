@@ -230,6 +230,138 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+public class Given_Mssql_Provisioning_Against_A_Case_Sensitive_Utf8_Database_Collation
+{
+    private const string RepresentativeCollation = "Latin1_General_100_CS_AS_SC_UTF8";
+    private string _databaseName = string.Empty;
+    private string _connectionString = string.Empty;
+    private int _exitCode;
+    private string _output = string.Empty;
+    private string _error = string.Empty;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        if (!MssqlTestDatabaseHelper.CollationExists(RepresentativeCollation))
+        {
+            Assert.Ignore($"SQL Server collation {RepresentativeCollation} is not available.");
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabaseWithCollation(_databaseName, RepresentativeCollation);
+        _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        (_exitCode, _output, _error) = ProvisionTestHelper.RunProvision("mssql", _connectionString);
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        if (MssqlTestDatabaseHelper.IsConfigured() && _databaseName.Length > 0)
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_returns_exit_code_0()
+    {
+        AssertProvisionSucceeded();
+    }
+
+    [Test]
+    public void It_uses_the_requested_database_default_and_lifecycle_column_collation()
+    {
+        AssertProvisionSucceeded();
+
+        using var connection = new SqlConnection(_connectionString);
+        connection.Open();
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128));";
+            command.ExecuteScalar().Should().Be(RepresentativeCollation);
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT c.collation_name
+                FROM sys.columns c
+                INNER JOIN sys.tables t ON t.object_id = c.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = N'dms'
+                AND t.name = N'DocumentCacheState'
+                AND c.name = N'ProjectionLifecycleState'
+                """;
+            command.ExecuteScalar().Should().Be("Latin1_General_100_BIN2");
+        }
+    }
+
+    [Test]
+    public void It_rejects_lifecycle_values_under_the_representative_database_collation()
+    {
+        AssertProvisionSucceeded();
+
+        using var connection = new SqlConnection(_connectionString);
+        connection.Open();
+
+        ProvisionTestHelper.AssertDocumentCacheLifecycleRejectsInvalidValues(connection, "mssql");
+
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    ALTER TABLE [dms].[DocumentCacheState] NOCHECK CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+
+                    UPDATE [dms].[DocumentCacheState]
+                    SET [ProjectionLifecycleState] = @lifecycle
+                    WHERE [StateId] = 1
+                    """;
+                command.Parameters.Add("lifecycle", SqlDbType.VarChar, 16).Value = "Disabled ";
+                command.ExecuteNonQuery();
+            }
+
+            using var insertCommand = MssqlDocumentProjectionTestSupport.CreateInsertDocumentCommand(
+                connection
+            );
+            insertCommand.Transaction = transaction;
+
+            Action insertDocument = () => insertCommand.ExecuteNonQuery();
+            insertDocument
+                .Should()
+                .Throw<SqlException>()
+                .Which.Message.Should()
+                .Contain(
+                    "ProjectionLifecycleState has unsupported value",
+                    "enqueue must reject a padded lifecycle value under the representative database collation"
+                );
+        }
+        finally
+        {
+            transaction.Rollback();
+        }
+    }
+
+    private void AssertProvisionSucceeded()
+    {
+        _exitCode.Should().Be(0, $"stdout: {_output}\nstderr: {_error}");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
 public class Given_Mssql_Provisioning_Rerun_On_Same_Database
 {
     private string _databaseName = null!;

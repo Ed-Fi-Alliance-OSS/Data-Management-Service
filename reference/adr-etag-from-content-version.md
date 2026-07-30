@@ -134,7 +134,7 @@ must use the supported out-of-band representation-restamp operation to advance
 `ContentVersion` for every affected document, even when a corrected composer would produce
 a different ETag at the old version. The restamp is a coordinated maintenance operation,
 not an ordinary no-op resource update; see
-[Offline byte-changing representation correction](design/cdc-streaming.md#offline-byte-changing-representation-correction).
+[Offline byte-changing representation correction](design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
 
 **`ContentVersion` MUST be treated as a string.** HTTP entity-tags are opaque, quoted strings (e.g. `ETag: "5-json"`). Neither the server nor clients may interpret the `ContentVersion` portion as a number: serialize it as a string in the `_etag` body field and as a quoted value in the `ETag` header, compare it as an opaque string (RFC strong comparison is character-by-character), and document it to clients as opaque so they never parse it or compare it numerically.
 
