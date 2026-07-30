@@ -60,6 +60,10 @@ RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
+    _stampedDocumentUuid uuid;
+    _stampedIdentityVersion bigint;
+    _stampedIdentityLastModifiedAt timestamp with time zone;
+    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
@@ -71,12 +75,16 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."DocumentUuid" := _stampedDocumentUuid;
+        NEW."IdentityVersion" := _stampedIdentityVersion;
+        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."CreatedAt" := _stampedCreatedAt;
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -88,7 +96,10 @@ BEGIN
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
+        WHERE "DocumentId" = NEW."DocumentId"
+        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := _stampedIdentityVersion;
+        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
     END IF;
     RETURN NEW;
 END;
@@ -124,6 +135,10 @@ RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
+    _stampedDocumentUuid uuid;
+    _stampedIdentityVersion bigint;
+    _stampedIdentityLastModifiedAt timestamp with time zone;
+    _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
@@ -135,12 +150,16 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt, _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."DocumentUuid" := _stampedDocumentUuid;
+        NEW."IdentityVersion" := _stampedIdentityVersion;
+        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
+        NEW."CreatedAt" := _stampedCreatedAt;
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -152,7 +171,10 @@ BEGIN
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate" OR OLD."EntryTimestamp" IS DISTINCT FROM NEW."EntryTimestamp" OR OLD."IsActive" IS DISTINCT FROM NEW."IsActive") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
+        WHERE "DocumentId" = NEW."DocumentId"
+        RETURNING "IdentityVersion", "IdentityLastModifiedAt" INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;
+        NEW."IdentityVersion" := _stampedIdentityVersion;
+        NEW."IdentityLastModifiedAt" := _stampedIdentityLastModifiedAt;
     END IF;
     RETURN NEW;
 END;

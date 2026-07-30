@@ -18,10 +18,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     // Frequently-used column names, allocated once to avoid repetitive allocations.
     private static readonly DbColumnName DocumentIdColumn = RelationalNameConventions.DocumentIdColumnName;
+    private static readonly DbColumnName DocumentUuidColumn =
+        RelationalNameConventions.DocumentUuidColumnName;
     private static readonly DbColumnName ContentVersionColumn = new("ContentVersion");
     private static readonly DbColumnName ContentLastModifiedAtColumn = new("ContentLastModifiedAt");
     private static readonly DbColumnName IdentityVersionColumn = new("IdentityVersion");
     private static readonly DbColumnName IdentityLastModifiedAtColumn = new("IdentityLastModifiedAt");
+    private static readonly DbColumnName CreatedAtColumn = RelationalNameConventions.CreatedAtColumnName;
     private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
     private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
@@ -700,6 +703,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.AppendLine("_stampedContentVersion bigint;");
                 writer.AppendLine("_stampedContentLastModifiedAt timestamp with time zone;");
+                // The remaining dms.Document metadata mirrors. DocumentUuid and CreatedAt are copied
+                // once on INSERT (immutable thereafter); the identity pair is copied on INSERT and
+                // re-copied whenever the identity-diff branch bumps it.
+                writer.AppendLine("_stampedDocumentUuid uuid;");
+                writer.AppendLine("_stampedIdentityVersion bigint;");
+                writer.AppendLine("_stampedIdentityLastModifiedAt timestamp with time zone;");
+                writer.AppendLine("_stampedCreatedAt timestamp with time zone;");
             }
         }
         writer.AppendLine("BEGIN");
@@ -1278,7 +1288,31 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(Quote(DocumentIdColumn));
                 writer.Append(" = NEW.");
                 writer.Append(Quote(keyColumn));
-                writer.AppendLine(";");
+
+                if (isRootDocumentStampingTrigger)
+                {
+                    // Mirror the bump back onto the row being written. Legal because this is a BEFORE
+                    // trigger, so assigning NEW still influences the stored row; without this the root
+                    // mirror would keep the pre-bump identity values until the next INSERT.
+                    writer.AppendLine();
+                    writer.Append("RETURNING ");
+                    writer.Append(Quote(IdentityVersionColumn));
+                    writer.Append(", ");
+                    writer.Append(Quote(IdentityLastModifiedAtColumn));
+                    writer.AppendLine(
+                        " INTO STRICT _stampedIdentityVersion, _stampedIdentityLastModifiedAt;"
+                    );
+                    writer.Append("NEW.");
+                    writer.Append(Quote(IdentityVersionColumn));
+                    writer.AppendLine(" := _stampedIdentityVersion;");
+                    writer.Append("NEW.");
+                    writer.Append(Quote(IdentityLastModifiedAtColumn));
+                    writer.AppendLine(" := _stampedIdentityLastModifiedAt;");
+                }
+                else
+                {
+                    writer.AppendLine(";");
+                }
 
                 // Resource-kind tracked-change attachments record a key-change row for the same
                 // identity-diff workset that bumped IdentityVersion above. ConcreteAbstract tables
@@ -1313,10 +1347,31 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(ContentVersionColumn));
         writer.Append(", ");
         writer.Append(Quote(ContentLastModifiedAtColumn));
+        if (assignToNewMirrorColumns)
+        {
+            // Root rows also mirror the non-stamp metadata so they are self-sufficient. Only the
+            // assigning (root) path reads these, so the projection stays in lockstep with the
+            // INTO list below.
+            writer.Append(", ");
+            writer.Append(Quote(DocumentUuidColumn));
+            writer.Append(", ");
+            writer.Append(Quote(IdentityVersionColumn));
+            writer.Append(", ");
+            writer.Append(Quote(IdentityLastModifiedAtColumn));
+            writer.Append(", ");
+            writer.Append(Quote(CreatedAtColumn));
+        }
         writer.AppendLine();
         // STRICT: a missing dms.Document row must fail with a clear no-rows error here,
         // not as a misleading not-null violation when the NULL locals reach NEW.
-        writer.AppendLine("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
+        writer.Append("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
+        if (assignToNewMirrorColumns)
+        {
+            writer.Append(
+                ", _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt"
+            );
+        }
+        writer.AppendLine();
         writer.Append("FROM ");
         writer.AppendLine(documentTable);
         writer.Append("WHERE ");
@@ -1335,6 +1390,18 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("NEW.");
             writer.Append(Quote(ContentLastModifiedAtColumn));
             writer.AppendLine(" := _stampedContentLastModifiedAt;");
+            writer.Append("NEW.");
+            writer.Append(Quote(DocumentUuidColumn));
+            writer.AppendLine(" := _stampedDocumentUuid;");
+            writer.Append("NEW.");
+            writer.Append(Quote(IdentityVersionColumn));
+            writer.AppendLine(" := _stampedIdentityVersion;");
+            writer.Append("NEW.");
+            writer.Append(Quote(IdentityLastModifiedAtColumn));
+            writer.AppendLine(" := _stampedIdentityLastModifiedAt;");
+            writer.Append("NEW.");
+            writer.Append(Quote(CreatedAtColumn));
+            writer.AppendLine(" := _stampedCreatedAt;");
         }
     }
 
