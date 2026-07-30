@@ -205,11 +205,17 @@ public class Given_Postgresql_DocumentCacheMaterializer_Fixtures
         await command.ExecuteNonQueryAsync();
     }
 
-    private DocumentCacheMaterializer CreateMaterializer() =>
-        new(
-            new DocumentCacheSourceMetadataReader(_commandExecutor),
-            new DocumentCacheDescriptorHydrator(_commandExecutor),
-            new PostgresqlFixtureDocumentHydrator(_dataSource),
+    private DocumentCacheMaterializer CreateMaterializer()
+    {
+        var materializationDataStore = new AmbientDocumentCacheMaterializationDataStore(
+            _commandExecutor,
+            new PostgresqlFixtureDocumentHydrator(_dataSource)
+        );
+
+        return new DocumentCacheMaterializer(
+            new DocumentCacheSourceMetadataReader(materializationDataStore),
+            new DocumentCacheDescriptorHydrator(materializationDataStore),
+            materializationDataStore,
             new RelationalReadMaterializer(
                 new DeterministicLinkSlugResolver(
                     new Dictionary<short, DocumentLinkSlugTriple>
@@ -223,6 +229,7 @@ public class Given_Postgresql_DocumentCacheMaterializer_Fixtures
             ),
             new ServedEtagComposer()
         );
+    }
 
     private static DocumentCacheMaterializationRequest CreateRequest(
         MappingSet mappingSet,

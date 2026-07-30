@@ -206,7 +206,7 @@ public class Given_DocumentCacheMaterializerContract
             .Equal(
                 typeof(IDocumentCacheSourceMetadataReader),
                 typeof(IDocumentCacheDescriptorHydrator),
-                typeof(IDocumentHydrator),
+                typeof(IDocumentCacheMaterializationDataStore),
                 typeof(IRelationalReadMaterializer),
                 typeof(IServedEtagComposer)
             );

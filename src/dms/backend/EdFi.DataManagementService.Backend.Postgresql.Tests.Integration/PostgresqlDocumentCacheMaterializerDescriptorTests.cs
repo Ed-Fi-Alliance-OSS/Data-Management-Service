@@ -126,11 +126,15 @@ public class Given_Postgresql_DocumentCacheMaterializer_Descriptor
             async cancellationToken => (DbConnection)await _dataSource.OpenConnectionAsync(cancellationToken),
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
+        var materializationDataStore = new AmbientDocumentCacheMaterializationDataStore(
+            commandExecutor,
+            new ThrowingDocumentHydrator()
+        );
 
         var sut = new DocumentCacheMaterializer(
-            new DocumentCacheSourceMetadataReader(commandExecutor),
-            new DocumentCacheDescriptorHydrator(commandExecutor),
-            new ThrowingDocumentHydrator(),
+            new DocumentCacheSourceMetadataReader(materializationDataStore),
+            new DocumentCacheDescriptorHydrator(materializationDataStore),
+            materializationDataStore,
             new ThrowingReadMaterializer(),
             new ServedEtagComposer()
         );

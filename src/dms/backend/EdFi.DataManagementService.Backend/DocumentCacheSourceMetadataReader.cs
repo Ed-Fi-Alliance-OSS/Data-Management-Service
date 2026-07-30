@@ -195,13 +195,14 @@ internal abstract record DocumentCacheResolvedSourceMetadata
     }
 }
 
-internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecutor commandExecutor)
-    : IDocumentCacheSourceMetadataReader
+internal sealed class DocumentCacheSourceMetadataReader(
+    IDocumentCacheMaterializationDataStore materializationDataStore
+) : IDocumentCacheSourceMetadataReader
 {
     private const string DocumentIdParameterName = "@documentId";
 
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly IDocumentCacheMaterializationDataStore _materializationDataStore =
+        materializationDataStore ?? throw new ArgumentNullException(nameof(materializationDataStore));
 
     public async Task<DocumentCacheSourceMetadataReadResult> ReadAsync(
         DocumentCacheMaterializationRequest request,
@@ -231,8 +232,9 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var source = await _commandExecutor
+        var source = await _materializationDataStore
             .ExecuteReaderAsync(
+                request,
                 BuildReadCommand(request.TargetContext.MappingSet.Key.Dialect, request.DocumentId),
                 ReadSingleOrDefaultAsync,
                 cancellationToken

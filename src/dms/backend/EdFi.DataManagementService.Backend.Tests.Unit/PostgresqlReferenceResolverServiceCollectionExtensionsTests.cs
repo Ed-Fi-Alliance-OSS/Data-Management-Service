@@ -32,6 +32,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         services.AddLogging();
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
         services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
@@ -60,6 +61,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var documentCacheMaterializationDataStore =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializationDataStore>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
@@ -90,6 +93,9 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         adapter.Should().BeOfType<PostgresqlReferenceResolverAdapter>();
         commandExecutor.Should().BeOfType<PostgresqlRelationalCommandExecutor>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        documentCacheMaterializationDataStore
+            .Should()
+            .BeOfType<PostgresqlDocumentCacheMaterializationDataStore>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();

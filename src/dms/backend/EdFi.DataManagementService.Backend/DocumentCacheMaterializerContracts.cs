@@ -37,7 +37,9 @@ public sealed record DocumentCacheProjectionTargetKey
 
 /// <summary>
 /// Resolved target inputs consumed by one materialization call. The materializer uses the supplied
-/// mapping set but does not resolve, validate, or refresh <c>DocumentCache:Targets</c>.
+/// mapping set but does not resolve, validate, or refresh <c>DocumentCache:Targets</c>. Provider
+/// adapters bind database access to <see cref="TargetKey" /> for background projector and direct-fill
+/// contexts that do not have ambient HTTP request data-store selection.
 /// </summary>
 public sealed record DocumentCacheMaterializationTargetContext
 {

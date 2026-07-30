@@ -72,6 +72,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var sessionDocumentHydrator = scope.ServiceProvider.GetRequiredService<ISessionDocumentHydrator>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var documentCacheMaterializationDataStore =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializationDataStore>();
         var documentCacheSourceMetadataReader =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheSourceMetadataReader>();
         var documentCacheDescriptorHydrator =
@@ -128,6 +130,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        documentCacheMaterializationDataStore
+            .Should()
+            .BeOfType<AmbientDocumentCacheMaterializationDataStore>();
         documentCacheSourceMetadataReader.Should().BeOfType<DocumentCacheSourceMetadataReader>();
         documentCacheDescriptorHydrator.Should().BeOfType<DocumentCacheDescriptorHydrator>();
         documentCacheMaterializer.Should().BeOfType<DocumentCacheMaterializer>();
@@ -177,6 +182,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         services
             .Where(descriptor =>
                 descriptor.ServiceType == typeof(IDocumentCacheMaterializer)
+                || descriptor.ServiceType == typeof(IDocumentCacheMaterializationDataStore)
                 || descriptor.ServiceType == typeof(IDocumentCacheSourceMetadataReader)
                 || descriptor.ServiceType == typeof(IDocumentCacheDescriptorHydrator)
             )

@@ -28,6 +28,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         services.AddLogging();
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddMssqlReferenceResolver();
 
@@ -56,6 +57,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var parameterConfigurator =
             scope.ServiceProvider.GetRequiredService<IRelationalParameterConfigurator>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var documentCacheMaterializationDataStore =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializationDataStore>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
@@ -87,6 +90,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();
         parameterConfigurator.Should().BeOfType<MssqlRelationalParameterConfigurator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        documentCacheMaterializationDataStore.Should().BeOfType<MssqlDocumentCacheMaterializationDataStore>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<MssqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();

@@ -154,14 +154,18 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
             },
             NullLogger<MssqlRelationalCommandExecutor>.Instance
         );
-
-        return new DocumentCacheMaterializer(
-            new DocumentCacheSourceMetadataReader(commandExecutor),
-            new ThrowingDescriptorHydrator(),
+        var materializationDataStore = new AmbientDocumentCacheMaterializationDataStore(
+            commandExecutor,
             new MutatingDocumentHydrator(
                 _mappingSet.ReadPlansByResource[SchoolResource],
                 mutateDuringHydration
-            ),
+            )
+        );
+
+        return new DocumentCacheMaterializer(
+            new DocumentCacheSourceMetadataReader(materializationDataStore),
+            new ThrowingDescriptorHydrator(),
+            materializationDataStore,
             new ThrowingReadMaterializer(),
             new ThrowingServedEtagComposer()
         );
@@ -319,8 +323,8 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
     private sealed class ThrowingDescriptorHydrator : IDocumentCacheDescriptorHydrator
     {
         public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-            SqlDialect dialect,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException("Coherence integration tests use ordinary resources.");
     }

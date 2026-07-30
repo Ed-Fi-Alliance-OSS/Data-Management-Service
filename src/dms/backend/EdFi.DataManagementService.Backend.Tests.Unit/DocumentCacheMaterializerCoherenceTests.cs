@@ -496,17 +496,28 @@ public class Given_DocumentCacheMaterializer_Coherence
         ) => Task.FromResult(finalResult);
     }
 
-    private sealed class RecordingDocumentHydrator : IDocumentHydrator
+    private sealed class RecordingDocumentHydrator : IDocumentCacheMaterializationDataStore
     {
         public HydratedPage Result { get; init; } = null!;
 
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
         public int CallCount { get; private set; }
 
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheMaterializationRequest request,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException("Coherence tests provide source metadata through a stub reader.");
+
         public Task<HydratedPage> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
-            CancellationToken ct
+            CancellationToken cancellationToken = default
         )
         {
             CallCount++;
@@ -514,13 +525,26 @@ public class Given_DocumentCacheMaterializer_Coherence
         }
     }
 
-    private sealed class ThrowingDocumentHydrator : IDocumentHydrator
+    private sealed class ThrowingDocumentHydrator : IDocumentCacheMaterializationDataStore
     {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheMaterializationRequest request,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException(
+                "Descriptor coherence tests provide source metadata through a stub reader."
+            );
+
         public Task<HydratedPage> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
-            CancellationToken ct
+            CancellationToken cancellationToken = default
         ) => throw new NotSupportedException("Descriptor coherence tests must not use ordinary hydration.");
     }
 
@@ -532,8 +556,8 @@ public class Given_DocumentCacheMaterializer_Coherence
         public int CallCount { get; private set; }
 
         public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-            SqlDialect dialect,
             CancellationToken cancellationToken = default
         )
         {
@@ -545,8 +569,8 @@ public class Given_DocumentCacheMaterializer_Coherence
     private sealed class ThrowingDescriptorHydrator : IDocumentCacheDescriptorHydrator
     {
         public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-            SqlDialect dialect,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException("Ordinary coherence tests must not hydrate descriptors.");
     }

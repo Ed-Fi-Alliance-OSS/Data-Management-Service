@@ -61,11 +61,15 @@ public class Given_Postgresql_DocumentCacheMaterializer_LinkBearingResource
             async cancellationToken => (DbConnection)await _dataSource.OpenConnectionAsync(cancellationToken),
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
+        var materializationDataStore = new AmbientDocumentCacheMaterializationDataStore(
+            commandExecutor,
+            new PostgresqlTestDocumentHydrator(_dataSource)
+        );
 
         var sut = new DocumentCacheMaterializer(
-            new DocumentCacheSourceMetadataReader(commandExecutor),
-            new DocumentCacheDescriptorHydrator(commandExecutor),
-            new PostgresqlTestDocumentHydrator(_dataSource),
+            new DocumentCacheSourceMetadataReader(materializationDataStore),
+            new DocumentCacheDescriptorHydrator(materializationDataStore),
+            materializationDataStore,
             new RelationalReadMaterializer(
                 new DeterministicLinkSlugResolver(),
                 Options.Create(new ResourceLinksOptions { Enabled = false }),

@@ -82,12 +82,12 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
             );
         }
 
+        var commandExecutor = new PostgresqlRelationalCommandExecutor(
+            async cancellationToken => (DbConnection)await _dataSource.OpenConnectionAsync(cancellationToken),
+            NullLogger<PostgresqlRelationalCommandExecutor>.Instance
+        );
         var sut = new DocumentCacheSourceMetadataReader(
-            new PostgresqlRelationalCommandExecutor(
-                async cancellationToken =>
-                    (DbConnection)await _dataSource.OpenConnectionAsync(cancellationToken),
-                NullLogger<PostgresqlRelationalCommandExecutor>.Instance
-            )
+            new AmbientDocumentCacheMaterializationDataStore(commandExecutor)
         );
 
         _foundResult = await sut.ReadAsync(CreateRequest(ExistingDocumentId));

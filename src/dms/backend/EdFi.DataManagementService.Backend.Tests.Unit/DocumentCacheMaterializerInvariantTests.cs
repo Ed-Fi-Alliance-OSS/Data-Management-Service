@@ -425,19 +425,33 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
     private sealed class ThrowingDescriptorHydrator : IDocumentCacheDescriptorHydrator
     {
         public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-            SqlDialect dialect,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException("Invariant validation tests use ordinary resources.");
     }
 
-    private sealed class SuccessfulDocumentHydrator(HydratedPage result) : IDocumentHydrator
+    private sealed class SuccessfulDocumentHydrator(HydratedPage result)
+        : IDocumentCacheMaterializationDataStore
     {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheMaterializationRequest request,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException(
+                "Invariant validation tests provide source metadata through a stub reader."
+            );
+
         public Task<HydratedPage> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
-            CancellationToken ct
+            CancellationToken cancellationToken = default
         ) => Task.FromResult(result);
     }
 

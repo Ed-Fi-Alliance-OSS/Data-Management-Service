@@ -24,20 +24,20 @@ public class Given_DocumentCacheSourceMetadataReader
     [Test]
     public async Task It_returns_missing_source_when_the_canonical_document_row_is_absent()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         var result = await sut.ReadAsync(CreateRequest(CreateMappingSetWithReadPlan()));
 
         result.Should().BeSameAs(DocumentCacheSourceMetadataReadResult.MissingSource.Instance);
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain("""FROM dms."Document" document""");
-        executor.Commands[0].CommandText.Should().Contain("""WHERE document."DocumentId" = @documentId""");
-        executor.Commands[0].CommandText.Should().NotContain("DocumentProjectionWork");
-        executor.Commands[0].CommandText.Should().NotContain("DocumentCache");
-        executor
+        dataStore.Commands.Should().ContainSingle();
+        dataStore.Commands[0].CommandText.Should().Contain("""FROM dms."Document" document""");
+        dataStore.Commands[0].CommandText.Should().Contain("""WHERE document."DocumentId" = @documentId""");
+        dataStore.Commands[0].CommandText.Should().NotContain("DocumentProjectionWork");
+        dataStore.Commands[0].CommandText.Should().NotContain("DocumentCache");
+        dataStore
             .Commands[0]
             .Parameters.Should()
             .ContainSingle(parameter => parameter.Name == "@documentId" && (long)parameter.Value! == 123L);
@@ -54,10 +54,10 @@ public class Given_DocumentCacheSourceMetadataReader
                 [SchoolResource] = readPlan,
             },
         };
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         var result = await sut.ReadAsync(CreateRequest(mappingSet));
 
@@ -83,10 +83,10 @@ public class Given_DocumentCacheSourceMetadataReader
     [Test]
     public async Task It_reads_current_source_metadata_without_resolving_the_resource_key_against_the_mapping_set()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 99)]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         var result = await sut.ReadCurrentAsync(CreateRequest(CreateMappingSet()));
 
@@ -101,10 +101,10 @@ public class Given_DocumentCacheSourceMetadataReader
     [Test]
     public async Task It_resolves_descriptor_resource_metadata_without_requiring_an_ordinary_read_plan()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 13)]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         var result = await sut.ReadAsync(CreateRequest(CreateMappingSet()));
 
@@ -124,26 +124,26 @@ public class Given_DocumentCacheSourceMetadataReader
         {
             Key = new MappingSetKey("test-hash", SqlDialect.Mssql, "v1"),
         };
-        var executor = new InMemoryRelationalCommandExecutor(
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore(
             [new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()])],
             SqlDialect.Mssql
         );
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         await sut.ReadAsync(CreateRequest(mappingSet));
 
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain("FROM [dms].[Document] document");
-        executor.Commands[0].CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
+        dataStore.Commands.Should().ContainSingle();
+        dataStore.Commands[0].CommandText.Should().Contain("FROM [dms].[Document] document");
+        dataStore.Commands[0].CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
     }
 
     [Test]
     public async Task It_throws_target_mapping_failure_when_the_source_resource_key_is_not_in_the_mapping_set()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 99)]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         Func<Task> act = () => sut.ReadAsync(CreateRequest(CreateMappingSet()));
 
@@ -162,10 +162,10 @@ public class Given_DocumentCacheSourceMetadataReader
     [Test]
     public async Task It_throws_target_mapping_failure_when_an_ordinary_resource_read_plan_is_missing()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         Func<Task> act = () => sut.ReadAsync(CreateRequest(CreateMappingSet()));
 
@@ -195,10 +195,10 @@ public class Given_DocumentCacheSourceMetadataReader
                 [resourceKey.ResourceKeyId] = resourceKey,
             },
         };
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 40)]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         Func<Task> act = () => sut.ReadAsync(CreateRequest(mappingSet));
 
@@ -221,10 +221,10 @@ public class Given_DocumentCacheSourceMetadataReader
                 [resourceKey.ResourceKeyId] = resourceKey,
             },
         };
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 41)]),
         ]);
-        var sut = new DocumentCacheSourceMetadataReader(executor);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
         Func<Task> act = () => sut.ReadAsync(CreateRequest(mappingSet));
 

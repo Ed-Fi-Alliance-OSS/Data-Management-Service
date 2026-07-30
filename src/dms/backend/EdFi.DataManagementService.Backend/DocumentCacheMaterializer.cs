@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed class DocumentCacheMaterializer(
     IDocumentCacheSourceMetadataReader sourceMetadataReader,
     IDocumentCacheDescriptorHydrator descriptorHydrator,
-    IDocumentHydrator documentHydrator,
+    IDocumentCacheMaterializationDataStore materializationDataStore,
     IRelationalReadMaterializer readMaterializer,
     IServedEtagComposer servedEtagComposer
 ) : IDocumentCacheMaterializer
@@ -28,8 +28,8 @@ internal sealed class DocumentCacheMaterializer(
         sourceMetadataReader ?? throw new ArgumentNullException(nameof(sourceMetadataReader));
     private readonly IDocumentCacheDescriptorHydrator _descriptorHydrator =
         descriptorHydrator ?? throw new ArgumentNullException(nameof(descriptorHydrator));
-    private readonly IDocumentHydrator _documentHydrator =
-        documentHydrator ?? throw new ArgumentNullException(nameof(documentHydrator));
+    private readonly IDocumentCacheMaterializationDataStore _materializationDataStore =
+        materializationDataStore ?? throw new ArgumentNullException(nameof(materializationDataStore));
     private readonly IRelationalReadMaterializer _readMaterializer =
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
     private readonly IServedEtagComposer _servedEtagComposer =
@@ -72,8 +72,9 @@ internal sealed class DocumentCacheMaterializer(
         DocumentCacheResolvedSourceMetadata.OrdinaryResource source
     )
     {
-        var hydratedPage = await _documentHydrator
+        var hydratedPage = await _materializationDataStore
             .HydrateAsync(
+                request,
                 source.ReadPlan,
                 new PageKeysetSpec.Single(source.DocumentId),
                 new HydrationExecutionOptions(UseSingleDocumentFastPath: true),
@@ -128,7 +129,7 @@ internal sealed class DocumentCacheMaterializer(
     )
     {
         var hydrationResult = await _descriptorHydrator
-            .HydrateAsync(source, request.TargetContext.MappingSet.Key.Dialect, request.CancellationToken)
+            .HydrateAsync(request, source, request.CancellationToken)
             .ConfigureAwait(false);
 
         return hydrationResult switch

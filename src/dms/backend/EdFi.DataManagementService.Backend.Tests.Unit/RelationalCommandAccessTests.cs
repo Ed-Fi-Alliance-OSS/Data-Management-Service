@@ -195,6 +195,68 @@ internal sealed class InMemoryRelationalCommandExecutor(
     }
 }
 
+internal sealed class InMemoryDocumentCacheMaterializationDataStore : IDocumentCacheMaterializationDataStore
+{
+    private readonly InMemoryRelationalCommandExecutor _commandExecutor;
+    private readonly Queue<HydratedPage> _hydratedPages;
+
+    public InMemoryDocumentCacheMaterializationDataStore(
+        IReadOnlyList<InMemoryRelationalCommandExecution> executions,
+        SqlDialect dialect = SqlDialect.Pgsql,
+        IReadOnlyList<HydratedPage>? hydratedPages = null
+    )
+    {
+        _commandExecutor = new InMemoryRelationalCommandExecutor(executions, dialect);
+        _hydratedPages = new Queue<HydratedPage>(hydratedPages ?? []);
+    }
+
+    public SqlDialect Dialect => _commandExecutor.Dialect;
+
+    public List<RelationalCommand> Commands => _commandExecutor.Commands;
+
+    public List<DocumentCacheMaterializationRequest> CommandRequests { get; } = [];
+
+    public List<DocumentCacheMaterializationRequest> HydrationRequests { get; } = [];
+
+    public List<ResourceReadPlan> HydrationPlans { get; } = [];
+
+    public List<PageKeysetSpec> HydrationKeysets { get; } = [];
+
+    public List<HydrationExecutionOptions> HydrationExecutionOptions { get; } = [];
+
+    public Task<TResult> ExecuteReaderAsync<TResult>(
+        DocumentCacheMaterializationRequest request,
+        RelationalCommand command,
+        Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+        CancellationToken cancellationToken = default
+    )
+    {
+        CommandRequests.Add(request);
+        return _commandExecutor.ExecuteReaderAsync(command, readAsync, cancellationToken);
+    }
+
+    public Task<HydratedPage> HydrateAsync(
+        DocumentCacheMaterializationRequest request,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
+        CancellationToken cancellationToken = default
+    )
+    {
+        HydrationRequests.Add(request);
+        HydrationPlans.Add(plan);
+        HydrationKeysets.Add(keyset);
+        HydrationExecutionOptions.Add(executionOptions);
+
+        if (!_hydratedPages.TryDequeue(out var hydratedPage))
+        {
+            throw new AssertionException("No in-memory hydrated page was configured for this call.");
+        }
+
+        return Task.FromResult(hydratedPage);
+    }
+}
+
 internal sealed record InMemoryRelationalCommandExecution(
     IReadOnlyList<InMemoryRelationalResultSet> ResultSets
 );

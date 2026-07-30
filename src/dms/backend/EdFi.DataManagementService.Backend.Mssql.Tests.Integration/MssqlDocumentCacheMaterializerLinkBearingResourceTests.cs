@@ -73,11 +73,15 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
             },
             NullLogger<MssqlRelationalCommandExecutor>.Instance
         );
+        var materializationDataStore = new AmbientDocumentCacheMaterializationDataStore(
+            commandExecutor,
+            new MssqlTestDocumentHydrator(_connectionString)
+        );
 
         var sut = new DocumentCacheMaterializer(
-            new DocumentCacheSourceMetadataReader(commandExecutor),
-            new DocumentCacheDescriptorHydrator(commandExecutor),
-            new MssqlTestDocumentHydrator(_connectionString),
+            new DocumentCacheSourceMetadataReader(materializationDataStore),
+            new DocumentCacheDescriptorHydrator(materializationDataStore),
+            materializationDataStore,
             new RelationalReadMaterializer(
                 new DeterministicLinkSlugResolver(),
                 Options.Create(new ResourceLinksOptions { Enabled = false }),

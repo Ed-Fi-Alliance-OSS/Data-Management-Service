@@ -69,6 +69,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(ServiceDescriptor.Singleton<IServedEtagComposer, ServedEtagComposer>());
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalReadMaterializer, RelationalReadMaterializer>());
         services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IDocumentCacheMaterializationDataStore,
+                AmbientDocumentCacheMaterializationDataStore
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IDocumentCacheSourceMetadataReader, DocumentCacheSourceMetadataReader>()
         );
         services.TryAdd(

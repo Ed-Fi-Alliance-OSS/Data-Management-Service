@@ -89,16 +89,17 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
             );
         }
 
+        var commandExecutor = new MssqlRelationalCommandExecutor(
+            async cancellationToken =>
+            {
+                var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync(cancellationToken);
+                return (DbConnection)connection;
+            },
+            NullLogger<MssqlRelationalCommandExecutor>.Instance
+        );
         var sut = new DocumentCacheSourceMetadataReader(
-            new MssqlRelationalCommandExecutor(
-                async cancellationToken =>
-                {
-                    var connection = new SqlConnection(_connectionString);
-                    await connection.OpenAsync(cancellationToken);
-                    return (DbConnection)connection;
-                },
-                NullLogger<MssqlRelationalCommandExecutor>.Instance
-            )
+            new AmbientDocumentCacheMaterializationDataStore(commandExecutor)
         );
 
         _foundResult = await sut.ReadAsync(CreateRequest(ExistingDocumentId));

@@ -117,6 +117,65 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             );
     }
 
+    [Test]
+    public async Task It_uses_TargetContext_data_store_for_metadata_reads_and_ordinary_hydration()
+    {
+        var testContext = CreateMaterializerTestContext();
+        var source = CreateOrdinarySource(testContext);
+        var request = CreateRequest(testContext.MappingSet);
+        var expectedDocumentJson = JsonNode
+            .Parse(
+                """
+                {"id":"11111111-2222-3333-4444-555555555555","_lastModifiedDate":"2026-07-30T14:15:16Z","nameOfInstitution":"Lincoln High"}
+                """
+            )!
+            .AsObject();
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore(
+            [
+                new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
+                new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
+            ],
+            hydratedPages: [CreateHydratedPage(testContext.ReadPlan, source)]
+        );
+        var readMaterializer = new RecordingReadMaterializer { Result = expectedDocumentJson };
+        var sut = new DocumentCacheMaterializer(
+            new DocumentCacheSourceMetadataReader(dataStore),
+            new DocumentCacheDescriptorHydrator(dataStore),
+            dataStore,
+            readMaterializer,
+            new RecordingServedEtagComposer("stream-etag")
+        );
+
+        var result = await sut.MaterializeAsync(request);
+
+        result.Should().BeOfType<DocumentCacheMaterializationResult.Success>();
+        dataStore.CommandRequests.Should().HaveCount(2);
+        dataStore
+            .CommandRequests.Should()
+            .OnlyContain(capturedRequest =>
+                capturedRequest.TargetContext.TargetKey.DataStoreId == new DataStoreId(7)
+                && capturedRequest.TargetContext.TargetKey.TenantKey == "tenant-a"
+            );
+        dataStore.HydrationRequests.Should().ContainSingle().Which.Should().BeSameAs(request);
+        dataStore.HydrationPlans.Should().ContainSingle().Which.Should().BeSameAs(testContext.ReadPlan);
+        dataStore
+            .HydrationKeysets.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(new PageKeysetSpec.Single(DocumentId));
+        dataStore
+            .HydrationExecutionOptions.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: true,
+                    IncludeDocumentReferenceLookup: true,
+                    UseSingleDocumentFastPath: true
+                )
+            );
+    }
+
     [TestCaseSource(nameof(SelectedRequiredContentVersionCases))]
     public async Task It_ignores_selected_required_content_version_when_materializing_current_source(
         long? selectedRequiredContentVersion
@@ -353,6 +412,20 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             ]),
         };
 
+    private static InMemoryRelationalResultSet CreateSourceMetadataResultSet(
+        DocumentCacheResolvedSourceMetadata source
+    ) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?>
+            {
+                ["DocumentId"] = source.DocumentId,
+                ["DocumentUuid"] = source.DocumentUuid.Value,
+                ["ResourceKeyId"] = source.ResourceKeyId,
+                ["ContentVersion"] = source.ContentVersion,
+                ["ContentLastModifiedAt"] = source.ContentLastModifiedAt,
+            }
+        );
+
     private static MaterializerTestContext CreateMaterializerTestContext()
     {
         var readPlan = CreateReadPlan();
@@ -520,8 +593,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
     private sealed class ThrowingDescriptorHydrator : IDocumentCacheDescriptorHydrator
     {
         public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-            SqlDialect dialect,
             CancellationToken cancellationToken = default
         ) =>
             throw new NotSupportedException(
@@ -529,11 +602,15 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             );
     }
 
-    private sealed class RecordingDocumentHydrator : IDocumentHydrator
+    private sealed class RecordingDocumentHydrator : IDocumentCacheMaterializationDataStore
     {
         public HydratedPage Result { get; init; } = null!;
 
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
         public int CallCount { get; private set; }
+
+        public DocumentCacheMaterializationRequest? CapturedRequest { get; private set; }
 
         public ResourceReadPlan? CapturedPlan { get; private set; }
 
@@ -541,14 +618,26 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
 
         public HydrationExecutionOptions? CapturedExecutionOptions { get; private set; }
 
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheMaterializationRequest request,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException(
+                "Ordinary resource hydration tests provide source metadata through a stub reader."
+            );
+
         public Task<HydratedPage> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
-            CancellationToken ct
+            CancellationToken cancellationToken = default
         )
         {
             CallCount++;
+            CapturedRequest = request;
             CapturedPlan = plan;
             CapturedKeyset = keyset;
             CapturedExecutionOptions = executionOptions;

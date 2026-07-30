@@ -75,7 +75,10 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
         sourceReader.CapturedRequest.Should().NotBeNull();
         sourceReader.CapturedRequest!.SelectedRequiredContentVersion.Should().Be(19);
         descriptorHydrator.CapturedSource.Should().BeSameAs(source);
-        descriptorHydrator.CapturedDialect.Should().Be(SqlDialect.Pgsql);
+        descriptorHydrator.CapturedRequest.Should().NotBeNull();
+        descriptorHydrator
+            .CapturedRequest!.TargetContext.MappingSet.Key.Dialect.Should()
+            .Be(SqlDialect.Pgsql);
         ordinaryHydrator.CallCount.Should().Be(0);
         readMaterializer.CallCount.Should().Be(0);
         servedEtagComposer
@@ -397,31 +400,44 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
         public DocumentCacheDescriptorHydrationResult Result { get; init; } =
             DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance;
 
+        public DocumentCacheMaterializationRequest? CapturedRequest { get; private set; }
+
         public DocumentCacheResolvedSourceMetadata.DescriptorResource? CapturedSource { get; private set; }
 
-        public SqlDialect? CapturedDialect { get; private set; }
-
         public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-            SqlDialect dialect,
             CancellationToken cancellationToken = default
         )
         {
+            CapturedRequest = request;
             CapturedSource = source;
-            CapturedDialect = dialect;
             return Task.FromResult(Result);
         }
     }
 
-    private sealed class RecordingDocumentHydrator : IDocumentHydrator
+    private sealed class RecordingDocumentHydrator : IDocumentCacheMaterializationDataStore
     {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
         public int CallCount { get; private set; }
 
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheMaterializationRequest request,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException(
+                "Descriptor hydration tests provide source metadata through a stub reader."
+            );
+
         public Task<HydratedPage> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
             HydrationExecutionOptions executionOptions,
-            CancellationToken ct
+            CancellationToken cancellationToken = default
         )
         {
             CallCount++;
@@ -477,12 +493,12 @@ public class Given_DocumentCacheDescriptorHydrator
     [Test]
     public async Task It_reads_descriptor_body_from_the_expected_DocumentId_and_ResourceKeyId()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateDescriptorResultSet(CreateHydrationRow())]),
         ]);
-        var sut = new DocumentCacheDescriptorHydrator(executor);
+        var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        var result = await sut.HydrateAsync(CreateDescriptorSource(), SqlDialect.Pgsql);
+        var result = await sut.HydrateAsync(CreateRequest(), CreateDescriptorSource());
 
         var found = result.Should().BeOfType<DocumentCacheDescriptorHydrationResult.Found>().Subject;
         found.DescriptorRow.DocumentId.Should().Be(DocumentId);
@@ -492,15 +508,15 @@ public class Given_DocumentCacheDescriptorHydrator
         found.DescriptorRow.CodeValue.Should().Be("Alternative");
         found.DescriptorRow.ShortDescription.Should().Be("Alternative");
 
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain("""FROM dms."Descriptor" descriptor""");
-        executor.Commands[0].CommandText.Should().Contain("""descriptor."DocumentId" = @documentId""");
-        executor.Commands[0].CommandText.Should().Contain("""descriptor."ResourceKeyId" = @resourceKeyId""");
-        executor.Commands[0].CommandText.Should().NotContain("dms.\"Document\"");
-        executor.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
-        executor.Commands[0].CommandText.Should().NotContain("@documentUuid");
-        executor.Commands[0].CommandText.Should().NotContain("Uri");
-        executor
+        dataStore.Commands.Should().ContainSingle();
+        dataStore.Commands[0].CommandText.Should().Contain("""FROM dms."Descriptor" descriptor""");
+        dataStore.Commands[0].CommandText.Should().Contain("""descriptor."DocumentId" = @documentId""");
+        dataStore.Commands[0].CommandText.Should().Contain("""descriptor."ResourceKeyId" = @resourceKeyId""");
+        dataStore.Commands[0].CommandText.Should().NotContain("dms.\"Document\"");
+        dataStore.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
+        dataStore.Commands[0].CommandText.Should().NotContain("@documentUuid");
+        dataStore.Commands[0].CommandText.Should().NotContain("Uri");
+        dataStore
             .Commands[0]
             .Parameters.Should()
             .Contain(parameter => parameter.Name == "@documentId" && (long)parameter.Value! == DocumentId)
@@ -512,12 +528,12 @@ public class Given_DocumentCacheDescriptorHydrator
     [Test]
     public async Task It_returns_stable_body_missing_when_the_descriptor_row_is_absent()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
-        var sut = new DocumentCacheDescriptorHydrator(executor);
+        var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        var result = await sut.HydrateAsync(CreateDescriptorSource(), SqlDialect.Pgsql);
+        var result = await sut.HydrateAsync(CreateRequest(), CreateDescriptorSource());
 
         result.Should().BeSameAs(DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance);
     }
@@ -525,16 +541,16 @@ public class Given_DocumentCacheDescriptorHydrator
     [Test]
     public async Task It_returns_stable_body_missing_when_required_descriptor_fields_are_absent()
     {
-        var executor = new InMemoryRelationalCommandExecutor([
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([
                 CreateDescriptorResultSet(
                     CreateHydrationRow(("Namespace", null), ("CodeValue", null), ("ShortDescription", null))
                 ),
             ]),
         ]);
-        var sut = new DocumentCacheDescriptorHydrator(executor);
+        var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        var result = await sut.HydrateAsync(CreateDescriptorSource(), SqlDialect.Pgsql);
+        var result = await sut.HydrateAsync(CreateRequest(), CreateDescriptorSource());
 
         result.Should().BeSameAs(DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance);
     }
@@ -542,20 +558,42 @@ public class Given_DocumentCacheDescriptorHydrator
     [Test]
     public async Task It_uses_sql_server_descriptor_body_sql_for_sql_server_mapping_sets()
     {
-        var executor = new InMemoryRelationalCommandExecutor(
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore(
             [new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()])],
             SqlDialect.Mssql
         );
-        var sut = new DocumentCacheDescriptorHydrator(executor);
+        var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        await sut.HydrateAsync(CreateDescriptorSource(), SqlDialect.Mssql);
+        await sut.HydrateAsync(CreateRequest(SqlDialect.Mssql), CreateDescriptorSource());
 
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
-        executor.Commands[0].CommandText.Should().Contain("descriptor.[DocumentId] = @documentId");
-        executor.Commands[0].CommandText.Should().Contain("descriptor.[ResourceKeyId] = @resourceKeyId");
-        executor.Commands[0].CommandText.Should().NotContain("[dms].[Document]");
-        executor.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
+        dataStore.Commands.Should().ContainSingle();
+        dataStore.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
+        dataStore.Commands[0].CommandText.Should().Contain("descriptor.[DocumentId] = @documentId");
+        dataStore.Commands[0].CommandText.Should().Contain("descriptor.[ResourceKeyId] = @resourceKeyId");
+        dataStore.Commands[0].CommandText.Should().NotContain("[dms].[Document]");
+        dataStore.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
+    }
+
+    private static DocumentCacheMaterializationRequest CreateRequest(SqlDialect dialect = SqlDialect.Pgsql) =>
+        new(
+            new DocumentCacheMaterializationTargetContext(
+                new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
+                CreateMappingSet(dialect)
+            ),
+            DocumentId,
+            selectedRequiredContentVersion: null,
+            DocumentCacheMaterializationPurpose.Fixture,
+            CancellationToken.None
+        );
+
+    private static MappingSet CreateMappingSet(SqlDialect dialect)
+    {
+        var mappingSet = RelationalAccessTestData.CreateMappingSet(DescriptorResource);
+
+        return mappingSet with
+        {
+            Key = new MappingSetKey("test-hash", dialect, "v1"),
+        };
     }
 
     private static InMemoryRelationalResultSet CreateDescriptorResultSet(

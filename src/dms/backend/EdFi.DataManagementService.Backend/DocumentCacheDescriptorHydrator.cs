@@ -10,8 +10,8 @@ namespace EdFi.DataManagementService.Backend;
 internal interface IDocumentCacheDescriptorHydrator
 {
     Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+        DocumentCacheMaterializationRequest request,
         DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-        SqlDialect dialect,
         CancellationToken cancellationToken = default
     );
 }
@@ -34,25 +34,32 @@ internal abstract record DocumentCacheDescriptorHydrationResult
     }
 }
 
-internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor commandExecutor)
-    : IDocumentCacheDescriptorHydrator
+internal sealed class DocumentCacheDescriptorHydrator(
+    IDocumentCacheMaterializationDataStore materializationDataStore
+) : IDocumentCacheDescriptorHydrator
 {
     private const string DocumentIdParameterName = "@documentId";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
 
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly IDocumentCacheMaterializationDataStore _materializationDataStore =
+        materializationDataStore ?? throw new ArgumentNullException(nameof(materializationDataStore));
 
     public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+        DocumentCacheMaterializationRequest request,
         DocumentCacheResolvedSourceMetadata.DescriptorResource source,
-        SqlDialect dialect,
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(source);
 
-        return _commandExecutor.ExecuteReaderAsync(
-            BuildReadCommand(dialect, source.DocumentId, source.ResourceKeyId),
+        return _materializationDataStore.ExecuteReaderAsync(
+            request,
+            BuildReadCommand(
+                request.TargetContext.MappingSet.Key.Dialect,
+                source.DocumentId,
+                source.ResourceKeyId
+            ),
             (reader, ct) => ReadSingleOrDefaultAsync(reader, source, ct),
             cancellationToken
         );
