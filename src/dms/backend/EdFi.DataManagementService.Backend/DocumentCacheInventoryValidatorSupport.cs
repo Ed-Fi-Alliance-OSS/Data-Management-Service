@@ -943,6 +943,16 @@ internal static class DocumentCacheInventoryValidatorSupport
                 )
             );
         }
+
+        if (!foreignKey.IsEnabled || !foreignKey.IsTrusted)
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{constraintName} foreign key is disabled or untrusted."
+                )
+            );
+        }
     }
 
     private static void ValidateColumns(
@@ -1302,6 +1312,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                     refa.attname AS ReferencedColumn,
                     CASE c.confdeltype WHEN 'c' THEN 'CASCADE' WHEN 'a' THEN 'NO_ACTION' ELSE c.confdeltype::text END AS DeleteAction,
                     CASE c.confupdtype WHEN 'c' THEN 'CASCADE' WHEN 'a' THEN 'NO_ACTION' ELSE c.confupdtype::text END AS UpdateAction,
+                    TRUE AS IsEnabled,
+                    TRUE AS IsTrusted,
                     key_columns.ordinal AS Ordinal
                 FROM pg_catalog.pg_constraint c
                 INNER JOIN pg_catalog.pg_class rel
@@ -1336,6 +1348,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                     referenced_columns.name AS ReferencedColumn,
                     foreign_keys.delete_referential_action_desc AS DeleteAction,
                     foreign_keys.update_referential_action_desc AS UpdateAction,
+                    CASE WHEN foreign_keys.is_disabled = 0 THEN 1 ELSE 0 END AS IsEnabled,
+                    CASE WHEN foreign_keys.is_not_trusted = 0 THEN 1 ELSE 0 END AS IsTrusted,
                     foreign_key_columns.constraint_column_id AS Ordinal
                 FROM sys.foreign_keys foreign_keys
                 INNER JOIN sys.tables parent_tables
@@ -1376,7 +1390,9 @@ internal static class DocumentCacheInventoryValidatorSupport
                     reader.GetString(reader.GetOrdinal("ReferencedTable")),
                     reader.GetString(reader.GetOrdinal("ReferencedColumn")),
                     reader.GetString(reader.GetOrdinal("DeleteAction")),
-                    reader.GetString(reader.GetOrdinal("UpdateAction"))
+                    reader.GetString(reader.GetOrdinal("UpdateAction")),
+                    ReadBooleanLike(reader, "IsEnabled"),
+                    ReadBooleanLike(reader, "IsTrusted")
                 ),
                 cancellationToken
             )
@@ -1394,7 +1410,9 @@ internal static class DocumentCacheInventoryValidatorSupport
             first.ReferencedTable,
             rows.Select(row => row.ReferencedColumn).ToArray(),
             first.DeleteAction,
-            first.UpdateAction
+            first.UpdateAction,
+            first.IsEnabled,
+            first.IsTrusted
         );
     }
 
@@ -2036,7 +2054,9 @@ internal static class DocumentCacheInventoryValidatorSupport
         string ReferencedTable,
         string ReferencedColumn,
         string DeleteAction,
-        string UpdateAction
+        string UpdateAction,
+        bool IsEnabled,
+        bool IsTrusted
     );
 
     private sealed record ForeignKeySnapshot(
@@ -2045,7 +2065,9 @@ internal static class DocumentCacheInventoryValidatorSupport
         string ReferencedTable,
         IReadOnlyList<string> ReferencedColumns,
         string DeleteAction,
-        string UpdateAction
+        string UpdateAction,
+        bool IsEnabled,
+        bool IsTrusted
     );
 
     private sealed record IndexRow(string Column, bool IsUsable);

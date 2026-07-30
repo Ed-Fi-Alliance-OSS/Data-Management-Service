@@ -251,6 +251,57 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
     }
 
+    [TestCase("[dms].[DocumentCache]", "FK_DocumentCache_Document")]
+    [TestCase("[dms].[DocumentProjectionWork]", "FK_DocumentProjectionWork_Document")]
+    public async Task It_rejects_disabled_required_DocumentCache_foreign_keys(
+        string tableName,
+        string foreignKeyName
+    )
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $$"""
+            ALTER TABLE {{tableName}}
+            NOCHECK CONSTRAINT [{{foreignKeyName}}];
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [TestCase("[dms].[DocumentCache]", "FK_DocumentCache_Document")]
+    [TestCase("[dms].[DocumentProjectionWork]", "FK_DocumentProjectionWork_Document")]
+    public async Task It_rejects_untrusted_required_DocumentCache_foreign_keys(
+        string tableName,
+        string foreignKeyName
+    )
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $$"""
+            ALTER TABLE {{tableName}}
+            NOCHECK CONSTRAINT [{{foreignKeyName}}];
+
+            ALTER TABLE {{tableName}}
+            WITH NOCHECK CHECK CONSTRAINT [{{foreignKeyName}}];
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [Test]
     public async Task It_keeps_inventory_failures_scoped_to_the_validated_target()
     {
