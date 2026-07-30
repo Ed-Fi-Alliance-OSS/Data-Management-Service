@@ -85,7 +85,9 @@ function Resolve-ComposeEnvRawValue {
     param(
         [hashtable]$EnvironmentValues,
         [AllowEmptyString()][string]$RawValue,
-        [int]$Depth = 0
+        [int]$Depth = 0,
+        [scriptblock]$NameLookup,
+        [System.Collections.Generic.List[string]]$ReferenceTrace
     )
 
     $converted = ConvertFrom-ComposeEnvironmentValue -Value $RawValue
@@ -95,7 +97,12 @@ function Resolve-ComposeEnvRawValue {
         return $converted
     }
 
-    return Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $converted -Depth $Depth
+    return Resolve-ComposeEnvReference `
+        -EnvironmentValues $EnvironmentValues `
+        -Value $converted `
+        -Depth $Depth `
+        -NameLookup $NameLookup `
+        -ReferenceTrace $ReferenceTrace
 }
 
 function Resolve-ComposeEnvReference {
@@ -113,11 +120,31 @@ function Resolve-ComposeEnvReference {
         render: ':-' substitutes when unset OR empty, '-' only when unset; ':+' substitutes when set
         AND non-empty, '+' whenever set (even empty); the error forms fail interpolation, surfaced
         here as a thrown error.
+
+    .PARAMETER NameLookup
+        Optional. When supplied, every variable NAME is resolved by invoking this scriptblock with the
+        name instead of consulting the ambient environment and the EnvironmentValues map. The value it
+        returns is used VERBATIM as a terminal literal: it is not resolved again, and its '$'
+        characters are not reinterpreted. That is what Docker Compose does for a value it has already
+        resolved - verified live: with NAME=secret and A=$$'{NAME}', a later B=${A} renders the literal
+        ${NAME}, not "secret", and the same holds for a single-quoted source value. Returning $null
+        means "unset", which is distinct from returning "" (set-but-empty); the ':-' vs '-' and ':+'
+        vs '+' operators key on exactly that difference. Omit this parameter and every existing
+        caller keeps today's behavior, where map entries are RAW dotenv values resolved recursively.
+
+    .PARAMETER ReferenceTrace
+        Optional. Receives the name of every variable actually evaluated during this resolution, in
+        evaluation order. Because operator words are resolved lazily (only in the branch that fires),
+        this is the set of names the value genuinely depends on GIVEN the current environment state -
+        something no purely lexical scan can determine, since ${A:-${B}} depends on B only when A is
+        unset or empty and ${A:+${B}} has the opposite condition.
     #>
     param(
         [hashtable]$EnvironmentValues,
         [AllowEmptyString()][string]$Value,
-        [int]$Depth = 0
+        [int]$Depth = 0,
+        [scriptblock]$NameLookup,
+        [System.Collections.Generic.List[string]]$ReferenceTrace
     )
 
     if ([string]::IsNullOrEmpty($Value) -or $Value.IndexOf('$') -lt 0 -or $Depth -ge 8) {
@@ -128,7 +155,12 @@ function Resolve-ComposeEnvReference {
     $placeholder = [char]0x1
     $working = $Value.Replace('$$', $placeholder)
 
-    $working = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $working -Depth $Depth
+    $working = Resolve-ComposeInterpolatedText `
+        -EnvironmentValues $EnvironmentValues `
+        -Text $working `
+        -Depth $Depth `
+        -NameLookup $NameLookup `
+        -ReferenceTrace $ReferenceTrace
 
     return $working.Replace($placeholder, '$')
 }
@@ -140,12 +172,28 @@ function Resolve-ComposeNamedReference {
         then the env-file map (whose value is itself resolved through Resolve-ComposeEnvRawValue so
         quoting and nested references hold), then $null for "unset". Distinguishing $null (unset)
         from "" (set-but-empty) is what the ':-' vs '-' and ':+' vs '+' operators key on.
+
+        This is the single place a NAME becomes a value, so it is also the single place that records
+        the reference trace and honors a caller-supplied terminal-value lookup.
     #>
     param(
         [hashtable]$EnvironmentValues,
         [Parameter(Mandatory)] [string]$Name,
-        [int]$Depth = 0
+        [int]$Depth = 0,
+        [scriptblock]$NameLookup,
+        [System.Collections.Generic.List[string]]$ReferenceTrace
     )
+
+    if ($null -ne $ReferenceTrace) { $ReferenceTrace.Add($Name) }
+
+    if ($null -ne $NameLookup) {
+        # Terminal lookup: the caller owns precedence, and whatever it returns is already resolved.
+        # No recursion and no re-interpretation of '$' - see the NameLookup note on
+        # Resolve-ComposeEnvReference.
+        $looked = & $NameLookup $Name
+        if ($null -eq $looked) { return $null }
+        return [string]$looked
+    }
 
     $ambient = [System.Environment]::GetEnvironmentVariable($Name)
     if ($null -ne $ambient) { return $ambient }
@@ -167,7 +215,9 @@ function Resolve-ComposeInterpolatedText {
     param(
         [hashtable]$EnvironmentValues,
         [AllowEmptyString()][string]$Text,
-        [int]$Depth = 0
+        [int]$Depth = 0,
+        [scriptblock]$NameLookup,
+        [System.Collections.Generic.List[string]]$ReferenceTrace
     )
 
     if ([string]::IsNullOrEmpty($Text) -or $Text.IndexOf('$') -lt 0 -or $Depth -ge 8) {
@@ -206,7 +256,12 @@ function Resolve-ComposeInterpolatedText {
             }
 
             $inner = $Text.Substring($i + 2, $scan - ($i + 2))
-            [void]$builder.Append((Resolve-ComposeBracedReference -EnvironmentValues $EnvironmentValues -Inner $inner -Depth $Depth))
+            [void]$builder.Append((Resolve-ComposeBracedReference `
+                -EnvironmentValues $EnvironmentValues `
+                -Inner $inner `
+                -Depth $Depth `
+                -NameLookup $NameLookup `
+                -ReferenceTrace $ReferenceTrace))
             $i = $scan + 1
             continue
         }
@@ -216,7 +271,12 @@ function Resolve-ComposeInterpolatedText {
             $scan = $i + 1
             while ($scan -lt $Text.Length -and $Text[$scan] -match '[A-Za-z0-9_]') { $scan++ }
             $name = $Text.Substring($i + 1, $scan - ($i + 1))
-            $resolved = Resolve-ComposeNamedReference -EnvironmentValues $EnvironmentValues -Name $name -Depth $Depth
+            $resolved = Resolve-ComposeNamedReference `
+                -EnvironmentValues $EnvironmentValues `
+                -Name $name `
+                -Depth $Depth `
+                -NameLookup $NameLookup `
+                -ReferenceTrace $ReferenceTrace
             [void]$builder.Append([string]($resolved ?? ""))
             $i = $scan
             continue
@@ -240,7 +300,9 @@ function Resolve-ComposeBracedReference {
     param(
         [hashtable]$EnvironmentValues,
         [AllowEmptyString()][string]$Inner,
-        [int]$Depth = 0
+        [int]$Depth = 0,
+        [scriptblock]$NameLookup,
+        [System.Collections.Generic.List[string]]$ReferenceTrace
     )
 
     $nameMatch = [regex]::Match($Inner, '^[A-Za-z_][A-Za-z0-9_]*')
@@ -252,7 +314,12 @@ function Resolve-ComposeBracedReference {
     $rest = $Inner.Substring($name.Length)
 
     if ($rest.Length -eq 0) {
-        $resolved = Resolve-ComposeNamedReference -EnvironmentValues $EnvironmentValues -Name $name -Depth $Depth
+        $resolved = Resolve-ComposeNamedReference `
+            -EnvironmentValues $EnvironmentValues `
+            -Name $name `
+            -Depth $Depth `
+            -NameLookup $NameLookup `
+            -ReferenceTrace $ReferenceTrace
         return [string]($resolved ?? "")
     }
 
@@ -266,39 +333,210 @@ function Resolve-ComposeBracedReference {
     }
 
     $word = $rest.Substring($operator.Length)
-    $value = Resolve-ComposeNamedReference -EnvironmentValues $EnvironmentValues -Name $name -Depth $Depth
+    $value = Resolve-ComposeNamedReference `
+        -EnvironmentValues $EnvironmentValues `
+        -Name $name `
+        -Depth $Depth `
+        -NameLookup $NameLookup `
+        -ReferenceTrace $ReferenceTrace
 
+    # The word is resolved only inside the branch that uses it. Compose evaluates an operator word
+    # only when the operator fires - verified live: ${SET:-${MISSING:?boom}} renders the set value
+    # with no error. That laziness is also why ReferenceTrace reports genuine, state-dependent
+    # dependencies rather than every name that merely appears in the text. The call is repeated per
+    # branch rather than hoisted into a closure: a closure created here loses this module's session
+    # state, so the module-private resolver would not be resolvable when it is finally invoked.
     switch ($operator) {
         ':-' {
-            if ($null -eq $value -or $value -eq '') { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            if ($null -eq $value -or $value -eq '') {
+                return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) -NameLookup $NameLookup -ReferenceTrace $ReferenceTrace
+            }
             return $value
         }
         '-' {
-            if ($null -eq $value) { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            if ($null -eq $value) {
+                return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) -NameLookup $NameLookup -ReferenceTrace $ReferenceTrace
+            }
             return $value
         }
         ':+' {
-            if ($null -ne $value -and $value -ne '') { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            if ($null -ne $value -and $value -ne '') {
+                return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) -NameLookup $NameLookup -ReferenceTrace $ReferenceTrace
+            }
             return ""
         }
         '+' {
-            if ($null -ne $value) { return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) }
+            if ($null -ne $value) {
+                return Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) -NameLookup $NameLookup -ReferenceTrace $ReferenceTrace
+            }
             return ""
         }
         ':?' {
             if ($null -eq $value -or $value -eq '') {
-                $message = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1)
+                $message = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) -NameLookup $NameLookup -ReferenceTrace $ReferenceTrace
                 throw "Docker Compose interpolation error: required variable '$name' is missing a value: $message"
             }
             return $value
         }
         '?' {
             if ($null -eq $value) {
-                $message = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1)
+                $message = Resolve-ComposeInterpolatedText -EnvironmentValues $EnvironmentValues -Text $word -Depth ($Depth + 1) -NameLookup $NameLookup -ReferenceTrace $ReferenceTrace
                 throw "Docker Compose interpolation error: required variable '$name' is missing a value: $message"
             }
             return $value
         }
+    }
+}
+
+function Get-DotenvAssignment {
+    <#
+    .SYNOPSIS
+        Parses one env-file line as a Docker Compose assignment, or returns $null when the line is a
+        comment, blank, or not an assignment.
+
+    .DESCRIPTION
+        The single assignment grammar for this module. Every site that detects, replaces, or moves an
+        env-file line must use it, because a detection grammar wider than the write grammar silently
+        turns a repair into a no-op.
+
+        The accepted shape was confirmed against real `docker compose config` renders: leading
+        whitespace is allowed; an `export ` prefix is accepted and stripped; whitespace is allowed on
+        both sides of '='; the key is trimmed; and an empty value is a valid assignment. Value
+        trimming, quote handling, and inline-comment stripping are NOT done here - they belong to
+        ConvertFrom-ComposeEnvironmentValue, which the resolver already applies - so RawValue is the
+        verbatim text after '=' and callers keep the ability to rewrite a line without disturbing its
+        authored quoting.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$Line
+    )
+
+    $match = [regex]::Match($Line, '^[ \t]*(?:export[ \t]+)?(?<key>[A-Za-z_][A-Za-z0-9_]*)[ \t]*=(?<value>.*)$')
+    if (-not $match.Success) { return $null }
+
+    return [pscustomobject]@{
+        Key      = $match.Groups['key'].Value
+        RawValue = $match.Groups['value'].Value
+        Text     = $Line
+    }
+}
+
+function Test-DotenvAssignmentLine {
+    <#
+    .SYNOPSIS
+        True when the line assigns the given key, using the shared assignment grammar.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$Line,
+        [Parameter(Mandatory)] [string]$Key
+    )
+
+    $assignment = Get-DotenvAssignment -Line $Line
+    return ($null -ne $assignment -and $assignment.Key -eq $Key)
+}
+
+function Resolve-DotenvFileSequentially {
+    <#
+    .SYNOPSIS
+        Resolves an env file the way Docker Compose actually resolves an --env-file: line by line, in
+        declaration order, so a reference sees only what precedes it.
+
+    .DESCRIPTION
+        Docker Compose does not resolve an env file against its own finished contents. It walks the
+        file, and each value is resolved against what is in effect at that point. Ground truth captured
+        from real `docker compose config` renders:
+
+          - a reference resolves to the ambient value if the name is set in the process environment,
+            else to the most recent PRECEDING declaration in the same file, else unset;
+          - the final environment the compose file interpolates against keeps the LAST declaration of
+            each key (ambient still winning), so a duplicated key can hold two different effective
+            values in one run - an earlier one frozen into intervening lines and the last one seen by
+            the compose file;
+          - a value that has been resolved is terminal: referencing it yields that literal verbatim,
+            with no further interpolation and no re-interpretation of '$'.
+
+        A hashtable-based resolution cannot express any of that, which is why validation built on one
+        can approve a file Compose renders differently.
+
+    .OUTPUTS
+        A PSCustomObject with:
+          Declarations - ordered list of every assignment, each carrying Key, RawValue, LineIndex,
+                         ResolvedValue (the value frozen at that line) and References (the names
+                         actually evaluated while resolving it, in evaluation order).
+          Effective    - hashtable of the final effective value per key: ambient if set, else the last
+                         declaration's resolved value. This is what the compose file sees.
+          DuplicateKeys- keys declared more than once, in first-declaration order.
+    #>
+    param(
+        [Parameter(Mandatory, ParameterSetName = 'Path')] [string]$Path,
+        [Parameter(Mandatory, ParameterSetName = 'Line')] [AllowEmptyCollection()] [string[]]$Line
+    )
+
+    $lines = if ($PSCmdlet.ParameterSetName -eq 'Path') { [System.IO.File]::ReadAllLines($Path) } else { $Line }
+
+    # Terminal values of the declarations seen so far. Never fed back through raw-value resolution:
+    # see the NameLookup note on Resolve-ComposeEnvReference.
+    $accumulated = @{}
+    $declarations = [System.Collections.Generic.List[object]]::new()
+    $declarationCounts = @{}
+
+    for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
+        $text = [string]$lines[$lineIndex]
+        if ($text -match '^\s*#') { continue }
+
+        $assignment = Get-DotenvAssignment -Line $text
+        if ($null -eq $assignment) { continue }
+
+        $trace = [System.Collections.Generic.List[string]]::new()
+        $lookup = {
+            param([string]$name)
+            $ambientValue = [System.Environment]::GetEnvironmentVariable($name)
+            if ($null -ne $ambientValue) { return $ambientValue }
+            if ($accumulated.ContainsKey($name)) { return [string]$accumulated[$name] }
+            return $null
+        }.GetNewClosure()
+
+        # Resolve-ComposeEnvRawValue applies Compose's value semantics to the raw text first (quote
+        # stripping, inline comments, and the single-quote literal rule), then interpolates - so a
+        # single-quoted value stays literal here exactly as Compose leaves it.
+        $resolved = Resolve-ComposeEnvRawValue `
+            -EnvironmentValues @{} `
+            -RawValue $assignment.RawValue `
+            -NameLookup $lookup `
+            -ReferenceTrace $trace
+
+        $accumulated[$assignment.Key] = $resolved
+        $declarationCounts[$assignment.Key] = 1 + [int]($declarationCounts[$assignment.Key] ?? 0)
+
+        $declarations.Add([pscustomobject]@{
+            Key           = $assignment.Key
+            RawValue      = $assignment.RawValue
+            LineIndex     = $lineIndex
+            ResolvedValue = $resolved
+            References    = @($trace)
+        })
+    }
+
+    # Ambient precedence applies to the final environment too, so a key set in the shell overrides
+    # whatever the file last declared.
+    $effective = @{}
+    foreach ($key in $accumulated.Keys) { $effective[$key] = $accumulated[$key] }
+    foreach ($key in @($effective.Keys)) {
+        $ambientValue = [System.Environment]::GetEnvironmentVariable($key)
+        if ($null -ne $ambientValue) { $effective[$key] = $ambientValue }
+    }
+
+    $duplicates = [System.Collections.Generic.List[string]]::new()
+    foreach ($declaration in $declarations) {
+        if ($declarationCounts[$declaration.Key] -gt 1 -and -not $duplicates.Contains($declaration.Key)) {
+            $duplicates.Add($declaration.Key)
+        }
+    }
+
+    return [pscustomobject]@{
+        Declarations  = @($declarations)
+        Effective     = $effective
+        DuplicateKeys = @($duplicates)
     }
 }
 
@@ -793,6 +1031,9 @@ Export-ModuleMember -Function `
     ConvertFrom-ComposeEnvironmentValue, `
     Resolve-ComposeEnvReference, `
     Resolve-ComposeEnvRawValue, `
+    Get-DotenvAssignment, `
+    Test-DotenvAssignmentLine, `
+    Resolve-DotenvFileSequentially, `
     Get-ComposeResolvedEnvValue, `
     Get-RequiredComposeResolvedEnvValue, `
     Assert-SafeDatabaseName, `

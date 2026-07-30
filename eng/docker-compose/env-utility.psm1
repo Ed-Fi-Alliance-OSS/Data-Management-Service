@@ -461,10 +461,15 @@ function Write-DerivedEnvFile {
     $content = Get-Content -LiteralPath $BaseEnvironmentFile -Raw
     if ($null -eq $content) { $content = "" }
 
-    # 1) Apply scalar key overrides. Replace `^KEY=...$` lines, or append if missing.
+    # 1) Apply scalar key overrides. Replace the key's assignment line, or append if missing. The
+    # pattern mirrors the shared assignment grammar (Get-DotenvAssignment): optional indent, optional
+    # `export ` prefix, and optional whitespace around '='. A narrower pattern would append a second
+    # declaration of the same key instead of replacing the existing one, and Compose keeps the LAST
+    # declaration for the final environment while earlier lines still see the first - so the file would
+    # carry two different effective values for one key.
     foreach ($key in $KeyOverrides.Keys) {
         $value = [string]$KeyOverrides[$key]
-        $linePattern = "(?m)^[ \t]*$([Regex]::Escape($key))=.*$"
+        $linePattern = "(?m)^[ \t]*(?:export[ \t]+)?$([Regex]::Escape($key))[ \t]*=.*$"
         $newLine = "$key=$value"
         if ([Regex]::IsMatch($content, $linePattern)) {
             # A match evaluator returns $newLine literally. The string-replacement overload of
@@ -1361,15 +1366,26 @@ function Move-EnvFileKeyBeforeAnotherKey {
     $moveIndex = -1
     $beforeIndex = -1
     for ($i = 0; $i -lt $lines.Length; $i++) {
-        if ($moveIndex -lt 0 -and $lines[$i] -match "^\s*$([regex]::Escape($KeyToMove))=") {
+        # One shared assignment grammar for detection, replacement, and movement. A narrower grammar
+        # here than the detector's is what previously turned this into a silent no-op: a valid
+        # "KEY = value" line was routed to repair, never matched, and the file was handed to Compose
+        # still rendering that segment empty.
+        if ($moveIndex -lt 0 -and (Test-DotenvAssignmentLine -Line $lines[$i] -Key $KeyToMove)) {
             $moveIndex = $i
         }
-        if ($beforeIndex -lt 0 -and $lines[$i] -match "^\s*$([regex]::Escape($BeforeKey))=") {
+        if ($beforeIndex -lt 0 -and (Test-DotenvAssignmentLine -Line $lines[$i] -Key $BeforeKey)) {
             $beforeIndex = $i
         }
     }
 
-    if ($moveIndex -lt 0 -or $beforeIndex -lt 0 -or $moveIndex -lt $beforeIndex) {
+    if ($moveIndex -lt 0) {
+        # Every caller asks to move a key it has already observed in the file, so not finding it means
+        # the grammars have drifted apart again. Fail loudly rather than silently declining the repair.
+        throw "Move-EnvFileKeyBeforeAnotherKey: '$KeyToMove' is not declared in '$Path', so it cannot be moved."
+    }
+
+    if ($beforeIndex -lt 0 -or $moveIndex -lt $beforeIndex) {
+        # Nothing to order against, or already ordered correctly.
         return
     }
 
@@ -1381,6 +1397,158 @@ function Move-EnvFileKeyBeforeAnotherKey {
 
     $content = ($reordered -join "`n") + "`n"
     [System.IO.File]::WriteAllText($Path, $content, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Get-DotenvLastDeclaration {
+    <#
+    .SYNOPSIS
+        The last declaration of a key in a sequential evaluation, or $null when the key is not
+        declared. The LAST one is what the compose file's own final environment sees.
+    #>
+    param(
+        [Parameter(Mandatory)] $Evaluation,
+        [Parameter(Mandatory)] [string]$Name
+    )
+
+    $declarationsForKey = @($Evaluation.Declarations | Where-Object { $_.Key -eq $Name })
+    if ($declarationsForKey.Count -eq 0) { return $null }
+    return $declarationsForKey[-1]
+}
+
+function Get-SequentialEffectiveValue {
+    <#
+    .SYNOPSIS
+        The effective value of a key as the compose file would see it: ambient if set, else the last
+        declaration's resolved value, else $null.
+
+    .PARAMETER DefaultValue
+        When supplied, returned in place of an absent or blank result - matching
+        Get-ComposeResolvedEnvValue's documented fallback behavior.
+    #>
+    param(
+        [Parameter(Mandatory)] $Evaluation,
+        [Parameter(Mandatory)] [string]$Name,
+        [string]$DefaultValue
+    )
+
+    $ambient = [System.Environment]::GetEnvironmentVariable($Name)
+    $value =
+        if ($null -ne $ambient) { $ambient }
+        elseif ($Evaluation.Effective.ContainsKey($Name)) { [string]$Evaluation.Effective[$Name] }
+        else { $null }
+
+    if ($PSBoundParameters.ContainsKey('DefaultValue') -and [string]::IsNullOrWhiteSpace($value)) {
+        return $DefaultValue
+    }
+    return $value
+}
+
+function Test-DotenvReferenceResolvable {
+    <#
+    .SYNOPSIS
+        True when a reference to Name, appearing on the line at BeforeLineIndex, resolves to something
+        rather than to nothing.
+
+    .DESCRIPTION
+        Mirrors Compose's sequential rule: an ambient value always resolves; otherwise the name must
+        have a declaration STRICTLY BEFORE the referencing line. A declaration at or after that line
+        is a forward reference, which Compose renders as empty.
+    #>
+    param(
+        [Parameter(Mandatory)] $Evaluation,
+        [Parameter(Mandatory)] [string]$Name,
+        [Parameter(Mandatory)] [int]$BeforeLineIndex
+    )
+
+    if ($null -ne [System.Environment]::GetEnvironmentVariable($Name)) { return $true }
+    foreach ($declaration in $Evaluation.Declarations) {
+        if ($declaration.Key -eq $Name -and $declaration.LineIndex -lt $BeforeLineIndex) { return $true }
+    }
+    return $false
+}
+
+function Get-DotenvSequentialLookup {
+    <#
+    .SYNOPSIS
+        Builds a terminal-value lookup delegate over a sequential evaluation, for resolving a value in
+        the same environment Compose would use.
+
+    .DESCRIPTION
+        Precedence matches Compose: ambient first, then any caller Override, then the evaluation's
+        values. With -BeforeLineIndex the lookup uses the value in effect AT that line (the most recent
+        preceding declaration); without it, the file's final effective values are used. Values are
+        returned as already-resolved terminals, so a value Compose froze as a literal '${NAME}' stays
+        literal instead of being expanded a second time.
+    #>
+    param(
+        [Parameter(Mandatory)] $Evaluation,
+        [hashtable]$Override = @{},
+        [int]$BeforeLineIndex = -1
+    )
+
+    $declarations = $Evaluation.Declarations
+    $effective = $Evaluation.Effective
+    $overrides = $Override
+    $limit = $BeforeLineIndex
+
+    return {
+        param([string]$name)
+
+        $ambient = [System.Environment]::GetEnvironmentVariable($name)
+        if ($null -ne $ambient) { return $ambient }
+        if ($overrides.ContainsKey($name)) { return [string]$overrides[$name] }
+
+        if ($limit -ge 0) {
+            $frozen = $null
+            $found = $false
+            foreach ($declaration in $declarations) {
+                if ($declaration.Key -eq $name -and $declaration.LineIndex -lt $limit) {
+                    $frozen = $declaration.ResolvedValue
+                    $found = $true
+                }
+            }
+            if ($found) { return [string]$frozen }
+            return $null
+        }
+
+        if ($effective.ContainsKey($name)) { return [string]$effective[$name] }
+        return $null
+    }.GetNewClosure()
+}
+
+function Get-DotenvDependencyClosure {
+    <#
+    .SYNOPSIS
+        The set of keys a group of root keys transitively depends on, including the roots themselves.
+
+    .DESCRIPTION
+        Walks each key's last declaration's evaluated-reference trace. Because the traces are recorded
+        at resolution time, an escaped '$$' literal and an operator word that did not fire contribute
+        nothing - so the closure is the set of keys that genuinely affect the roots' values in this
+        environment.
+    #>
+    param(
+        [Parameter(Mandatory)] $Evaluation,
+        [Parameter(Mandatory)] [string[]]$RootKey
+    )
+
+    $closure = [System.Collections.Generic.List[string]]::new()
+    $pending = [System.Collections.Generic.Queue[string]]::new()
+    foreach ($key in $RootKey) { $pending.Enqueue($key) }
+
+    while ($pending.Count -gt 0) {
+        $key = $pending.Dequeue()
+        if ($closure.Contains($key)) { continue }
+        $closure.Add($key)
+
+        $declaration = Get-DotenvLastDeclaration -Evaluation $Evaluation -Name $key
+        if ($null -eq $declaration) { continue }
+        foreach ($referencedName in $declaration.References) {
+            if (-not $closure.Contains($referencedName)) { $pending.Enqueue($referencedName) }
+        }
+    }
+
+    return @($closure)
 }
 
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
@@ -1484,6 +1652,9 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     }
 
     $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
+    # Sequential evaluation is the authority for every value decision below: it is what Docker Compose
+    # actually does with an --env-file, honoring declaration order, duplicates, and ambient precedence.
+    $sequential = Resolve-DotenvFileSequentially -Path $BaseEnvironmentFile
     $datastoreNameKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
     $legacyToken = '${' + $datastoreNameKey + '}'
 
@@ -1491,14 +1662,14 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
 
     # Ambient-aware: an ambient POSTGRES_DB_NAME / MSSQL_DB_NAME override genuinely moves the running
     # database container, so the CMS seam this function materializes must follow it too - matching
-    # Confirm-CmsDatabaseTopologyAgreement's own resolution of the same key, not a file-only lookup
-    # that would silently disagree with what Compose actually starts.
+    # Confirm-CmsDatabaseTopologyAgreement's own resolution of the same key. Taken from the sequential
+    # evaluation so a datastore name Compose freezes differently is not silently accepted.
     $intendedDatabaseName =
         if ($SeparateConfigDatabase) {
             "edfi_configurationservice"
         }
         else {
-            Get-ComposeResolvedEnvValue -EnvironmentValues $baseValues -Name $datastoreNameKey
+            [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         }
     if ([string]::IsNullOrWhiteSpace($intendedDatabaseName)) {
         throw "Resolve-CmsDatabaseTopologyEnvironmentFile: could not resolve a non-blank database name for '$datastoreNameKey'."
@@ -1538,80 +1709,137 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
 
     $currentMarker = Get-EnvValue -EnvValues $baseValues -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -DefaultValue "false"
 
-    # Resolve the CURRENT DMS_CONFIG_DATABASE_NAME the same Compose-precedence-aware way the intended
-    # value above was computed (ambient wins; ${VAR} indirection followed), so an already-correct
-    # alias-shaped file is recognized as needing no update even while an ambient datastore-name
-    # override is active - Compose would resolve that same alias to the same ambient value too.
-    $currentDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $baseValues -Name "DMS_CONFIG_DATABASE_NAME"
+    # The current DMS_CONFIG_DATABASE_NAME comes from the SEQUENTIAL evaluation, not a hashtable
+    # lookup, so an already-correct alias-shaped file is recognized as needing no update while an
+    # ambient datastore-name override is active, AND a file whose alias Compose actually freezes to a
+    # different value is recognized as needing one.
+    $currentDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "DMS_CONFIG_DATABASE_NAME")
 
     $markerChanged = -not [string]::Equals($currentMarker, $intendedMarker, [System.StringComparison]::Ordinal)
     $nameChanged = -not [string]::Equals($currentDatabaseName, $intendedDatabaseName, [System.StringComparison]::Ordinal)
     $connectionStringChanged = -not [string]::Equals($currentConnectionString, $intendedConnectionString, [System.StringComparison]::Ordinal)
 
-    # Docker Compose resolves --env-file references in declaration order, so a value can be correct
-    # in this function's hashtable-based (order-blind) resolution and still render empty for Compose:
-    # DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME} declared ABOVE POSTGRES_DB_NAME resolves here (the
-    # map is complete) but to "" at real render time. So an early return additionally requires the
-    # seam keys' declaration order to be Compose-viable; a disordered file falls through to the
-    # derived-write path, which heals it - the writer serializes DMS_CONFIG_DATABASE_NAME as the
-    # resolved literal (no references left to be forward), and the Move below keeps the alias ahead
-    # of the connection string that references it.
-    $declarationOrderBroken = $false
-    $rawLines = [System.IO.File]::ReadAllLines($BaseEnvironmentFile)
-    $indexOfKeyLine = {
-        param([string]$key)
-        for ($lineIndex = 0; $lineIndex -lt $rawLines.Count; $lineIndex++) {
-            if ($rawLines[$lineIndex] -match ('^\s*' + [regex]::Escape($key) + '\s*=')) { return $lineIndex }
+    # Docker Compose resolves an --env-file sequentially: a reference sees the ambient value if set,
+    # else the most recent PRECEDING declaration, else nothing. A hashtable-based check cannot express
+    # that, so it can approve a file Compose renders differently. Classification below works from the
+    # sequential evaluation's per-declaration reference traces, which report the names each value
+    # genuinely depended on at resolution time - escapes and unfired operator words excluded.
+    #
+    # Three input classes, with the required outcome for each:
+    #   duplicate declaration of a seam-relevant key -> reject (reordering one occurrence would change
+    #       the frozen value of every line between the two declarations)
+    #   transitive forward dependency                -> reject with the chain (a multi-line reorder
+    #       would change other lines' frozen values)
+    #   simple forward reference                     -> repair, then prove the repaired file
+    # Both rejections happen before anything is written.
+    $seamKeys = @('DMS_CONFIG_DATABASE_CONNECTION_STRING', 'DMS_CONFIG_DATABASE_NAME', $datastoreNameKey)
+    $closure = Get-DotenvDependencyClosure -Evaluation $sequential -RootKey $seamKeys
+
+    foreach ($closureKey in $closure) {
+        if ($sequential.DuplicateKeys -contains $closureKey) {
+            $lineNumbers = @($sequential.Declarations |
+                Where-Object { $_.Key -eq $closureKey } |
+                ForEach-Object { $_.LineIndex + 1 })
+            throw "CMS database topology: '$closureKey' is declared more than once in '$BaseEnvironmentFile' (lines $($lineNumbers -join ', ')), and the CMS database seam depends on it. Docker Compose resolves an --env-file sequentially, so lines between the declarations see the earlier value while the compose file itself sees the last one - the two can disagree. Remove the duplicate declaration and keep a single definition."
         }
-        return -1
     }
-    $aliasLineIndex = & $indexOfKeyLine 'DMS_CONFIG_DATABASE_NAME'
-    if ($aliasLineIndex -ge 0) {
-        # Every variable the alias's own raw value references (${NAME}, $NAME, and names inside
-        # ${NAME:-...} forms all match this scan) must be declared before the alias.
-        $aliasRawValue = [string](Get-EnvValue -EnvValues $baseValues -Name 'DMS_CONFIG_DATABASE_NAME' -DefaultValue '')
-        foreach ($referenceMatch in [regex]::Matches($aliasRawValue, '\$\{?([A-Za-z_][A-Za-z0-9_]*)')) {
-            $referenceLineIndex = & $indexOfKeyLine $referenceMatch.Groups[1].Value
-            if ($referenceLineIndex -gt $aliasLineIndex) {
+
+    $aliasDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name 'DMS_CONFIG_DATABASE_NAME'
+    $connectionDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING'
+    $seamRootLineIndexes = @{}
+    if ($null -ne $aliasDeclaration) { $seamRootLineIndexes['DMS_CONFIG_DATABASE_NAME'] = $aliasDeclaration.LineIndex }
+    if ($null -ne $connectionDeclaration) { $seamRootLineIndexes['DMS_CONFIG_DATABASE_CONNECTION_STRING'] = $connectionDeclaration.LineIndex }
+
+    # A forward reference inside a DEPENDENCY of the seam (rather than inside a seam key itself) is a
+    # transitive chain: the dependency froze to the wrong value before the seam line was even reached.
+    foreach ($closureKey in $closure) {
+        if ($seamRootLineIndexes.ContainsKey($closureKey)) { continue }
+        $declaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name $closureKey
+        if ($null -eq $declaration) { continue }
+        foreach ($referencedName in $declaration.References) {
+            if (Test-DotenvReferenceResolvable -Evaluation $sequential -Name $referencedName -BeforeLineIndex $declaration.LineIndex) { continue }
+            throw "CMS database topology: DMS_CONFIG_DATABASE_CONNECTION_STRING depends on '$closureKey', whose own value references '$referencedName' before it is declared in '$BaseEnvironmentFile' (dependency chain: DMS_CONFIG_DATABASE_CONNECTION_STRING -> $closureKey -> $referencedName). Docker Compose resolves an --env-file sequentially, so '$closureKey' freezes with an empty '$referencedName' and the connection string inherits that. Declare '$referencedName' above '$closureKey'."
+        }
+    }
+
+    # Simple forward references: a seam key referencing a name that is declared only later. These are
+    # repairable - the alias is serialized as a resolved literal, and each other referenced key is
+    # moved above the connection string.
+    $declarationOrderBroken = $false
+    $connectionStringForwardReferencedKeys = [System.Collections.Generic.List[string]]::new()
+
+    if ($null -ne $aliasDeclaration) {
+        foreach ($referencedName in $aliasDeclaration.References) {
+            if (-not (Test-DotenvReferenceResolvable -Evaluation $sequential -Name $referencedName -BeforeLineIndex $aliasDeclaration.LineIndex)) {
                 $declarationOrderBroken = $true
                 break
             }
         }
     }
 
-    # The connection string in effect (the intended value: in separate mode the legacy token has
-    # already been rewritten to the alias) must have EVERY variable it references declared before
-    # it, not only the DMS_CONFIG_DATABASE_NAME alias. A shared-mode connection string keeps its
-    # supported ${POSTGRES_DB_NAME}/${MSSQL_DB_NAME} (or credential) references untouched, and any
-    # of them declared below the connection string passes the order-blind resolution above while
-    # Compose renders that segment empty. A key absent from the file is not order-broken: Compose
-    # resolves it from the ambient environment independent of line order, and a genuinely undefined
-    # key is a separate failure the topology validator reports on resolution.
-    $connectionStringForwardReferencedKeys = [System.Collections.Generic.List[string]]::new()
-    $connectionLineIndex = & $indexOfKeyLine 'DMS_CONFIG_DATABASE_CONNECTION_STRING'
-    if ($connectionLineIndex -ge 0 -and -not [string]::IsNullOrEmpty($intendedConnectionString)) {
-        foreach ($referenceMatch in [regex]::Matches($intendedConnectionString, '\$\{?([A-Za-z_][A-Za-z0-9_]*)')) {
-            $referencedKey = $referenceMatch.Groups[1].Value
-            if ($referencedKey -eq 'DMS_CONFIG_DATABASE_NAME') {
-                # The alias is healed structurally: the writer serializes it as a resolved literal
-                # and the Move below places it ahead of the connection string.
-                if ($aliasLineIndex -ge 0 -and $connectionLineIndex -lt $aliasLineIndex) {
+    if ($null -ne $connectionDeclaration) {
+        # The references are taken from the INTENDED connection string, because in separate mode the
+        # legacy token has already been rewritten to the alias and it is the intended value that will
+        # be written and rendered.
+        $intendedReferences = [System.Collections.Generic.List[string]]::new()
+        $null = Resolve-ComposeEnvRawValue `
+            -EnvironmentValues @{} `
+            -RawValue $intendedConnectionString `
+            -NameLookup (Get-DotenvSequentialLookup -Evaluation $sequential -BeforeLineIndex $connectionDeclaration.LineIndex) `
+            -ReferenceTrace $intendedReferences
+
+        foreach ($referencedName in $intendedReferences) {
+            if ($referencedName -eq 'DMS_CONFIG_DATABASE_NAME') {
+                # Healed structurally: the writer serializes the alias as a resolved literal and the
+                # Move below places it ahead of the connection string.
+                if ($null -ne $aliasDeclaration -and $connectionDeclaration.LineIndex -lt $aliasDeclaration.LineIndex) {
                     $declarationOrderBroken = $true
                 }
                 continue
             }
-            $referenceLineIndex = & $indexOfKeyLine $referencedKey
-            if ($referenceLineIndex -gt $connectionLineIndex) {
-                $declarationOrderBroken = $true
-                if (-not $connectionStringForwardReferencedKeys.Contains($referencedKey)) {
-                    $connectionStringForwardReferencedKeys.Add($referencedKey)
-                }
+            if (Test-DotenvReferenceResolvable -Evaluation $sequential -Name $referencedName -BeforeLineIndex $connectionDeclaration.LineIndex) { continue }
+
+            # Only a key that IS declared later can be moved. A name declared nowhere and absent from
+            # the ambient environment is a genuinely undefined key, which the topology validator
+            # reports on resolution rather than something to reorder.
+            $referencedDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name $referencedName
+            if ($null -eq $referencedDeclaration) { continue }
+
+            # Resolvable in place is not the same as safe to relocate. Moving this key above the
+            # connection string also moves it above anything IT depends on, so a key with active
+            # references of its own cannot be repaired by reordering even when its own dependencies are
+            # correctly ordered where it currently sits. The references are the resolution-time trace,
+            # so an escaped '$$' literal (a password like pa$$word) reports nothing and stays movable.
+            if ($referencedDeclaration.References.Count -gt 0) {
+                throw "CMS database topology: DMS_CONFIG_DATABASE_CONNECTION_STRING references '$referencedName', which is declared after it in '$BaseEnvironmentFile' and itself references $(($referencedDeclaration.References | ForEach-Object { "'$_'" }) -join ', '), so it cannot be moved above the connection string without breaking its own resolution order. Docker Compose resolves an --env-file sequentially; declare '$referencedName' (and the variables it references) above the connection string."
+            }
+
+            $declarationOrderBroken = $true
+            if (-not $connectionStringForwardReferencedKeys.Contains($referencedName)) {
+                $connectionStringForwardReferencedKeys.Add($referencedName)
             }
         }
     }
 
     if (-not $markerChanged -and -not $nameChanged -and -not $connectionStringChanged -and -not $declarationOrderBroken) {
         return $BaseEnvironmentFile
+    }
+
+    # The postcondition target, computed BEFORE writing: the complete connection string this run
+    # intends Compose to render, with the topology-adjusted alias and ambient precedence applied. A
+    # narrower check (host/database/port agreement) would pass a repaired file whose password segment
+    # still renders empty, which is exactly the failure the silent no-op used to produce.
+    $intendedEffectiveConnectionString = $null
+    if (-not [string]::IsNullOrEmpty($intendedConnectionString)) {
+        $intendedEffectiveConnectionString = Resolve-ComposeEnvRawValue `
+            -EnvironmentValues @{} `
+            -RawValue $intendedConnectionString `
+            -NameLookup (Get-DotenvSequentialLookup `
+                -Evaluation $sequential `
+                -Override @{
+                    DMS_CONFIG_DATABASE_NAME              = $intendedDatabaseName
+                    DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $intendedMarker
+                })
     }
 
     # If $BaseEnvironmentFile is already one of this function's own prior derived outputs (a caller
@@ -1646,16 +1874,23 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove "DMS_CONFIG_DATABASE_NAME" -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
 
     # Heal the connection string's OTHER forward references the same way: each referenced key found
-    # declared below the connection string is moved ahead of it in the derived file. Moving is only
-    # safe when the moved line's own value is reference-free (relocating a reference-bearing line
-    # could break ITS declaration order); every supported profile declares these keys as literals,
-    # so a reference-bearing one fails loudly with the manual fix instead of rendering empty.
+    # declared below the connection string is moved ahead of it in the derived file. A key whose own
+    # value has unresolved dependencies was already rejected above as a transitive chain, so every key
+    # reaching this point is safe to relocate.
     foreach ($referencedKey in $connectionStringForwardReferencedKeys) {
-        $referencedRawValue = [string](Get-EnvValue -EnvValues $baseValues -Name $referencedKey -DefaultValue '')
-        if ($referencedRawValue.Contains('$')) {
-            throw "CMS database topology: DMS_CONFIG_DATABASE_CONNECTION_STRING references '$referencedKey', which is declared after it in '$BaseEnvironmentFile' and itself references other variables, so it cannot be reordered automatically. Docker Compose resolves --env-file references in declaration order; declare '$referencedKey' (and the variables it references) above the connection string."
-        }
         Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove $referencedKey -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+    }
+
+    # Postcondition: re-evaluate the file that was actually written, the same sequential way Compose
+    # will, and require the COMPLETE connection string to match the target computed before writing.
+    # Without this, a repair that failed to move a line still returned a path, and the caller handed
+    # Compose a file whose credential or database segment rendered empty.
+    if ($null -ne $intendedEffectiveConnectionString) {
+        $derivedEvaluation = Resolve-DotenvFileSequentially -Path $derivedPath
+        $derivedEffectiveConnectionString = [string](Get-SequentialEffectiveValue -Evaluation $derivedEvaluation -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
+        if (-not [string]::Equals($derivedEffectiveConnectionString, $intendedEffectiveConnectionString, [System.StringComparison]::Ordinal)) {
+            throw "CMS database topology: the derived environment file '$derivedPath' does not render the intended CMS connection string. Docker Compose would resolve it to '$derivedEffectiveConnectionString' instead of '$intendedEffectiveConnectionString'. This is a repair failure, not a configuration error - please report it with the source environment file."
+        }
     }
 
     return $derivedPath
@@ -1722,6 +1957,11 @@ function Confirm-CmsDatabaseTopologyAgreement {
     )
 
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    # Sequential evaluation, because that is what Docker Compose does with an --env-file. Resolving
+    # against a complete hashtable instead let this validator pass a file where the datastore database
+    # and the CMS database genuinely disagreed: with the datastore name declared twice, the hashtable
+    # saw only the last value while Compose froze the first one into the connection string.
+    $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
     $datastoreNameKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
     $expectedHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
     $expectedPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
@@ -1734,7 +1974,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
             "edfi_configurationservice"
         }
         else {
-            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $datastoreNameKey
+            [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         }
     if ([string]::IsNullOrWhiteSpace($expectedDatabaseName)) {
         throw "Confirm-CmsDatabaseTopologyAgreement: could not resolve a non-blank expected database name for '$datastoreNameKey'."
@@ -1746,7 +1986,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # services silently share one database, so distinctness is proven explicitly. Resolved with
         # the same Compose precedence as everything else here, so an ambient datastore-name override
         # that collides is caught too.
-        $datastoreDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $datastoreNameKey
+        $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         if (-not [string]::IsNullOrWhiteSpace($datastoreDatabaseName) -and
             [string]::Equals($datastoreDatabaseName, $expectedDatabaseName, $nameComparison)) {
             throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' also resolves to '$datastoreDatabaseName'. Rename the datastore database or use shared mode."
@@ -1759,20 +1999,20 @@ function Confirm-CmsDatabaseTopologyAgreement {
             # value Compose would never render: both .yml fallbacks are PostgreSQL-shaped by
             # construction (Compose interpolation cannot branch on the engine), so there is no MSSQL
             # default to compare against - see the .DESCRIPTION note above.
-            $explicitConnectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+            $explicitConnectionString = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
             if ([string]::IsNullOrWhiteSpace($explicitConnectionString)) {
                 throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING is required for MSSQL and cannot be entirely absent. The Compose inline fallback is PostgreSQL-shaped, so no SQL Server default exists to validate against; the .env.mssql overlay normally supplies this key, so check for a corrupted or manually-edited environment file."
             }
             $explicitConnectionString
         }
         else {
-            $postgresPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_PASSWORD"
+            $postgresPassword = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "POSTGRES_PASSWORD")
             $defaultConnectionString = Get-CmsDatabaseTopologyDefaultConnectionString `
                 -ExpectedHost $expectedHost `
                 -ExpectedPort $expectedPort `
                 -ExpectedDatabaseName $expectedDatabaseName `
                 -PostgresPassword $postgresPassword
-            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING" -DefaultValue $defaultConnectionString
+            Get-SequentialEffectiveValue -Evaluation $sequential -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING" -DefaultValue $defaultConnectionString
         }
 
     $actualDatabaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $actualConnectionString)
