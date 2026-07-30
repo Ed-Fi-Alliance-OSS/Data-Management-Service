@@ -6,11 +6,11 @@ Scope:
 - Covers the baseline E00-E15 story inventory below plus the focused E18/E19 addendum. It
   is not an exhaustive index of every later, deferred, spike-generated, or placeholder
   story file now present under `reference/design/backend-redesign/epics/`.
-- Placeholder follow-ons are excluded until their owning proposal is approved and their
-  Jira keys are assigned, unless a focused addendum explicitly includes them. In
-  particular, the DMS-1190 Stories 38-42 remain governed by
-  `10-update-tracking-change-queries/EPIC.md` § Follow-on Stories (spawned by DMS-1190)
-  until those placeholders become traceable work items and this index is regenerated.
+- Spike-generated follow-ons are excluded until this index is regenerated, unless a focused
+  addendum explicitly includes them, so a story carrying a Jira key is not necessarily
+  represented here. In particular, the DMS-1190 Stories 38-42 remain governed by
+  `10-update-tracking-change-queries/EPIC.md` § Follow-on Stories (spawned by DMS-1190),
+  which records their keys, dependencies, and the release gate.
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -346,7 +346,7 @@ Epic: `10-update-tracking-change-queries/EPIC.md`
 | E10-S06 | [`06-descriptor-stamping.md`](10-update-tracking-change-queries/06-descriptor-stamping.md) | E10-S00 | E07-S06 | Ensure `dms.Descriptor` updates stamp/journal descriptor documents |
 
 This baseline table intentionally stops at E10-S06. Later E10 work, including the
-DMS-1190 placeholder follow-ons, is not silently represented by this table. Release gates
+DMS-1190 follow-on Stories 38-42, is not silently represented by this table. Release gates
 are also outside this implementation-dependency index; the authoritative DMS-1190
 runtime/OpenAPI release gate is recorded in
 [`10-update-tracking-change-queries/EPIC.md`](10-update-tracking-change-queries/EPIC.md)

@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1367
+jira_url: https://edfi.atlassian.net/browse/DMS-1367
 ---
 
 # Story: Route DMS Reads to Snapshots and Read Replicas

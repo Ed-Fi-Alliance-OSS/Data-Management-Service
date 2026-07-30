@@ -77,19 +77,17 @@ Release disposition: none of the follow-ons is must-have for 8.1. Stories 33 and
 
 ## Follow-on Stories (spawned by DMS-1190)
 
-The `TBD` keys below are intentional and are not an incomplete edit. `29-snapshot-support.md` § Follow-on Ticket Plan gates Jira creation on approval of that spike, so the story files ship with placeholder front matter and the keys are filled in — here and in each story's `jira` / `jira_url` front matter — once the tickets exist. Do not treat these rows as traceable work items until they carry real keys.
-
 **Authoritative release disposition:** Story dependencies and the snapshot release gate are deliberately different. Story 42 may be scheduled and closed after Stories 38–40 and the external Publisher build are available; it does not depend on Story 41 or on the upstream MetaEd/ApiSchema publication, so Publisher validation, operator guidance, and release-note preparation can finish independently. That independence does **not** authorize runtime rollout. The runtime changes delivered by Stories 39 and 40 must not ship in any release until Story 41 is complete in that release using the published upstream packages and the served OpenAPI documents advertise the matching `Use-Snapshot`, `404`, and `405` contract. If Story 41 or its upstream publication misses the release cut, hold the Stories 39/40 runtime changes from that release; Story 42 may remain closed and its validation and documentation artifacts carry forward.
 
-- `TBD` — `38-cms-data-store-derivative-invariants.md` — Enforce CMS data-store derivative cardinality and type invariants
-- `TBD` — `39-snapshot-read-replica-runtime-routing.md` — Route eligible DMS reads to snapshots and read replicas
-- `TBD` — `40-snapshot-problem-details.md` — Implement snapshot ProblemDetails and connection-unavailable translation
-- `TBD` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents (DMS half; depends on Story 40 and on the upstream MetaEd ticket below)
-- `TBD` — `42-api-publisher-snapshot-interoperability.md` — Validate API Publisher snapshot interoperability and document operator workflow (depends on Stories 38-40 only; deliberately not on Story 41, so validation and release-note preparation are not blocked on upstream package publication; runtime release remains subject to the gate above)
+- `DMS-1366` — `38-cms-data-store-derivative-invariants.md` — Enforce CMS data-store derivative cardinality and type invariants
+- `DMS-1367` — `39-snapshot-read-replica-runtime-routing.md` — Route eligible DMS reads to snapshots and read replicas
+- `DMS-1368` — `40-snapshot-problem-details.md` — Implement snapshot ProblemDetails and connection-unavailable translation
+- `DMS-1369` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents (DMS half; depends on Story 40 and on the upstream MetaEd ticket below)
+- `DMS-1370` — `42-api-publisher-snapshot-interoperability.md` — Validate API Publisher snapshot interoperability and document operator workflow (depends on Stories 38-40 only; deliberately not on Story 41, so validation and release-note preparation are not blocked on upstream package publication; runtime release remains subject to the gate above)
 
-One prerequisite is not a DMS ticket and has no story file in this epic:
+One prerequisite has no story file in this epic because the work is authored in the MetaEd/ApiSchema repository rather than in DMS:
 
-- `TBD` — *upstream MetaEd/ApiSchema* — Author the `Use-Snapshot` parameter and snapshot response components in the served base documents and publish the ApiSchema packages. `41-snapshot-openapi-surface.md` consumes the published packages and cannot be scheduled before this is created and linked.
+- `DMS-1371` — *upstream MetaEd/ApiSchema* — Author the `Use-Snapshot` parameter and snapshot response components in the served base documents and publish the ApiSchema packages. `41-snapshot-openapi-surface.md` consumes the published packages and cannot be scheduled before this is delivered.
 
 ## Cross-Epic Prerequisite
 

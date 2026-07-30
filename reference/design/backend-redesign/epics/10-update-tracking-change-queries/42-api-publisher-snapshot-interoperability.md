@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1370
+jira_url: https://edfi.atlassian.net/browse/DMS-1370
 ---
 
 # Story: Validate API Publisher Snapshot Interoperability

@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1366
+jira_url: https://edfi.atlassian.net/browse/DMS-1366
 ---
 
 # Story: Enforce CMS Data Store Derivative Invariants

@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1368
+jira_url: https://edfi.atlassian.net/browse/DMS-1368
 ---
 
 # Story: Implement Snapshot ProblemDetails and Connection-Unavailable Translation

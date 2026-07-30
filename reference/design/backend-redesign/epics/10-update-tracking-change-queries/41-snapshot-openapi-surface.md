@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1369
+jira_url: https://edfi.atlassian.net/browse/DMS-1369
 ---
 
 # Story: Add the Snapshot Contract to Served OpenAPI Documents
@@ -35,7 +35,7 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
   - **File-based path.** `SCHEMA_PACKAGES` and the bootstrap schema catalog select and download packages at deployment time. The pins live in the tracked `eng/docker-compose/` environment overlays and in the bootstrap catalog's core package identity and fallback version, independent of `src/Directory.Packages.props`. This is how Sample, Homograph, and all of Data Standard 6.1 reach a running DMS, and it can serve the full set rather than only the families the bundled path omits.
 - A central version declaration is therefore not by itself a served-package update: five of the seven have no direct `PackageReference` consumer today, so bumping only `src/Directory.Packages.props` would leave the file-based pins on their previous versions and those families would keep serving OpenAPI without the snapshot contract. **No new `PackageReference` is added merely to make a single-mechanism claim true** — the two paths are existing runtime topology and changing it is outside this story.
 - This story is therefore blocked until the upstream change is merged and published, and its first DMS commit updates the version-selection surfaces for the packages being adopted, across both intake paths, rather than a single central-version edit.
-- The upstream change must be tracked as its own MetaEd ticket, created and linked before this story is scheduled. This story is not "done" on DMS-side assembly code alone; it is done when DMS serves the snapshot contract from published packages.
+- The upstream change is tracked as its own ticket, `DMS-1371`, created and linked before this story is scheduled. This story is not "done" on DMS-side assembly code alone; it is done when DMS serves the snapshot contract from published packages.
 - If the upstream ticket cannot be scheduled and published in the same release, this DMS story does not start. DMS assembly-and-reference-resolution work is not landed against a hand-authored or backend fixture ahead of the package bump. If preparatory DMS work is needed before publication, create a separate explicitly scoped story that identifies an upstream-produced prerelease ApiSchema artifact; that preparatory story cannot satisfy any served-surface acceptance criterion below.
 - The bump is expected to be hash-neutral. DMS-1183 established that `projectSchema.openApiBaseDocuments` is stripped before effective-schema hashing, model derivation, DDL generation, and mapping-pack selection, so an OpenAPI-only package change should not alter the effective-schema hash, require an `apiSchemaVersion` bump, or churn DDL and plan goldens. This story verifies that expectation rather than assuming it; a hash change means the upstream package carried more than the OpenAPI contract and must be investigated before the bump is accepted.
 
@@ -83,7 +83,7 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
 
 ## Dependencies
 
-- An upstream MetaEd/ApiSchema ticket delivering the § Upstream Prerequisite contract for the resource, descriptor, and standalone Change Queries base documents, and published ApiSchema packages containing it. This is a hard, cross-repository dependency; see § Dependency mechanics. The profile-document work depends on it only for the resource content it filters, and is otherwise owned here.
+- `DMS-1371`, the upstream MetaEd/ApiSchema ticket delivering the § Upstream Prerequisite contract for the resource, descriptor, and standalone Change Queries base documents, and published ApiSchema packages containing it. This is a hard, cross-repository dependency; see § Dependency mechanics. The profile-document work depends on it only for the resource content it filters, and is otherwise owned here.
 - `40-snapshot-problem-details.md`. This is a scheduling dependency, not only a consistency note: the served response definitions must remain identical to that story's runtime contract, and the § Tests criterion requiring an assertion that served snapshot response metadata matches it exactly cannot be written before that story lands.
 
 ## Out of Scope
