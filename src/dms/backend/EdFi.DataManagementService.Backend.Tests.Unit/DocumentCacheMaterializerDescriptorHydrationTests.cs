@@ -226,7 +226,7 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
         );
 
     private static DocumentCacheResolvedSourceMetadata.DescriptorResource CreateDescriptorSource(
-        MaterializerTestContext testContext
+        DescriptorMappingSetTestContext testContext
     ) =>
         new(
             DocumentId,
@@ -254,100 +254,14 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
             "SchoolTypeDescriptor"
         );
 
-    private static MaterializerTestContext CreateMaterializerTestContext()
-    {
-        var resourceKey = new ResourceKeyEntry(ResourceKeyId, DescriptorResource, "5.2.0", false);
-        var relationalModel = CreateDescriptorRelationalModel(DescriptorResource);
-        var concreteResourceModel = new ConcreteResourceModel(
-            resourceKey,
-            ResourceStorageKind.SharedDescriptorTable,
-            relationalModel
-        );
-        var effectiveSchema = new EffectiveSchemaInfo(
-            ApiSchemaFormatVersion: "1.0.0",
-            RelationalMappingVersion: "v1",
-            EffectiveSchemaHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            ResourceKeyCount: 1,
-            ResourceKeySeedHash: new byte[32],
-            SchemaComponentsInEndpointOrder: [],
-            ResourceKeysInIdOrder: [resourceKey]
-        );
-        var modelSet = new DerivedRelationalModelSet(
-            effectiveSchema,
+    private static DescriptorMappingSetTestContext CreateMaterializerTestContext() =>
+        DocumentCacheDescriptorTestData.CreateDescriptorMappingSetContext(
+            DescriptorResource,
+            ResourceKeyId,
             SqlDialect.Pgsql,
-            ProjectSchemasInEndpointOrder: [],
-            ConcreteResourcesInNameOrder: [concreteResourceModel],
-            AbstractIdentityTablesInNameOrder: [],
-            AbstractUnionViewsInNameOrder: [],
-            IndexesInCreateOrder: [],
-            TriggersInCreateOrder: []
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "5.2.0"
         );
-        var mappingSet = new MappingSet(
-            new MappingSetKey(effectiveSchema.EffectiveSchemaHash, SqlDialect.Pgsql, "v1"),
-            modelSet,
-            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
-            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
-            {
-                [DescriptorResource] = ResourceKeyId,
-            },
-            ResourceKeyById: new Dictionary<short, ResourceKeyEntry> { [ResourceKeyId] = resourceKey },
-            SecurableElementColumnPathsByResource: new Dictionary<
-                QualifiedResourceName,
-                IReadOnlyList<ResolvedSecurableElementPath>
-            >()
-        );
-
-        return new MaterializerTestContext(mappingSet, resourceKey, concreteResourceModel);
-    }
-
-    private static RelationalResourceModel CreateDescriptorRelationalModel(QualifiedResourceName resource)
-    {
-        var descriptorTable = new DbTableModel(
-            new DbTableName(new DbSchemaName("dms"), "Descriptor"),
-            new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_Descriptor",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    false,
-                    null,
-                    null
-                ),
-            ],
-            []
-        )
-        {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.Root,
-                [new DbColumnName("DocumentId")],
-                [new DbColumnName("DocumentId")],
-                [],
-                []
-            ),
-        };
-
-        return new RelationalResourceModel(
-            resource,
-            new DbSchemaName("dms"),
-            ResourceStorageKind.SharedDescriptorTable,
-            descriptorTable,
-            [descriptorTable],
-            [],
-            []
-        );
-    }
-
-    private sealed record MaterializerTestContext(
-        MappingSet MappingSet,
-        ResourceKeyEntry ResourceKey,
-        ConcreteResourceModel ConcreteResourceModel
-    );
 
     private sealed class StubSourceMetadataReader(
         DocumentCacheSourceMetadataReadResult result,
@@ -503,7 +417,9 @@ public class Given_DocumentCacheDescriptorHydrator
         ]);
         var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        var result = await sut.HydrateAsync(CreateRequest(), CreateDescriptorSource());
+        var testContext = CreateHydratorTestContext();
+
+        var result = await sut.HydrateAsync(testContext.Request, testContext.Source);
 
         var found = result.Should().BeOfType<DocumentCacheDescriptorHydrationResult.Found>().Subject;
         found.DescriptorRow.DocumentId.Should().Be(DocumentId);
@@ -538,7 +454,9 @@ public class Given_DocumentCacheDescriptorHydrator
         ]);
         var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        var result = await sut.HydrateAsync(CreateRequest(), CreateDescriptorSource());
+        var testContext = CreateHydratorTestContext();
+
+        var result = await sut.HydrateAsync(testContext.Request, testContext.Source);
 
         result.Should().BeSameAs(DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance);
     }
@@ -555,7 +473,9 @@ public class Given_DocumentCacheDescriptorHydrator
         ]);
         var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        var result = await sut.HydrateAsync(CreateRequest(), CreateDescriptorSource());
+        var testContext = CreateHydratorTestContext();
+
+        var result = await sut.HydrateAsync(testContext.Request, testContext.Source);
 
         result.Should().BeSameAs(DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance);
     }
@@ -569,7 +489,9 @@ public class Given_DocumentCacheDescriptorHydrator
         );
         var sut = new DocumentCacheDescriptorHydrator(dataStore);
 
-        await sut.HydrateAsync(CreateRequest(SqlDialect.Mssql), CreateDescriptorSource());
+        var testContext = CreateHydratorTestContext(SqlDialect.Mssql);
+
+        await sut.HydrateAsync(testContext.Request, testContext.Source);
 
         dataStore.Commands.Should().ContainSingle();
         dataStore.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
@@ -579,11 +501,29 @@ public class Given_DocumentCacheDescriptorHydrator
         dataStore.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
     }
 
-    private static DocumentCacheMaterializationRequest CreateRequest(SqlDialect dialect = SqlDialect.Pgsql) =>
+    private static DescriptorHydratorTestContext CreateHydratorTestContext(
+        SqlDialect dialect = SqlDialect.Pgsql
+    )
+    {
+        var mappingSetContext = DocumentCacheDescriptorTestData.CreateDescriptorMappingSetContext(
+            DescriptorResource,
+            ResourceKeyId,
+            dialect,
+            "test-hash",
+            "5.2.0"
+        );
+
+        return new DescriptorHydratorTestContext(
+            CreateRequest(mappingSetContext.MappingSet),
+            CreateDescriptorSource(mappingSetContext)
+        );
+    }
+
+    private static DocumentCacheMaterializationRequest CreateRequest(MappingSet mappingSet) =>
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                CreateMappingSet(dialect),
+                mappingSet,
                 DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             DocumentId,
@@ -591,16 +531,6 @@ public class Given_DocumentCacheDescriptorHydrator
             DocumentCacheMaterializationPurpose.Fixture,
             CancellationToken.None
         );
-
-    private static MappingSet CreateMappingSet(SqlDialect dialect)
-    {
-        var mappingSet = RelationalAccessTestData.CreateMappingSet(DescriptorResource);
-
-        return mappingSet with
-        {
-            Key = new MappingSetKey("test-hash", dialect, "v1"),
-        };
-    }
 
     private static InMemoryRelationalResultSet CreateDescriptorResultSet(
         IReadOnlyDictionary<string, object?> row
@@ -636,25 +566,78 @@ public class Given_DocumentCacheDescriptorHydrator
         return row;
     }
 
-    private static DocumentCacheResolvedSourceMetadata.DescriptorResource CreateDescriptorSource()
+    private static DocumentCacheResolvedSourceMetadata.DescriptorResource CreateDescriptorSource(
+        DescriptorMappingSetTestContext mappingSetContext
+    ) =>
+        new(
+            DocumentId,
+            new DocumentUuid(DocumentGuid),
+            ResourceKeyId,
+            mappingSetContext.ResourceKey,
+            mappingSetContext.ConcreteResourceModel,
+            ContentVersion,
+            LastModifiedAt
+        );
+
+    private sealed record DescriptorHydratorTestContext(
+        DocumentCacheMaterializationRequest Request,
+        DocumentCacheResolvedSourceMetadata.DescriptorResource Source
+    );
+}
+
+file static class DocumentCacheDescriptorTestData
+{
+    public static DescriptorMappingSetTestContext CreateDescriptorMappingSetContext(
+        QualifiedResourceName descriptorResource,
+        short resourceKeyId,
+        SqlDialect dialect,
+        string effectiveSchemaHash,
+        string resourceVersion
+    )
     {
-        var resourceKey = new ResourceKeyEntry(ResourceKeyId, DescriptorResource, "5.2.0", false);
-        var relationalModel = CreateDescriptorRelationalModel(DescriptorResource);
+        var resourceKey = new ResourceKeyEntry(resourceKeyId, descriptorResource, resourceVersion, false);
+        var relationalModel = CreateDescriptorRelationalModel(descriptorResource);
         var concreteResourceModel = new ConcreteResourceModel(
             resourceKey,
             ResourceStorageKind.SharedDescriptorTable,
             relationalModel
         );
-
-        return new DocumentCacheResolvedSourceMetadata.DescriptorResource(
-            DocumentId,
-            new DocumentUuid(DocumentGuid),
-            ResourceKeyId,
-            resourceKey,
-            concreteResourceModel,
-            ContentVersion,
-            LastModifiedAt
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "v1",
+            EffectiveSchemaHash: effectiveSchemaHash,
+            ResourceKeyCount: 1,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: [resourceKey]
         );
+        var modelSet = new DerivedRelationalModelSet(
+            effectiveSchema,
+            dialect,
+            ProjectSchemasInEndpointOrder: [],
+            ConcreteResourcesInNameOrder: [concreteResourceModel],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
+        var mappingSet = new MappingSet(
+            new MappingSetKey(effectiveSchema.EffectiveSchemaHash, dialect, "v1"),
+            modelSet,
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [descriptorResource] = resourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry> { [resourceKeyId] = resourceKey },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+
+        return new DescriptorMappingSetTestContext(mappingSet, resourceKey, concreteResourceModel);
     }
 
     private static RelationalResourceModel CreateDescriptorRelationalModel(QualifiedResourceName resource)
@@ -699,3 +682,9 @@ public class Given_DocumentCacheDescriptorHydrator
         );
     }
 }
+
+internal sealed record DescriptorMappingSetTestContext(
+    MappingSet MappingSet,
+    ResourceKeyEntry ResourceKey,
+    ConcreteResourceModel ConcreteResourceModel
+);
