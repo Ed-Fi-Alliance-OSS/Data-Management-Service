@@ -225,6 +225,33 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_postgresql_lifecycle_reader()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            var reader = serviceProvider.GetRequiredService<IDocumentCacheLifecycleReader>();
+
+            reader.Should().BeOfType<PostgresqlDocumentCacheLifecycleReader>();
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_builder_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetContextBuilder>()
+                .Should()
+                .BeOfType<DocumentCacheTargetContextBuilder>();
+            serviceProvider
+                .GetRequiredService<DocumentCacheProcessProviderToken>()
+                .ProviderToken.Should()
+                .Be(RelationalProviderToken.Postgresql);
+        }
+
+        [Test]
         public void It_uses_direct_typed_relational_repository_registrations()
         {
             var services = CreateServiceCollection("postgresql");
@@ -396,6 +423,33 @@ public class WebApplicationBuilderExtensionsTests
             var validator = serviceProvider.GetRequiredService<IDocumentCacheProviderPrerequisiteValidator>();
 
             validator.Should().BeOfType<MssqlDocumentCacheProviderPrerequisiteValidator>();
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_mssql_lifecycle_reader()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            var reader = serviceProvider.GetRequiredService<IDocumentCacheLifecycleReader>();
+
+            reader.Should().BeOfType<MssqlDocumentCacheLifecycleReader>();
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetContext")]
+        public void It_resolves_the_DocumentCacheTargetContext_builder_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetContextBuilder>()
+                .Should()
+                .BeOfType<DocumentCacheTargetContextBuilder>();
+            serviceProvider
+                .GetRequiredService<DocumentCacheProcessProviderToken>()
+                .ProviderToken.Should()
+                .Be(RelationalProviderToken.SqlServer);
         }
 
         [Test]

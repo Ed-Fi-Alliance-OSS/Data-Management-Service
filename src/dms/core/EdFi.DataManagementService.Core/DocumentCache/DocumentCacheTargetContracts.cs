@@ -84,6 +84,40 @@ public enum DocumentCacheTargetDiagnosticCategory
     UnexpectedProviderFailure,
 }
 
+public sealed record DocumentCacheProcessProviderToken
+{
+    public DocumentCacheProcessProviderToken(RelationalProviderToken providerToken)
+    {
+        ArgumentNullException.ThrowIfNull(providerToken);
+
+        ProviderToken = providerToken;
+    }
+
+    public RelationalProviderToken ProviderToken { get; }
+
+    public static bool TryCreate(
+        string? datastore,
+        out DocumentCacheProcessProviderToken? processProviderToken
+    )
+    {
+        processProviderToken = null;
+
+        if (string.Equals(datastore, "mssql", StringComparison.OrdinalIgnoreCase))
+        {
+            processProviderToken = new DocumentCacheProcessProviderToken(RelationalProviderToken.SqlServer);
+            return true;
+        }
+
+        if (RelationalProviderToken.TryNormalize(datastore, out RelationalProviderToken? providerToken))
+        {
+            processProviderToken = new DocumentCacheProcessProviderToken(providerToken);
+            return true;
+        }
+
+        return false;
+    }
+}
+
 public sealed record DocumentCacheTargetContextGeneration
 {
     public DocumentCacheTargetContextGeneration(long value)
@@ -173,6 +207,80 @@ public sealed record DocumentCacheLifecycleObservation(
     DocumentCacheLifecycleState State,
     bool CacheAheadRecoveryRequired
 );
+
+public enum DocumentCacheLifecycleReadStatus
+{
+    Succeeded,
+    Missing,
+    Invalid,
+    Unreadable,
+}
+
+public sealed record DocumentCacheLifecycleReadResult
+{
+    private DocumentCacheLifecycleReadResult(
+        DocumentCacheLifecycleReadStatus status,
+        DocumentCacheLifecycleObservation? lifecycle,
+        string message
+    )
+    {
+        if (status == DocumentCacheLifecycleReadStatus.Succeeded && lifecycle is null)
+        {
+            throw new ArgumentException("Successful lifecycle reads require an observation.");
+        }
+
+        if (status != DocumentCacheLifecycleReadStatus.Succeeded && lifecycle is not null)
+        {
+            throw new ArgumentException("Failed lifecycle reads must not carry an observation.");
+        }
+
+        Status = status;
+        Lifecycle = lifecycle;
+        Message = DocumentCacheDiagnosticText.Sanitize(message);
+    }
+
+    public DocumentCacheLifecycleReadStatus Status { get; }
+
+    public DocumentCacheLifecycleObservation? Lifecycle { get; }
+
+    public string Message { get; }
+
+    public bool Succeeded => Status == DocumentCacheLifecycleReadStatus.Succeeded;
+
+    public static DocumentCacheLifecycleReadResult Success(DocumentCacheLifecycleObservation lifecycle)
+    {
+        ArgumentNullException.ThrowIfNull(lifecycle);
+
+        return new(
+            DocumentCacheLifecycleReadStatus.Succeeded,
+            lifecycle,
+            "DocumentCache lifecycle observed."
+        );
+    }
+
+    public static DocumentCacheLifecycleReadResult Failure(
+        DocumentCacheLifecycleReadStatus status,
+        string message
+    )
+    {
+        if (status == DocumentCacheLifecycleReadStatus.Succeeded)
+        {
+            throw new ArgumentException("Use Success for successful lifecycle reads.", nameof(status));
+        }
+
+        return new(status, lifecycle: null, message);
+    }
+}
+
+public interface IDocumentCacheLifecycleReader
+{
+    RelationalProviderToken ProviderToken { get; }
+
+    Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    );
+}
 
 public sealed record DocumentCacheInventoryValidationResult
 {

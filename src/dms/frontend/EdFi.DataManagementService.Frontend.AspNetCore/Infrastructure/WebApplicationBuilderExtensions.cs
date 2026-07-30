@@ -187,6 +187,27 @@ public static class WebApplicationBuilderExtensions
         );
         webAppBuilder.Services.AddSingleton<IDataStoreProvider, ConfigurationServiceDataStoreProvider>();
         webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
+        webAppBuilder.Services.AddSingleton<DocumentCacheProcessProviderToken>(_ =>
+        {
+            string? datastore = webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value;
+            if (
+                !DocumentCacheProcessProviderToken.TryCreate(
+                    datastore,
+                    out DocumentCacheProcessProviderToken? providerToken
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "Unable to normalize AppSettings:Datastore for DocumentCache target resolution."
+                );
+            }
+
+            return providerToken!;
+        });
+        webAppBuilder.Services.AddSingleton<
+            IDocumentCacheTargetContextBuilder,
+            DocumentCacheTargetContextBuilder
+        >();
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
@@ -222,6 +243,10 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.PostgresqlDocumentCacheInventoryValidator
             >();
             webAppBuilder.Services.AddSingleton<
+                IDocumentCacheLifecycleReader,
+                Backend.Postgresql.PostgresqlDocumentCacheLifecycleReader
+            >();
+            webAppBuilder.Services.AddSingleton<
                 IDocumentCacheProviderPrerequisiteValidator,
                 Backend.Postgresql.PostgresqlDocumentCacheProviderPrerequisiteValidator
             >();
@@ -248,6 +273,10 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddSingleton<
                 IDocumentCacheInventoryValidator,
                 Backend.Mssql.MssqlDocumentCacheInventoryValidator
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheLifecycleReader,
+                Backend.Mssql.MssqlDocumentCacheLifecycleReader
             >();
             webAppBuilder.Services.AddSingleton<
                 IDocumentCacheProviderPrerequisiteValidator,
