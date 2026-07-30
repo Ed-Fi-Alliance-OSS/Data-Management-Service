@@ -184,6 +184,181 @@ public class ConfigurationServiceDataStoreProviderTests
     }
 
     [TestFixture]
+    public class Given_DataStores_With_Relational_Provider_Metadata
+    {
+        private ConfigurationServiceDataStoreProvider? _provider;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            var dataStoresResponse = new object[]
+            {
+                new
+                {
+                    Id = 1L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Provider Token Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi;", TestEncryptionKey),
+                    ProviderToken = "POSTGRESQL",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 2L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Relational Provider Token Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi2;", TestEncryptionKey),
+                    RelationalProviderToken = "sqlserver",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 3L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Provider Alias Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi3;", TestEncryptionKey),
+                    Provider = "postgresql",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 4L,
+                    DataStoreType = "sqlserver",
+                    Name = "Missing Provider Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi4;", TestEncryptionKey),
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 5L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Unknown Provider Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi5;", TestEncryptionKey),
+                    ProviderToken = "mysql",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 6L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Whitespace Provider Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi6;", TestEncryptionKey),
+                    ProviderToken = " postgresql ",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 7L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Blank Provider Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi7;", TestEncryptionKey),
+                    ProviderToken = "   ",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+            };
+
+            handler.SetResponse("v3/dataStores/", dataStoresResponse);
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDataStoreProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDataStoreProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
+            );
+
+            await _provider.LoadDataStores();
+        }
+
+        [Test]
+        public void It_should_normalize_provider_token_metadata()
+        {
+            var instance = _provider!.GetById(1);
+
+            instance.Should().NotBeNull();
+            instance!
+                .RelationalProviderMetadataStatus.Should()
+                .Be(RelationalProviderMetadataStatus.Supported);
+            instance.RelationalProviderToken.Should().Be(RelationalProviderToken.Postgresql);
+            instance.RelationalProviderToken!.Value.Should().Be("postgresql");
+        }
+
+        [Test]
+        public void It_should_read_relational_provider_token_metadata()
+        {
+            var instance = _provider!.GetById(2);
+
+            instance.Should().NotBeNull();
+            instance!
+                .RelationalProviderMetadataStatus.Should()
+                .Be(RelationalProviderMetadataStatus.Supported);
+            instance.RelationalProviderToken.Should().Be(RelationalProviderToken.SqlServer);
+        }
+
+        [Test]
+        public void It_should_read_provider_metadata_alias()
+        {
+            var instance = _provider!.GetById(3);
+
+            instance.Should().NotBeNull();
+            instance!
+                .RelationalProviderMetadataStatus.Should()
+                .Be(RelationalProviderMetadataStatus.Supported);
+            instance.RelationalProviderToken.Should().Be(RelationalProviderToken.Postgresql);
+        }
+
+        [Test]
+        public void It_should_not_infer_provider_token_from_data_store_type()
+        {
+            var instance = _provider!.GetById(4);
+
+            instance.Should().NotBeNull();
+            instance!.DataStoreType.Should().Be("sqlserver");
+            instance.RelationalProviderMetadataStatus.Should().Be(RelationalProviderMetadataStatus.Missing);
+            instance.RelationalProviderToken.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_keep_unknown_provider_metadata_distinguishable()
+        {
+            var instance = _provider!.GetById(5);
+
+            instance.Should().NotBeNull();
+            instance!.RelationalProviderMetadataStatus.Should().Be(RelationalProviderMetadataStatus.Unknown);
+            instance.RelationalProviderToken.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_treat_whitespace_wrapped_provider_metadata_as_unknown()
+        {
+            var instance = _provider!.GetById(6);
+
+            instance.Should().NotBeNull();
+            instance!.RelationalProviderMetadataStatus.Should().Be(RelationalProviderMetadataStatus.Unknown);
+            instance.RelationalProviderToken.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_keep_blank_provider_metadata_distinguishable_as_missing()
+        {
+            var instance = _provider!.GetById(7);
+
+            instance.Should().NotBeNull();
+            instance!.RelationalProviderMetadataStatus.Should().Be(RelationalProviderMetadataStatus.Missing);
+            instance.RelationalProviderToken.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
     public class Given_Empty_DataStores_From_ConfigService
     {
         private ConfigurationServiceDataStoreProvider? _provider;
@@ -379,6 +554,78 @@ public class ConfigurationServiceDataStoreProviderTests
 
             var instance3 = _provider!.GetById(3);
             instance3.Should().NotBeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Relational_Provider_Metadata_Changes_Across_Refresh
+    {
+        private ConfigurationServiceDataStoreProvider? _provider;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            var firstResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Mutable Provider Instance",
+                    ConnectionString = EncryptToBase64("host=first;database=db1;", TestEncryptionKey),
+                    ProviderToken = "postgresql",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+            };
+            var secondResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Mutable Provider Instance",
+                    ConnectionString = EncryptToBase64("host=first;database=db1;", TestEncryptionKey),
+                    ProviderToken = "sqlserver",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+            };
+
+            handler.SetResponse("v3/dataStores/", firstResponse);
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDataStoreProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDataStoreProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
+            );
+
+            await _provider.LoadDataStores();
+
+            handler.SetResponse("v3/dataStores/", secondResponse);
+
+            await _provider.LoadDataStores();
+        }
+
+        [Test]
+        public void It_should_replace_provider_metadata_for_the_same_data_store()
+        {
+            var instance = _provider!.GetById(1);
+
+            instance.Should().NotBeNull();
+            instance!
+                .RelationalProviderMetadataStatus.Should()
+                .Be(RelationalProviderMetadataStatus.Supported);
+            instance.RelationalProviderToken.Should().Be(RelationalProviderToken.SqlServer);
         }
     }
 

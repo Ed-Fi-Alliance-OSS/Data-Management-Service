@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Utilities;
 
@@ -100,52 +99,6 @@ public sealed record DocumentCacheTargetContextGeneration
     public long Value { get; }
 
     public override string ToString() => Value.ToString();
-}
-
-public sealed record DocumentCacheRelationalProviderToken
-{
-    public const string PostgresqlValue = "postgresql";
-    public const string SqlServerValue = "sqlserver";
-
-    public static DocumentCacheRelationalProviderToken Postgresql { get; } = new(PostgresqlValue);
-
-    public static DocumentCacheRelationalProviderToken SqlServer { get; } = new(SqlServerValue);
-
-    private DocumentCacheRelationalProviderToken(string value)
-    {
-        Value = value;
-    }
-
-    public string Value { get; }
-
-    public static bool TryNormalize(
-        string? providerToken,
-        [NotNullWhen(true)] out DocumentCacheRelationalProviderToken? normalizedToken
-    )
-    {
-        normalizedToken = null;
-
-        if (string.IsNullOrEmpty(providerToken))
-        {
-            return false;
-        }
-
-        if (string.Equals(providerToken, PostgresqlValue, StringComparison.OrdinalIgnoreCase))
-        {
-            normalizedToken = Postgresql;
-            return true;
-        }
-
-        if (string.Equals(providerToken, SqlServerValue, StringComparison.OrdinalIgnoreCase))
-        {
-            normalizedToken = SqlServer;
-            return true;
-        }
-
-        return false;
-    }
-
-    public override string ToString() => Value;
 }
 
 public sealed record DocumentCachePhysicalSourceFingerprint
@@ -343,7 +296,7 @@ public sealed record DocumentCacheTargetDiagnostic
     public DocumentCacheTargetDiagnostic(
         DocumentCacheTargetKey targetKey,
         DocumentCacheTargetResolutionState resolutionState,
-        DocumentCacheRelationalProviderToken? providerToken,
+        RelationalProviderToken? providerToken,
         DocumentCacheTargetContextGeneration? generation,
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
@@ -373,7 +326,7 @@ public sealed record DocumentCacheTargetDiagnostic
 
     public DocumentCacheTargetResolutionState ResolutionState { get; }
 
-    public DocumentCacheRelationalProviderToken? ProviderToken { get; }
+    public RelationalProviderToken? ProviderToken { get; }
 
     public DocumentCacheTargetContextGeneration? Generation { get; }
 
@@ -403,7 +356,7 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheTargetEffectiveSettings effectiveSettings,
         DocumentCacheTargetContextGeneration? generation,
         DocumentCacheTargetContextGeneration? replacedByGeneration,
-        DocumentCacheRelationalProviderToken? providerToken,
+        RelationalProviderToken? providerToken,
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
         DocumentCacheInventoryValidationResult? inventory,
@@ -441,7 +394,7 @@ public sealed record DocumentCacheTargetObservation
 
     public DocumentCacheTargetContextGeneration? ReplacedByGeneration { get; }
 
-    public DocumentCacheRelationalProviderToken? ProviderToken { get; }
+    public RelationalProviderToken? ProviderToken { get; }
 
     public DocumentCachePhysicalSourceFingerprint? PhysicalSourceFingerprint { get; }
 
@@ -505,7 +458,7 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheTargetKey targetKey,
         DocumentCacheTargetEffectiveSettings effectiveSettings,
         DocumentCacheTargetContextGeneration generation,
-        DocumentCacheRelationalProviderToken providerToken,
+        RelationalProviderToken providerToken,
         DocumentCachePhysicalSourceFingerprint physicalSourceFingerprint,
         DocumentCacheLifecycleObservation lifecycle,
         DocumentCacheInventoryValidationResult inventory,
@@ -534,7 +487,7 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheTargetKey targetKey,
         DocumentCacheTargetEffectiveSettings effectiveSettings,
         DocumentCacheTargetContextGeneration? generation,
-        DocumentCacheRelationalProviderToken? providerToken,
+        RelationalProviderToken? providerToken,
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
         DocumentCacheInventoryValidationResult? inventory,
@@ -565,7 +518,7 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheTargetEffectiveSettings effectiveSettings,
         DocumentCacheTargetContextGeneration generation,
         DocumentCacheTargetContextGeneration replacedByGeneration,
-        DocumentCacheRelationalProviderToken? providerToken,
+        RelationalProviderToken? providerToken,
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
         DocumentCacheInventoryValidationResult? inventory,

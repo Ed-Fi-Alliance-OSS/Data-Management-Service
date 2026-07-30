@@ -105,7 +105,7 @@ public class DocumentCacheTargetContractTests
                 TargetKey,
                 EffectiveSettings,
                 Generation(3),
-                DocumentCacheRelationalProviderToken.Postgresql,
+                RelationalProviderToken.Postgresql,
                 Fingerprint,
                 TrackingLifecycle,
                 SatisfiedInventory,
@@ -116,7 +116,7 @@ public class DocumentCacheTargetContractTests
             observation.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Resolved);
             observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
             observation.Generation.Should().Be(Generation(3));
-            observation.ProviderToken.Should().Be(DocumentCacheRelationalProviderToken.Postgresql);
+            observation.ProviderToken.Should().Be(RelationalProviderToken.Postgresql);
             observation.PhysicalSourceFingerprint.Should().Be(Fingerprint);
             observation.Lifecycle.Should().Be(TrackingLifecycle);
             observation.Inventory.Should().Be(SatisfiedInventory);
@@ -132,7 +132,7 @@ public class DocumentCacheTargetContractTests
             DocumentCacheTargetDiagnostic diagnostic = new(
                 TargetKey,
                 DocumentCacheTargetResolutionState.Resolved,
-                DocumentCacheRelationalProviderToken.SqlServer,
+                RelationalProviderToken.SqlServer,
                 Generation(5),
                 Fingerprint,
                 new DocumentCacheLifecycleObservation(
@@ -168,7 +168,7 @@ public class DocumentCacheTargetContractTests
                 TargetKey,
                 EffectiveSettings,
                 Generation(5),
-                DocumentCacheRelationalProviderToken.SqlServer,
+                RelationalProviderToken.SqlServer,
                 Fingerprint,
                 diagnostic.Lifecycle,
                 diagnostic.Inventory,
@@ -196,7 +196,7 @@ public class DocumentCacheTargetContractTests
                 EffectiveSettings,
                 Generation(4),
                 replacedByGeneration: Generation(5),
-                DocumentCacheRelationalProviderToken.Postgresql,
+                RelationalProviderToken.Postgresql,
                 Fingerprint,
                 TrackingLifecycle,
                 SatisfiedInventory,
@@ -255,9 +255,9 @@ public class DocumentCacheTargetContractTests
         [TestCase("SQLSERVER", "sqlserver")]
         public void It_should_normalize_supported_provider_tokens(string providerToken, string expectedValue)
         {
-            bool normalized = DocumentCacheRelationalProviderToken.TryNormalize(
+            bool normalized = RelationalProviderToken.TryNormalize(
                 providerToken,
-                out DocumentCacheRelationalProviderToken? token
+                out RelationalProviderToken? token
             );
 
             normalized.Should().BeTrue();
@@ -270,9 +270,9 @@ public class DocumentCacheTargetContractTests
         [TestCase("mysql")]
         public void It_should_reject_missing_blank_or_unknown_provider_tokens(string? providerToken)
         {
-            bool normalized = DocumentCacheRelationalProviderToken.TryNormalize(
+            bool normalized = RelationalProviderToken.TryNormalize(
                 providerToken,
-                out DocumentCacheRelationalProviderToken? token
+                out RelationalProviderToken? token
             );
 
             normalized.Should().BeFalse();
@@ -358,7 +358,7 @@ public class DocumentCacheTargetContractTests
             DocumentCacheTargetDiagnostic diagnostic = new(
                 TargetKey,
                 DocumentCacheTargetResolutionState.Resolved,
-                DocumentCacheRelationalProviderToken.SqlServer,
+                RelationalProviderToken.SqlServer,
                 Generation(9),
                 Fingerprint,
                 TrackingLifecycle,
@@ -372,7 +372,7 @@ public class DocumentCacheTargetContractTests
 
             diagnostic.TargetKey.Should().Be(TargetKey);
             diagnostic.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Resolved);
-            diagnostic.ProviderToken.Should().Be(DocumentCacheRelationalProviderToken.SqlServer);
+            diagnostic.ProviderToken.Should().Be(RelationalProviderToken.SqlServer);
             diagnostic.Generation.Should().Be(Generation(9));
             diagnostic.PhysicalSourceFingerprint.Should().Be(Fingerprint);
             diagnostic.Lifecycle.Should().Be(TrackingLifecycle);

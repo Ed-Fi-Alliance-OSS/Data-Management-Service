@@ -341,17 +341,45 @@ public class ConfigurationServiceDataStoreProvider(
         }
 
         return dataStoreResponses
-            .Select(response => new DataStore(
-                response.Id,
-                response.DataStoreType,
-                response.Name,
-                _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
-                response.DataStoreContexts.ToDictionary(
-                    rc => new RouteQualifierName(rc.ContextKey),
-                    rc => new RouteQualifierValue(rc.ContextValue)
-                )
-            ))
+            .Select(response =>
+            {
+                (
+                    RelationalProviderToken? relationalProviderToken,
+                    RelationalProviderMetadataStatus relationalProviderMetadataStatus
+                ) = NormalizeRelationalProviderMetadata(response);
+
+                return new DataStore(
+                    response.Id,
+                    response.DataStoreType,
+                    response.Name,
+                    _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
+                    response.DataStoreContexts.ToDictionary(
+                        rc => new RouteQualifierName(rc.ContextKey),
+                        rc => new RouteQualifierValue(rc.ContextValue)
+                    ),
+                    relationalProviderToken,
+                    relationalProviderMetadataStatus
+                );
+            })
             .ToList();
+    }
+
+    private static (
+        RelationalProviderToken? Token,
+        RelationalProviderMetadataStatus Status
+    ) NormalizeRelationalProviderMetadata(DataStoreResponse response)
+    {
+        string? providerMetadata =
+            response.ProviderToken ?? response.RelationalProviderToken ?? response.Provider;
+
+        if (string.IsNullOrWhiteSpace(providerMetadata))
+        {
+            return (null, RelationalProviderMetadataStatus.Missing);
+        }
+
+        return RelationalProviderToken.TryNormalize(providerMetadata, out RelationalProviderToken? token)
+            ? (token, RelationalProviderMetadataStatus.Supported)
+            : (null, RelationalProviderMetadataStatus.Unknown);
     }
 
     /// <summary>
@@ -372,6 +400,9 @@ public class ConfigurationServiceDataStoreProvider(
         public string DataStoreType { get; init; } = string.Empty;
         public string Name { get; init; } = string.Empty;
         public string? ConnectionString { get; init; } = null;
+        public string? ProviderToken { get; init; } = null;
+        public string? RelationalProviderToken { get; init; } = null;
+        public string? Provider { get; init; } = null;
         public IList<DataStoreContextItem> DataStoreContexts { get; init; } = [];
     }
 

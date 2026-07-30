@@ -15,8 +15,11 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 /// </summary>
 internal static class FakeDataStoreProvider
 {
-    public static IDataStoreProvider WithSingleInstance(long id, string connectionString) =>
-        new SingleInstanceProvider(id, connectionString);
+    public static IDataStoreProvider WithSingleInstance(
+        long id,
+        string connectionString,
+        RelationalProviderToken? relationalProviderToken = null
+    ) => new SingleInstanceProvider(id, connectionString, relationalProviderToken);
 
     private sealed class SingleInstanceProvider : IDataStoreProvider
     {
@@ -24,14 +27,22 @@ internal static class FakeDataStoreProvider
         private readonly DataStore _instance;
         private readonly IReadOnlyList<DataStore> _instances;
 
-        public SingleInstanceProvider(long id, string connectionString)
+        public SingleInstanceProvider(
+            long id,
+            string connectionString,
+            RelationalProviderToken? relationalProviderToken
+        )
         {
             _instance = new DataStore(
                 Id: id,
                 DataStoreType: "default",
                 Name: "integration-test",
                 ConnectionString: connectionString,
-                RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>(),
+                RelationalProviderToken: relationalProviderToken,
+                RelationalProviderMetadataStatus: relationalProviderToken is null
+                    ? RelationalProviderMetadataStatus.Missing
+                    : RelationalProviderMetadataStatus.Supported
             );
             _instances = [_instance];
         }
