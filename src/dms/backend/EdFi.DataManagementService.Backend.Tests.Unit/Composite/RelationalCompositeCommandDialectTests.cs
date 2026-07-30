@@ -14,15 +14,67 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 public class Given_A_Relational_Composite_Command_Dialect
 {
     [Test]
-    public void It_emits_the_sql_server_session_option_prologue_only_for_multi_statement_commands()
+    public void It_emits_the_sql_server_session_option_prologue_on_a_single_statement_command()
     {
         var builder = new RelationalCompositeCommandBuilder(
             IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
         );
         builder.Append("only", "SELECT 1;", [], RelationalCompositeResultShape.Scalar);
 
-        // A single statement has no later statement to protect, so the prologue is unnecessary.
-        builder.Seal().Command.CommandText.Should().NotContain("XACT_ABORT");
+        var commandText = builder.Seal().Command.CommandText;
+
+        // The prologue is unconditional because a logical statement count does not bound the emitted
+        // statement count, so no logical shape can be relied on to make the batch single-statement.
+        commandText.Should().StartWith("SET XACT_ABORT ON;");
+        commandText.Should().Contain("SET NOCOUNT ON;");
+    }
+
+    [Test]
+    public void It_emits_the_sql_server_session_option_prologue_on_a_single_data_modifying_statement()
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+        builder.Append(
+            "insert",
+            "INSERT INTO [edfi].[School] DEFAULT VALUES;",
+            [],
+            RelationalCompositeResultShape.Sentinel
+        );
+
+        var commandText = builder.Seal().Command.CommandText;
+
+        // One logical statement of this shape emits two statements: the DML and its appended sentinel. A
+        // constraint violation in that DML must abort the batch rather than leave the transaction
+        // committable, which is what the session options establish.
+        commandText.Should().StartWith("SET XACT_ABORT ON;");
+        commandText.Should().Contain("SET NOCOUNT ON;");
+        commandText.Should().Contain("SELECT 0 AS [LogicalStatementOrdinal];");
+    }
+
+    [Test]
+    public void It_emits_the_sql_server_session_option_prologue_ahead_of_the_captured_target_declaration()
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+        var parameter = new RelationalParameter(
+            builder.Allocator.AllocateStatementScoped("documentUuid", 0),
+            Guid.NewGuid()
+        );
+        builder.AppendCaptureTarget("d.[DocumentUuid] = @documentUuid_s0", [parameter]);
+
+        var commandText = builder.Seal().Command.CommandText;
+
+        // A capture-only command is a single logical statement that emits a declaration, an assignment
+        // select, and a projection select, and the session options must precede all of them.
+        commandText.Should().StartWith("SET XACT_ABORT ON;");
+        commandText
+            .IndexOf("SET NOCOUNT ON;", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(
+                commandText.IndexOf("DECLARE @dms_composite_target_documentid", StringComparison.Ordinal)
+            );
     }
 
     [Test]
@@ -40,16 +92,31 @@ public class Given_A_Relational_Composite_Command_Dialect
         commandText.Should().Contain("SET NOCOUNT ON;");
     }
 
-    [Test]
-    public void It_emits_no_prologue_for_postgresql_which_always_aborts_the_transaction_on_error()
+    [TestCase(1, TestName = "It_emits_no_prologue_for_a_single_statement_postgresql_command")]
+    [TestCase(2, TestName = "It_emits_no_prologue_for_a_multi_statement_postgresql_command")]
+    public void It_emits_no_prologue_for_postgresql_which_always_aborts_the_transaction_on_error(
+        int statementCount
+    )
     {
         var builder = new RelationalCompositeCommandBuilder(
             IRelationalCompositeCommandDialect.Create(SqlDialect.Pgsql)
         );
-        builder.Append("first", "SELECT 1;", [], RelationalCompositeResultShape.Scalar);
-        builder.Append("second", "SELECT 2;", [], RelationalCompositeResultShape.Scalar);
 
-        builder.Seal().Command.CommandText.Should().StartWith("SELECT 1;");
+        for (var ordinal = 0; ordinal < statementCount; ordinal++)
+        {
+            builder.Append(
+                $"statement-{ordinal}",
+                "INSERT INTO edfi.\"School\" DEFAULT VALUES;",
+                [],
+                RelationalCompositeResultShape.Sentinel
+            );
+        }
+
+        var commandText = builder.Seal().Command.CommandText;
+
+        commandText.Should().StartWith("INSERT INTO edfi.\"School\" DEFAULT VALUES;");
+        commandText.Should().NotContain("XACT_ABORT");
+        commandText.Should().NotContain("NOCOUNT");
     }
 
     [Test]

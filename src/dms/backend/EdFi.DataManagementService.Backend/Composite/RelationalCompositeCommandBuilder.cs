@@ -179,8 +179,11 @@ internal sealed class RelationalCompositeCommandBuilder
         StringBuilder builder = new();
 
         // The prologue and any carrier declaration precede every statement and are not logical statements:
-        // they produce no result set, so they must not consume an ordinal.
-        if (_statements.Count > 1 && _dialect.MultiStatementPrologue is { } prologue)
+        // they produce no result set, so they must not consume an ordinal. The prologue is emitted on every
+        // command because the logical statement count does not bound the emitted statement count: a
+        // data-modifying statement carries an appended sentinel and the captured-target statement emits a
+        // declaration plus two selects, so no logical shape makes the emitted batch single-statement.
+        if (_dialect.CommandPrologue is { } prologue)
         {
             builder.AppendLine(prologue);
         }

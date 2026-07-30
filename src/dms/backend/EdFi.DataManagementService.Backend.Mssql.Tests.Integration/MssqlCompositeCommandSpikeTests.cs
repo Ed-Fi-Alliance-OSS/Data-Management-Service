@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
 /// SQL Server mirror of the composite-command live-provider gates: ordered failure attribution, the
-/// batch-local captured-target carrier, and the multi-statement session-option prologue.
+/// batch-local captured-target carrier, and the session-option prologue.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -139,7 +139,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         outcomes.Select(outcome => outcome.Label).Should().Equal("scalar", "dml", "rows");
         outcomes[0].Value.Should().Be(41);
         // A sentinel echoes its own ordinal, which is how the decoder proves emitted and declared order
-        // agree. SET NOCOUNT ON keeps the DML from injecting a row-count message ahead of it.
+        // agree.
         outcomes[1].Value.Should().Be(1);
         outcomes[2].Value.Should().Be(3);
 
@@ -237,6 +237,97 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         (await act.Should().ThrowAsync<SqlException>())
             .Which.Message.Should()
             .Contain("dms_composite_target_documentid");
+
+        await TryRollbackAsync(session);
+    }
+
+    // --- Session-option prologue on a command holding one logical statement ---
+
+    [Test]
+    public async Task It_carries_the_session_option_prologue_on_a_single_logical_data_modifying_statement()
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+
+        // One logical statement, four emitted statements once the sentinel is appended. Deterministic
+        // packing makes a command holding a single logical statement ordinary at a budget boundary.
+        builder.Append(
+            "single-dml",
+            """
+            CREATE TABLE #composite_single_probe (id INT NOT NULL);
+            INSERT INTO #composite_single_probe (id) VALUES (1), (2);
+            """,
+            [],
+            RelationalCompositeResultShape.Sentinel
+        );
+
+        var composite = builder.Seal();
+
+        composite.Command.CommandText.Should().StartWith("SET XACT_ABORT ON;");
+
+        await using var session = await CreateSessionAsync();
+
+        var outcomes = await new RelationalCompositeCommandExecution().ExecuteAsync(session, composite);
+
+        // The single declared result set is the sentinel and it echoes its own ordinal. Measured: SqlClient
+        // does not surface the insert's row-count completion as a result set, so this decodes the same with
+        // NOCOUNT off; the session options are established for the abort semantics, not for the decoder.
+        outcomes.Should().HaveCount(1);
+        outcomes[0].Label.Should().Be("single-dml");
+        outcomes[0].Value.Should().Be(0);
+
+        await TryRollbackAsync(session);
+    }
+
+    [Test]
+    public async Task It_aborts_a_failing_single_logical_statement_batch_instead_of_continuing_it()
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+
+        builder.Append(
+            "single-dml",
+            """
+            CREATE TABLE #composite_abort_probe (id INT NOT NULL PRIMARY KEY);
+            INSERT INTO #composite_abort_probe (id) VALUES (1);
+            INSERT INTO #composite_abort_probe (id) VALUES (1);
+            INSERT INTO #composite_abort_probe (id) VALUES (2);
+            """,
+            [],
+            RelationalCompositeResultShape.Sentinel
+        );
+
+        await using var session = await CreateSessionAsync();
+
+        var execution = new RelationalCompositeCommandExecution();
+
+        var act = async () => await execution.ExecuteAsync(session, builder.Seal());
+
+        // 2627 is the primary-key violation on the duplicate insert.
+        (await act.Should().ThrowAsync<SqlException>())
+            .Which.Number.Should()
+            .Be(2627);
+
+        // The ordinal is the invariant; the stage is provider-dependent and is deliberately not asserted.
+        execution.Failure.Should().NotBeNull();
+        execution.Failure!.Ordinal.Should().Be(0);
+        execution.Failure.Label.Should().Be("single-dml");
+
+        // The discriminating assertion. Without the prologue the violation would abort only the offending
+        // statement, the batch would run on through the following insert, and the transaction would still be
+        // committable. XACT_ABORT dooms it instead, so nothing the batch emitted after the violation can
+        // reach durable state.
+        var commit = async () => await session.CommitAsync();
+        var commitFailure = (await commit.Should().ThrowAsync<Exception>()).Which;
+
+        // The type depends on how far the server got: SqlClient raises InvalidOperationException once the
+        // server has rolled back and detached the client transaction, and SqlException when it rejects the
+        // commit of a doomed transaction. Tolerating that in the shared session is separate scope.
+        (commitFailure is InvalidOperationException || commitFailure is SqlException)
+            .Should()
+            .BeTrue($"commit after an aborted batch threw {commitFailure.GetType().Name}");
 
         await TryRollbackAsync(session);
     }

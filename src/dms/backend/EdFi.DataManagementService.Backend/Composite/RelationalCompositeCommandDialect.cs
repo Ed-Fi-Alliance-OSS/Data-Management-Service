@@ -17,10 +17,10 @@ internal interface IRelationalCompositeCommandDialect
     SqlDialect Dialect { get; }
 
     /// <summary>
-    /// Session-option prologue emitted once at the head of a multi-statement command, or
+    /// Session-option prologue emitted once at the head of every composite command, or
     /// <see langword="null"/> when the provider needs none.
     /// </summary>
-    string? MultiStatementPrologue { get; }
+    string? CommandPrologue { get; }
 
     /// <summary>Emits the sentinel select that gives a data-modifying statement its result set.</summary>
     string EmitSentinel(int ordinal);
@@ -93,7 +93,7 @@ internal sealed class PgsqlCompositeCommandDialect : IRelationalCompositeCommand
     /// PostgreSQL needs no prologue: an error always aborts the transaction, so a later statement in the
     /// command cannot execute after a failure.
     /// </summary>
-    public string? MultiStatementPrologue => null;
+    public string? CommandPrologue => null;
 
     public string EmitSentinel(int ordinal) =>
         string.Create(CultureInfo.InvariantCulture, $"SELECT {ordinal} AS \"LogicalStatementOrdinal\";");
@@ -113,12 +113,22 @@ internal sealed class MssqlCompositeCommandDialect : IRelationalCompositeCommand
     /// <c>SET XACT_ABORT</c> is session state, not command state. With it off — the default — a constraint
     /// violation in a multi-statement batch aborts only the offending statement and execution continues, so
     /// co-batched DML could leave later statements running after a failure. The prologue is therefore
-    /// established inside every multi-statement command rather than set once and restored: a trailing
+    /// established inside the command rather than set once and restored: a trailing
     /// <c>SET XACT_ABORT OFF</c> would never execute after an abort, and re-establishing per command means
-    /// no path depends on carry-over. <c>SET NOCOUNT ON</c> is safe because the write path decides delete
-    /// success from returned rows, never from an affected-row count.
+    /// no path depends on carry-over.
     /// </summary>
-    public string? MultiStatementPrologue => "SET XACT_ABORT ON;\nSET NOCOUNT ON;";
+    /// <remarks>
+    /// It is established on every command, not only on commands holding several logical statements, because
+    /// the logical statement count does not bound the emitted statement count: a data-modifying statement
+    /// carries an appended sentinel, and the captured-target statement emits a declaration and two selects.
+    /// Deterministic packing also makes a command holding one logical statement ordinary at a parameter
+    /// budget boundary. Live measurement shows the continuation hazard is what the prologue defends against:
+    /// without it a constraint violation in a one-logical-statement batch leaves the transaction
+    /// committable. <c>SET NOCOUNT ON</c> travels with it because no write path reads an affected-row count
+    /// — delete success is decided from returned rows — and not because the decoder needs it; SqlClient does
+    /// not surface a data-modifying statement's row-count completion as a result set.
+    /// </remarks>
+    public string? CommandPrologue => "SET XACT_ABORT ON;\nSET NOCOUNT ON;";
 
     public string EmitSentinel(int ordinal) =>
         string.Create(CultureInfo.InvariantCulture, $"SELECT {ordinal} AS [LogicalStatementOrdinal];");
