@@ -246,7 +246,10 @@ public sealed class DocumentCacheTargetRegistry(
             return ApplyTargetUnresolved(targetKey, previousState);
         }
 
-        ResolvedTargetExecutionSignature signature = ResolvedTargetExecutionSignature.From(dataStore);
+        DocumentCacheResolvedTargetDataStore resolvedDataStore = DocumentCacheResolvedTargetDataStore.From(
+            dataStore
+        );
+        ResolvedTargetExecutionSignature signature = ResolvedTargetExecutionSignature.From(resolvedDataStore);
         bool hasReusableGeneration =
             previousState.Signature == signature
             && previousState.StableObservation.ResolutionState == DocumentCacheTargetResolutionState.Resolved
@@ -263,7 +266,7 @@ public sealed class DocumentCacheTargetRegistry(
 
         DocumentCacheTargetContextGeneration generation = new(previousState.LastGenerationValue + 1);
         DocumentCacheTargetContextBuildResult buildResult = await targetContextBuilder
-            .BuildAsync(targetKey, generation, cancellationToken)
+            .BuildAsync(targetKey, resolvedDataStore, generation, cancellationToken)
             .ConfigureAwait(false);
 
         DocumentCacheTargetObservation stableObservation = buildResult.Observation;
@@ -477,14 +480,18 @@ public sealed class DocumentCacheTargetRegistry(
         string? ConnectionFactoryInput
     )
     {
-        public static ResolvedTargetExecutionSignature From(DataStore dataStore)
+        public static ResolvedTargetExecutionSignature From(
+            DocumentCacheResolvedTargetDataStore resolvedDataStore
+        )
         {
-            ArgumentNullException.ThrowIfNull(dataStore);
+            ArgumentNullException.ThrowIfNull(resolvedDataStore);
 
             return new(
-                dataStore.RelationalProviderMetadataStatus,
-                dataStore.RelationalProviderToken,
-                string.IsNullOrWhiteSpace(dataStore.ConnectionString) ? null : dataStore.ConnectionString
+                resolvedDataStore.RelationalProviderMetadataStatus,
+                resolvedDataStore.RelationalProviderToken,
+                string.IsNullOrWhiteSpace(resolvedDataStore.ConnectionFactoryInput)
+                    ? null
+                    : resolvedDataStore.ConnectionFactoryInput
             );
         }
     }

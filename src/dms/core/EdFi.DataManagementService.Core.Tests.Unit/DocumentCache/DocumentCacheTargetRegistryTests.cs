@@ -150,6 +150,7 @@ public class DocumentCacheTargetRegistryTests
                 .Which.Category.Should()
                 .Be(DocumentCacheTargetDiagnosticCategory.TargetUnresolved);
             fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
+            fixture.ContextBuilder.BuildCalls.Should().BeEmpty();
         }
 
         [Test]
@@ -242,6 +243,36 @@ public class DocumentCacheTargetRegistryTests
                 .BeNull();
             fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
             fixture.ContextBuilder.BuildCalls[0].Generation.Value.Should().Be(1);
+            fixture
+                .ContextBuilder.BuildCalls[0]
+                .ResolvedDataStore.ConnectionFactoryInput.Should()
+                .Be("connection-a");
+        }
+
+        [Test]
+        public async Task It_builds_a_generation_from_the_same_resolved_data_store_used_for_the_signature()
+        {
+            RegistryWithRealBuilderFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            fixture.DataStoreProvider.QueueMutationAfterNextGetById(
+                "TenantA",
+                CreateDataStore(7, "connection-b")
+            );
+
+            DocumentCacheTargetRegistrySnapshot snapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.Startup
+            );
+
+            snapshot.Targets.Single().Generation!.Value.Should().Be(1);
+            fixture.DataStoreProvider.GetByIdCalls.Should().ContainSingle();
+            DocumentCacheTargetExecutionContext context =
+                fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey)!;
+            context.ConnectionInput.Value.Should().Be("connection-a");
+            context.ProviderToken.Should().Be(RelationalProviderToken.Postgresql);
+            fixture.FingerprintReader.ConnectionInputs.Should().Equal("connection-a");
+            fixture.LifecycleReader.ConnectionInputs.Should().Equal("connection-a");
+            fixture.InventoryValidator.ConnectionInputs.Should().Equal("connection-a");
+            fixture.PrerequisiteValidator.ConnectionInputs.Should().Equal("connection-a");
         }
 
         [Test]
@@ -433,6 +464,131 @@ public class DocumentCacheTargetRegistryTests
         }
     }
 
+    private sealed class RegistryWithRealBuilderFixture
+    {
+        public SequencedDataStoreProvider DataStoreProvider { get; } = new();
+
+        public RecordingFingerprintReader FingerprintReader { get; } = new();
+
+        public RecordingLifecycleReader LifecycleReader { get; } = new();
+
+        public RecordingInventoryValidator InventoryValidator { get; } = new();
+
+        public RecordingPrerequisiteValidator PrerequisiteValidator { get; } = new();
+
+        public FakeTimeProvider TimeProvider { get; } =
+            new(new DateTimeOffset(2026, 7, 29, 12, 0, 0, TimeSpan.Zero));
+
+        public DocumentCacheTargetRegistry Registry { get; }
+
+        public RegistryWithRealBuilderFixture(IReadOnlyList<(string TenantKey, long DataStoreId)> Targets)
+        {
+            DocumentCacheOptions options = CreateOptions(Targets);
+            DocumentCacheTargetContextBuilder contextBuilder = new(
+                Options.Create(options),
+                new DocumentCacheProcessProviderToken(RelationalProviderToken.Postgresql),
+                FingerprintReader,
+                LifecycleReader,
+                InventoryValidator,
+                PrerequisiteValidator,
+                NullLogger<DocumentCacheTargetContextBuilder>.Instance
+            );
+
+            Registry = new DocumentCacheTargetRegistry(
+                DataStoreProvider,
+                contextBuilder,
+                Options.Create(options),
+                TimeProvider,
+                NullLogger<DocumentCacheTargetRegistry>.Instance
+            );
+        }
+    }
+
+    private sealed class RecordingFingerprintReader : IDocumentCachePhysicalSourceFingerprintReader
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public List<string> ConnectionInputs { get; } = [];
+
+        public Task<DocumentCachePhysicalSourceFingerprintReadResult> ReadFingerprintAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ConnectionInputs.Add(connectionString);
+            return Task.FromResult(DocumentCachePhysicalSourceFingerprintReadResult.Success(_fingerprint));
+        }
+    }
+
+    private sealed class RecordingLifecycleReader : IDocumentCacheLifecycleReader
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public List<string> ConnectionInputs { get; } = [];
+
+        public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ConnectionInputs.Add(connectionString);
+            return Task.FromResult(DocumentCacheLifecycleReadResult.Success(_trackingLifecycle));
+        }
+    }
+
+    private sealed class RecordingInventoryValidator : IDocumentCacheInventoryValidator
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public List<string> ConnectionInputs { get; } = [];
+
+        public Task<DocumentCacheProviderInventoryValidationResult> ValidateInventoryAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ConnectionInputs.Add(connectionString);
+            return Task.FromResult(
+                new DocumentCacheProviderInventoryValidationResult(
+                    _satisfiedInventory,
+                    _satisfiedEnqueueTrigger
+                )
+            );
+        }
+    }
+
+    private sealed class RecordingPrerequisiteValidator : IDocumentCacheProviderPrerequisiteValidator
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public List<string> ConnectionInputs { get; } = [];
+
+        public Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateInitializationAsync(
+            string connectionString,
+            DocumentCacheLifecycleObservation lifecycle,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ConnectionInputs.Add(connectionString);
+            return Task.FromResult(
+                DocumentCacheProviderPrerequisiteValidationResult.Initialization(
+                    DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
+                    lifecycle
+                )
+            );
+        }
+
+        public Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateActivationPreflightAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default
+        ) =>
+            Task.FromResult(
+                DocumentCacheProviderPrerequisiteValidationResult.ActivationPreflight(
+                    DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+                )
+            );
+    }
+
     private sealed class RecordingTargetContextBuilder : IDocumentCacheTargetContextBuilder
     {
         private readonly HashSet<DocumentCacheTargetKey> _ineligibleTargetKeys = [];
@@ -448,24 +604,28 @@ public class DocumentCacheTargetRegistryTests
 
         public Task<DocumentCacheTargetContextBuildResult> BuildAsync(
             DocumentCacheTargetKey targetKey,
+            DocumentCacheResolvedTargetDataStore resolvedDataStore,
             DocumentCacheTargetContextGeneration generation,
             CancellationToken cancellationToken = default
         )
         {
-            BuildCalls.Add(new BuildCall(targetKey, generation));
+            BuildCalls.Add(new BuildCall(targetKey, resolvedDataStore, generation));
             if (_ineligibleTargetKeys.Contains(targetKey))
             {
-                return Task.FromResult(CreateIneligibleBuildResult(targetKey, generation));
+                return Task.FromResult(CreateIneligibleBuildResult(targetKey, resolvedDataStore, generation));
             }
 
-            return Task.FromResult(CreateBuildResult(targetKey, generation));
+            return Task.FromResult(CreateBuildResult(targetKey, resolvedDataStore, generation));
         }
 
         private static DocumentCacheTargetContextBuildResult CreateIneligibleBuildResult(
             DocumentCacheTargetKey targetKey,
+            DocumentCacheResolvedTargetDataStore resolvedDataStore,
             DocumentCacheTargetContextGeneration generation
         )
         {
+            RelationalProviderToken providerToken =
+                resolvedDataStore.RelationalProviderToken ?? RelationalProviderToken.Postgresql;
             DocumentCacheInventoryValidationResult invalidInventory = new(
                 DocumentCacheInventoryStatus.Invalid,
                 "Inventory invalid."
@@ -473,7 +633,7 @@ public class DocumentCacheTargetRegistryTests
             DocumentCacheTargetDiagnostic diagnostic = new(
                 targetKey,
                 DocumentCacheTargetResolutionState.Resolved,
-                RelationalProviderToken.Postgresql,
+                providerToken,
                 generation,
                 _fingerprint,
                 _trackingLifecycle,
@@ -488,7 +648,7 @@ public class DocumentCacheTargetRegistryTests
                 targetKey,
                 _effectiveSettings,
                 generation,
-                RelationalProviderToken.Postgresql,
+                providerToken,
                 _fingerprint,
                 _trackingLifecycle,
                 invalidInventory,
@@ -503,14 +663,17 @@ public class DocumentCacheTargetRegistryTests
 
         private static DocumentCacheTargetContextBuildResult CreateBuildResult(
             DocumentCacheTargetKey targetKey,
+            DocumentCacheResolvedTargetDataStore resolvedDataStore,
             DocumentCacheTargetContextGeneration generation
         )
         {
+            RelationalProviderToken providerToken =
+                resolvedDataStore.RelationalProviderToken ?? RelationalProviderToken.Postgresql;
             DocumentCacheTargetObservation observation = DocumentCacheTargetObservation.ResolvedEligible(
                 targetKey,
                 _effectiveSettings,
                 generation,
-                RelationalProviderToken.Postgresql,
+                providerToken,
                 _fingerprint,
                 _trackingLifecycle,
                 _satisfiedInventory,
@@ -521,8 +684,14 @@ public class DocumentCacheTargetRegistryTests
                 targetKey,
                 generation,
                 _effectiveSettings,
-                new DocumentCacheTargetDataStoreMetadata(targetKey.DataStoreId, "Operational"),
-                new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "connection"),
+                new DocumentCacheTargetDataStoreMetadata(
+                    resolvedDataStore.Id,
+                    resolvedDataStore.DataStoreType
+                ),
+                new DocumentCacheTargetConnectionInput(
+                    providerToken,
+                    resolvedDataStore.ConnectionFactoryInput ?? "connection"
+                ),
                 _fingerprint,
                 _trackingLifecycle,
                 _satisfiedInventory,
@@ -536,6 +705,7 @@ public class DocumentCacheTargetRegistryTests
 
     private sealed record BuildCall(
         DocumentCacheTargetKey TargetKey,
+        DocumentCacheResolvedTargetDataStore ResolvedDataStore,
         DocumentCacheTargetContextGeneration Generation
     );
 
@@ -547,8 +717,13 @@ public class DocumentCacheTargetRegistryTests
         private readonly Dictionary<string, IList<DataStore>> _loadedDataStores = new(
             StringComparer.OrdinalIgnoreCase
         );
+        private readonly Dictionary<string, Queue<IList<DataStore>>> _queuedGetByIdMutations = new(
+            StringComparer.OrdinalIgnoreCase
+        );
 
         public List<string> LoadDataStoreCalls { get; } = [];
+
+        public List<(long Id, string TenantKey)> GetByIdCalls { get; } = [];
 
         public int LoadTenantsCallCount { get; private set; }
 
@@ -561,6 +736,9 @@ public class DocumentCacheTargetRegistryTests
 
         public void QueueLoadFailure(string? tenant, Exception exception) =>
             GetQueue(tenant).Enqueue(LoadDataStoresResult.Failure(exception));
+
+        public void QueueMutationAfterNextGetById(string? tenant, params DataStore[] dataStores) =>
+            GetGetByIdMutationQueue(tenant).Enqueue(dataStores);
 
         public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
         {
@@ -592,10 +770,27 @@ public class DocumentCacheTargetRegistryTests
                 ? dataStores.ToList().AsReadOnly()
                 : [];
 
-        public DataStore? GetById(long id, string? tenant = null) =>
-            _loadedDataStores.TryGetValue(GetTenantKey(tenant), out IList<DataStore>? dataStores)
-                ? dataStores.FirstOrDefault(dataStore => dataStore.Id == id)
-                : null;
+        public DataStore? GetById(long id, string? tenant = null)
+        {
+            string tenantKey = GetTenantKey(tenant);
+            GetByIdCalls.Add((id, tenantKey));
+
+            if (!_loadedDataStores.TryGetValue(tenantKey, out IList<DataStore>? dataStores))
+            {
+                return null;
+            }
+
+            DataStore? dataStore = dataStores.FirstOrDefault(dataStore => dataStore.Id == id);
+            if (
+                _queuedGetByIdMutations.TryGetValue(tenantKey, out Queue<IList<DataStore>>? queuedMutations)
+                && queuedMutations.Count > 0
+            )
+            {
+                _loadedDataStores[tenantKey] = queuedMutations.Dequeue();
+            }
+
+            return dataStore;
+        }
 
         public bool IsLoaded(string? tenant = null) => _loadedDataStores.ContainsKey(GetTenantKey(tenant));
 
@@ -624,6 +819,18 @@ public class DocumentCacheTargetRegistryTests
             {
                 queue = new Queue<LoadDataStoresResult>();
                 _queuedLoadResults.Add(tenantKey, queue);
+            }
+
+            return queue;
+        }
+
+        private Queue<IList<DataStore>> GetGetByIdMutationQueue(string? tenant)
+        {
+            string tenantKey = GetTenantKey(tenant);
+            if (!_queuedGetByIdMutations.TryGetValue(tenantKey, out Queue<IList<DataStore>>? queue))
+            {
+                queue = new Queue<IList<DataStore>>();
+                _queuedGetByIdMutations.Add(tenantKey, queue);
             }
 
             return queue;

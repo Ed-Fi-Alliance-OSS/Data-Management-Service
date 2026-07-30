@@ -31,6 +31,28 @@ public sealed record DocumentCacheTargetConnectionInput
 
 public sealed record DocumentCacheTargetDataStoreMetadata(long Id, string DataStoreType);
 
+public sealed record DocumentCacheResolvedTargetDataStore(
+    long Id,
+    string DataStoreType,
+    RelationalProviderMetadataStatus RelationalProviderMetadataStatus,
+    RelationalProviderToken? RelationalProviderToken,
+    string? ConnectionFactoryInput
+)
+{
+    public static DocumentCacheResolvedTargetDataStore From(DataStore dataStore)
+    {
+        ArgumentNullException.ThrowIfNull(dataStore);
+
+        return new(
+            dataStore.Id,
+            dataStore.DataStoreType,
+            dataStore.RelationalProviderMetadataStatus,
+            dataStore.RelationalProviderToken,
+            dataStore.ConnectionString
+        );
+    }
+}
+
 public sealed record DocumentCacheTargetExecutionContext
 {
     public DocumentCacheTargetExecutionContext(
@@ -94,13 +116,13 @@ public interface IDocumentCacheTargetContextBuilder
 {
     Task<DocumentCacheTargetContextBuildResult> BuildAsync(
         DocumentCacheTargetKey targetKey,
+        DocumentCacheResolvedTargetDataStore resolvedDataStore,
         DocumentCacheTargetContextGeneration generation,
         CancellationToken cancellationToken = default
     );
 }
 
 public sealed class DocumentCacheTargetContextBuilder(
-    IDataStoreProvider dataStoreProvider,
     IOptions<DocumentCacheOptions> options,
     DocumentCacheProcessProviderToken processProviderToken,
     IDocumentCachePhysicalSourceFingerprintReader fingerprintReader,
@@ -112,59 +134,21 @@ public sealed class DocumentCacheTargetContextBuilder(
 {
     public async Task<DocumentCacheTargetContextBuildResult> BuildAsync(
         DocumentCacheTargetKey targetKey,
+        DocumentCacheResolvedTargetDataStore resolvedDataStore,
         DocumentCacheTargetContextGeneration generation,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
+        ArgumentNullException.ThrowIfNull(resolvedDataStore);
         ArgumentNullException.ThrowIfNull(generation);
 
         DocumentCacheTargetEffectiveSettings effectiveSettings =
             DocumentCacheTargetEffectiveSettings.FromOptions(options.Value);
 
-        DataStore? dataStore = dataStoreProvider.GetById(
-            targetKey.DataStoreId,
-            targetKey.TenantKey.Length == 0 ? null : targetKey.TenantKey
-        );
-
-        if (dataStore is null)
-        {
-            DocumentCacheResolutionRetryState retryState = new(
-                attemptCount: 0,
-                lastAttemptedAt: null,
-                nextRetryAt: null,
-                DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
-                "Configured target is not loaded from CMS."
-            );
-            DocumentCacheTargetDiagnostic diagnostic = CreateDiagnostic(
-                targetKey,
-                DocumentCacheTargetResolutionState.Unresolved,
-                providerToken: null,
-                generation: null,
-                physicalSourceFingerprint: null,
-                lifecycle: null,
-                inventory: null,
-                enqueueTrigger: null,
-                sqlServerPrerequisites: null,
-                retryState,
-                DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
-                "Configured target is not loaded from CMS."
-            );
-
-            return new DocumentCacheTargetContextBuildResult(
-                DocumentCacheTargetObservation.Unresolved(
-                    targetKey,
-                    effectiveSettings,
-                    retryState,
-                    [diagnostic]
-                ),
-                ExecutionContext: null
-            );
-        }
-
-        RelationalProviderToken? providerToken = dataStore.RelationalProviderToken;
+        RelationalProviderToken? providerToken = resolvedDataStore.RelationalProviderToken;
         DocumentCacheTargetDiagnosticCategory? providerMetadataFailureCategory =
-            GetProviderMetadataFailureCategory(dataStore);
+            GetProviderMetadataFailureCategory(resolvedDataStore);
 
         if (providerMetadataFailureCategory is not null)
         {
@@ -189,7 +173,7 @@ public sealed class DocumentCacheTargetContextBuilder(
             return Ineligible(targetKey, effectiveSettings, generation, providerToken, [diagnostic]);
         }
 
-        providerToken = dataStore.RelationalProviderToken!;
+        providerToken = resolvedDataStore.RelationalProviderToken!;
         if (providerToken != processProviderToken.ProviderToken)
         {
             DocumentCacheTargetDiagnostic diagnostic = CreateDiagnostic(
@@ -210,7 +194,7 @@ public sealed class DocumentCacheTargetContextBuilder(
             return Ineligible(targetKey, effectiveSettings, generation, providerToken, [diagnostic]);
         }
 
-        if (string.IsNullOrWhiteSpace(dataStore.ConnectionString))
+        if (string.IsNullOrWhiteSpace(resolvedDataStore.ConnectionFactoryInput))
         {
             DocumentCacheTargetDiagnostic diagnostic = CreateDiagnostic(
                 targetKey,
@@ -250,7 +234,7 @@ public sealed class DocumentCacheTargetContextBuilder(
             return Ineligible(targetKey, effectiveSettings, generation, providerToken, [diagnostic]);
         }
 
-        string connectionValue = dataStore.ConnectionString;
+        string connectionValue = resolvedDataStore.ConnectionFactoryInput!;
 
         DocumentCachePhysicalSourceFingerprintReadResult fingerprintResult = await ReadFingerprintAsync(
                 connectionValue,
@@ -325,7 +309,7 @@ public sealed class DocumentCacheTargetContextBuilder(
             targetKey,
             generation,
             effectiveSettings,
-            new DocumentCacheTargetDataStoreMetadata(dataStore.Id, dataStore.DataStoreType),
+            new DocumentCacheTargetDataStoreMetadata(resolvedDataStore.Id, resolvedDataStore.DataStoreType),
             connectionInput,
             fingerprintResult.Fingerprint!,
             lifecycleResult.Lifecycle!,
@@ -658,7 +642,7 @@ public sealed class DocumentCacheTargetContextBuilder(
     }
 
     private static DocumentCacheTargetDiagnosticCategory? GetProviderMetadataFailureCategory(
-        DataStore dataStore
+        DocumentCacheResolvedTargetDataStore dataStore
     ) =>
         dataStore.RelationalProviderMetadataStatus switch
         {

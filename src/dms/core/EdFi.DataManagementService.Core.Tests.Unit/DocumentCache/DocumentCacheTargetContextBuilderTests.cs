@@ -66,6 +66,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -129,6 +130,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -157,6 +159,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -185,6 +188,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -209,6 +213,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -266,6 +271,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -319,6 +325,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -358,6 +365,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
                 _targetKey,
+                fixture.ResolvedDataStore,
                 _generation
             );
 
@@ -411,6 +419,18 @@ public class DocumentCacheTargetContextBuilderTests
                 .Should()
                 .NotContain(requestScopedSelectionContract);
         }
+
+        [Test]
+        public void It_does_not_re_read_the_data_store_provider()
+        {
+            typeof(DocumentCacheTargetContextBuilder)
+                .GetConstructors()
+                .Single()
+                .GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .Should()
+                .NotContain(typeof(IDataStoreProvider));
+        }
     }
 
     private static void AssertProviderAdaptersWereNotCalled(BuilderFixture fixture)
@@ -456,8 +476,6 @@ public class DocumentCacheTargetContextBuilderTests
 
     private sealed class BuilderFixture
     {
-        public IDataStoreProvider DataStoreProvider { get; } = A.Fake<IDataStoreProvider>();
-
         public IDocumentCachePhysicalSourceFingerprintReader FingerprintReader { get; } =
             A.Fake<IDocumentCachePhysicalSourceFingerprintReader>();
 
@@ -469,6 +487,8 @@ public class DocumentCacheTargetContextBuilderTests
 
         public IDocumentCacheProviderPrerequisiteValidator PrerequisiteValidator { get; } =
             A.Fake<IDocumentCacheProviderPrerequisiteValidator>();
+
+        public DocumentCacheResolvedTargetDataStore ResolvedDataStore { get; }
 
         public DocumentCacheTargetContextBuilder Builder { get; }
 
@@ -482,10 +502,9 @@ public class DocumentCacheTargetContextBuilderTests
             DocumentCacheProviderPrerequisiteValidationResult? PrerequisiteResult = null
         )
         {
+            ResolvedDataStore = DocumentCacheResolvedTargetDataStore.From(DataStore ?? CreateDataStore());
             RelationalProviderToken adapterToken = AdapterProviderToken ?? RelationalProviderToken.Postgresql;
 
-            A.CallTo(() => DataStoreProvider.GetById(_targetKey.DataStoreId, _targetKey.TenantKey))
-                .Returns(DataStore ?? CreateDataStore());
             A.CallTo(() => FingerprintReader.ProviderToken).Returns(adapterToken);
             A.CallTo(() => LifecycleReader.ProviderToken).Returns(adapterToken);
             A.CallTo(() => InventoryValidator.ProviderToken).Returns(adapterToken);
@@ -521,7 +540,6 @@ public class DocumentCacheTargetContextBuilderTests
             };
 
             Builder = new DocumentCacheTargetContextBuilder(
-                DataStoreProvider,
                 Options.Create(options),
                 new DocumentCacheProcessProviderToken(
                     ProcessProviderToken ?? RelationalProviderToken.Postgresql
