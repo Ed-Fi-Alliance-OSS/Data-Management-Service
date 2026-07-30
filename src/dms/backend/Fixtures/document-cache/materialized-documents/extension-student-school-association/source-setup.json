@@ -134,32 +134,6 @@
       }
     }
   ],
-  "referenceRows": [
-    {
-      "schema": "edfi",
-      "table": "StudentSchoolAssociation",
-      "referenceName": "SchoolReference",
-      "documentId": 971101,
-      "referencedDocumentId": 971201,
-      "values": {
-        "schoolId": 255902,
-        "linkRel": "School",
-        "linkHref": "/ed-fi/schools/aaaaaaaa-bbbb-cccc-dddd-000000001201"
-      }
-    },
-    {
-      "schema": "edfi",
-      "table": "StudentSchoolAssociation",
-      "referenceName": "StudentReference",
-      "documentId": 971101,
-      "referencedDocumentId": 971202,
-      "values": {
-        "studentUniqueId": "604822",
-        "linkRel": "Student",
-        "linkHref": "/ed-fi/students/aaaaaaaa-bbbb-cccc-dddd-000000001202"
-      }
-    }
-  ],
   "referentialIdentityRows": [
     {
       "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000011101",

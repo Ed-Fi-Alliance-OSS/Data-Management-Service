@@ -216,7 +216,6 @@ public static class MaterializedDocumentFixtureCatalog
             || sourceSetup.ConcreteRootRows is null
             || sourceSetup.ChildRows is null
             || sourceSetup.ExtensionRows is null
-            || sourceSetup.ReferenceRows is null
             || sourceSetup.ReferentialIdentityRows is null
         )
         {
@@ -273,18 +272,6 @@ public static class MaterializedDocumentFixtureCatalog
                 throw new InvalidOperationException(
                     $"Source setup '{path}' has a descriptor row without values."
                 );
-            }
-        }
-
-        foreach (var row in sourceSetup.ReferenceRows)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(row.Schema);
-            ArgumentException.ThrowIfNullOrWhiteSpace(row.Table);
-            ArgumentException.ThrowIfNullOrWhiteSpace(row.ReferenceName);
-
-            if (row.DocumentId <= 0 || row.ReferencedDocumentId <= 0 || row.Values is null)
-            {
-                throw new InvalidOperationException($"Source setup '{path}' has an invalid reference row.");
             }
         }
 
@@ -554,7 +541,6 @@ public sealed record MaterializedDocumentSourceSetup(
     MaterializedDocumentSourceTableRow[] ConcreteRootRows,
     MaterializedDocumentSourceTableRow[] ChildRows,
     MaterializedDocumentSourceTableRow[] ExtensionRows,
-    MaterializedDocumentSourceReferenceRow[] ReferenceRows,
     MaterializedDocumentSourceReferentialIdentityRow[] ReferentialIdentityRows
 );
 
@@ -579,15 +565,6 @@ public sealed record MaterializedDocumentSourceDescriptorRow(
     string Namespace,
     string CodeValue,
     string ShortDescription,
-    JsonObject Values
-);
-
-public sealed record MaterializedDocumentSourceReferenceRow(
-    string Schema,
-    string Table,
-    string ReferenceName,
-    long DocumentId,
-    long ReferencedDocumentId,
     JsonObject Values
 );
 

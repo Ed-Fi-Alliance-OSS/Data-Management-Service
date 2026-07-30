@@ -90,7 +90,6 @@ public class Given_MaterializedDocumentFixtureCatalog
         _fixture.SourceSetup.ChildRows.Should().BeEmpty();
         _fixture.SourceSetup.ExtensionRows.Should().BeEmpty();
         _fixture.SourceSetup.Descriptors.Should().BeEmpty();
-        _fixture.SourceSetup.ReferenceRows.Should().BeEmpty();
         _fixture
             .SourceSetup.ReferentialIdentityRows.Should()
             .ContainSingle(row => row.DocumentId == 1001 && row.ResourceKeyId == 1);

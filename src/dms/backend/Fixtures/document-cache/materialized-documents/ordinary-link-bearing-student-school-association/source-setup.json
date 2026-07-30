@@ -38,20 +38,6 @@
   ],
   "childRows": [],
   "extensionRows": [],
-  "referenceRows": [
-    {
-      "schema": "edfi",
-      "table": "StudentSchoolAssociation",
-      "referenceName": "SchoolReference",
-      "documentId": 970101,
-      "referencedDocumentId": 970201,
-      "values": {
-        "schoolId": 255901,
-        "linkRel": "School",
-        "linkHref": "/ed-fi/schools/aaaaaaaa-bbbb-cccc-dddd-000000000201"
-      }
-    }
-  ],
   "referentialIdentityRows": [
     {
       "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000010101",
