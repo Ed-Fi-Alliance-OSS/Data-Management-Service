@@ -503,6 +503,38 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
         result.IsSatisfied.Should().BeFalse();
     }
 
+    [TestCase("\"dms\".\"DocumentCache\"", "FK_DocumentCache_Document")]
+    [TestCase("\"dms\".\"DocumentProjectionWork\"", "FK_DocumentProjectionWork_Document")]
+    public async Task It_rejects_not_valid_required_DocumentCache_foreign_keys(
+        string tableName,
+        string foreignKeyName
+    )
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $$"""
+            ALTER TABLE {{tableName}}
+            DROP CONSTRAINT "{{foreignKeyName}}";
+
+            ALTER TABLE {{tableName}}
+            ADD CONSTRAINT "{{foreignKeyName}}"
+            FOREIGN KEY ("DocumentId")
+            REFERENCES "dms"."Document" ("DocumentId")
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION
+            NOT VALID;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [Test]
     public async Task It_keeps_inventory_failures_scoped_to_the_validated_target()
     {

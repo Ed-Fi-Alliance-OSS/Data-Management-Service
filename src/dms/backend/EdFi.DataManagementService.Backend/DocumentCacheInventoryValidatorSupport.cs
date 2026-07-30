@@ -1345,7 +1345,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                     CASE c.confdeltype WHEN 'c' THEN 'CASCADE' WHEN 'a' THEN 'NO_ACTION' ELSE c.confdeltype::text END AS DeleteAction,
                     CASE c.confupdtype WHEN 'c' THEN 'CASCADE' WHEN 'a' THEN 'NO_ACTION' ELSE c.confupdtype::text END AS UpdateAction,
                     TRUE AS IsEnabled,
-                    TRUE AS IsTrusted,
+                    c.convalidated AS IsTrusted,
                     key_columns.ordinal AS Ordinal
                 FROM pg_catalog.pg_constraint c
                 INNER JOIN pg_catalog.pg_class rel
