@@ -240,6 +240,6 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DocumentCache",
       "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCache"
     ],
-    "completed": false
+    "completed": true
   }
 ]
