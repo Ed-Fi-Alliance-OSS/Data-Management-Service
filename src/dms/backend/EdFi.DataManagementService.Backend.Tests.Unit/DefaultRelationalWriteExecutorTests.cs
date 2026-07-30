@@ -3665,6 +3665,122 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public void It_rejects_an_operation_kind_that_does_not_match_the_target_request()
+    {
+        var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [writePlan]);
+        var mappingSet = CreateMappingSet(resourceModel);
+
+        var act = () =>
+            new RelationalWriteExecutorInput(
+                mappingSet,
+                RelationalWriteOperationKind.Post,
+                new RelationalWriteTargetRequest.Put(UpdateDocumentUuid),
+                resourceWritePlan,
+                CreateReadPlan(resourceModel),
+                JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+                false,
+                new TraceId("write-executor-test"),
+                new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], [])
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("targetRequest");
+        // The executor cannot be handed a mismatched pair, so no session opens and neither target
+        // resolver runs: an invalid input never reaches the database.
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_rejects_an_existing_document_read_plan_for_another_resource()
+    {
+        var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [writePlan]);
+        var mappingSet = CreateMappingSet(resourceModel);
+        var otherResourceModel = CreateRelationalResourceModel(
+            writePlan.TableModel,
+            new QualifiedResourceName("Ed-Fi", "Student")
+        );
+
+        var act = () =>
+            new RelationalWriteExecutorInput(
+                mappingSet,
+                RelationalWriteOperationKind.Post,
+                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                resourceWritePlan,
+                CreateReadPlan(otherResourceModel),
+                JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+                false,
+                new TraceId("write-executor-test"),
+                new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], [])
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("existingDocumentReadPlan");
+    }
+
+    [Test]
+    public void It_rejects_a_reference_resolution_request_built_from_another_mapping_set_instance()
+    {
+        var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [writePlan]);
+        var mappingSet = CreateMappingSet(resourceModel);
+        var otherMappingSetInstance = CreateMappingSet(resourceModel);
+
+        var act = () =>
+            new RelationalWriteExecutorInput(
+                mappingSet,
+                RelationalWriteOperationKind.Post,
+                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                resourceWritePlan,
+                CreateReadPlan(resourceModel),
+                JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+                false,
+                new TraceId("write-executor-test"),
+                new ReferenceResolverRequest(
+                    otherMappingSetInstance,
+                    resourceWritePlan.Model.Resource,
+                    [],
+                    []
+                )
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("referenceResolutionRequest");
+    }
+
+    [Test]
+    public void It_rejects_a_reference_resolution_request_for_another_resource()
+    {
+        var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [writePlan]);
+        var mappingSet = CreateMappingSet(resourceModel);
+
+        var act = () =>
+            new RelationalWriteExecutorInput(
+                mappingSet,
+                RelationalWriteOperationKind.Post,
+                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                resourceWritePlan,
+                CreateReadPlan(resourceModel),
+                JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+                false,
+                new TraceId("write-executor-test"),
+                new ReferenceResolverRequest(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "Student"),
+                    [],
+                    []
+                )
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("referenceResolutionRequest");
+    }
+
+    [Test]
     public void It_requires_target_requests_to_match_operation_kind()
     {
         var writePlan = CreateRootPlan();
@@ -8149,9 +8265,12 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static RelationalResourceModel CreateRelationalResourceModel(DbTableModel rootTable)
+    private static RelationalResourceModel CreateRelationalResourceModel(
+        DbTableModel rootTable,
+        QualifiedResourceName? resourceOverride = null
+    )
     {
-        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resource = resourceOverride ?? new QualifiedResourceName("Ed-Fi", "School");
 
         return new RelationalResourceModel(
             Resource: resource,
