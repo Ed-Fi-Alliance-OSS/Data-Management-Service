@@ -260,6 +260,22 @@ public sealed record DocumentCacheSqlServerPrerequisiteDetails
         DocumentCacheProviderPrerequisiteResult nestedTriggers
     )
     {
+        if (readCommittedSnapshot.Name != DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot)
+        {
+            throw new ArgumentException(
+                "Read committed snapshot result must use the ReadCommittedSnapshot prerequisite name.",
+                nameof(readCommittedSnapshot)
+            );
+        }
+
+        if (nestedTriggers.Name != DocumentCacheProviderPrerequisiteName.NestedTriggers)
+        {
+            throw new ArgumentException(
+                "Nested triggers result must use the NestedTriggers prerequisite name.",
+                nameof(nestedTriggers)
+            );
+        }
+
         ReadCommittedSnapshot = readCommittedSnapshot;
         NestedTriggers = nestedTriggers;
     }
@@ -267,6 +283,8 @@ public sealed record DocumentCacheSqlServerPrerequisiteDetails
     public DocumentCacheProviderPrerequisiteResult ReadCommittedSnapshot { get; }
 
     public DocumentCacheProviderPrerequisiteResult NestedTriggers { get; }
+
+    public bool HasFailure => IsFailure(ReadCommittedSnapshot.Status) || IsFailure(NestedTriggers.Status);
 
     public static DocumentCacheSqlServerPrerequisiteDetails NotApplicable() =>
         new(
@@ -281,6 +299,133 @@ public sealed record DocumentCacheSqlServerPrerequisiteDetails
                 "Not applicable."
             )
         );
+
+    private static bool IsFailure(DocumentCacheProviderPrerequisiteStatus status) =>
+        status
+            is DocumentCacheProviderPrerequisiteStatus.Disabled
+                or DocumentCacheProviderPrerequisiteStatus.Unreadable;
+}
+
+public sealed record DocumentCacheProviderPrerequisiteValidationResult
+{
+    private DocumentCacheProviderPrerequisiteValidationResult(
+        DocumentCacheSqlServerPrerequisiteDetails sqlServerPrerequisites,
+        DocumentCacheTargetDiagnosticCategory? failureCategory,
+        string message
+    )
+    {
+        if (
+            failureCategory is not null
+            && failureCategory != DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+            && failureCategory != DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident
+        )
+        {
+            throw new ArgumentException(
+                "Provider prerequisite validation supports only prerequisite failure categories.",
+                nameof(failureCategory)
+            );
+        }
+
+        if (!sqlServerPrerequisites.HasFailure && failureCategory is not null)
+        {
+            throw new ArgumentException(
+                "Satisfied provider prerequisites must not carry a failure category.",
+                nameof(failureCategory)
+            );
+        }
+
+        if (sqlServerPrerequisites.HasFailure && failureCategory is null)
+        {
+            throw new ArgumentException(
+                "Failed provider prerequisites require a failure category.",
+                nameof(failureCategory)
+            );
+        }
+
+        SqlServerPrerequisites = sqlServerPrerequisites;
+        FailureCategory = failureCategory;
+        Message = DocumentCacheDiagnosticText.Sanitize(message);
+    }
+
+    public DocumentCacheSqlServerPrerequisiteDetails SqlServerPrerequisites { get; }
+
+    public DocumentCacheTargetDiagnosticCategory? FailureCategory { get; }
+
+    public string Message { get; }
+
+    public bool IsSatisfied => FailureCategory is null;
+
+    public static DocumentCacheProviderPrerequisiteValidationResult Initialization(
+        DocumentCacheSqlServerPrerequisiteDetails sqlServerPrerequisites,
+        DocumentCacheLifecycleObservation lifecycle
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sqlServerPrerequisites);
+        ArgumentNullException.ThrowIfNull(lifecycle);
+
+        if (!sqlServerPrerequisites.HasFailure)
+        {
+            return new(
+                sqlServerPrerequisites,
+                failureCategory: null,
+                sqlServerPrerequisites.ReadCommittedSnapshot.Status
+                == DocumentCacheProviderPrerequisiteStatus.NotApplicable
+                    ? "Provider prerequisites are not applicable."
+                    : "Provider prerequisites satisfied."
+            );
+        }
+
+        return new(
+            sqlServerPrerequisites,
+            lifecycle.State == DocumentCacheLifecycleState.Disabled
+                ? DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+                : DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
+            lifecycle.State == DocumentCacheLifecycleState.Disabled
+                ? "Provider prerequisite failed; correction and DMS/projector restart are required."
+                : "Provider prerequisite failure was observed outside the supported Disabled lifecycle."
+        );
+    }
+
+    public static DocumentCacheProviderPrerequisiteValidationResult ActivationPreflight(
+        DocumentCacheSqlServerPrerequisiteDetails sqlServerPrerequisites
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sqlServerPrerequisites);
+
+        if (!sqlServerPrerequisites.HasFailure)
+        {
+            return new(
+                sqlServerPrerequisites,
+                failureCategory: null,
+                sqlServerPrerequisites.ReadCommittedSnapshot.Status
+                == DocumentCacheProviderPrerequisiteStatus.NotApplicable
+                    ? "Provider prerequisites are not applicable."
+                    : "Provider prerequisites satisfied."
+            );
+        }
+
+        return new(
+            sqlServerPrerequisites,
+            DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
+            "Activation preflight provider prerequisite failed; correct provider settings and retry."
+        );
+    }
+}
+
+public interface IDocumentCacheProviderPrerequisiteValidator
+{
+    RelationalProviderToken ProviderToken { get; }
+
+    Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateInitializationAsync(
+        string connectionString,
+        DocumentCacheLifecycleObservation lifecycle,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateActivationPreflightAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public sealed record DocumentCacheResolutionRetryState

@@ -222,6 +222,10 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.PostgresqlDocumentCacheInventoryValidator
             >();
             webAppBuilder.Services.AddSingleton<
+                IDocumentCacheProviderPrerequisiteValidator,
+                Backend.Postgresql.PostgresqlDocumentCacheProviderPrerequisiteValidator
+            >();
+            webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,
                 Backend.Postgresql.PostgresqlResourceKeyRowReader
             >();
@@ -244,6 +248,10 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddSingleton<
                 IDocumentCacheInventoryValidator,
                 Backend.Mssql.MssqlDocumentCacheInventoryValidator
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCacheProviderPrerequisiteValidator,
+                Backend.Mssql.MssqlDocumentCacheProviderPrerequisiteValidator
             >();
             webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,

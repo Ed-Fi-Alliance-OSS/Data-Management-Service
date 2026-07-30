@@ -215,6 +215,16 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        public void It_resolves_the_postgresql_document_cache_provider_prerequisite_validator()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            var validator = serviceProvider.GetRequiredService<IDocumentCacheProviderPrerequisiteValidator>();
+
+            validator.Should().BeOfType<PostgresqlDocumentCacheProviderPrerequisiteValidator>();
+        }
+
+        [Test]
         public void It_uses_direct_typed_relational_repository_registrations()
         {
             var services = CreateServiceCollection("postgresql");
@@ -376,6 +386,16 @@ public class WebApplicationBuilderExtensionsTests
                 serviceProvider.GetRequiredService<IDocumentCachePhysicalSourceFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<MssqlDocumentCachePhysicalSourceFingerprintReader>();
+        }
+
+        [Test]
+        public void It_resolves_the_mssql_document_cache_provider_prerequisite_validator()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            var validator = serviceProvider.GetRequiredService<IDocumentCacheProviderPrerequisiteValidator>();
+
+            validator.Should().BeOfType<MssqlDocumentCacheProviderPrerequisiteValidator>();
         }
 
         [Test]
