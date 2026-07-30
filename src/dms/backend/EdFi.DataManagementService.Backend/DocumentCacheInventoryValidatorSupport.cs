@@ -585,6 +585,16 @@ internal static class DocumentCacheInventoryValidatorSupport
             );
         }
 
+        if (dialect == SqlDialect.Mssql && !HasExpectedMssqlAfterInsertUpdateTriggerShape(trigger))
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger shape is invalid."
+                )
+            );
+        }
+
         if (
             dialect == SqlDialect.Mssql
             && !HasExpectedMssqlDocumentCacheUuidValidationTriggerDefinition(trigger.Definition)
@@ -787,6 +797,16 @@ internal static class DocumentCacheInventoryValidatorSupport
                 new EnqueueIssue(
                     DocumentCacheEnqueueTriggerStatus.Invalid,
                     $"{triggerName} trigger uses an unexpected function."
+                )
+            );
+        }
+
+        if (dialect == SqlDialect.Mssql && !HasExpectedMssqlAfterInsertUpdateTriggerShape(trigger))
+        {
+            enqueueIssues.Add(
+                new EnqueueIssue(
+                    DocumentCacheEnqueueTriggerStatus.Invalid,
+                    $"{triggerName} trigger shape is invalid."
                 )
             );
         }
@@ -1551,14 +1571,35 @@ internal static class DocumentCacheInventoryValidatorSupport
             SqlDialect.Mssql => """
                 SELECT
                     CASE WHEN triggers.is_disabled = 0 THEN 1 ELSE 0 END AS IsEnabled,
-                    CAST(NULL AS bit) AS IsInternal,
-                    CAST(NULL AS bit) AS IsRowLevel,
-                    CAST(NULL AS bit) AS IsBefore,
-                    CAST(NULL AS bit) AS IsInsteadOf,
-                    CAST(NULL AS bit) AS IsInsert,
-                    CAST(NULL AS bit) AS IsDelete,
-                    CAST(NULL AS bit) AS IsUpdate,
-                    CAST(NULL AS bit) AS IsTruncate,
+                    CASE WHEN triggers.is_ms_shipped = 0 THEN 0 ELSE 1 END AS IsInternal,
+                    CAST(0 AS bit) AS IsRowLevel,
+                    CAST(0 AS bit) AS IsBefore,
+                    CASE WHEN triggers.is_instead_of_trigger = 1 THEN 1 ELSE 0 END AS IsInsteadOf,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.trigger_events trigger_events
+                            WHERE trigger_events.object_id = triggers.object_id
+                              AND trigger_events.type_desc = N'INSERT'
+                        ) THEN 1 ELSE 0
+                    END AS IsInsert,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.trigger_events trigger_events
+                            WHERE trigger_events.object_id = triggers.object_id
+                              AND trigger_events.type_desc = N'DELETE'
+                        ) THEN 1 ELSE 0
+                    END AS IsDelete,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM sys.trigger_events trigger_events
+                            WHERE trigger_events.object_id = triggers.object_id
+                              AND trigger_events.type_desc = N'UPDATE'
+                        ) THEN 1 ELSE 0
+                    END AS IsUpdate,
+                    CAST(0 AS bit) AS IsTruncate,
                     CAST(NULL AS nvarchar(128)) AS OldTransitionTable,
                     CAST(NULL AS nvarchar(128)) AS NewTransitionTable,
                     CAST(NULL AS nvarchar(128)) AS FunctionSchema,
@@ -1827,6 +1868,16 @@ internal static class DocumentCacheInventoryValidatorSupport
             "<>",
             "THROW"
         );
+
+    private static bool HasExpectedMssqlAfterInsertUpdateTriggerShape(TriggerSnapshot trigger) =>
+        trigger.IsInternal == false
+        && trigger.IsRowLevel == false
+        && trigger.IsBefore == false
+        && trigger.IsInsteadOf == false
+        && trigger.IsInsert == true
+        && trigger.IsUpdate == true
+        && trigger.IsDelete == false
+        && trigger.IsTruncate == false;
 
     private static bool HasExpectedPgsqlDocumentEnqueueFunctionDefinition(
         string functionName,

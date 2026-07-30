@@ -161,6 +161,41 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
     }
 
+    [TestCaseSource(nameof(InvalidMssqlAfterInsertUpdateTriggerShapes))]
+    public async Task It_rejects_same_named_uuid_validation_triggers_with_invalid_sqlserver_shape(
+        string timingAndEvents
+    )
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $$"""
+            CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]
+            ON [dms].[DocumentCache]
+            {{timingAndEvents}}
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                /*
+                    INSERTED
+                    dms.Document
+                    DocumentId
+                    DocumentUuid
+                    <>
+                    THROW
+                */
+                RETURN;
+            END;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+    }
+
     [Test]
     public async Task It_rejects_an_enqueue_trigger_with_the_expected_name_but_wrong_body()
     {
@@ -174,6 +209,53 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             AS
             BEGIN
                 SET NOCOUNT ON;
+                RETURN;
+            END;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+    }
+
+    [TestCaseSource(nameof(InvalidMssqlAfterInsertUpdateTriggerShapes))]
+    public async Task It_rejects_same_named_enqueue_triggers_with_invalid_sqlserver_shape(
+        string timingAndEvents
+    )
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $$"""
+            CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]
+            ON [dms].[Document]
+            {{timingAndEvents}}
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                /*
+                    DocumentCacheState
+                    ProjectionLifecycleState
+                    StateId = 1
+                    'Disabled'
+                    'Resetting'
+                    'Rebuilding'
+                    'Tracking'
+                    inserted
+                    deleted
+                    MAX
+                    GROUP BY i.DocumentId
+                    dms.DocumentProjectionWork
+                    UPDATE work
+                    SET work.RequiredContentVersion = req.RequiredContentVersion
+                    work.RequiredContentVersion < req.RequiredContentVersion
+                    INSERT INTO dms.DocumentProjectionWork
+                    LEFT JOIN dms.DocumentProjectionWork
+                */
                 RETURN;
             END;
             """
@@ -346,6 +428,22 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
 
         invalidResult.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
         validResult.IsSatisfied.Should().BeTrue();
+    }
+
+    private static IEnumerable<TestCaseData> InvalidMssqlAfterInsertUpdateTriggerShapes()
+    {
+        yield return new TestCaseData("INSTEAD OF INSERT, UPDATE").SetName(
+            "It_rejects_sqlserver_trigger_with_instead_of_timing"
+        );
+        yield return new TestCaseData("AFTER UPDATE").SetName(
+            "It_rejects_sqlserver_trigger_missing_insert_event"
+        );
+        yield return new TestCaseData("AFTER INSERT").SetName(
+            "It_rejects_sqlserver_trigger_missing_update_event"
+        );
+        yield return new TestCaseData("AFTER INSERT, UPDATE, DELETE").SetName(
+            "It_rejects_sqlserver_trigger_with_delete_event"
+        );
     }
 
     private Task<MssqlGeneratedDdlTestDatabase> CreateDatabaseAsync() =>
