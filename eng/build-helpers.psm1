@@ -71,6 +71,43 @@ function Invoke-Main {
 
 <#
     .DESCRIPTION
+    Resolve the built test assemblies for a test target, failing when the glob matches nothing.
+
+    An empty match means the target would execute zero tests, and a target that executes zero tests
+    must never report success: there would be no signal separating "everything passed" from "nothing
+    ran". The glob is easy to miss (assemblies built under a different -Configuration, a renamed test
+    project, a changed directory layout, or a skipped build step), so this is a hard failure.
+#>
+function Get-RequiredTestAssembly {
+    param (
+        # Root of the solution whose test projects are being searched
+        [string]
+        $SolutionRoot,
+
+        # File search filter, e.g. "*.Tests.Unit"
+        [string]
+        $Filter,
+
+        # .NET build configuration the assemblies were built under
+        [string]
+        $Configuration
+    )
+
+    $testAssemblyPath = "$SolutionRoot/*/$Filter/bin/$Configuration/"
+
+    # @() so the emptiness test below is a count. Get-ChildItem returns a bare FileInfo when exactly
+    # one file matches, and FileInfo.Length is the file's size in bytes, not an item count.
+    $testAssemblies = @(Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse)
+
+    if ($testAssemblies.Count -eq 0) {
+        throw "no test assemblies found in $testAssemblyPath. Nothing matching '$Filter' was built for configuration '$Configuration', so this target would run zero tests."
+    }
+
+    return $testAssemblies
+}
+
+<#
+    .DESCRIPTION
     Display a command and its arguments on the console
 #>
 function Write-Command($message){

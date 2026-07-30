@@ -586,14 +586,13 @@ function RunTests {
         $ResultNameSuffix
     )
 
-    $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
-    $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse |
-    Sort-Object -Property { $_.Name.Length }
+    # @() so $testAssemblies[-1] below is well defined when exactly one assembly matches: the
+    # pipeline hands back a bare FileInfo in that case rather than a single-element array.
+    $testAssemblies = @(
+        Get-RequiredTestAssembly -SolutionRoot $solutionRoot -Filter $Filter -Configuration $Configuration |
+            Sort-Object -Property { $_.Name.Length }
+    )
     $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
-
-    if ($testAssemblies.Length -eq 0) {
-        Write-Output "no test assemblies found in $testAssemblyPath"
-    }
 
     Write-Output "Tests Assemblies List"
     Write-Output $testAssemblies
