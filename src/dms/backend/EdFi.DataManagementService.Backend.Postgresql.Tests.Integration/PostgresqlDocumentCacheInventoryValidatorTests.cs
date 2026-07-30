@@ -518,6 +518,37 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
         result.IsSatisfied.Should().BeFalse();
     }
 
+    [TestCase(
+        """
+            "FirstEnqueuedAt", "DocumentId", ("RequiredContentVersion" + 1)
+            """
+    )]
+    [TestCase(
+        """
+            "FirstEnqueuedAt", ("RequiredContentVersion" + 1), "DocumentId"
+            """
+    )]
+    public async Task It_rejects_a_work_paging_index_with_expression_keys(string indexKeySql)
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $$"""
+            DROP INDEX "dms"."IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId";
+
+            CREATE INDEX "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId"
+            ON "dms"."DocumentProjectionWork" ({{indexKeySql}});
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [TestCase("\"dms\".\"DocumentCache\"", "FK_DocumentCache_Document")]
     [TestCase("\"dms\".\"DocumentProjectionWork\"", "FK_DocumentProjectionWork_Document")]
     public async Task It_rejects_not_valid_required_DocumentCache_foreign_keys(

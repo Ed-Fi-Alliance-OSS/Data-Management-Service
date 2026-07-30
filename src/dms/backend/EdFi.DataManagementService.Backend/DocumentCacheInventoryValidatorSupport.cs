@@ -509,6 +509,16 @@ internal static class DocumentCacheInventoryValidatorSupport
             );
         }
 
+        if (index.HasExpressionKeys)
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index has expression keys."
+                )
+            );
+        }
+
         ValidateColumnOrder(
             index.Columns,
             [
@@ -1494,7 +1504,9 @@ internal static class DocumentCacheInventoryValidatorSupport
                 SELECT
                     a.attname AS ColumnName,
                     idx.indisvalid AND idx.indisready AS IsUsable,
-                    idx.indpred IS NOT NULL AS IsFilteredOrPartial
+                    idx.indpred IS NOT NULL AS IsFilteredOrPartial,
+                    key_columns.attnum = 0 AS IsExpressionKey,
+                    FALSE AS IsIncludedColumn
                 FROM pg_catalog.pg_index idx
                 INNER JOIN pg_catalog.pg_class index_rel
                     ON index_rel.oid = idx.indexrelid
@@ -1504,7 +1516,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                     ON n.oid = table_rel.relnamespace
                 INNER JOIN unnest(idx.indkey) WITH ORDINALITY AS key_columns(attnum, ordinal)
                     ON TRUE
-                INNER JOIN pg_catalog.pg_attribute a
+                LEFT JOIN pg_catalog.pg_attribute a
                     ON a.attrelid = table_rel.oid
                    AND a.attnum = key_columns.attnum
                 WHERE n.nspname = @schema
@@ -1517,6 +1529,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                     columns.name AS ColumnName,
                     CASE WHEN indexes.is_disabled = 0 THEN 1 ELSE 0 END AS IsUsable,
                     indexes.has_filter AS IsFilteredOrPartial,
+                    CAST(0 AS bit) AS IsExpressionKey,
                     index_columns.is_included_column AS IsIncludedColumn
                 FROM sys.indexes indexes
                 INNER JOIN sys.tables tables
@@ -1548,10 +1561,11 @@ internal static class DocumentCacheInventoryValidatorSupport
                     Parameter("indexName", indexName),
                 ],
                 reader => new IndexRow(
-                    reader.GetString(reader.GetOrdinal("ColumnName")),
+                    ReadNullableString(reader, "ColumnName"),
                     ReadBooleanLike(reader, "IsUsable"),
                     ReadBooleanLike(reader, "IsFilteredOrPartial"),
-                    dialect == SqlDialect.Mssql && ReadBooleanLike(reader, "IsIncludedColumn")
+                    ReadBooleanLike(reader, "IsExpressionKey"),
+                    ReadBooleanLike(reader, "IsIncludedColumn")
                 ),
                 cancellationToken
             )
@@ -1560,10 +1574,13 @@ internal static class DocumentCacheInventoryValidatorSupport
         return rows.Count == 0
             ? null
             : new IndexSnapshot(
-                rows.Where(row => !row.IsIncludedColumn).Select(row => row.Column).ToArray(),
+                rows.Where(row => !row.IsIncludedColumn && !row.IsExpressionKey && row.Column is not null)
+                    .Select(row => row.Column!)
+                    .ToArray(),
                 rows.All(row => row.IsUsable),
                 rows.Any(row => row.IsFilteredOrPartial),
-                rows.Any(row => row.IsIncludedColumn)
+                rows.Any(row => row.IsIncludedColumn),
+                rows.Any(row => row.IsExpressionKey)
             );
     }
 
@@ -2395,9 +2412,10 @@ internal static class DocumentCacheInventoryValidatorSupport
     );
 
     private sealed record IndexRow(
-        string Column,
+        string? Column,
         bool IsUsable,
         bool IsFilteredOrPartial,
+        bool IsExpressionKey,
         bool IsIncludedColumn
     );
 
@@ -2405,7 +2423,8 @@ internal static class DocumentCacheInventoryValidatorSupport
         IReadOnlyList<string> Columns,
         bool IsUsable,
         bool IsFilteredOrPartial,
-        bool HasIncludedColumns
+        bool HasIncludedColumns,
+        bool HasExpressionKeys
     );
 
     private sealed record TriggerSnapshot(
