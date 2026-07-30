@@ -385,6 +385,29 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_rejects_a_partial_work_paging_index_with_the_expected_name_and_column_order()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            DROP INDEX "dms"."IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId";
+
+            CREATE INDEX "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId"
+            ON "dms"."DocumentProjectionWork" ("FirstEnqueuedAt", "DocumentId")
+            WHERE "DocumentId" > 0;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_keeps_inventory_failures_scoped_to_the_validated_target()
     {
         await using PostgresqlGeneratedDdlTestDatabase invalidDatabase = await CreateDatabaseAsync();

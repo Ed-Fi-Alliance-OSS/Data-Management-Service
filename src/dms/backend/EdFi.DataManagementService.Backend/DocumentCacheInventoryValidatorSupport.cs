@@ -485,6 +485,16 @@ internal static class DocumentCacheInventoryValidatorSupport
             );
         }
 
+        if (index.IsFilteredOrPartial)
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index is filtered or partial."
+                )
+            );
+        }
+
         ValidateColumnOrder(
             index.Columns,
             [
@@ -1429,7 +1439,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             SqlDialect.Pgsql => """
                 SELECT
                     a.attname AS ColumnName,
-                    idx.indisvalid AND idx.indisready AS IsUsable
+                    idx.indisvalid AND idx.indisready AS IsUsable,
+                    idx.indpred IS NOT NULL AS IsFilteredOrPartial
                 FROM pg_catalog.pg_index idx
                 INNER JOIN pg_catalog.pg_class index_rel
                     ON index_rel.oid = idx.indexrelid
@@ -1450,7 +1461,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             SqlDialect.Mssql => """
                 SELECT
                     columns.name AS ColumnName,
-                    CASE WHEN indexes.is_disabled = 0 THEN 1 ELSE 0 END AS IsUsable
+                    CASE WHEN indexes.is_disabled = 0 THEN 1 ELSE 0 END AS IsUsable,
+                    indexes.has_filter AS IsFilteredOrPartial
                 FROM sys.indexes indexes
                 INNER JOIN sys.tables tables
                     ON tables.object_id = indexes.object_id
@@ -1481,7 +1493,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 ],
                 reader => new IndexRow(
                     reader.GetString(reader.GetOrdinal("ColumnName")),
-                    ReadBooleanLike(reader, "IsUsable")
+                    ReadBooleanLike(reader, "IsUsable"),
+                    ReadBooleanLike(reader, "IsFilteredOrPartial")
                 ),
                 cancellationToken
             )
@@ -1489,7 +1502,11 @@ internal static class DocumentCacheInventoryValidatorSupport
 
         return rows.Count == 0
             ? null
-            : new IndexSnapshot(rows.Select(row => row.Column).ToArray(), rows.All(row => row.IsUsable));
+            : new IndexSnapshot(
+                rows.Select(row => row.Column).ToArray(),
+                rows.All(row => row.IsUsable),
+                rows.Any(row => row.IsFilteredOrPartial)
+            );
     }
 
     private static async Task<TriggerSnapshot?> ReadTriggerAsync(
@@ -2070,9 +2087,13 @@ internal static class DocumentCacheInventoryValidatorSupport
         bool IsTrusted
     );
 
-    private sealed record IndexRow(string Column, bool IsUsable);
+    private sealed record IndexRow(string Column, bool IsUsable, bool IsFilteredOrPartial);
 
-    private sealed record IndexSnapshot(IReadOnlyList<string> Columns, bool IsUsable);
+    private sealed record IndexSnapshot(
+        IReadOnlyList<string> Columns,
+        bool IsUsable,
+        bool IsFilteredOrPartial
+    );
 
     private sealed record TriggerSnapshot(
         bool IsEnabled,
