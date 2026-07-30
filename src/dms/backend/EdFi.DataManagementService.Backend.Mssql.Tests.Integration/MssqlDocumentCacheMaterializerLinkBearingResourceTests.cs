@@ -9,9 +9,9 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
-using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -27,14 +27,7 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
     private const long StudentSchoolAssociationDocumentId = 970101;
     private const short StudentSchoolAssociationResourceKeyId = 11;
     private const short SchoolResourceKeyId = 30;
-    private const long ContentVersion = 222;
-    private const int SchoolId = 255901;
 
-    private static readonly Guid StudentSchoolAssociationDocumentGuid = Guid.Parse(
-        "aaaaaaaa-bbbb-cccc-dddd-000000000101"
-    );
-    private static readonly Guid SchoolDocumentGuid = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000201");
-    private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 30, 14, 15, 16, TimeSpan.Zero);
     private static readonly QualifiedResourceName StudentSchoolAssociationResource = new(
         "Ed-Fi",
         "StudentSchoolAssociation"
@@ -44,6 +37,7 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
     private string _databaseName = null!;
     private string _connectionString = null!;
     private MappingSet _mappingSet = null!;
+    private MaterializedDocumentFixture _fixture = null!;
     private DocumentCacheMaterializationResult _result = null!;
 
     [OneTimeSetUp]
@@ -57,77 +51,17 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
         MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
         _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
         _mappingSet = CreateMappingSet(SqlDialect.Mssql);
+        _fixture = MaterializedDocumentFixtureCatalog.LoadCase(
+            TestContext.CurrentContext.TestDirectory,
+            "ordinary-link-bearing-student-school-association"
+        );
 
         await using (var connection = new SqlConnection(_connectionString))
         {
             await connection.OpenAsync();
-            await ExecuteSql(
-                connection,
-                """
-                IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
-                IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'edfi') EXEC('CREATE SCHEMA [edfi]');
-
-                CREATE TABLE [dms].[Document] (
-                    [DocumentId] bigint NOT NULL CONSTRAINT [PK_Document] PRIMARY KEY,
-                    [DocumentUuid] uniqueidentifier NOT NULL,
-                    [ResourceKeyId] smallint NOT NULL,
-                    [CreatedByOwnershipTokenId] smallint NULL,
-                    [ContentVersion] bigint NOT NULL,
-                    [IdentityVersion] bigint NOT NULL,
-                    [ContentLastModifiedAt] datetimeoffset NOT NULL,
-                    [IdentityLastModifiedAt] datetimeoffset NOT NULL,
-                    [CreatedAt] datetimeoffset NOT NULL
-                );
-
-                CREATE TABLE [edfi].[StudentSchoolAssociation] (
-                    [DocumentId] bigint NOT NULL CONSTRAINT [PK_StudentSchoolAssociation] PRIMARY KEY,
-                    [School_DocumentId] bigint NOT NULL,
-                    [SchoolReference_SchoolId] int NOT NULL
-                );
-
-                INSERT INTO [dms].[Document] (
-                    [DocumentId],
-                    [DocumentUuid],
-                    [ResourceKeyId],
-                    [CreatedByOwnershipTokenId],
-                    [ContentVersion],
-                    [IdentityVersion],
-                    [ContentLastModifiedAt],
-                    [IdentityLastModifiedAt],
-                    [CreatedAt]
-                )
-                VALUES
-                (
-                    970101,
-                    'aaaaaaaa-bbbb-cccc-dddd-000000000101',
-                    11,
-                    NULL,
-                    222,
-                    111,
-                    '2026-07-30T14:15:16+00:00',
-                    '2026-07-30T14:15:16+00:00',
-                    '2026-07-30T14:15:16+00:00'
-                ),
-                (
-                    970201,
-                    'aaaaaaaa-bbbb-cccc-dddd-000000000201',
-                    30,
-                    NULL,
-                    101,
-                    101,
-                    '2026-07-29T14:15:16+00:00',
-                    '2026-07-29T14:15:16+00:00',
-                    '2026-07-29T14:15:16+00:00'
-                );
-
-                INSERT INTO [edfi].[StudentSchoolAssociation] (
-                    [DocumentId],
-                    [School_DocumentId],
-                    [SchoolReference_SchoolId]
-                )
-                VALUES (970101, 970201, 255901);
-                """
-            );
+            await new MaterializedDocumentFixtureSeeder(
+                MaterializedDocumentFixtureSqlDialect.Mssql
+            ).SeedAsync(connection, _fixture);
         }
 
         var commandExecutor = new MssqlRelationalCommandExecutor(
@@ -165,29 +99,27 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
     }
 
     [Test]
-    public void It_materializes_a_link_bearing_resource_cache_projection_from_real_Mssql_hydration()
+    public void It_materializes_a_FixtureSeeder_link_bearing_resource_cache_projection_from_real_Mssql_hydration()
     {
-        var success = _result.Should().BeOfType<DocumentCacheMaterializationResult.Success>().Subject;
+        if (_result is not DocumentCacheMaterializationResult.Success success)
+        {
+            throw new InvalidOperationException($"Expected success, got {_result.GetType().Name}.");
+        }
 
-        success.Candidate.DocumentId.Should().Be(StudentSchoolAssociationDocumentId);
-        success.Candidate.DocumentUuid.Should().Be(new DocumentUuid(StudentSchoolAssociationDocumentGuid));
-        success.Candidate.ProjectName.Should().Be("Ed-Fi");
-        success.Candidate.ResourceName.Should().Be("StudentSchoolAssociation");
-        success.Candidate.ResourceVersion.Should().Be("1.0");
-        success.Candidate.ContentVersion.Should().Be(ContentVersion);
-        success.Candidate.LastModifiedAt.Should().Be(LastModifiedAt);
-        success.Candidate.StreamEtag.Should().Be("222-01234567.j._.l.i");
-
-        var documentJson = success.Candidate.DocumentJson;
-        documentJson["id"]!.GetValue<string>().Should().Be(StudentSchoolAssociationDocumentGuid.ToString());
-        documentJson["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-07-30T14:15:16Z");
-        documentJson.Should().NotContainKey("_etag");
-
-        var schoolReference = documentJson["schoolReference"]!.AsObject();
-        schoolReference["schoolId"]!.GetValue<int>().Should().Be(SchoolId);
-        var link = schoolReference["link"]!.AsObject();
-        link["rel"]!.GetValue<string>().Should().Be("School");
-        link["href"]!.GetValue<string>().Should().Be($"/ed-fi/schools/{SchoolDocumentGuid:D}");
+        MaterializedDocumentFixtureAssertions.AssertCandidateMatchesFixture(
+            new MaterializedDocumentFixtureActualCacheRow(
+                success.Candidate.DocumentId,
+                success.Candidate.DocumentUuid.Value.ToString("D"),
+                success.Candidate.ProjectName,
+                success.Candidate.ResourceName,
+                success.Candidate.ResourceVersion,
+                success.Candidate.ContentVersion,
+                success.Candidate.LastModifiedAt,
+                success.Candidate.StreamEtag,
+                success.Candidate.DocumentJson
+            ),
+            _fixture
+        );
     }
 
     private static DocumentCacheMaterializationRequest CreateRequest(MappingSet mappingSet) =>
@@ -534,12 +466,6 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect."),
         };
 
-    private static async Task ExecuteSql(SqlConnection connection, string sql)
-    {
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync();
-    }
-
     private sealed class MssqlTestDocumentHydrator(string connectionString) : IDocumentHydrator
     {
         public async Task<HydratedPage> HydrateAsync(
@@ -567,7 +493,12 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
     {
         public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId)
         {
-            resourceKeyId.Should().Be(SchoolResourceKeyId);
+            if (resourceKeyId != SchoolResourceKeyId)
+            {
+                throw new InvalidOperationException(
+                    $"Expected School ResourceKeyId {SchoolResourceKeyId}, received {resourceKeyId}."
+                );
+            }
 
             return new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
