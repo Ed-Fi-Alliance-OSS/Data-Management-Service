@@ -20,6 +20,8 @@ internal sealed record DocumentCacheInventoryValidatorQuery(
 internal static class DocumentCacheInventoryValidatorSupport
 {
     private const string DmsSchema = "dms";
+    private const string PgsqlDocumentEnqueueOwnerRole = "edfi_dms_enqueue_owner";
+    private const string PgsqlDocumentEnqueueSearchPathConfiguration = "search_path=pg_catalog";
 
     private static readonly DocumentCacheInventoryValidatorQuery _pgsqlQuery = new(
         SqlDialect.Pgsql,
@@ -727,6 +729,26 @@ internal static class DocumentCacheInventoryValidatorSupport
                 )
             );
             return;
+        }
+
+        if (!string.Equals(function.OwnerRole, PgsqlDocumentEnqueueOwnerRole, StringComparison.Ordinal))
+        {
+            enqueueIssues.Add(
+                new EnqueueIssue(
+                    DocumentCacheEnqueueTriggerStatus.Invalid,
+                    $"{functionName} function is not owned by the required enqueue owner role."
+                )
+            );
+        }
+
+        if (!HasExpectedPgsqlFunctionSearchPath(function.Configuration))
+        {
+            enqueueIssues.Add(
+                new EnqueueIssue(
+                    DocumentCacheEnqueueTriggerStatus.Invalid,
+                    $"{functionName} function does not set search_path exactly to pg_catalog."
+                )
+            );
         }
 
         if (!HasExpectedPgsqlDocumentEnqueueFunctionDefinition(functionName, function.Definition))
@@ -1658,6 +1680,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             SELECT
                 n.nspname AS FunctionSchema,
                 proc.proname AS FunctionName,
+                pg_catalog.pg_get_userbyid(proc.proowner) AS OwnerRole,
+                COALESCE(proc.proconfig, ARRAY[]::text[]) AS Configuration,
                 pg_catalog.pg_get_functiondef(proc.oid) AS Definition
             FROM pg_catalog.pg_proc proc
             INNER JOIN pg_catalog.pg_namespace n
@@ -1674,6 +1698,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 reader => new FunctionSnapshot(
                     reader.GetString(reader.GetOrdinal("FunctionSchema")),
                     reader.GetString(reader.GetOrdinal("FunctionName")),
+                    reader.GetString(reader.GetOrdinal("OwnerRole")),
+                    ReadStringArray(reader, "Configuration"),
                     reader.GetString(reader.GetOrdinal("Definition"))
                 ),
                 cancellationToken
@@ -1924,6 +1950,19 @@ internal static class DocumentCacheInventoryValidatorSupport
 
         return false;
     }
+
+    private static bool HasExpectedPgsqlFunctionSearchPath(IReadOnlyList<string> configuration) =>
+        configuration.Count(IsPgsqlSearchPathConfiguration) == 1
+        && configuration.Any(configurationValue =>
+            string.Equals(
+                configurationValue,
+                PgsqlDocumentEnqueueSearchPathConfiguration,
+                StringComparison.Ordinal
+            )
+        );
+
+    private static bool IsPgsqlSearchPathConfiguration(string configurationValue) =>
+        configurationValue.StartsWith("search_path=", StringComparison.Ordinal);
 
     private static bool HasExpectedMssqlDocumentEnqueueTriggerDefinition(string? definition) =>
         HasNormalizedTokens(
@@ -2243,6 +2282,25 @@ internal static class DocumentCacheInventoryValidatorSupport
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
     }
 
+    private static IReadOnlyList<string> ReadStringArray(DbDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return [];
+        }
+
+        object value = reader.GetValue(ordinal);
+        return value switch
+        {
+            string[] arrayValue => arrayValue,
+            IEnumerable<string> enumerableValue => enumerableValue.ToArray(),
+            _ => throw new InvalidOperationException(
+                $"Column {columnName} could not be read as a string array."
+            ),
+        };
+    }
+
     private static bool ReadBooleanLike(DbDataReader reader, string columnName)
     {
         int ordinal = reader.GetOrdinal(columnName);
@@ -2347,7 +2405,13 @@ internal static class DocumentCacheInventoryValidatorSupport
         string? Definition
     );
 
-    private sealed record FunctionSnapshot(string FunctionSchema, string FunctionName, string Definition);
+    private sealed record FunctionSnapshot(
+        string FunctionSchema,
+        string FunctionName,
+        string OwnerRole,
+        IReadOnlyList<string> Configuration,
+        string Definition
+    );
 
     private sealed record QueryParameter(string Name, object Value);
 

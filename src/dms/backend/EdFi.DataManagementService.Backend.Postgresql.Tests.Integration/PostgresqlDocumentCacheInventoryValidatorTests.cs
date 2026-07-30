@@ -354,6 +354,21 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
         result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
     }
 
+    [TestCaseSource(nameof(PostgresqlEnqueueFunctionSecurityMetadataMutations))]
+    public async Task It_rejects_enqueue_functions_with_invalid_security_metadata(string mutationSql)
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutationSql);
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [TestCaseSource(nameof(PostgresqlEnqueueFunctionCommentOnlyMutations))]
     public async Task It_rejects_enqueue_functions_with_expected_tokens_only_in_comments(
         string functionName,
@@ -639,6 +654,45 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
             EXECUTE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"();
             """
         ).SetName("It_rejects_update_enqueue_trigger_with_wrong_transition_aliases");
+    }
+
+    private static IEnumerable<TestCaseData> PostgresqlEnqueueFunctionSecurityMetadataMutations()
+    {
+        yield return new TestCaseData(
+            """
+            ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() OWNER TO SESSION_USER;
+            """
+        ).SetName("It_rejects_insert_enqueue_function_not_owned_by_enqueue_owner");
+
+        yield return new TestCaseData(
+            """
+            ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() OWNER TO SESSION_USER;
+            """
+        ).SetName("It_rejects_update_enqueue_function_not_owned_by_enqueue_owner");
+
+        yield return new TestCaseData(
+            """
+            ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() RESET search_path;
+            """
+        ).SetName("It_rejects_insert_enqueue_function_without_function_level_search_path");
+
+        yield return new TestCaseData(
+            """
+            ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() RESET search_path;
+            """
+        ).SetName("It_rejects_update_enqueue_function_without_function_level_search_path");
+
+        yield return new TestCaseData(
+            """
+            ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() SET search_path = pg_catalog, public;
+            """
+        ).SetName("It_rejects_insert_enqueue_function_search_path_with_extra_schema");
+
+        yield return new TestCaseData(
+            """
+            ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() SET search_path = pg_catalog, public;
+            """
+        ).SetName("It_rejects_update_enqueue_function_search_path_with_extra_schema");
     }
 
     private static IEnumerable<TestCaseData> PostgresqlEnqueueFunctionCommentOnlyMutations()
