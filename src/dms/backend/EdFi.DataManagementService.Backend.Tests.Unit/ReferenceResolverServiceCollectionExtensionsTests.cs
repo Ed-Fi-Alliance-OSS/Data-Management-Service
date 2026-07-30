@@ -72,6 +72,12 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var sessionDocumentHydrator = scope.ServiceProvider.GetRequiredService<ISessionDocumentHydrator>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var documentCacheSourceMetadataReader =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheSourceMetadataReader>();
+        var documentCacheDescriptorHydrator =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheDescriptorHydrator>();
+        var documentCacheMaterializer =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var singleRecordRelationshipAuthorizationExecutor =
@@ -122,6 +128,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        documentCacheSourceMetadataReader.Should().BeOfType<DocumentCacheSourceMetadataReader>();
+        documentCacheDescriptorHydrator.Should().BeOfType<DocumentCacheDescriptorHydrator>();
+        documentCacheMaterializer.Should().BeOfType<DocumentCacheMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         singleRecordRelationshipAuthorizationExecutor
             .Should()
@@ -147,6 +156,59 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         edOrgAuthorizationSubjectSelector.Should().NotBeNull();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
+    }
+
+    [Test]
+    public void DocumentCacheMaterializer_ServiceRegistration_registers_the_materializer_without_cross_story_services()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+
+        services.AddReferenceResolver<
+            ExecutorBackedReferenceResolverAdapterFactory,
+            TestRelationalCommandExecutor,
+            TestRelationalWriteSessionFactory,
+            TestDocumentHydrator,
+            TestSessionDocumentHydrator
+        >();
+
+        services
+            .Where(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheMaterializer)
+                || descriptor.ServiceType == typeof(IDocumentCacheSourceMetadataReader)
+                || descriptor.ServiceType == typeof(IDocumentCacheDescriptorHydrator)
+            )
+            .Should()
+            .AllSatisfy(descriptor => descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped));
+
+        services
+            .Select(descriptor => descriptor.ServiceType.FullName ?? descriptor.ServiceType.Name)
+            .Should()
+            .NotContain(serviceTypeName =>
+                serviceTypeName.Contains("DocumentCacheTarget", StringComparison.Ordinal)
+                || serviceTypeName.Contains("DocumentCacheWriter", StringComparison.Ordinal)
+                || serviceTypeName.Contains("DocumentProjectionWork", StringComparison.Ordinal)
+                || serviceTypeName.Contains("Lifecycle", StringComparison.Ordinal)
+                || serviceTypeName.Contains("Kafka", StringComparison.Ordinal)
+            );
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheSourceMetadataReader>()
+            .Should()
+            .BeOfType<DocumentCacheSourceMetadataReader>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheDescriptorHydrator>()
+            .Should()
+            .BeOfType<DocumentCacheDescriptorHydrator>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>()
+            .Should()
+            .BeOfType<DocumentCacheMaterializer>();
     }
 
     [Test]
