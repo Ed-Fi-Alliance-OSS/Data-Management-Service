@@ -19,6 +19,11 @@ internal sealed class DocumentCacheMaterializer(
     IServedEtagComposer servedEtagComposer
 ) : IDocumentCacheMaterializer
 {
+    private const string IdPropertyName = "id";
+    private const string EtagPropertyName = "_etag";
+    private const string LastModifiedDatePropertyName = "_lastModifiedDate";
+    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
+
     private readonly IDocumentCacheSourceMetadataReader _sourceMetadataReader =
         sourceMetadataReader ?? throw new ArgumentNullException(nameof(sourceMetadataReader));
     private readonly IDocumentCacheDescriptorHydrator _descriptorHydrator =
@@ -104,14 +109,7 @@ internal sealed class DocumentCacheMaterializer(
             }
         );
 
-        if (documentJsonNode is not JsonObject documentJson)
-        {
-            throw BuildProjectionProcessingException(
-                request,
-                source,
-                DocumentCacheProjectionProcessingFailureReason.DocumentJsonNotObject
-            );
-        }
+        var documentJson = RequireDocumentJsonObject(request, source, documentJsonNode);
 
         var streamEtag = DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
             _servedEtagComposer,
@@ -119,19 +117,9 @@ internal sealed class DocumentCacheMaterializer(
             source.ContentVersion
         );
 
-        return new DocumentCacheMaterializationResult.Success(
-            new DocumentCacheMaterializationCandidate(
-                source.DocumentId,
-                source.DocumentUuid,
-                source.ProjectName,
-                source.ResourceName,
-                source.ResourceVersion,
-                source.ContentVersion,
-                source.ContentLastModifiedAt,
-                streamEtag,
-                documentJson
-            )
-        );
+        ValidateCandidate(request, source, documentJson, streamEtag);
+
+        return CreateSuccess(source, streamEtag, documentJson);
     }
 
     private async Task<DocumentCacheMaterializationResult> MaterializeDescriptorResourceAsync(
@@ -199,19 +187,9 @@ internal sealed class DocumentCacheMaterializer(
             source.ContentVersion
         );
 
-        return new DocumentCacheMaterializationResult.Success(
-            new DocumentCacheMaterializationCandidate(
-                source.DocumentId,
-                source.DocumentUuid,
-                source.ProjectName,
-                source.ResourceName,
-                source.ResourceVersion,
-                source.ContentVersion,
-                source.ContentLastModifiedAt,
-                streamEtag,
-                documentJson
-            )
-        );
+        ValidateCandidate(request, source, documentJson, streamEtag);
+
+        return CreateSuccess(source, streamEtag, documentJson);
     }
 
     private async Task<DocumentCacheMaterializationResult?> CheckSourceCoherenceAsync(
@@ -349,6 +327,191 @@ internal sealed class DocumentCacheMaterializer(
             source.ContentLastModifiedAt,
             source.ContentLastModifiedAt
         );
+
+    private static DocumentCacheMaterializationResult.Success CreateSuccess(
+        DocumentCacheResolvedSourceMetadata source,
+        string streamEtag,
+        JsonObject documentJson
+    ) =>
+        new(
+            new DocumentCacheMaterializationCandidate(
+                source.DocumentId,
+                source.DocumentUuid,
+                source.ProjectName,
+                source.ResourceName,
+                source.ResourceVersion,
+                source.ContentVersion,
+                source.ContentLastModifiedAt,
+                streamEtag,
+                documentJson
+            )
+        );
+
+    private static JsonObject RequireDocumentJsonObject(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata source,
+        JsonNode documentJsonNode
+    )
+    {
+        if (documentJsonNode is JsonObject documentJson)
+        {
+            return documentJson;
+        }
+
+        throw BuildProjectionProcessingException(
+            request,
+            source,
+            DocumentCacheProjectionProcessingFailureReason.DocumentJsonNotObject
+        );
+    }
+
+    private void ValidateCandidate(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata source,
+        JsonObject documentJson,
+        string streamEtag
+    )
+    {
+        ValidateResourceMetadata(request, source);
+
+        if (
+            !TryGetStringProperty(documentJson, IdPropertyName, out var documentJsonId)
+            || !string.Equals(documentJsonId, source.DocumentUuid.Value.ToString(), StringComparison.Ordinal)
+        )
+        {
+            throw BuildProjectionProcessingException(
+                request,
+                source,
+                DocumentCacheProjectionProcessingFailureReason.DocumentJsonIdMismatch
+            );
+        }
+
+        if (
+            !TryGetStringProperty(
+                documentJson,
+                LastModifiedDatePropertyName,
+                out var documentJsonLastModifiedDate
+            )
+            || !string.Equals(
+                documentJsonLastModifiedDate,
+                FormatLastModifiedDate(source.ContentLastModifiedAt),
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw BuildProjectionProcessingException(
+                request,
+                source,
+                DocumentCacheProjectionProcessingFailureReason.DocumentJsonLastModifiedDateMismatch
+            );
+        }
+
+        if (documentJson.ContainsKey(EtagPropertyName))
+        {
+            throw BuildProjectionProcessingException(
+                request,
+                source,
+                DocumentCacheProjectionProcessingFailureReason.DocumentJsonContainsEtag
+            );
+        }
+
+        if (!string.Equals(streamEtag, ComposeExpectedStreamEtag(request, source), StringComparison.Ordinal))
+        {
+            throw BuildProjectionProcessingException(
+                request,
+                source,
+                DocumentCacheProjectionProcessingFailureReason.StreamEtagMismatch
+            );
+        }
+    }
+
+    private string ComposeExpectedStreamEtag(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata source
+    ) =>
+        source switch
+        {
+            DocumentCacheResolvedSourceMetadata.OrdinaryResource =>
+                DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+                    _servedEtagComposer,
+                    request.TargetContext.MappingSet,
+                    source.ContentVersion
+                ),
+            DocumentCacheResolvedSourceMetadata.DescriptorResource =>
+                DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
+                    _servedEtagComposer,
+                    request.TargetContext.MappingSet,
+                    source.ContentVersion
+                ),
+            _ => throw new InvalidOperationException(
+                $"DocumentCache materializer received unsupported source metadata type '{source.GetType().Name}'."
+            ),
+        };
+
+    private static void ValidateResourceMetadata(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata source
+    )
+    {
+        if (
+            source.ResourceKeyId != source.ResourceKey.ResourceKeyId
+            || source.ProjectName != source.ResourceKey.Resource.ProjectName
+            || source.ResourceName != source.ResourceKey.Resource.ResourceName
+            || source.ResourceVersion != source.ResourceKey.ResourceVersion
+            || source.ConcreteResourceModel.ResourceKey != source.ResourceKey
+            || source.ConcreteResourceModel.RelationalModel.Resource != source.ResourceKey.Resource
+        )
+        {
+            throw BuildProjectionProcessingException(
+                request,
+                source,
+                DocumentCacheProjectionProcessingFailureReason.ResourceMetadataMismatch
+            );
+        }
+
+        switch (source)
+        {
+            case DocumentCacheResolvedSourceMetadata.OrdinaryResource ordinaryResource
+                when source.ConcreteResourceModel.StorageKind != ResourceStorageKind.RelationalTables
+                    || source.ConcreteResourceModel.RelationalModel.StorageKind
+                        != ResourceStorageKind.RelationalTables
+                    || ordinaryResource.ReadPlan.Model.Resource != source.ResourceKey.Resource:
+                throw BuildProjectionProcessingException(
+                    request,
+                    source,
+                    DocumentCacheProjectionProcessingFailureReason.ResourceMetadataMismatch
+                );
+
+            case DocumentCacheResolvedSourceMetadata.DescriptorResource
+                when source.ConcreteResourceModel.StorageKind != ResourceStorageKind.SharedDescriptorTable
+                    || source.ConcreteResourceModel.RelationalModel.StorageKind
+                        != ResourceStorageKind.SharedDescriptorTable:
+                throw BuildProjectionProcessingException(
+                    request,
+                    source,
+                    DocumentCacheProjectionProcessingFailureReason.ResourceMetadataMismatch
+                );
+        }
+    }
+
+    private static bool TryGetStringProperty(JsonObject documentJson, string propertyName, out string value)
+    {
+        if (
+            documentJson.TryGetPropertyValue(propertyName, out var propertyValue)
+            && propertyValue is JsonValue jsonValue
+            && jsonValue.TryGetValue<string>(out var stringValue)
+        )
+        {
+            value = stringValue;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
+        lastModifiedAt.UtcDateTime.ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
 
     private static DocumentCacheProjectionProcessingException BuildProjectionProcessingException(
         DocumentCacheMaterializationRequest request,
