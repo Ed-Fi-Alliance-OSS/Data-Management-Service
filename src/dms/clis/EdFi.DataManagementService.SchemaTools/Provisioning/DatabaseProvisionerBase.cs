@@ -86,8 +86,6 @@ public sealed record DialectSql(
 /// </summary>
 public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisioner
 {
-    private const string ZeroUuid = "00000000-0000-0000-0000-000000000000";
-
     protected ILogger Logger => logger;
 
     /// <summary>
@@ -323,7 +321,7 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             sourceCommand.CommandText = Dialect.DataStoreIdentitySourceIdentitySql;
             var sourceIdentity = sourceCommand.ExecuteScalar();
 
-            if (sourceIdentity is null || sourceIdentity == DBNull.Value)
+            if (sourceIdentity is null || sourceIdentity is DBNull)
             {
                 throw new InvalidOperationException(
                     "The dms.EffectiveSchema hash matches the current schema, but the dms.DataStoreIdentity singleton row is missing. "
@@ -331,7 +329,7 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
                 );
             }
 
-            if (IsZeroUuid(sourceIdentity))
+            if (ReadUuidOrThrow(sourceIdentity) == Guid.Empty)
             {
                 throw new InvalidOperationException(
                     "dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. "
@@ -363,7 +361,6 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             }
 
             var lifecycleState = ReadStringOrEmpty(reader, 0);
-            var cacheAheadRecoveryRequired = ReadBoolOrNull(reader, 1);
 
             if (!IsValidLifecycleState(lifecycleState))
             {
@@ -372,12 +369,7 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
                 );
             }
 
-            if (cacheAheadRecoveryRequired is null)
-            {
-                throw new InvalidOperationException(
-                    "dms.DocumentCacheState.CacheAheadRecoveryRequired must not be null during provisioning preflight."
-                );
-            }
+            _ = ReadRequiredBool(reader, 1, "dms.DocumentCacheState.CacheAheadRecoveryRequired");
         }
     }
 
@@ -435,31 +427,43 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
         };
     }
 
-    private static bool? ReadBoolOrNull(DbDataReader reader, int ordinal)
+    private static bool ReadRequiredBool(DbDataReader reader, int ordinal, string columnName)
     {
-        if (reader.IsDBNull(ordinal))
+        object value = reader.GetValue(ordinal);
+        if (value is null || value is DBNull)
         {
-            return null;
+            throw new InvalidOperationException(
+                $"{columnName} must not be null during provisioning preflight."
+            );
         }
 
-        return reader.GetValue(ordinal) switch
+        return value switch
         {
-            bool value => value,
-            byte value => value != 0,
-            short value => value != 0,
-            int value => value != 0,
-            long value => value != 0,
-            _ => null,
+            bool boolValue => boolValue,
+            byte byteValue => byteValue != 0,
+            short shortValue => shortValue != 0,
+            int intValue => intValue != 0,
+            long longValue => longValue != 0,
+            _ => throw new InvalidOperationException(
+                $"{columnName} must be a boolean-compatible database value during provisioning preflight, "
+                    + $"but found {value.GetType().FullName}."
+            ),
         };
     }
 
-    private static bool IsZeroUuid(object sourceIdentity)
+    private static Guid ReadUuidOrThrow(object sourceIdentity)
     {
         return sourceIdentity switch
         {
-            Guid value => value == Guid.Empty,
-            string value when Guid.TryParse(value, out var parsed) => parsed == Guid.Empty,
-            _ => string.Equals(sourceIdentity.ToString(), ZeroUuid, StringComparison.OrdinalIgnoreCase),
+            Guid value => value,
+            string value when Guid.TryParse(value, out var parsed) => parsed,
+            string => throw new InvalidOperationException(
+                "dms.DataStoreIdentity.SourceIdentity must be a valid UUID during provisioning preflight."
+            ),
+            _ => throw new InvalidOperationException(
+                "dms.DataStoreIdentity.SourceIdentity must be a UUID-compatible database value during provisioning preflight, "
+                    + $"but found {sourceIdentity.GetType().FullName}."
+            ),
         };
     }
 
