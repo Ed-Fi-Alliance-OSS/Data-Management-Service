@@ -1,0 +1,603 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Utilities;
+
+namespace EdFi.DataManagementService.Core.DocumentCache;
+
+public enum DocumentCacheTargetResolutionState
+{
+    Configured,
+    Unresolved,
+    Resolved,
+    ReplacedGeneration,
+}
+
+public enum DocumentCacheTargetEligibilityState
+{
+    NotEvaluated,
+    Eligible,
+    Ineligible,
+}
+
+public enum DocumentCacheLifecycleState
+{
+    Disabled,
+    Resetting,
+    Rebuilding,
+    Tracking,
+}
+
+public enum DocumentCacheInventoryStatus
+{
+    NotEvaluated,
+    Satisfied,
+    Missing,
+    Invalid,
+    Unreadable,
+}
+
+public enum DocumentCacheEnqueueTriggerStatus
+{
+    NotEvaluated,
+    Satisfied,
+    Missing,
+    Disabled,
+    Invalid,
+    Unreadable,
+}
+
+public enum DocumentCacheProviderPrerequisiteStatus
+{
+    Satisfied,
+    Disabled,
+    Unreadable,
+    NotApplicable,
+}
+
+public enum DocumentCacheProviderPrerequisiteName
+{
+    ReadCommittedSnapshot,
+    NestedTriggers,
+}
+
+public enum DocumentCacheTargetDiagnosticCategory
+{
+    TargetConfigured,
+    TargetUnresolved,
+    ProviderMetadataMissing,
+    ProviderMetadataUnknown,
+    ProviderMismatch,
+    ConnectionInputMissing,
+    PhysicalSourceFingerprintFailure,
+    InventoryFailure,
+    EnqueueTriggerFailure,
+    ProviderPrerequisiteFailed,
+    UnsupportedPrerequisiteIncident,
+    LifecycleObservationFailure,
+    TransientCmsRefreshFailure,
+    TargetReplaced,
+    UnexpectedProviderFailure,
+}
+
+public sealed record DocumentCacheTargetContextGeneration
+{
+    public DocumentCacheTargetContextGeneration(long value)
+    {
+        if (value <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Generation must be positive.");
+        }
+
+        Value = value;
+    }
+
+    public long Value { get; }
+
+    public override string ToString() => Value.ToString();
+}
+
+public sealed record DocumentCacheRelationalProviderToken
+{
+    public const string PostgresqlValue = "postgresql";
+    public const string SqlServerValue = "sqlserver";
+
+    public static DocumentCacheRelationalProviderToken Postgresql { get; } = new(PostgresqlValue);
+
+    public static DocumentCacheRelationalProviderToken SqlServer { get; } = new(SqlServerValue);
+
+    private DocumentCacheRelationalProviderToken(string value)
+    {
+        Value = value;
+    }
+
+    public string Value { get; }
+
+    public static bool TryNormalize(
+        string? providerToken,
+        [NotNullWhen(true)] out DocumentCacheRelationalProviderToken? normalizedToken
+    )
+    {
+        normalizedToken = null;
+
+        if (string.IsNullOrEmpty(providerToken))
+        {
+            return false;
+        }
+
+        if (string.Equals(providerToken, PostgresqlValue, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedToken = Postgresql;
+            return true;
+        }
+
+        if (string.Equals(providerToken, SqlServerValue, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedToken = SqlServer;
+            return true;
+        }
+
+        return false;
+    }
+
+    public override string ToString() => Value;
+}
+
+public sealed record DocumentCachePhysicalSourceFingerprint
+{
+    public DocumentCachePhysicalSourceFingerprint(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Fingerprint must not be blank.", nameof(value));
+        }
+
+        Value = DocumentCacheDiagnosticText.Sanitize(value);
+    }
+
+    public string Value { get; }
+
+    public override string ToString() => Value;
+}
+
+public sealed record DocumentCacheTargetEffectiveSettings
+{
+    public DocumentCacheTargetEffectiveSettings(
+        bool readAccelerationEnabled,
+        TimeSpan directFillTimeout,
+        TimeSpan projectorPollInterval,
+        int projectorPageSize,
+        int projectorMaxConcurrentTargets,
+        TimeSpan projectorFailureBackoff,
+        int projectorBaselineHighWaterMark
+    )
+    {
+        ReadAccelerationEnabled = readAccelerationEnabled;
+        DirectFillTimeout = directFillTimeout;
+        ProjectorPollInterval = projectorPollInterval;
+        ProjectorPageSize = projectorPageSize;
+        ProjectorMaxConcurrentTargets = projectorMaxConcurrentTargets;
+        ProjectorFailureBackoff = projectorFailureBackoff;
+        ProjectorBaselineHighWaterMark = projectorBaselineHighWaterMark;
+    }
+
+    public bool ReadAccelerationEnabled { get; }
+
+    public TimeSpan DirectFillTimeout { get; }
+
+    public TimeSpan ProjectorPollInterval { get; }
+
+    public int ProjectorPageSize { get; }
+
+    public int ProjectorMaxConcurrentTargets { get; }
+
+    public TimeSpan ProjectorFailureBackoff { get; }
+
+    public int ProjectorBaselineHighWaterMark { get; }
+
+    public static DocumentCacheTargetEffectiveSettings FromOptions(DocumentCacheOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return new DocumentCacheTargetEffectiveSettings(
+            options.ReadAcceleration.Enabled,
+            options.ReadAcceleration.DirectFillTimeout,
+            options.Projector.PollInterval,
+            options.Projector.PageSize,
+            options.Projector.MaxConcurrentTargets,
+            options.Projector.FailureBackoff,
+            options.Projector.BaselineHighWaterMark
+        );
+    }
+}
+
+public sealed record DocumentCacheLifecycleObservation(
+    DocumentCacheLifecycleState State,
+    bool CacheAheadRecoveryRequired
+);
+
+public sealed record DocumentCacheInventoryValidationResult
+{
+    public DocumentCacheInventoryValidationResult(DocumentCacheInventoryStatus status, string message)
+    {
+        Status = status;
+        Message = DocumentCacheDiagnosticText.Sanitize(message);
+    }
+
+    public DocumentCacheInventoryStatus Status { get; }
+
+    public string Message { get; }
+}
+
+public sealed record DocumentCacheEnqueueTriggerValidationResult
+{
+    public DocumentCacheEnqueueTriggerValidationResult(
+        DocumentCacheEnqueueTriggerStatus status,
+        string message
+    )
+    {
+        Status = status;
+        Message = DocumentCacheDiagnosticText.Sanitize(message);
+    }
+
+    public DocumentCacheEnqueueTriggerStatus Status { get; }
+
+    public string Message { get; }
+}
+
+public sealed record DocumentCacheProviderPrerequisiteResult
+{
+    public DocumentCacheProviderPrerequisiteResult(
+        DocumentCacheProviderPrerequisiteName name,
+        DocumentCacheProviderPrerequisiteStatus status,
+        string message
+    )
+    {
+        Name = name;
+        Status = status;
+        Message = DocumentCacheDiagnosticText.Sanitize(message);
+    }
+
+    public DocumentCacheProviderPrerequisiteName Name { get; }
+
+    public DocumentCacheProviderPrerequisiteStatus Status { get; }
+
+    public string Message { get; }
+}
+
+public sealed record DocumentCacheSqlServerPrerequisiteDetails
+{
+    public DocumentCacheSqlServerPrerequisiteDetails(
+        DocumentCacheProviderPrerequisiteResult readCommittedSnapshot,
+        DocumentCacheProviderPrerequisiteResult nestedTriggers
+    )
+    {
+        ReadCommittedSnapshot = readCommittedSnapshot;
+        NestedTriggers = nestedTriggers;
+    }
+
+    public DocumentCacheProviderPrerequisiteResult ReadCommittedSnapshot { get; }
+
+    public DocumentCacheProviderPrerequisiteResult NestedTriggers { get; }
+
+    public static DocumentCacheSqlServerPrerequisiteDetails NotApplicable() =>
+        new(
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot,
+                DocumentCacheProviderPrerequisiteStatus.NotApplicable,
+                "Not applicable."
+            ),
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.NestedTriggers,
+                DocumentCacheProviderPrerequisiteStatus.NotApplicable,
+                "Not applicable."
+            )
+        );
+}
+
+public sealed record DocumentCacheResolutionRetryState
+{
+    public DocumentCacheResolutionRetryState(
+        int attemptCount,
+        DateTimeOffset? lastAttemptedAt,
+        DateTimeOffset? nextRetryAt,
+        DocumentCacheTargetDiagnosticCategory? lastFailureCategory,
+        string? lastFailureMessage
+    )
+    {
+        if (attemptCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(attemptCount),
+                "Attempt count must not be negative."
+            );
+        }
+
+        AttemptCount = attemptCount;
+        LastAttemptedAt = lastAttemptedAt;
+        NextRetryAt = nextRetryAt;
+        LastFailureCategory = lastFailureCategory;
+        LastFailureMessage = lastFailureMessage is null
+            ? null
+            : DocumentCacheDiagnosticText.Sanitize(lastFailureMessage);
+    }
+
+    public int AttemptCount { get; }
+
+    public DateTimeOffset? LastAttemptedAt { get; }
+
+    public DateTimeOffset? NextRetryAt { get; }
+
+    public DocumentCacheTargetDiagnosticCategory? LastFailureCategory { get; }
+
+    public string? LastFailureMessage { get; }
+}
+
+public sealed record DocumentCacheTargetDiagnostic
+{
+    public DocumentCacheTargetDiagnostic(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetResolutionState resolutionState,
+        DocumentCacheRelationalProviderToken? providerToken,
+        DocumentCacheTargetContextGeneration? generation,
+        DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
+        DocumentCacheLifecycleObservation? lifecycle,
+        DocumentCacheInventoryValidationResult? inventory,
+        DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
+        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
+        DocumentCacheResolutionRetryState? retryState,
+        DocumentCacheTargetDiagnosticCategory category,
+        string message
+    )
+    {
+        TargetKey = targetKey;
+        ResolutionState = resolutionState;
+        ProviderToken = providerToken;
+        Generation = generation;
+        PhysicalSourceFingerprint = physicalSourceFingerprint;
+        Lifecycle = lifecycle;
+        Inventory = inventory;
+        EnqueueTrigger = enqueueTrigger;
+        SqlServerPrerequisites = sqlServerPrerequisites;
+        RetryState = retryState;
+        Category = category;
+        Message = DocumentCacheDiagnosticText.Sanitize(message);
+    }
+
+    public DocumentCacheTargetKey TargetKey { get; }
+
+    public DocumentCacheTargetResolutionState ResolutionState { get; }
+
+    public DocumentCacheRelationalProviderToken? ProviderToken { get; }
+
+    public DocumentCacheTargetContextGeneration? Generation { get; }
+
+    public DocumentCachePhysicalSourceFingerprint? PhysicalSourceFingerprint { get; }
+
+    public DocumentCacheLifecycleObservation? Lifecycle { get; }
+
+    public DocumentCacheInventoryValidationResult? Inventory { get; }
+
+    public DocumentCacheEnqueueTriggerValidationResult? EnqueueTrigger { get; }
+
+    public DocumentCacheSqlServerPrerequisiteDetails? SqlServerPrerequisites { get; }
+
+    public DocumentCacheResolutionRetryState? RetryState { get; }
+
+    public DocumentCacheTargetDiagnosticCategory Category { get; }
+
+    public string Message { get; }
+}
+
+public sealed record DocumentCacheTargetObservation
+{
+    private DocumentCacheTargetObservation(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetResolutionState resolutionState,
+        DocumentCacheTargetEligibilityState eligibilityState,
+        DocumentCacheTargetEffectiveSettings effectiveSettings,
+        DocumentCacheTargetContextGeneration? generation,
+        DocumentCacheTargetContextGeneration? replacedByGeneration,
+        DocumentCacheRelationalProviderToken? providerToken,
+        DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
+        DocumentCacheLifecycleObservation? lifecycle,
+        DocumentCacheInventoryValidationResult? inventory,
+        DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
+        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
+        DocumentCacheResolutionRetryState? retryState,
+        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics
+    )
+    {
+        TargetKey = targetKey;
+        ResolutionState = resolutionState;
+        EligibilityState = eligibilityState;
+        EffectiveSettings = effectiveSettings;
+        Generation = generation;
+        ReplacedByGeneration = replacedByGeneration;
+        ProviderToken = providerToken;
+        PhysicalSourceFingerprint = physicalSourceFingerprint;
+        Lifecycle = lifecycle;
+        Inventory = inventory;
+        EnqueueTrigger = enqueueTrigger;
+        SqlServerPrerequisites = sqlServerPrerequisites;
+        RetryState = retryState;
+        Diagnostics = diagnostics?.ToImmutableArray() ?? [];
+    }
+
+    public DocumentCacheTargetKey TargetKey { get; }
+
+    public DocumentCacheTargetResolutionState ResolutionState { get; }
+
+    public DocumentCacheTargetEligibilityState EligibilityState { get; }
+
+    public DocumentCacheTargetEffectiveSettings EffectiveSettings { get; }
+
+    public DocumentCacheTargetContextGeneration? Generation { get; }
+
+    public DocumentCacheTargetContextGeneration? ReplacedByGeneration { get; }
+
+    public DocumentCacheRelationalProviderToken? ProviderToken { get; }
+
+    public DocumentCachePhysicalSourceFingerprint? PhysicalSourceFingerprint { get; }
+
+    public DocumentCacheLifecycleObservation? Lifecycle { get; }
+
+    public DocumentCacheInventoryValidationResult? Inventory { get; }
+
+    public DocumentCacheEnqueueTriggerValidationResult? EnqueueTrigger { get; }
+
+    public DocumentCacheSqlServerPrerequisiteDetails? SqlServerPrerequisites { get; }
+
+    public DocumentCacheResolutionRetryState? RetryState { get; }
+
+    public ImmutableArray<DocumentCacheTargetDiagnostic> Diagnostics { get; }
+
+    public static DocumentCacheTargetObservation Configured(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetEffectiveSettings effectiveSettings
+    ) =>
+        new(
+            targetKey,
+            DocumentCacheTargetResolutionState.Configured,
+            DocumentCacheTargetEligibilityState.NotEvaluated,
+            effectiveSettings,
+            generation: null,
+            replacedByGeneration: null,
+            providerToken: null,
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState: null,
+            diagnostics: []
+        );
+
+    public static DocumentCacheTargetObservation Unresolved(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetEffectiveSettings effectiveSettings,
+        DocumentCacheResolutionRetryState? retryState,
+        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics
+    ) =>
+        new(
+            targetKey,
+            DocumentCacheTargetResolutionState.Unresolved,
+            DocumentCacheTargetEligibilityState.Ineligible,
+            effectiveSettings,
+            generation: null,
+            replacedByGeneration: null,
+            providerToken: null,
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState,
+            diagnostics
+        );
+
+    public static DocumentCacheTargetObservation ResolvedEligible(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetEffectiveSettings effectiveSettings,
+        DocumentCacheTargetContextGeneration generation,
+        DocumentCacheRelationalProviderToken providerToken,
+        DocumentCachePhysicalSourceFingerprint physicalSourceFingerprint,
+        DocumentCacheLifecycleObservation lifecycle,
+        DocumentCacheInventoryValidationResult inventory,
+        DocumentCacheEnqueueTriggerValidationResult enqueueTrigger,
+        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
+        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics = null
+    ) =>
+        new(
+            targetKey,
+            DocumentCacheTargetResolutionState.Resolved,
+            DocumentCacheTargetEligibilityState.Eligible,
+            effectiveSettings,
+            generation,
+            replacedByGeneration: null,
+            providerToken,
+            physicalSourceFingerprint,
+            lifecycle,
+            inventory,
+            enqueueTrigger,
+            sqlServerPrerequisites,
+            retryState: null,
+            diagnostics
+        );
+
+    public static DocumentCacheTargetObservation ResolvedIneligible(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetEffectiveSettings effectiveSettings,
+        DocumentCacheTargetContextGeneration? generation,
+        DocumentCacheRelationalProviderToken? providerToken,
+        DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
+        DocumentCacheLifecycleObservation? lifecycle,
+        DocumentCacheInventoryValidationResult? inventory,
+        DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
+        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
+        DocumentCacheResolutionRetryState? retryState,
+        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics
+    ) =>
+        new(
+            targetKey,
+            DocumentCacheTargetResolutionState.Resolved,
+            DocumentCacheTargetEligibilityState.Ineligible,
+            effectiveSettings,
+            generation,
+            replacedByGeneration: null,
+            providerToken,
+            physicalSourceFingerprint,
+            lifecycle,
+            inventory,
+            enqueueTrigger,
+            sqlServerPrerequisites,
+            retryState,
+            diagnostics
+        );
+
+    public static DocumentCacheTargetObservation ReplacedGeneration(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetEffectiveSettings effectiveSettings,
+        DocumentCacheTargetContextGeneration generation,
+        DocumentCacheTargetContextGeneration replacedByGeneration,
+        DocumentCacheRelationalProviderToken? providerToken,
+        DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
+        DocumentCacheLifecycleObservation? lifecycle,
+        DocumentCacheInventoryValidationResult? inventory,
+        DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
+        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
+        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics
+    ) =>
+        new(
+            targetKey,
+            DocumentCacheTargetResolutionState.ReplacedGeneration,
+            DocumentCacheTargetEligibilityState.Ineligible,
+            effectiveSettings,
+            generation,
+            replacedByGeneration,
+            providerToken,
+            physicalSourceFingerprint,
+            lifecycle,
+            inventory,
+            enqueueTrigger,
+            sqlServerPrerequisites,
+            retryState: null,
+            diagnostics
+        );
+}
+
+internal static class DocumentCacheDiagnosticText
+{
+    private const int MaximumLength = 512;
+
+    public static string Sanitize(string? message)
+    {
+        string sanitized = LoggingSanitizer.SanitizeForLogging(message);
+        return sanitized.Length <= MaximumLength ? sanitized : sanitized[..MaximumLength];
+    }
+}
