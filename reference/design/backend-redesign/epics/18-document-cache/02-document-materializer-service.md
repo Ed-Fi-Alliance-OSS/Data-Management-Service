@@ -32,10 +32,132 @@ direct fill, and CDC fixtures.
 - Add the materializer interface, result model, and runtime implementation.
 - Reuse compiled read plans, reconstitution, and the shared served-ETag composer.
 - Add source-coherence and result-invariant validation at the materializer boundary.
-- Accept a selected durable work item and materialize the latest canonical version required
-  by current source/work state; the selected worker-local version never overrides the
-  final current-state classification.
+- Accept a selected durable work item and materialize the latest coherent canonical source
+  for its document; the selected worker-local version never overrides the final
+  current-state classification.
 - Add representative materialized-document fixtures for projection and CDC verification.
+
+## Resolved Materializer Scope and Runtime Contract
+
+### Component Boundary
+
+- Add one reusable `IDocumentCacheMaterializer`-style application service plus small
+  provider adapters needed to hydrate a single document by `DocumentId`. The exact type
+  names may follow local conventions, but the boundary is one caller-agnostic materializer,
+  not separate projector, direct-fill, and CDC materializers.
+- The service is target-context scoped. It consumes the resolved connection, selected
+  mapping set, effective-schema hash, resource-key lookup, compiled read/reconstitution
+  plans, and shared served-ETag composer already established by earlier backend-redesign
+  work.
+- It does not resolve `DocumentCache:Targets`, validate SQL Server RCSI or `nested
+  triggers`, inspect lifecycle state, page durable work, write `DocumentCache`, delete
+  `DocumentProjectionWork`, set the cache-ahead latch, or shape Kafka envelopes. Those
+  responsibilities remain in 18-01, 18-03, 18-04, 18-05, and E19.
+- The materializer performs no request authorization and applies no readable profile. It is
+  an internal projection of a document already selected by the caller's authorized read
+  path, durable work row, baseline page, scrub/rebuild page, direct-fill path, or fixture.
+
+### Inputs and Result Model
+
+- Inputs are the resolved target context, `DocumentId`, optional selected durable-work
+  `RequiredContentVersion`, materialization purpose for diagnostics, and cancellation token.
+  The selected work version is only worker-local context. It never gates hydration and is
+  not returned as current source evidence.
+- A successful result returns the cache-row candidate fields owned by the cached-document
+  contract:
+  - `DocumentId`;
+  - canonical `DocumentUuid`;
+  - `ProjectName`, `ResourceName`, and `ResourceVersion` from the selected mapping/resource
+    key;
+  - current `ContentVersion`;
+  - current `ContentLastModifiedAt` as cache `LastModifiedAt`;
+  - `StreamEtag`; and
+  - `DocumentJson` as a JSON object ready for `dms.DocumentCache`.
+- The result does not include `ComputedAt`. Cache DML owns the provider timestamp used for
+  insert/update operational metadata.
+- Expected non-success results are limited to materializer-owned facts: source row missing,
+  source changed during hydration, mapping/resource-plan unavailable, or invariant
+  violation. Cancellation, transient database failures, and other provider/runtime failures
+  may use the existing exception flow and are handled by the caller's retry/backoff policy;
+  they are not converted into cache candidates.
+
+### Source Read and Coherence
+
+- Hydrate from the canonical relational source by `DocumentId`, not from
+  `DocumentProjectionWork`, `DocumentCache`, `ContentVersion` scans, or public
+  `DocumentUuid` lookup. The materializer may use the same compiled single-document
+  hydration plan shape as GET-by-id after the document id has already been resolved.
+- The first source observation reads `dms.Document` joined to immutable resource-key
+  metadata. If no canonical row exists, return a missing-source outcome without attempting
+  cache repair or work acknowledgement.
+- Reconstitute the body without holding a work-row lock or deliberate write-conflicting
+  source-row lock. Use ordinary target read semantics: PostgreSQL read-committed statement
+  snapshots and SQL Server's target-validated RCSI path.
+- After hydration, re-read the canonical source metadata for the same `DocumentId` and
+  require it to still match the observed `DocumentUuid`, `ResourceKeyId`, `ContentVersion`,
+  and `ContentLastModifiedAt`. A missing or different row returns source-changed/missing
+  and produces no candidate. The later 18-03 writer still performs the authoritative
+  source/cache/work classification and repeats all DML predicates.
+- Do not compare current source state to the selected work item's
+  `RequiredContentVersion` inside this service. If work is behind, ahead, absent, or has
+  advanced since selection, 18-03's current source/cache/work statement classifies the
+  relationship and either writes, acknowledges, leaves work pending, or latches cache-ahead
+  according to the ADR.
+
+### Representation Shape
+
+- Build `DocumentJson` by reusing the compiled relational reconstitution path and
+  `System.Text.Json`/`Utf8JsonWriter`. If the existing API materializer always emits
+  `_etag`, factor the shared body/metadata writer so cache projection emits `id` and
+  `_lastModifiedDate` but omits `_etag`; do not introduce a trigger-side JSON builder,
+  provider-specific JSON composition query, post-parse string surgery, or `Newtonsoft.Json`
+  dependency.
+- The projection is the caller-agnostic full stored representation before readable-profile
+  projection. It includes stable top-level `id`, `_lastModifiedDate`, and compiled reference
+  `link` subtrees when the read plan emits them. It excludes API client identity,
+  authorization arrays, EdOrg hierarchy payloads, and readable-profile-specific filtering.
+- `DocumentJson` stored in `dms.DocumentCache` must not contain `_etag`. The materializer
+  returns `StreamEtag` separately. E19's `DocumentState` transform injects that opaque value
+  into the public `document._etag` field when shaping Kafka upsert values.
+- Compose `StreamEtag` with the same served-ETag composer used by the API, using current
+  `ContentVersion`, selected effective-schema hash/schema epoch, JSON format, no readable
+  profile, identity content coding, and the fixed stream link mode. Ordinary resource
+  projections use the link-bearing stream context; descriptor projections use the
+  descriptor stream context defined by the message contract.
+- Cache `LastModifiedAt` retains provider timestamp precision from `dms.Document`.
+  `DocumentJson._lastModifiedDate` uses the existing whole-second UTC DMS formatter without
+  rounding. Fractional precision remains database metadata, not public JSON text.
+
+### Invariant Validation and Failure Handling
+
+- Before returning a success result, validate:
+  - `DocumentJson` is a JSON object;
+  - `DocumentJson.id` exactly matches the canonical `DocumentUuid` string emitted by the API
+    reconstitution path;
+  - `DocumentJson._lastModifiedDate` exactly matches formatted `ContentLastModifiedAt`;
+  - `DocumentJson` has no `_etag`;
+  - `StreamEtag` equals the shared composer output for the fixed stream representation; and
+  - denormalized resource metadata matches the selected `ResourceKey`/compiled plan.
+- An invariant failure returns or throws a deterministic projection-processing failure, emits
+  bounded sanitized diagnostics, and produces no cache candidate. It must leave durable work
+  visible for retry or operator diagnosis and must not be treated as a successful
+  stale-candidate suppression.
+- Missing canonical rows are not materializer errors. They are ordinary delete/post-delete
+  races fenced by foreign keys and handled by the cache-write/acknowledgement component.
+- A materialized candidate is never an authorization, freshness, caught-up, or cache-write
+  decision. It is only an optimistic current-source candidate that 18-03 may attempt to
+  publish under its own lifecycle lock, monotonic write, and conditional acknowledgement
+  rules.
+
+### Fixture Boundary
+
+- Add shared fixtures at the materializer boundary: canonical source setup,
+  materializer result, expected cache-row JSON without `_etag`, expected `StreamEtag`, and
+  the companion public CDC document shape only where needed to prove handoff to E19.
+- Include at least one ordinary link-bearing resource, one descriptor/no-link stream
+  context, one extension or nested-collection case, and one invariant-failure fixture.
+  Provider-specific cache DML, Debezium raw records, and Kafka envelope assertions remain in
+  18-03 and E19.
 
 ## Acceptance Evidence
 
