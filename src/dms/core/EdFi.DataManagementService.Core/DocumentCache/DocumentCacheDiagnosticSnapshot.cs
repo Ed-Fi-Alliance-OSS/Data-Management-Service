@@ -4,10 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.Configuration;
 
 namespace EdFi.DataManagementService.Core.DocumentCache;
 
+[JsonConverter(typeof(DocumentCacheDiagnosticSnapshotJsonConverter))]
 public sealed record DocumentCacheDiagnosticSnapshot
 {
     public DocumentCacheDiagnosticSnapshot(
@@ -38,6 +41,7 @@ public sealed record DocumentCacheDiagnosticSnapshot
     }
 }
 
+[JsonConverter(typeof(DocumentCacheTargetDiagnosticSnapshotJsonConverter))]
 public sealed record DocumentCacheTargetDiagnosticSnapshot
 {
     private DocumentCacheTargetDiagnosticSnapshot(
@@ -131,4 +135,44 @@ public sealed class DocumentCacheDiagnosticSnapshotProvider(IDocumentCacheTarget
 {
     public DocumentCacheDiagnosticSnapshot CurrentSnapshot =>
         DocumentCacheDiagnosticSnapshot.FromRegistrySnapshot(targetRegistry.CurrentSnapshot);
+}
+
+internal sealed class DocumentCacheDiagnosticSnapshotJsonConverter
+    : JsonConverter<DocumentCacheDiagnosticSnapshot>
+{
+    public override DocumentCacheDiagnosticSnapshot Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    ) => throw DocumentCacheDiagnosticSnapshotJsonBoundary.NotSupported();
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        DocumentCacheDiagnosticSnapshot value,
+        JsonSerializerOptions options
+    ) => throw DocumentCacheDiagnosticSnapshotJsonBoundary.NotSupported();
+}
+
+internal sealed class DocumentCacheTargetDiagnosticSnapshotJsonConverter
+    : JsonConverter<DocumentCacheTargetDiagnosticSnapshot>
+{
+    public override DocumentCacheTargetDiagnosticSnapshot Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    ) => throw DocumentCacheDiagnosticSnapshotJsonBoundary.NotSupported();
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        DocumentCacheTargetDiagnosticSnapshot value,
+        JsonSerializerOptions options
+    ) => throw DocumentCacheDiagnosticSnapshotJsonBoundary.NotSupported();
+}
+
+internal static class DocumentCacheDiagnosticSnapshotJsonBoundary
+{
+    public static NotSupportedException NotSupported() =>
+        new(
+            "DocumentCache diagnostic snapshots are internal 18-01 domain state. Public diagnostic JSON is deferred to the 18-06 health/status contract."
+        );
 }

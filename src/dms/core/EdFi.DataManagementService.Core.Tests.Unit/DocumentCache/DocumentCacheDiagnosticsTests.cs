@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
@@ -316,6 +317,35 @@ public class DocumentCacheDiagnosticsTests
                 .HaveLength(512)
                 .And.NotContain("\r")
                 .And.NotContain("\n");
+        }
+
+        [Test]
+        public void It_marks_diagnostic_snapshot_json_as_internal_only_until_the_public_health_contract()
+        {
+            DocumentCacheDiagnosticSnapshot snapshot = DocumentCacheDiagnosticSnapshot.FromRegistrySnapshot(
+                new DocumentCacheTargetRegistrySnapshot(
+                    [DocumentCacheTargetObservation.Configured(TargetKey("TenantA", 7), _effectiveSettings)],
+                    _observedAt
+                )
+            );
+
+            Action serializeSnapshot = () => JsonSerializer.Serialize(snapshot);
+            Action serializeTarget = () => JsonSerializer.Serialize(snapshot.Targets.Single());
+            Action deserializeSnapshot = () =>
+                JsonSerializer.Deserialize<DocumentCacheDiagnosticSnapshot>("{}");
+
+            serializeSnapshot
+                .Should()
+                .Throw<NotSupportedException>()
+                .WithMessage("*internal 18-01 domain state*18-06 health/status contract*");
+            serializeTarget
+                .Should()
+                .Throw<NotSupportedException>()
+                .WithMessage("*internal 18-01 domain state*18-06 health/status contract*");
+            deserializeSnapshot
+                .Should()
+                .Throw<NotSupportedException>()
+                .WithMessage("*internal 18-01 domain state*18-06 health/status contract*");
         }
 
         private static DocumentCacheTargetKey TargetKey(string? tenantKey, long dataStoreId) =>
