@@ -152,6 +152,105 @@ public class Given_A_Relational_Composite_Command_Execution
     }
 
     [Test]
+    public async Task It_reports_a_provider_failure_raised_while_opening_the_reader_to_the_session()
+    {
+        var providerException = new FakeDbException("open");
+        var session = new FakeWriteSession(
+            new FakeReaderScript(resultSetCount: 3) { ThrowOnOpen = providerException }
+        );
+
+        var act = async () =>
+            await new RelationalCompositeCommandExecution().ExecuteAsync(session, CreateCompositeCommand(3));
+
+        await act.Should().ThrowAsync<FakeDbException>();
+        session.ReportedFailures.Should().ContainSingle().Which.Should().BeSameAs(providerException);
+    }
+
+    [Test]
+    public async Task It_reports_a_provider_failure_raised_while_advancing_a_result_set_to_the_session()
+    {
+        var providerException = new FakeDbException("advance");
+        var session = new FakeWriteSession(
+            new FakeReaderScript(resultSetCount: 3)
+            {
+                ThrowOnNextResultAtIndex = 1,
+                NextResultException = providerException,
+            }
+        );
+
+        var act = async () =>
+            await new RelationalCompositeCommandExecution().ExecuteAsync(session, CreateCompositeCommand(3));
+
+        await act.Should().ThrowAsync<FakeDbException>();
+        session.ReportedFailures.Should().ContainSingle().Which.Should().BeSameAs(providerException);
+    }
+
+    [Test]
+    public async Task It_reports_a_provider_failure_raised_while_reading_rows_to_the_session()
+    {
+        var providerException = new FakeDbException("row read");
+        var session = new FakeWriteSession(
+            new FakeReaderScript(resultSetCount: 3)
+            {
+                ThrowOnReadAtResultSetIndex = 2,
+                ReadException = providerException,
+            }
+        );
+
+        var act = async () =>
+            await new RelationalCompositeCommandExecution().ExecuteAsync(session, CreateCompositeCommand(3));
+
+        await act.Should().ThrowAsync<FakeDbException>();
+        session.ReportedFailures.Should().ContainSingle().Which.Should().BeSameAs(providerException);
+    }
+
+    [Test]
+    public async Task It_does_not_report_a_failure_that_carries_no_provider_error()
+    {
+        var session = new FakeWriteSession(
+            new FakeReaderScript(resultSetCount: 3)
+            {
+                ThrowOnOpen = new InvalidTimeZoneException("connection-level"),
+            }
+        );
+
+        var act = async () =>
+            await new RelationalCompositeCommandExecution().ExecuteAsync(session, CreateCompositeCommand(3));
+
+        // A non-provider failure says nothing about the transaction's server-side state, so it must not
+        // become grounds for tolerating a rollback.
+        await act.Should().ThrowAsync<InvalidTimeZoneException>();
+        session.ReportedFailures.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_does_not_report_a_cancellation()
+    {
+        var session = new FakeWriteSession(
+            new FakeReaderScript(resultSetCount: 3)
+            {
+                ThrowOnOpen = new OperationCanceledException("cancelled"),
+            }
+        );
+
+        var act = async () =>
+            await new RelationalCompositeCommandExecution().ExecuteAsync(session, CreateCompositeCommand(3));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        session.ReportedFailures.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_reports_nothing_when_every_statement_decodes()
+    {
+        var session = new FakeWriteSession(new FakeReaderScript(resultSetCount: 3));
+
+        await new RelationalCompositeCommandExecution().ExecuteAsync(session, CreateCompositeCommand(3));
+
+        session.ReportedFailures.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_fails_when_the_provider_produces_fewer_result_sets_than_declared()
     {
         var session = new FakeWriteSession(new FakeReaderScript(resultSetCount: 2));
@@ -242,6 +341,10 @@ public class Given_A_Relational_Composite_Command_Execution
 
     private sealed class FakeWriteSession(FakeReaderScript script) : IRelationalWriteSession
     {
+        private readonly List<DbException> _reportedFailures = [];
+
+        public IReadOnlyList<DbException> ReportedFailures => _reportedFailures;
+
         public DbConnection Connection => throw new NotSupportedException();
 
         public DbTransaction Transaction => throw new NotSupportedException();
@@ -251,6 +354,8 @@ public class Given_A_Relational_Composite_Command_Execution
         public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void ReportDatabaseFailure(DbException exception) => _reportedFailures.Add(exception);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

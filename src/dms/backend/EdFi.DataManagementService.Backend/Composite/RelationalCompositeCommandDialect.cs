@@ -22,6 +22,19 @@ internal interface IRelationalCompositeCommandDialect
     /// </summary>
     string? CommandPrologue { get; }
 
+    /// <summary>
+    /// Epilogue emitted once after the final logical statement, restoring the caller's option state that
+    /// <see cref="CommandPrologue"/> captured, or <see langword="null"/> when the provider needs none.
+    /// </summary>
+    string? CommandEpilogue { get; }
+
+    /// <summary>
+    /// Names the prologue and epilogue occupy, which the parameter allocator must never issue. Separate
+    /// from the carrier's reserved names because the prologue exists on every command whereas the carrier
+    /// declaration exists only on a command that captures a target.
+    /// </summary>
+    IReadOnlyList<string> ReservedCommandNames { get; }
+
     /// <summary>Emits the sentinel select that gives a data-modifying statement its result set.</summary>
     string EmitSentinel(int ordinal);
 
@@ -95,6 +108,11 @@ internal sealed class PgsqlCompositeCommandDialect : IRelationalCompositeCommand
     /// </summary>
     public string? CommandPrologue => null;
 
+    /// <summary>With nothing established, there is nothing to restore.</summary>
+    public string? CommandEpilogue => null;
+
+    public IReadOnlyList<string> ReservedCommandNames => [];
+
     public string EmitSentinel(int ordinal) =>
         string.Create(CultureInfo.InvariantCulture, $"SELECT {ordinal} AS \"LogicalStatementOrdinal\";");
 
@@ -105,6 +123,9 @@ internal sealed class MssqlCompositeCommandDialect : IRelationalCompositeCommand
 {
     public static readonly MssqlCompositeCommandDialect Instance = new();
 
+    private const string PriorXactAbortVariable = "dms_composite_prior_xact_abort";
+    private const string PriorNoCountVariable = "dms_composite_prior_nocount";
+
     private MssqlCompositeCommandDialect() { }
 
     public SqlDialect Dialect => SqlDialect.Mssql;
@@ -112,12 +133,13 @@ internal sealed class MssqlCompositeCommandDialect : IRelationalCompositeCommand
     /// <summary>
     /// <c>SET XACT_ABORT</c> is session state, not command state. With it off — the default — a constraint
     /// violation in a multi-statement batch aborts only the offending statement and execution continues, so
-    /// co-batched DML could leave later statements running after a failure. The prologue is therefore
-    /// established inside the command rather than set once and restored: a trailing
-    /// <c>SET XACT_ABORT OFF</c> would never execute after an abort, and re-establishing per command means
-    /// no path depends on carry-over.
+    /// co-batched DML could leave later statements running after a failure. The options are therefore
+    /// established inside the command itself, which costs no extra round trip and leaves no path depending
+    /// on a previous command having set them. Their prior values are captured first so
+    /// <see cref="CommandEpilogue"/> can put them back.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// It is established on every command, not only on commands holding several logical statements, because
     /// the logical statement count does not bound the emitted statement count: a data-modifying statement
     /// carries an appended sentinel, and the captured-target statement emits a declaration and two selects.
@@ -127,8 +149,40 @@ internal sealed class MssqlCompositeCommandDialect : IRelationalCompositeCommand
     /// committable. <c>SET NOCOUNT ON</c> travels with it because no write path reads an affected-row count
     /// — delete success is decided from returned rows — and not because the decoder needs it; SqlClient does
     /// not surface a data-modifying statement's row-count completion as a result set.
+    /// </para>
+    /// <para>
+    /// The prior values are captured because an option's lifetime depends on how the client transports the
+    /// command. A parameterized command travels through <c>sp_executesql</c>, whose procedure context
+    /// restores SET options on exit, so the establishment dies with the command. A parameterless command
+    /// travels as a plain batch with no such context, so it would otherwise leave both options set for the
+    /// remainder of the session and let a later ordinary command's constraint violation doom the
+    /// transaction. Capturing from <c>@@OPTIONS</c> — bit 16384 for <c>XACT_ABORT</c>, 512 for
+    /// <c>NOCOUNT</c> — lets <see cref="CommandEpilogue"/> restore exactly what the caller had, including an
+    /// ambient ON that must survive.
+    /// </para>
     /// </remarks>
-    public string? CommandPrologue => "SET XACT_ABORT ON;\nSET NOCOUNT ON;";
+    public string? CommandPrologue =>
+        $"""
+            DECLARE @{PriorXactAbortVariable} BIT = IIF((@@OPTIONS & 16384) = 0, 0, 1);
+            DECLARE @{PriorNoCountVariable} BIT = IIF((@@OPTIONS & 512) = 0, 0, 1);
+            SET XACT_ABORT ON;
+            SET NOCOUNT ON;
+            """;
+
+    /// <summary>
+    /// Restores each option to its captured prior value after the final logical statement. It deliberately
+    /// does not run after an abort: SQL Server skips the rest of the batch, and there the request is already
+    /// failing, rollback tolerance covers an already-completed transaction, disposal follows, and the
+    /// client's reset of a pooled connection is the outer cleanup boundary. The path that needs restoring is
+    /// the successful one, which is exactly the path this reaches.
+    /// </summary>
+    public string? CommandEpilogue =>
+        $"""
+            IF @{PriorXactAbortVariable} = 0 SET XACT_ABORT OFF;
+            IF @{PriorNoCountVariable} = 0 SET NOCOUNT OFF;
+            """;
+
+    public IReadOnlyList<string> ReservedCommandNames => [PriorXactAbortVariable, PriorNoCountVariable];
 
     public string EmitSentinel(int ordinal) =>
         string.Create(CultureInfo.InvariantCulture, $"SELECT {ordinal} AS [LogicalStatementOrdinal];");

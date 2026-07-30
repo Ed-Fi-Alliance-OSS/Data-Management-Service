@@ -15,7 +15,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
 /// SQL Server mirror of the composite-command live-provider gates: ordered failure attribution, the
-/// batch-local captured-target carrier, and the session-option prologue.
+/// batch-local captured-target carrier, the session-option envelope and its scope, and the session's
+/// tolerance of a rollback the server already performed.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -80,8 +81,8 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
 
         var composite = builder.Seal();
 
-        // Every one of these commands is multi-statement, so the prologue is exercised live on each.
-        composite.Command.CommandText.Should().StartWith("SET XACT_ABORT ON;");
+        // Every one of these commands carries the session-option envelope, so it is exercised live on each.
+        composite.Command.CommandText.Should().Contain("SET XACT_ABORT ON;");
 
         var execution = new RelationalCompositeCommandExecution();
 
@@ -109,7 +110,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         // failing statement onto a later one.
         execution.Failure.Stage.Should().Be(RelationalCompositeFailureStage.ReadingRows);
 
-        await TryRollbackAsync(session);
+        await session.RollbackAsync();
     }
 
     [Test]
@@ -143,7 +144,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         outcomes[1].Value.Should().Be(1);
         outcomes[2].Value.Should().Be(3);
 
-        await TryRollbackAsync(session);
+        await session.RollbackAsync();
     }
 
     // --- Gate 2: batch-local captured-target carrier ---
@@ -179,7 +180,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         outcomes[1].Value.Should().Be(documentId);
         outcomes[2].Value.Should().Be(true);
 
-        await TryRollbackAsync(session);
+        await session.RollbackAsync();
     }
 
     [Test]
@@ -209,7 +210,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         outcomes[1].Value.Should().Be(false);
         outcomes[2].Value.Should().BeNull();
 
-        await TryRollbackAsync(session);
+        await session.RollbackAsync();
     }
 
     [Test]
@@ -238,7 +239,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
             .Which.Message.Should()
             .Contain("dms_composite_target_documentid");
 
-        await TryRollbackAsync(session);
+        await session.RollbackAsync();
     }
 
     // --- Session-option prologue on a command holding one logical statement ---
@@ -264,7 +265,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
 
         var composite = builder.Seal();
 
-        composite.Command.CommandText.Should().StartWith("SET XACT_ABORT ON;");
+        composite.Command.CommandText.Should().Contain("SET XACT_ABORT ON;");
 
         await using var session = await CreateSessionAsync();
 
@@ -277,7 +278,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         outcomes[0].Label.Should().Be("single-dml");
         outcomes[0].Value.Should().Be(0);
 
-        await TryRollbackAsync(session);
+        await session.RollbackAsync();
     }
 
     [Test]
@@ -315,21 +316,253 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         execution.Failure!.Ordinal.Should().Be(0);
         execution.Failure.Label.Should().Be("single-dml");
 
-        // The discriminating assertion. Without the prologue the violation would abort only the offending
-        // statement, the batch would run on through the following insert, and the transaction would still be
-        // committable. XACT_ABORT dooms it instead, so nothing the batch emitted after the violation can
-        // reach durable state.
+        // The discriminating assertion. Without the session options the violation would abort only the
+        // offending statement, the batch would run on through the following insert, and the transaction would
+        // still be committable. XACT_ABORT dooms it instead, so nothing the batch emitted after the violation
+        // can reach durable state.
         var commit = async () => await session.CommitAsync();
         var commitFailure = (await commit.Should().ThrowAsync<Exception>()).Which;
 
         // The type depends on how far the server got: SqlClient raises InvalidOperationException once the
         // server has rolled back and detached the client transaction, and SqlException when it rejects the
-        // commit of a doomed transaction. Tolerating that in the shared session is separate scope.
+        // commit of a doomed transaction. Committing must fail either way.
         (commitFailure is InvalidOperationException || commitFailure is SqlException)
             .Should()
             .BeTrue($"commit after an aborted batch threw {commitFailure.GetType().Name}");
 
-        await TryRollbackAsync(session);
+        // The rollback completes rather than throwing over the mapped 2627. The composite execution reported
+        // the provider failure on this session and the probe proves the server already completed the
+        // transaction, which is the only case the session tolerates.
+        await session.RollbackAsync();
+    }
+
+    [Test]
+    public async Task It_rolls_back_a_transaction_the_server_already_completed_without_masking_the_failure()
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+        builder.Append(
+            "abort",
+            """
+            CREATE TABLE #composite_tolerance_probe (id INT NOT NULL PRIMARY KEY);
+            INSERT INTO #composite_tolerance_probe (id) VALUES (1);
+            INSERT INTO #composite_tolerance_probe (id) VALUES (1);
+            """,
+            [],
+            RelationalCompositeResultShape.Sentinel
+        );
+
+        await using var session = await CreateSessionAsync();
+
+        var act = async () =>
+            await new RelationalCompositeCommandExecution().ExecuteAsync(session, builder.Seal());
+
+        var thrown = (await act.Should().ThrowAsync<SqlException>()).Which;
+        thrown.Number.Should().Be(2627);
+
+        // The transaction the server aborted is detached, which is what the probe recognizes.
+        session.Transaction.Should().BeOfType<SqlTransaction>().Which.Connection.Should().BeNull();
+        session.Connection.State.Should().Be(ConnectionState.Open);
+
+        // The rollback completes, and the caller still holds the original provider exception, so a mapped
+        // 409 is never replaced by an unrelated invalid-operation failure.
+        var rollback = async () => await session.RollbackAsync();
+
+        await rollback.Should().NotThrowAsync();
+        thrown.Number.Should().Be(2627);
+    }
+
+    [Test]
+    public async Task It_refuses_tolerance_when_the_reported_failure_is_fatal()
+    {
+        await using var session = await CreateSessionAsync();
+
+        var fatalFailure = await CaptureFatalSqlExceptionAsync();
+
+        // Severity 20 and above terminates the connection, so the client cannot conclude the transaction's
+        // fate from a detached reference. Even in the otherwise tolerable shape the probe must defer.
+        fatalFailure.Class.Should().BeGreaterThanOrEqualTo(20);
+        await AbortTheBatchAsync(session);
+        session.Transaction.Should().BeOfType<SqlTransaction>().Which.Connection.Should().BeNull();
+
+        MssqlTransactionStateProbe
+            .Instance.IsAlreadyCompleted(session.Connection, session.Transaction, fatalFailure)
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public async Task It_refuses_tolerance_when_the_connection_is_no_longer_open()
+    {
+        var session = await CreateSessionAsync();
+        var connection = session.Connection;
+        var transaction = session.Transaction;
+
+        var nonFatalFailure = await AbortTheBatchAsync(session);
+        await connection.CloseAsync();
+
+        // A connection-level fault also detaches the transaction but has to surface, so an open connection
+        // is required evidence rather than a convenience check.
+        connection.State.Should().NotBe(ConnectionState.Open);
+        MssqlTransactionStateProbe
+            .Instance.IsAlreadyCompleted(connection, transaction, nonFatalFailure)
+            .Should()
+            .BeFalse();
+
+        await session.DisposeAsync();
+    }
+
+    // --- Does the session-option envelope escape the composite command's execution context? ---
+
+    [TestCase(true, TestName = "It_confines_the_options_when_the_composite_command_carries_parameters")]
+    [TestCase(false, TestName = "It_confines_the_options_when_the_composite_command_has_no_parameters")]
+    public async Task It_confines_the_session_options_to_the_composite_command(bool parameterized)
+    {
+        await using var session = await CreateSessionAsync();
+        await CreateOptionScopeProbeTableAsync(session);
+        await ExecuteOptionScopeCompositeAsync(session, parameterized);
+
+        // An ordinary single-statement command that violates the key. Whether this dooms the transaction is
+        // the measurement: options confined to the composite command leave the transaction alive, and
+        // options that reached the session doom it. SqlClient sends a parameterized command through
+        // sp_executesql, whose procedure context restores SET options on exit, and a parameterless command
+        // as a plain batch that would otherwise leak them, so both shapes are covered.
+        await using (
+            var violatingCommand = session.CreateCommand(
+                new RelationalCommand("INSERT INTO #option_scope_probe (id) VALUES (1);")
+            )
+        )
+        {
+            var act = async () => await violatingCommand.ExecuteNonQueryAsync();
+
+            (await act.Should().ThrowAsync<SqlException>()).Which.Number.Should().Be(2627);
+        }
+
+        // Still committable, so a failure raised outside a composite command is not doomed by options the
+        // composite command established.
+        await session.CommitAsync();
+    }
+
+    [TestCase(true, TestName = "It_restores_an_ambient_option_when_the_command_carries_parameters")]
+    [TestCase(false, TestName = "It_restores_an_ambient_option_when_the_command_has_no_parameters")]
+    public async Task It_restores_an_ambient_session_option_after_a_successful_composite_command(
+        bool parameterized
+    )
+    {
+        await using var session = await CreateSessionAsync();
+
+        await using (var ambientCommand = session.CreateCommand(new RelationalCommand("SET XACT_ABORT ON;")))
+        {
+            await ambientCommand.ExecuteNonQueryAsync();
+        }
+
+        await CreateOptionScopeProbeTableAsync(session);
+        await ExecuteOptionScopeCompositeAsync(session, parameterized);
+
+        // The epilogue restores the captured prior value rather than forcing OFF, so a caller who had
+        // XACT_ABORT on keeps it and the ordinary violation below still dooms the transaction.
+        await using (
+            var violatingCommand = session.CreateCommand(
+                new RelationalCommand("INSERT INTO #option_scope_probe (id) VALUES (1);")
+            )
+        )
+        {
+            var act = async () => await violatingCommand.ExecuteNonQueryAsync();
+
+            (await act.Should().ThrowAsync<SqlException>()).Which.Number.Should().Be(2627);
+        }
+
+        var commit = async () => await session.CommitAsync();
+
+        await commit.Should().ThrowAsync<Exception>();
+    }
+
+    private static async Task CreateOptionScopeProbeTableAsync(RelationalWriteSession session)
+    {
+        await using var setupCommand = session.CreateCommand(
+            new RelationalCommand(
+                """
+                CREATE TABLE #option_scope_probe (id INT NOT NULL PRIMARY KEY);
+                INSERT INTO #option_scope_probe (id) VALUES (1);
+                """
+            )
+        );
+
+        await setupCommand.ExecuteNonQueryAsync();
+    }
+
+    private static async Task ExecuteOptionScopeCompositeAsync(
+        RelationalWriteSession session,
+        bool parameterized
+    )
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+
+        if (parameterized)
+        {
+            var parameterName = builder.Allocator.AllocateStatementScoped("probe", 0);
+            builder.Append(
+                "scalar",
+                $"SELECT {parameterName};",
+                [new RelationalParameter(parameterName, 1L)],
+                RelationalCompositeResultShape.Scalar
+            );
+        }
+        else
+        {
+            builder.Append("scalar", "SELECT 1;", [], RelationalCompositeResultShape.Scalar);
+        }
+
+        var composite = builder.Seal();
+        composite.Command.CommandText.Should().Contain("SET XACT_ABORT ON;");
+
+        await new RelationalCompositeCommandExecution().ExecuteAsync(session, composite);
+    }
+
+    /// <summary>
+    /// Aborts a composite batch on the session and returns the non-fatal provider failure it raised, leaving
+    /// the transaction in the state the server completed itself.
+    /// </summary>
+    private static async Task<SqlException> AbortTheBatchAsync(RelationalWriteSession session)
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+        builder.Append(
+            "abort",
+            """
+            CREATE TABLE #composite_abort_scratch (id INT NOT NULL PRIMARY KEY);
+            INSERT INTO #composite_abort_scratch (id) VALUES (1);
+            INSERT INTO #composite_abort_scratch (id) VALUES (1);
+            """,
+            [],
+            RelationalCompositeResultShape.Sentinel
+        );
+
+        var act = async () =>
+            await new RelationalCompositeCommandExecution().ExecuteAsync(session, builder.Seal());
+
+        return (await act.Should().ThrowAsync<SqlException>()).Which;
+    }
+
+    /// <summary>
+    /// Raises a severity-20 error on a throwaway connection so a genuinely fatal <see cref="SqlException"/>
+    /// is available without breaking the connection under test.
+    /// </summary>
+    private async Task<SqlException> CaptureFatalSqlExceptionAsync()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "RAISERROR ('composite probe fatal', 20, 1) WITH LOG;";
+
+        var act = async () => await command.ExecuteNonQueryAsync();
+
+        return (await act.Should().ThrowAsync<SqlException>()).Which;
     }
 
     private static RelationalCompositeCommandBuilder CreateCaptureBuilder(
@@ -352,6 +585,10 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         return builder;
     }
 
+    /// <summary>
+    /// Builds the session the same way the production factory does, including the SQL Server transaction
+    /// state probe, so these gates exercise the shared session's real rollback behavior.
+    /// </summary>
     private async Task<RelationalWriteSession> CreateSessionAsync()
     {
         var connection = new SqlConnection(_database.ConnectionString);
@@ -359,24 +596,7 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         var transaction = (SqlTransaction)
             await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
 
-        return new RelationalWriteSession(connection, transaction);
-    }
-
-    /// <summary>
-    /// Rolls back best-effort. With <c>SET XACT_ABORT ON</c> the server may already have rolled the
-    /// transaction back and detached the client-side transaction object, in which case rollback throws.
-    /// Making the shared session tolerant of exactly that case is unit-4 scope; these gates only observe it.
-    /// </summary>
-    private static async Task TryRollbackAsync(RelationalWriteSession session)
-    {
-        try
-        {
-            await session.RollbackAsync();
-        }
-        catch (InvalidOperationException)
-        {
-            // Observed and expected after an XACT_ABORT-aborted batch; recorded as unit-4 evidence.
-        }
+        return new RelationalWriteSession(connection, transaction, MssqlTransactionStateProbe.Instance);
     }
 
     private async Task<long> SeedDocumentAsync(Guid documentUuid)

@@ -225,5 +225,12 @@ public sealed class RecordingRelationalWriteSession(
         return _innerSession.RollbackAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Forwarded so the wrapped session can still tolerate a rollback of a transaction the server already
+    /// completed. Without this the decorator would silently remove that behavior from every test using it.
+    /// </summary>
+    public void ReportDatabaseFailure(DbException exception) =>
+        _innerSession.ReportDatabaseFailure(exception);
+
     public ValueTask DisposeAsync() => _innerSession.DisposeAsync();
 }

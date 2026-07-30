@@ -39,13 +39,62 @@ public interface IRelationalWriteSession : IAsyncDisposable
     Task CommitAsync(CancellationToken cancellationToken = default);
 
     Task RollbackAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records that a provider database failure was raised on this session. The session uses it as one of
+    /// two preconditions for tolerating a rollback of a transaction the server has already completed; it
+    /// never alters, wraps, or suppresses the exception itself.
+    /// </summary>
+    /// <remarks>
+    /// A default no-op keeps the many test doubles that wrap no real session compiling and behaving as
+    /// before. A decorator over a real session must forward this, or the session it wraps never learns of
+    /// the failure and loses the tolerance the production session would have had.
+    /// </remarks>
+    void ReportDatabaseFailure(DbException exception) { }
 }
 
-internal sealed class RelationalWriteSession(DbConnection connection, DbTransaction transaction)
-    : IRelationalWriteSession
+/// <summary>
+/// Decides whether a transaction has already been completed by the server, so that a client-side rollback
+/// could only throw.
+/// </summary>
+/// <remarks>
+/// The probe receives every piece of evidence needed to exclude a connection-level fault, which presents
+/// similarly to a server-side rollback from the client's side but must still surface.
+/// </remarks>
+internal interface IRelationalTransactionStateProbe
 {
+    bool IsAlreadyCompleted(DbConnection connection, DbTransaction transaction, DbException reportedFailure);
+}
+
+/// <summary>
+/// The default probe, which never reports completion. Providers whose aborted transaction always accepts a
+/// rollback — PostgreSQL — keep it, so their behavior is identical to having no probe at all.
+/// </summary>
+internal sealed class NeverCompletedTransactionStateProbe : IRelationalTransactionStateProbe
+{
+    public static readonly NeverCompletedTransactionStateProbe Instance = new();
+
+    private NeverCompletedTransactionStateProbe() { }
+
+    public bool IsAlreadyCompleted(
+        DbConnection connection,
+        DbTransaction transaction,
+        DbException reportedFailure
+    ) => false;
+}
+
+internal sealed class RelationalWriteSession(
+    DbConnection connection,
+    DbTransaction transaction,
+    IRelationalTransactionStateProbe? transactionStateProbe = null
+) : IRelationalWriteSession
+{
+    private readonly IRelationalTransactionStateProbe _transactionStateProbe =
+        transactionStateProbe ?? NeverCompletedTransactionStateProbe.Instance;
+
     private RelationalWriteSessionState _state = RelationalWriteSessionState.Pending;
     private bool _disposed;
+    private DbException? _reportedDatabaseFailure;
 
     public DbConnection Connection { get; } =
         connection ?? throw new ArgumentNullException(nameof(connection));
@@ -95,8 +144,30 @@ internal sealed class RelationalWriteSession(DbConnection connection, DbTransact
             );
         }
 
+        // A pre-check, deliberately not a catch. When the server has already rolled this transaction back
+        // and detached it, the client-side rollback can only throw, and throwing here would replace a
+        // mapped database failure with an unrelated one. Because nothing is caught, a cancellation, a
+        // connection fault, and any unrelated invalid-operation failure still propagate by construction
+        // rather than by an exclusion list. Both preconditions are required: a detached transaction with no
+        // reported failure still takes the physical rollback and surfaces whatever it throws.
+        if (
+            _reportedDatabaseFailure is { } reportedFailure
+            && _transactionStateProbe.IsAlreadyCompleted(Connection, Transaction, reportedFailure)
+        )
+        {
+            _state = RelationalWriteSessionState.RolledBack;
+            return;
+        }
+
         await Transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
         _state = RelationalWriteSessionState.RolledBack;
+    }
+
+    public void ReportDatabaseFailure(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        _reportedDatabaseFailure = exception;
     }
 
     public async ValueTask DisposeAsync()

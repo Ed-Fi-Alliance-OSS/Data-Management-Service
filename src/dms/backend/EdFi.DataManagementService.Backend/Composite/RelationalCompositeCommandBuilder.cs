@@ -52,7 +52,7 @@ internal sealed class RelationalCompositeCommandBuilder
         _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
         _budget = budget ?? RelationalCommandBudget.ForDialect(_dialect.Dialect);
 
-        List<string> reserved = [.. _dialect.Carrier.ReservedNames];
+        List<string> reserved = [.. _dialect.ReservedCommandNames, .. _dialect.Carrier.ReservedNames];
 
         if (reservedParameterNames is not null)
         {
@@ -201,6 +201,13 @@ internal sealed class RelationalCompositeCommandBuilder
             {
                 builder.AppendLine(_dialect.EmitSentinel(statement.Ordinal));
             }
+        }
+
+        // The epilogue restores what the prologue established. Like the prologue it emits no result set, so
+        // it consumes no ordinal and the decoder's declared stream is unchanged.
+        if (_dialect.CommandEpilogue is { } epilogue)
+        {
+            builder.AppendLine(epilogue);
         }
 
         _sealed = true;

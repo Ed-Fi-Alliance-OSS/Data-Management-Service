@@ -67,6 +67,7 @@ internal sealed class RelationalCompositeCommandExecution
             // Only statement 0 can surface here: it always produces a result set, so the provider never
             // scans past it looking for one.
             Failure = BuildFailure(statements, 0, RelationalCompositeFailureStage.OpeningReader, exception);
+            ReportDatabaseFailure(writeSession, exception);
             throw;
         }
 
@@ -90,6 +91,7 @@ internal sealed class RelationalCompositeCommandExecution
                             RelationalCompositeFailureStage.AdvancingResultSet,
                             exception
                         );
+                        ReportDatabaseFailure(writeSession, exception);
                         throw;
                     }
 
@@ -124,6 +126,7 @@ internal sealed class RelationalCompositeCommandExecution
                         RelationalCompositeFailureStage.ReadingRows,
                         exception
                     );
+                    ReportDatabaseFailure(writeSession, exception);
                     throw;
                 }
             }
@@ -226,6 +229,20 @@ internal sealed class RelationalCompositeCommandExecution
         }
 
         return rowCount;
+    }
+
+    /// <summary>
+    /// Tells the session a provider database failure was raised on it, so a rollback of a transaction the
+    /// server already completed can be tolerated. Only a <see cref="DbException"/> qualifies: a cancellation
+    /// or an invariant failure from the decoder says nothing about the transaction's server-side state. The
+    /// exception instance is passed through untouched and rethrown unchanged by the caller.
+    /// </summary>
+    private static void ReportDatabaseFailure(IRelationalWriteSession writeSession, Exception exception)
+    {
+        if (exception is DbException databaseException)
+        {
+            writeSession.ReportDatabaseFailure(databaseException);
+        }
     }
 
     /// <summary>

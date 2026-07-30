@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
 using FakeItEasy;
@@ -84,5 +86,92 @@ public class Given_MssqlRelationalWriteSessionFactory
         connection.LastTransaction.Should().NotBeNull();
         connection.LastTransaction!.RollbackCallCount.Should().Be(1);
         connection.LastTransaction.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_still_rolls_back_physically_when_a_failure_is_reported_on_a_non_sql_server_transaction()
+    {
+        var connection = new RecordingDbConnection(
+            new RecordingDbCommand(new DataTable().CreateDataReader())
+        );
+        var sut = new MssqlRelationalWriteSessionFactory(
+            _ => Task.FromResult<DbConnection>(connection),
+            IsolationLevel.ReadCommitted
+        );
+
+        await using var session = await sut.CreateAsync();
+        session.ReportDatabaseFailure(new ProbeTestDbException());
+
+        await session.RollbackAsync();
+
+        // The factory wires the SQL Server probe, and the probe positively proves completion or defers. A
+        // reported failure alone never skips the physical rollback.
+        connection.LastTransaction!.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public void It_refuses_tolerance_when_the_connection_is_not_open()
+    {
+        var connection = new ProbeTestDbConnection(ConnectionState.Closed);
+
+        MssqlTransactionStateProbe
+            .Instance.IsAlreadyCompleted(connection, new ProbeTestDbTransaction(), new ProbeTestDbException())
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void It_refuses_tolerance_for_a_transaction_that_is_not_a_sql_server_transaction()
+    {
+        var connection = new ProbeTestDbConnection(ConnectionState.Open);
+
+        // Type-tested so the tolerance cannot leak to a provider whose transaction happens to null its
+        // connection for an unrelated reason.
+        MssqlTransactionStateProbe
+            .Instance.IsAlreadyCompleted(connection, new ProbeTestDbTransaction(), new ProbeTestDbException())
+            .Should()
+            .BeFalse();
+    }
+
+    private sealed class ProbeTestDbException : DbException
+    {
+        public ProbeTestDbException()
+            : base("probe test provider failure") { }
+    }
+
+    private sealed class ProbeTestDbTransaction : DbTransaction
+    {
+        protected override DbConnection? DbConnection => null;
+
+        public override IsolationLevel IsolationLevel => IsolationLevel.ReadCommitted;
+
+        public override void Commit() { }
+
+        public override void Rollback() { }
+    }
+
+    private sealed class ProbeTestDbConnection(ConnectionState state) : DbConnection
+    {
+        [AllowNull]
+        public override string ConnectionString { get; set; } = "probe";
+
+        public override string Database => "probe";
+
+        public override string DataSource => "probe";
+
+        public override string ServerVersion => "probe";
+
+        public override ConnectionState State => state;
+
+        public override void ChangeDatabase(string databaseName) { }
+
+        public override void Close() { }
+
+        public override void Open() { }
+
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            throw new NotSupportedException();
     }
 }

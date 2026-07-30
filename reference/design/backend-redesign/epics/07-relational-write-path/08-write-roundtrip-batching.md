@@ -439,12 +439,39 @@ retained only as a measured optimization.
 constraint violation in a multi-statement batch aborts only the offending statement and execution
 continues; PostgreSQL always aborts the transaction. Merging DML therefore requires it on.
 
-The lifecycle is *establish, never restore*: every SQL Server command containing more than one
-statement begins with `SET XACT_ABORT ON;` and `SET NOCOUNT ON;` inside the command text itself. That
-costs no extra round trip and no path depends on a previous command having set it, so nothing needs to
-be unset. `SET NOCOUNT ON` is safe because no write path reads an affected-row count; delete success is
-determined from returned rows. Independently, the client library resets session options when a pooled
-connection is handed to the next borrower, which is verified by test rather than relied upon.
+The lifecycle is *capture, establish, restore*. Every SQL Server composite command — not only one holding
+several logical statements — begins by capturing the caller's `XACT_ABORT` and `NOCOUNT` values from
+`@@OPTIONS` into batch-local variables and then sets both on; after the final logical statement it
+restores each to its captured value. The gate is the command, not its logical statement count, because a
+logical statement count does not bound the emitted statement count: a data-modifying statement carries an
+appended sentinel, the captured-target statement emits a declaration and two selects, and deterministic
+packing makes a command holding one logical statement ordinary at a parameter-budget boundary.
+
+Two measured facts drive that shape, both observed on SQL Server 2025:
+
+- **Without the options, a failing one-logical-statement batch does not abort.** A primary-key violation
+  aborts only the offending statement, execution continues through the following statement, and the
+  transaction remains committable.
+- **An option's lifetime depends on how the client transports the command.** A parameterized command
+  travels through `sp_executesql`, a procedure context whose SET options SQL Server restores on exit, so
+  the establishment dies with the command. A parameterless command travels as a plain batch with no such
+  context, so `SET XACT_ABORT ON` would persist on the connection and let a *later ordinary* command's
+  constraint violation doom the transaction and detach the client transaction object — a failure that
+  never passes through the composite execution boundary and so would never be reported to the session.
+
+An earlier draft of this section called the lifecycle *establish, never restore*, on the grounds that a
+trailing restore never executes after an abort. That premise is true and the conclusion does not follow:
+the abort path is the one case where leaving the options set is harmless, because the request is already
+failing, rollback tolerance covers an already-completed transaction, and disposal returns the connection
+to the pool. The path that needs restoring is the successful one, which is exactly the path a trailing
+restore reaches. Restoring the *captured* value rather than forcing `OFF` preserves an ambient
+`XACT_ABORT ON` that a caller established for its own reasons.
+
+`SET NOCOUNT ON` is safe because no write path reads an affected-row count; delete success is determined
+from returned rows. It is not required for result-stream decoding: SqlClient does not surface a
+data-modifying statement's row-count completion as a result set, so the decoder steps correctly without
+it. Independently, the client library resets session options when a pooled connection is handed to the
+next borrower, which is verified by test rather than relied upon.
 
 A related hazard must be handled in the same change: when `XACT_ABORT ON` causes the server to roll
 back, the client-side transaction object can be detached, and an unconditional rollback then throws.

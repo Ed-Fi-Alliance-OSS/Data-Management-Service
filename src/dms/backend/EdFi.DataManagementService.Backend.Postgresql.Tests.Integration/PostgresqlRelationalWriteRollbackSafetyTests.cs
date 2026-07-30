@@ -112,6 +112,10 @@ file sealed class FailOnAlignedExtensionAddressInsertRelationalWriteSession(
     public Task RollbackAsync(CancellationToken cancellationToken = default) =>
         _innerSession.RollbackAsync(cancellationToken);
 
+    // Forwarded so the wrapped session keeps the rollback tolerance the production session has.
+    public void ReportDatabaseFailure(DbException exception) =>
+        _innerSession.ReportDatabaseFailure(exception);
+
     public ValueTask DisposeAsync() => _innerSession.DisposeAsync();
 }
 

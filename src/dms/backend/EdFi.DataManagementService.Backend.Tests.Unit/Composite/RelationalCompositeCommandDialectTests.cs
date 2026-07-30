@@ -13,24 +13,52 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 [TestFixture]
 public class Given_A_Relational_Composite_Command_Dialect
 {
+    /// <summary>
+    /// Asserts the SQL Server envelope: the caller's option state is captured before either option is
+    /// established, and each is restored to the captured value after the last statement.
+    /// </summary>
+    private static void ShouldCarryTheSqlServerOptionEnvelope(string commandText)
+    {
+        commandText
+            .Should()
+            .StartWith("DECLARE @dms_composite_prior_xact_abort BIT = IIF((@@OPTIONS & 16384) = 0, 0, 1);");
+        commandText
+            .Should()
+            .Contain("DECLARE @dms_composite_prior_nocount BIT = IIF((@@OPTIONS & 512) = 0, 0, 1);");
+
+        var captureEnd = commandText.IndexOf(
+            "DECLARE @dms_composite_prior_nocount",
+            StringComparison.Ordinal
+        );
+        var establish = commandText.IndexOf("SET XACT_ABORT ON;", StringComparison.Ordinal);
+
+        // Capturing after establishing would record the value this command just imposed.
+        captureEnd.Should().BeLessThan(establish);
+        commandText.Should().Contain("SET NOCOUNT ON;");
+
+        commandText
+            .Should()
+            .EndWith(
+                "IF @dms_composite_prior_xact_abort = 0 SET XACT_ABORT OFF;\n"
+                    + "IF @dms_composite_prior_nocount = 0 SET NOCOUNT OFF;"
+            );
+    }
+
     [Test]
-    public void It_emits_the_sql_server_session_option_prologue_on_a_single_statement_command()
+    public void It_emits_the_sql_server_session_option_envelope_on_a_single_statement_command()
     {
         var builder = new RelationalCompositeCommandBuilder(
             IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
         );
         builder.Append("only", "SELECT 1;", [], RelationalCompositeResultShape.Scalar);
 
-        var commandText = builder.Seal().Command.CommandText;
-
-        // The prologue is unconditional because a logical statement count does not bound the emitted
+        // The envelope is unconditional because a logical statement count does not bound the emitted
         // statement count, so no logical shape can be relied on to make the batch single-statement.
-        commandText.Should().StartWith("SET XACT_ABORT ON;");
-        commandText.Should().Contain("SET NOCOUNT ON;");
+        ShouldCarryTheSqlServerOptionEnvelope(builder.Seal().Command.CommandText);
     }
 
     [Test]
-    public void It_emits_the_sql_server_session_option_prologue_on_a_single_data_modifying_statement()
+    public void It_emits_the_sql_server_session_option_envelope_on_a_single_data_modifying_statement()
     {
         var builder = new RelationalCompositeCommandBuilder(
             IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
@@ -47,13 +75,12 @@ public class Given_A_Relational_Composite_Command_Dialect
         // One logical statement of this shape emits two statements: the DML and its appended sentinel. A
         // constraint violation in that DML must abort the batch rather than leave the transaction
         // committable, which is what the session options establish.
-        commandText.Should().StartWith("SET XACT_ABORT ON;");
-        commandText.Should().Contain("SET NOCOUNT ON;");
+        ShouldCarryTheSqlServerOptionEnvelope(commandText);
         commandText.Should().Contain("SELECT 0 AS [LogicalStatementOrdinal];");
     }
 
     [Test]
-    public void It_emits_the_sql_server_session_option_prologue_ahead_of_the_captured_target_declaration()
+    public void It_emits_the_sql_server_session_options_ahead_of_the_captured_target_declaration()
     {
         var builder = new RelationalCompositeCommandBuilder(
             IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
@@ -68,7 +95,7 @@ public class Given_A_Relational_Composite_Command_Dialect
 
         // A capture-only command is a single logical statement that emits a declaration, an assignment
         // select, and a projection select, and the session options must precede all of them.
-        commandText.Should().StartWith("SET XACT_ABORT ON;");
+        ShouldCarryTheSqlServerOptionEnvelope(commandText);
         commandText
             .IndexOf("SET NOCOUNT ON;", StringComparison.Ordinal)
             .Should()
@@ -78,7 +105,7 @@ public class Given_A_Relational_Composite_Command_Dialect
     }
 
     [Test]
-    public void It_emits_xact_abort_and_nocount_at_the_head_of_a_multi_statement_sql_server_command()
+    public void It_emits_the_sql_server_session_option_envelope_on_a_multi_statement_command()
     {
         var builder = new RelationalCompositeCommandBuilder(
             IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
@@ -86,10 +113,28 @@ public class Given_A_Relational_Composite_Command_Dialect
         builder.Append("first", "SELECT 1;", [], RelationalCompositeResultShape.Scalar);
         builder.Append("second", "SELECT 2;", [], RelationalCompositeResultShape.Scalar);
 
-        var commandText = builder.Seal().Command.CommandText;
+        ShouldCarryTheSqlServerOptionEnvelope(builder.Seal().Command.CommandText);
+    }
 
-        commandText.Should().StartWith("SET XACT_ABORT ON;");
-        commandText.Should().Contain("SET NOCOUNT ON;");
+    [Test]
+    public void It_reserves_the_sql_server_captured_option_variables_from_the_allocator()
+    {
+        var builder = new RelationalCompositeCommandBuilder(
+            IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+        );
+
+        // The prologue's batch-locals must be unavailable to statements, because SqlClient rejects a
+        // batch-local that shares a name with a bound parameter.
+        builder
+            .Allocator.ReservedNames.Should()
+            .Contain("dms_composite_prior_xact_abort")
+            .And.Contain("dms_composite_prior_nocount");
+    }
+
+    [Test]
+    public void It_reserves_no_command_names_for_postgresql()
+    {
+        IRelationalCompositeCommandDialect.Create(SqlDialect.Pgsql).ReservedCommandNames.Should().BeEmpty();
     }
 
     [TestCase(1, TestName = "It_emits_no_prologue_for_a_single_statement_postgresql_command")]
@@ -115,8 +160,11 @@ public class Given_A_Relational_Composite_Command_Dialect
         var commandText = builder.Seal().Command.CommandText;
 
         commandText.Should().StartWith("INSERT INTO edfi.\"School\" DEFAULT VALUES;");
+        // No epilogue either, so the text ends at the last statement's sentinel.
+        commandText.Should().EndWith($"SELECT {statementCount - 1} AS \"LogicalStatementOrdinal\";");
         commandText.Should().NotContain("XACT_ABORT");
         commandText.Should().NotContain("NOCOUNT");
+        commandText.Should().NotContain("@@OPTIONS");
     }
 
     [Test]
