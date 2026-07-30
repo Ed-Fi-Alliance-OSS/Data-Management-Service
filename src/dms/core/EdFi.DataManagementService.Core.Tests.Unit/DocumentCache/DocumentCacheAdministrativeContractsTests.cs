@@ -128,6 +128,31 @@ public class DocumentCacheAdministrativeContractsTests
     [Parallelizable]
     public class Given_Administrative_Command_Results : DocumentCacheAdministrativeContractsTests
     {
+        private static readonly DocumentCacheTargetDiagnosticCategory[] _producedDiagnosticCategories =
+        [
+            DocumentCacheTargetDiagnosticCategory.TargetNotConfigured,
+            DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown,
+            DocumentCacheTargetDiagnosticCategory.ProviderMismatch,
+            DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing,
+            DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,
+            DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+            DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure,
+            DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
+            DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
+            DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+            DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure,
+            DocumentCacheTargetDiagnosticCategory.TargetReplaced,
+            DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
+            DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
+            DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
+            DocumentCacheTargetDiagnosticCategory.NonemptyGuardedActivationState,
+            DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown,
+            DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch,
+            DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
+        ];
+
         [Test]
         public void It_should_serialize_lower_camel_enums_and_observed_state()
         {
@@ -238,6 +263,32 @@ public class DocumentCacheAdministrativeContractsTests
             result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
         }
 
+        [TestCaseSource(nameof(ProducedDiagnosticCategories))]
+        public void It_should_round_trip_produced_diagnostic_categories(
+            DocumentCacheTargetDiagnosticCategory category
+        )
+        {
+            DocumentCacheAdministrativeDiagnostic diagnostic = new(category, "Diagnostic message.");
+
+            string json = JsonSerializer.Serialize(diagnostic);
+            DocumentCacheAdministrativeDiagnostic deserialized =
+                JsonSerializer.Deserialize<DocumentCacheAdministrativeDiagnostic>(json)!;
+
+            deserialized.Category.Should().Be(category);
+            JsonNode.Parse(json)!["category"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ToLowerCamelCase(category.ToString()));
+        }
+
+        [Test]
+        public void It_should_cover_every_produced_diagnostic_category()
+        {
+            _producedDiagnosticCategories
+                .Should()
+                .BeEquivalentTo(Enum.GetValues<DocumentCacheTargetDiagnosticCategory>());
+        }
+
         [Test]
         public void It_should_reject_numeric_enum_values()
         {
@@ -287,5 +338,14 @@ public class DocumentCacheAdministrativeContractsTests
             result.Diagnostics.Single().Message.Should().HaveLength(512).And.NotContain("\r\n");
             result.NoMutationGuarantee!.Message.Should().HaveLength(512).And.NotContain("\r\n");
         }
+
+        private static IEnumerable<TestCaseData> ProducedDiagnosticCategories()
+        {
+            return _producedDiagnosticCategories.Select(category =>
+                new TestCaseData(category).SetName($"Diagnostic category {category}")
+            );
+        }
+
+        private static string ToLowerCamelCase(string value) => char.ToLowerInvariant(value[0]) + value[1..];
     }
 }

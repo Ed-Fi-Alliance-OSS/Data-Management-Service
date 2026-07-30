@@ -119,6 +119,13 @@ public class DocumentCacheDiagnosticsTests
                 .Should()
                 .Equal(configuredTarget, eligibleTarget, failedTarget);
 
+            DocumentCacheTargetDiagnosticSnapshot configured = snapshot.Targets[0];
+            configured.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Configured);
+            configured.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.NotEvaluated);
+            configured.Generation.Should().BeNull();
+            configured.ProviderToken.Should().BeNull();
+            configured.Diagnostics.Should().BeEmpty();
+
             DocumentCacheTargetDiagnosticSnapshot eligible = snapshot.Targets[1];
             eligible.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Resolved);
             eligible.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);

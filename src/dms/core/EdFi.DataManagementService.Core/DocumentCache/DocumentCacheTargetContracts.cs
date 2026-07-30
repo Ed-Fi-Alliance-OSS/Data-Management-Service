@@ -66,7 +66,6 @@ public enum DocumentCacheProviderPrerequisiteName
 
 public enum DocumentCacheTargetDiagnosticCategory
 {
-    TargetConfigured,
     TargetNotConfigured,
     TargetUnresolved,
     ProviderMetadataMissing,
