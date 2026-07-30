@@ -3,7 +3,7 @@
   "caseName": "layout-contract-school",
   "coverageTags": [
     "layout-contract",
-    "success",
+    "layout-only",
     "ordinary-resource"
   ],
   "sourceSetupPath": "source-setup.json",

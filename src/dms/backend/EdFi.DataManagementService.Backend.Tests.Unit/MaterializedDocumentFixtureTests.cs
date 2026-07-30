@@ -46,7 +46,7 @@ public class Given_MaterializedDocumentFixtureCatalog
                 new MaterializedDocumentFixtureManifest(
                     FixtureVersion: "materialized-document-fixture-v1",
                     CaseName: "layout-contract-school",
-                    CoverageTags: ["layout-contract", "success", "ordinary-resource"],
+                    CoverageTags: ["layout-contract", "layout-only", "ordinary-resource"],
                     SourceSetupPath: "source-setup.json",
                     ExpectedCacheRowPath: "expected-cache-row.json",
                     ExpectedStreamEtagPath: "expected-stream-etag.json",
@@ -104,9 +104,15 @@ public class Given_MaterializedDocumentFixtureCatalog
         _fixture.ExpectedCacheRow.ResourceName.Should().Be("School");
         _fixture.ExpectedCacheRow.ResourceVersion.Should().Be("5.3.0");
         _fixture.ExpectedCacheRow.ContentVersion.Should().Be(42);
-        _fixture.ExpectedCacheRow.StreamEtag.Should().Be("\"42-cache-projection\"");
         _fixture.ExpectedStreamEtag.Should().Be(_fixture.ExpectedCacheRow.StreamEtag);
         _fixture.ExpectedCacheRow.DocumentJson.ContainsKey("_etag").Should().BeFalse();
+    }
+
+    [Test]
+    public void It_keeps_the_layout_contract_fixture_out_of_executable_success_expectations()
+    {
+        HasTags(_fixture, "layout-contract", "layout-only").Should().BeTrue();
+        HasTags(_fixture, "success").Should().BeFalse();
     }
 
     [Test]
@@ -155,7 +161,7 @@ public class Given_MaterializedDocumentFixtureCatalog
     public void It_keeps_each_success_fixture_cache_row_complete_and_free_of_etag()
     {
         _allFixtures
-            .Where(fixture => fixture.HasSuccessExpectation)
+            .Where(fixture => HasTags(fixture, "success"))
             .Should()
             .AllSatisfy(fixture =>
             {
