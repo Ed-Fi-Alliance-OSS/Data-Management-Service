@@ -31,16 +31,16 @@ public abstract class ConsistencyOperationTestBase : DatabaseTest
         new TenantContextProvider()
     );
 
-    protected long _vendorId;
-    protected long _profileId;
-    protected long _applicationId;
+    protected int _vendorId;
+    protected int _profileId;
+    protected int _applicationId;
     protected string _clientId = null!;
     protected Guid _clientUuid;
     protected string _secondClientId = null!;
     protected Guid _secondClientUuid;
-    protected long _secondClientRowId;
-    protected long _dataStoreId1;
-    protected long _dataStoreId2;
+    protected int _secondClientRowId;
+    protected int _dataStoreId1;
+    protected int _dataStoreId2;
 
     [SetUp]
     public async Task SeedAggregateAsync()
@@ -68,20 +68,20 @@ public abstract class ConsistencyOperationTestBase : DatabaseTest
         vendorResult.Should().BeOfType<VendorInsertResult.Success>();
         _vendorId = ((VendorInsertResult.Success)vendorResult).Id;
 
-        _dataStoreId1 = await Connection!.ExecuteScalarAsync<long>(
+        _dataStoreId1 = await Connection!.ExecuteScalarAsync<int>(
             """
             INSERT INTO dmscs.DataStore (DataStoreType, Name)
             OUTPUT INSERTED.Id VALUES ('Production', 'Consistency Store One');
             """
         );
-        _dataStoreId2 = await Connection!.ExecuteScalarAsync<long>(
+        _dataStoreId2 = await Connection!.ExecuteScalarAsync<int>(
             """
             INSERT INTO dmscs.DataStore (DataStoreType, Name)
             OUTPUT INSERTED.Id VALUES ('Production', 'Consistency Store Two');
             """
         );
 
-        _profileId = await Connection!.ExecuteScalarAsync<long>(
+        _profileId = await Connection!.ExecuteScalarAsync<int>(
             """
             INSERT INTO dmscs.Profile (ProfileName, Definition)
             OUTPUT INSERTED.Id VALUES (@ProfileName, '<Profile/>');
@@ -867,10 +867,10 @@ public class Given_a_second_writer_during_an_application_client_uuid_sync : Cons
 
 public abstract class ForeignTenantOperationTestBase : ConsistencyOperationTestBase
 {
-    protected long _foreignApplicationId;
+    protected int _foreignApplicationId;
     protected string _foreignClientId = null!;
     protected Guid _foreignClientUuid;
-    protected long _foreignClientRowId;
+    protected int _foreignClientRowId;
 
     [SetUp]
     public async Task SeedForeignTenantAggregateAsync()
@@ -904,7 +904,7 @@ public abstract class ForeignTenantOperationTestBase : ConsistencyOperationTestB
             }
         );
         vendorResult.Should().BeOfType<VendorInsertResult.Success>();
-        long foreignVendorId = ((VendorInsertResult.Success)vendorResult).Id;
+        int foreignVendorId = ((VendorInsertResult.Success)vendorResult).Id;
 
         IApplicationRepository foreignApplicationRepository = new ApplicationRepository(
             MssqlTestConfiguration.DatabaseOptions,
@@ -925,7 +925,7 @@ public abstract class ForeignTenantOperationTestBase : ConsistencyOperationTestB
         applicationResult.Should().BeOfType<ApplicationInsertResult.Success>();
         _foreignApplicationId = ((ApplicationInsertResult.Success)applicationResult).Id;
 
-        _foreignClientRowId = await Connection!.ExecuteScalarAsync<long>(
+        _foreignClientRowId = await Connection!.ExecuteScalarAsync<int>(
             """SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId;""",
             new { ClientId = _foreignClientId }
         );

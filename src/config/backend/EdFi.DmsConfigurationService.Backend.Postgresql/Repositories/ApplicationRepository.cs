@@ -692,7 +692,7 @@ public class ApplicationRepository(
     }
 
     public async Task<ApplicationUpdateStateResult> GetApplicationUpdateState(
-        long applicationId,
+        int applicationId,
         string clientId
     )
     {
@@ -711,7 +711,7 @@ public class ApplicationRepository(
                 """;
             var application = await connection.QuerySingleOrDefaultAsync<(
                 string ApplicationName,
-                long VendorId,
+                int VendorId,
                 string ClaimSetName
             )?>(applicationSql, new { Id = applicationId, TenantId }, transaction);
 
@@ -727,7 +727,7 @@ public class ApplicationRepository(
                 FOR UPDATE;
                 """;
             var client = await connection.QuerySingleOrDefaultAsync<(
-                long Id,
+                int Id,
                 Guid ClientUuid,
                 bool IsApproved
             )?>(clientSql, new { ClientId = clientId, ApplicationId = applicationId }, transaction);
@@ -749,9 +749,9 @@ public class ApplicationRepository(
                 ),
             ];
 
-            long[] profileIds =
+            int[] profileIds =
             [
-                .. await connection.QueryAsync<long>(
+                .. await connection.QueryAsync<int>(
                     """
                     SELECT "ProfileId" FROM "dmscs"."ApplicationProfile"
                     WHERE "ApplicationId" = @ApplicationId;
@@ -761,9 +761,9 @@ public class ApplicationRepository(
                 ),
             ];
 
-            long[] clientDataStoreIds =
+            int[] clientDataStoreIds =
             [
-                .. await connection.QueryAsync<long>(
+                .. await connection.QueryAsync<int>(
                     """
                     SELECT "DataStoreId" FROM "dmscs"."ApiClientDataStore"
                     WHERE "ApiClientId" = @ApiClientId;
@@ -798,7 +798,7 @@ public class ApplicationRepository(
     }
 
     public async Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
-        long applicationId,
+        int applicationId,
         string clientId,
         Guid expectedClientUuid,
         Guid newClientUuid

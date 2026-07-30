@@ -868,7 +868,7 @@ public class ApplicationModule : IEndpointModule
         }
     }
 
-    private static bool SetEquals(long[] first, long[] second) => first.ToHashSet().SetEquals(second);
+    private static bool SetEquals<T>(T[] first, T[] second) => first.ToHashSet().SetEquals(second);
 
     private static async Task<IResult> Delete(
         int id,

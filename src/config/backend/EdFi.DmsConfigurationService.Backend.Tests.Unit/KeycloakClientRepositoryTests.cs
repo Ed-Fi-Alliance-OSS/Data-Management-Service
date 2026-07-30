@@ -485,7 +485,7 @@ public class KeycloakClientRepositoryTests
                 Config = new Dictionary<string, string> { { "multivalued", "true" } },
             };
 
-        protected async Task ActUpdateAsync(long[]? dataStoreIds = null) =>
+        protected async Task ActUpdateAsync(int[]? dataStoreIds = null) =>
             _result = await _repository.UpdateClientAsync(
                 _clientUuid,
                 "Updated Client",

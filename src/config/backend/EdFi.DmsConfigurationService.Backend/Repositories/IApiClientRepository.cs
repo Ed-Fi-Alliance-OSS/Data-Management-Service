@@ -26,7 +26,7 @@ public interface IApiClientRepository
     /// transaction. Locking the row waits out any in-flight update transaction, so the returned
     /// snapshot reflects that transaction's final outcome.
     /// </summary>
-    Task<ApiClientResolutionResult> GetApiClientResolutionState(long id);
+    Task<ApiClientResolutionResult> GetApiClientResolutionState(int id);
 
     /// <summary>
     /// Atomically sets the stored identity-provider client UUID, guarded by its expected current
@@ -34,7 +34,7 @@ public interface IApiClientRepository
     /// distinguishes whether any row still references the new UUID so the caller can decide
     /// whether deleting the recreated provider client is safe.
     /// </summary>
-    Task<ApiClientUuidSyncResult> SyncApiClientUuid(long id, Guid expectedClientUuid, Guid newClientUuid);
+    Task<ApiClientUuidSyncResult> SyncApiClientUuid(int id, Guid expectedClientUuid, Guid newClientUuid);
 
     /// <summary>
     /// Reports whether any ApiClient row references the given identity-provider client UUID.
@@ -48,12 +48,12 @@ public interface IApiClientRepository
 /// The complete state an ApiClient update mutates, including the exact data store set.
 /// </summary>
 public record ApiClientResolutionState(
-    long ApplicationId,
+    int ApplicationId,
     string Name,
     bool IsApproved,
     string ClientId,
     Guid ClientUuid,
-    long[] DataStoreIds
+    int[] DataStoreIds
 );
 
 public record ApiClientResolutionResult

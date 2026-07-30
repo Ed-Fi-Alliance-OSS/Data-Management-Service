@@ -52,7 +52,7 @@ internal sealed class PostgresqlApplicationLockManager : IApplicationLockManager
     }
 
     public async Task<ApplicationLockResult> AcquireAsync(
-        long applicationId,
+        int applicationId,
         CancellationToken cancellationToken
     )
     {
@@ -143,7 +143,7 @@ internal sealed class PostgresqlApplicationLockManager : IApplicationLockManager
     /// of the canonical resource string. The namespace prefix keeps future advisory-lock uses
     /// from colliding with application locks.
     /// </summary>
-    internal static long ComputeLockKey(long applicationId)
+    internal static long ComputeLockKey(int applicationId)
     {
         byte[] hash = SHA256.HashData(
             Encoding.UTF8.GetBytes(
@@ -170,7 +170,7 @@ internal sealed class PostgresqlApplicationLockManager : IApplicationLockManager
         PostgresqlApplicationLockManager manager,
         NpgsqlConnection connection,
         long key,
-        long applicationId
+        int applicationId
     ) : IAsyncDisposable
     {
         private readonly Stopwatch _held = Stopwatch.StartNew();

@@ -748,8 +748,8 @@ public class ApiClientModule : IEndpointModule
         ApiClientResponse? ApiClient,
         List<IAsyncDisposable> Locks
     )> AcquireApiClientLocksAsync(
-        long id,
-        long? targetApplicationId,
+        int id,
+        int? targetApplicationId,
         IApiClientRepository apiClientRepository,
         IApplicationLockManager lockManager,
         HttpContext httpContext,
@@ -779,8 +779,8 @@ public class ApiClientModule : IEndpointModule
                 );
             }
 
-            long sourceApplicationId = preReadSuccess.ApiClientResponse.ApplicationId;
-            long[] applicationIdsToLock;
+            int sourceApplicationId = preReadSuccess.ApiClientResponse.ApplicationId;
+            int[] applicationIdsToLock;
             if (targetApplicationId is { } target && target != sourceApplicationId)
             {
                 applicationIdsToLock =
@@ -796,7 +796,7 @@ public class ApiClientModule : IEndpointModule
             List<IAsyncDisposable> heldLocks = [];
             try
             {
-                foreach (long applicationIdToLock in applicationIdsToLock)
+                foreach (int applicationIdToLock in applicationIdsToLock)
                 {
                     var lockResult = await lockManager.AcquireAsync(
                         applicationIdToLock,
@@ -907,7 +907,7 @@ public class ApiClientModule : IEndpointModule
         }
     }
 
-    private static bool SetEquals(IEnumerable<long> first, IEnumerable<long> second) =>
+    private static bool SetEquals(IEnumerable<int> first, IEnumerable<int> second) =>
         first.ToHashSet().SetEquals(second);
 
     private static async Task<IResult> DeleteApiClient(
