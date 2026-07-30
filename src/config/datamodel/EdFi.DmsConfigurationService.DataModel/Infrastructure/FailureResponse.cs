@@ -25,6 +25,8 @@ public static class FailureResponse
     private static readonly string _conflictTypePrefix = $"{_typePrefix}:conflict";
     private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
     private static readonly string _unavailableType = $"{_typePrefix}:internal-server-error";
+    private static readonly string _methodNotAllowedType = $"{_typePrefix}:method-not-allowed";
+    private static readonly string _unsupportedMediaTypeType = $"{_typePrefix}:unsupported-media-type";
 
     private static JsonObject CreateBaseJsonObject(
         string detail,
@@ -82,14 +84,14 @@ public static class FailureResponse
             errors: errors
         );
 
-    public static JsonNode ForBadRequest(string detail, string correlationId) =>
+    public static JsonNode ForBadRequest(string detail, string correlationId, string[]? errors = null) =>
         CreateBaseJsonObject(
             detail: detail,
             type: _badRequestTypePrefix,
             title: "Bad Request",
             status: 400,
             correlationId: correlationId,
-            []
+            errors: errors
         );
 
     public static JsonNode ForNotFound(string detail, string correlationId) =>
@@ -102,11 +104,66 @@ public static class FailureResponse
             []
         );
 
+    public static JsonNode ForMethodNotAllowed(string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "The request construction was invalid.",
+            type: _methodNotAllowedType,
+            title: "Method Not Allowed",
+            status: 405,
+            correlationId: correlationId,
+            []
+        );
+
+    public static JsonNode ForUnsupportedMediaType(string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "The value specified in the 'Content-Type' header is not supported by this host.",
+            type: _unsupportedMediaTypeType,
+            title: "Unsupported Media Type",
+            status: 415,
+            correlationId: correlationId,
+            []
+        );
+
+    /// <summary>
+    /// RFC 9457 fallback for a reachable HTTP status that has no ticket-mandated, Knowledge-Base, or
+    /// established Ed-Fi/DMS platform taxonomy URI. Uses <c>about:blank</c> with the standard HTTP
+    /// reason phrase as the title; no URI is invented.
+    /// </summary>
+    public static JsonNode ForUnclassifiedStatus(int status, string reasonPhrase, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "",
+            type: "about:blank",
+            title: reasonPhrase,
+            status: status,
+            correlationId: correlationId,
+            []
+        );
+
     public static JsonNode ForConflict(string detail, string correlationId) =>
         CreateBaseJsonObject(
             detail: detail,
             type: _conflictTypePrefix,
             title: "Conflict",
+            status: 409,
+            correlationId: correlationId,
+            []
+        );
+
+    public static JsonNode ForDependentItemExists(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:dependent-item-exists",
+            title: "Dependent Item Exists",
+            status: 409,
+            correlationId: correlationId,
+            []
+        );
+
+    public static JsonNode ForUnresolvedReference(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:unresolved-reference",
+            title: "Unresolved Reference",
             status: 409,
             correlationId: correlationId,
             []
@@ -125,6 +182,22 @@ public static class FailureResponse
             validationFailures
                 .GroupBy(x => x.PropertyName)
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
+        );
+
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:api:bad-request:parameter</c> response for a query/pagination
+    /// parameter failure (as opposed to a request-body data-validation failure). Per the Knowledge
+    /// Base's "Invalid Limit Count" example, <c>validationErrors</c> stays empty and the specific,
+    /// pre-sanitized reasons are carried in <c>errors</c>.
+    /// </summary>
+    public static JsonNode ForParameterValidation(string[] errors, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "Parameter validation failed. See 'errors' for details.",
+            type: $"{_badRequestTypePrefix}:parameter",
+            title: "Parameter Validation Failed",
+            status: 400,
+            correlationId: correlationId,
+            errors: errors
         );
 
     public static JsonNode ForNonUniqueIdentity(

@@ -604,7 +604,7 @@ public class ApplicationRepository(
             )
         {
             logger.LogWarning(ex, "Update application failure: Vendor not found");
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureVendorNotFound();
         }
         catch (PostgresException ex)
@@ -613,7 +613,7 @@ public class ApplicationRepository(
             )
         {
             logger.LogWarning(ex, "Update application failure: Data store not found");
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureDataStoreNotFound();
         }
         catch (PostgresException ex)
@@ -622,7 +622,7 @@ public class ApplicationRepository(
             )
         {
             logger.LogWarning(ex, "Update application failure: Profile not found");
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureProfileNotFound();
         }
         catch (PostgresException ex)
@@ -635,13 +635,13 @@ public class ApplicationRepository(
                 "Application '{ApplicationName}' already exists for vendor",
                 command.ApplicationName
             );
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureDuplicateApplication(command.ApplicationName);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Update application failure");
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureUnknown(ex.Message);
         }
     }
@@ -688,6 +688,219 @@ public class ApplicationRepository(
         {
             logger.LogError(ex, "Get application clients failure");
             return new ApplicationApiClientsResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApplicationUpdateStateResult> GetApplicationUpdateState(
+        long applicationId,
+        string clientId
+    )
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            // Locking the Application row waits out any in-flight update transaction, so the
+            // reads below observe that transaction's final outcome.
+            string applicationSql = $"""
+                SELECT "ApplicationName", "VendorId", "ClaimSetName"
+                FROM "dmscs"."Application"
+                WHERE "Id" = @Id AND {TenantScopedVendorCondition()}
+                FOR UPDATE;
+                """;
+            var application = await connection.QuerySingleOrDefaultAsync<(
+                string ApplicationName,
+                long VendorId,
+                string ClaimSetName
+            )?>(applicationSql, new { Id = applicationId, TenantId }, transaction);
+
+            if (application is null)
+            {
+                return new ApplicationUpdateStateResult.FailureNotExists();
+            }
+
+            string clientSql = """
+                SELECT "Id", "ClientUuid", "IsApproved"
+                FROM "dmscs"."ApiClient"
+                WHERE "ClientId" = @ClientId AND "ApplicationId" = @ApplicationId
+                FOR UPDATE;
+                """;
+            var client = await connection.QuerySingleOrDefaultAsync<(
+                long Id,
+                Guid ClientUuid,
+                bool IsApproved
+            )?>(clientSql, new { ClientId = clientId, ApplicationId = applicationId }, transaction);
+
+            if (client is null)
+            {
+                return new ApplicationUpdateStateResult.FailureNotExists();
+            }
+
+            long[] educationOrganizationIds =
+            [
+                .. await connection.QueryAsync<long>(
+                    """
+                    SELECT "EducationOrganizationId" FROM "dmscs"."ApplicationEducationOrganization"
+                    WHERE "ApplicationId" = @ApplicationId;
+                    """,
+                    new { ApplicationId = applicationId },
+                    transaction
+                ),
+            ];
+
+            long[] profileIds =
+            [
+                .. await connection.QueryAsync<long>(
+                    """
+                    SELECT "ProfileId" FROM "dmscs"."ApplicationProfile"
+                    WHERE "ApplicationId" = @ApplicationId;
+                    """,
+                    new { ApplicationId = applicationId },
+                    transaction
+                ),
+            ];
+
+            long[] clientDataStoreIds =
+            [
+                .. await connection.QueryAsync<long>(
+                    """
+                    SELECT "DataStoreId" FROM "dmscs"."ApiClientDataStore"
+                    WHERE "ApiClientId" = @ApiClientId;
+                    """,
+                    new { ApiClientId = client.Value.Id },
+                    transaction
+                ),
+            ];
+
+            await transaction.CommitAsync();
+
+            return new ApplicationUpdateStateResult.Success(
+                new ApplicationUpdateState(
+                    application.Value.ApplicationName,
+                    application.Value.VendorId,
+                    application.Value.ClaimSetName,
+                    educationOrganizationIds,
+                    profileIds,
+                    clientId,
+                    client.Value.ClientUuid,
+                    client.Value.IsApproved,
+                    clientDataStoreIds
+                )
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get application update state failure");
+            await RollbackSafelyAsync(transaction);
+            return new ApplicationUpdateStateResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
+        long applicationId,
+        string clientId,
+        Guid expectedClientUuid,
+        Guid newClientUuid
+    )
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            string selectSql = $"""
+                SELECT ac."ClientUuid"
+                FROM "dmscs"."ApiClient" ac
+                JOIN "dmscs"."Application" a ON ac."ApplicationId" = a."Id"
+                WHERE ac."ClientId" = @ClientId AND ac."ApplicationId" = @ApplicationId
+                  AND {TenantScopedVendorCondition("a")}
+                FOR UPDATE OF ac;
+                """;
+            Guid? storedUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                selectSql,
+                new
+                {
+                    ClientId = clientId,
+                    ApplicationId = applicationId,
+                    TenantId,
+                },
+                transaction
+            );
+
+            if (storedUuid is null)
+            {
+                // The caller's deletion decision needs to know whether any row still references
+                // the new UUID; the check is deliberately cross-tenant because it protects a
+                // provider-level object and exposes no tenant data.
+                bool referenced = await connection.ExecuteScalarAsync<bool>(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM "dmscs"."ApiClient" WHERE "ClientUuid" = @NewClientUuid
+                    );
+                    """,
+                    new { NewClientUuid = newClientUuid },
+                    transaction
+                );
+                await transaction.CommitAsync();
+                return referenced
+                    ? new ApiClientUuidSyncResult.FailureNotExists()
+                    : new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete();
+            }
+
+            if (storedUuid == newClientUuid)
+            {
+                await transaction.CommitAsync();
+                return new ApiClientUuidSyncResult.AlreadyApplied();
+            }
+
+            if (storedUuid != expectedClientUuid)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientUuidSyncResult.FailureStaleState();
+            }
+
+            await connection.ExecuteAsync(
+                """
+                UPDATE "dmscs"."ApiClient"
+                SET "ClientUuid" = @NewClientUuid, "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
+                WHERE "ClientId" = @ClientId AND "ApplicationId" = @ApplicationId;
+                """,
+                new
+                {
+                    NewClientUuid = newClientUuid,
+                    ClientId = clientId,
+                    ApplicationId = applicationId,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser(),
+                },
+                transaction
+            );
+
+            await transaction.CommitAsync();
+            return new ApiClientUuidSyncResult.Success();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Sync application client uuid failure");
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUuidSyncResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Rolls the transaction back without letting a rollback failure replace the intended
+    /// failure result; the disposal of the transaction remains the backstop.
+    /// </summary>
+    private async Task RollbackSafelyAsync(NpgsqlTransaction transaction)
+    {
+        try
+        {
+            await transaction.RollbackAsync();
+        }
+        catch (Exception rollbackException)
+        {
+            logger.LogError(rollbackException, "Transaction rollback failed");
         }
     }
 }

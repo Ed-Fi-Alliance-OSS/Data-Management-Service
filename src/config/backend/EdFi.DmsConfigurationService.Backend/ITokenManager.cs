@@ -20,6 +20,9 @@ public record TokenResult
 {
     public record Success(string Token) : TokenResult;
 
+    // Service-owned OAuth error: both values are trusted local constants, never provider content.
+    public record FailureAuthentication(string Error, string ErrorDescription) : TokenResult;
+
     public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : TokenResult;
 
     public record FailureUnknown(string FailureMessage) : TokenResult;

@@ -179,11 +179,11 @@ public class ProfileModule : IEndpointModule
         {
             ProfileDeleteResult.Success => Results.NoContent(),
             ProfileDeleteResult.FailureInUse => Results.Json(
-                FailureResponse.ForBadRequest(
+                FailureResponse.ForDependentItemExists(
                     "Profile is assigned to applications and cannot be deleted.",
                     httpContext.TraceIdentifier
                 ),
-                statusCode: (int)HttpStatusCode.BadRequest
+                statusCode: (int)HttpStatusCode.Conflict
             ),
             ProfileDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),

@@ -725,6 +725,19 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         expectedBody = await ReplacePlaceholdersInResponseAsync(expectedBody, responseJson);
         JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
 
+        if (_apiResponse.Status >= 400)
+        {
+            // Every error body must be a JSON object carrying a non-blank correlationId; assert the
+            // live value before removing the nondeterministic field for comparison.
+            responseJson.Should().BeOfType<JsonObject>("every error response must be a JSON object");
+            JsonObject errorBody = (JsonObject)responseJson;
+            errorBody
+                .TryGetPropertyValue("correlationId", out JsonNode? correlationId)
+                .Should()
+                .BeTrue("every error body must include correlationId");
+            correlationId!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        }
+
         (responseJson as JsonObject)?.Remove("correlationId");
         (expectedBodyJson as JsonObject)?.Remove("correlationId");
 

@@ -436,19 +436,19 @@ public class ApiClientRepository(
         catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClient_Application"))
         {
             logger.LogWarning(ex, "Application not found");
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureApplicationNotFound();
         }
         catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClientDataStore_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureDataStoreNotFound();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Update ApiClient failure");
-            await transaction.RollbackAsync();
+            await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureUnknown(ex.Message);
         }
     }
@@ -492,6 +492,187 @@ public class ApiClientRepository(
             logger.LogError(ex, "Delete ApiClient failure");
             await transaction.RollbackAsync();
             return new ApiClientDeleteResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApiClientResolutionResult> GetApiClientResolutionState(long id)
+    {
+        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+        try
+        {
+            // Locking the ApiClient row waits out any in-flight update transaction, so the
+            // reads below observe that transaction's final outcome.
+            string clientSql = $"""
+                SELECT ac.ApplicationId, ac.Name, ac.IsApproved, ac.ClientId, ac.ClientUuid
+                FROM dmscs.ApiClient ac WITH (UPDLOCK, HOLDLOCK)
+                WHERE ac.Id = @Id AND {TenantScopedApplicationCondition("ac")};
+                """;
+            var client = await connection.QuerySingleOrDefaultAsync<(
+                long ApplicationId,
+                string Name,
+                bool IsApproved,
+                string ClientId,
+                Guid ClientUuid
+            )?>(clientSql, new { Id = id, TenantId }, transaction);
+
+            if (client is null)
+            {
+                return new ApiClientResolutionResult.FailureNotExists();
+            }
+
+            long[] dataStoreIds =
+            [
+                .. await connection.QueryAsync<long>(
+                    """
+                    SELECT DataStoreId FROM dmscs.ApiClientDataStore
+                    WHERE ApiClientId = @Id;
+                    """,
+                    new { Id = id },
+                    transaction
+                ),
+            ];
+
+            await transaction.CommitAsync();
+
+            return new ApiClientResolutionResult.Success(
+                new ApiClientResolutionState(
+                    client.Value.ApplicationId,
+                    client.Value.Name,
+                    client.Value.IsApproved,
+                    client.Value.ClientId,
+                    client.Value.ClientUuid,
+                    dataStoreIds
+                )
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get ApiClient resolution state failure");
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientResolutionResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApiClientUuidSyncResult> SyncApiClientUuid(
+        long id,
+        Guid expectedClientUuid,
+        Guid newClientUuid
+    )
+    {
+        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+        try
+        {
+            string selectSql = $"""
+                SELECT ac.ClientUuid
+                FROM dmscs.ApiClient ac WITH (UPDLOCK, HOLDLOCK)
+                WHERE ac.Id = @Id AND {TenantScopedApplicationCondition("ac")};
+                """;
+            Guid? storedUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                selectSql,
+                new { Id = id, TenantId },
+                transaction
+            );
+
+            if (storedUuid is null)
+            {
+                // The caller's deletion decision needs to know whether any row still references
+                // the new UUID; the check is deliberately cross-tenant because it protects a
+                // provider-level object and exposes no tenant data.
+                int referenced = await connection.ExecuteScalarAsync<int>(
+                    """
+                    SELECT CASE WHEN EXISTS (
+                        SELECT 1 FROM dmscs.ApiClient WHERE ClientUuid = @NewClientUuid
+                    ) THEN 1 ELSE 0 END;
+                    """,
+                    new { NewClientUuid = newClientUuid },
+                    transaction
+                );
+                await transaction.CommitAsync();
+                return referenced == 1
+                    ? new ApiClientUuidSyncResult.FailureNotExists()
+                    : new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete();
+            }
+
+            if (storedUuid == newClientUuid)
+            {
+                await transaction.CommitAsync();
+                return new ApiClientUuidSyncResult.AlreadyApplied();
+            }
+
+            if (storedUuid != expectedClientUuid)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientUuidSyncResult.FailureStaleState();
+            }
+
+            await connection.ExecuteAsync(
+                """
+                UPDATE dmscs.ApiClient
+                SET ClientUuid = @NewClientUuid, LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
+                WHERE Id = @Id;
+                """,
+                new
+                {
+                    NewClientUuid = newClientUuid,
+                    Id = id,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser(),
+                },
+                transaction
+            );
+
+            await transaction.CommitAsync();
+            return new ApiClientUuidSyncResult.Success();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Sync ApiClient uuid failure");
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUuidSyncResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApiClientUuidReferenceResult> HasApiClientUuidReference(Guid clientUuid)
+    {
+        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
+        {
+            int referenced = await connection.ExecuteScalarAsync<int>(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1 FROM dmscs.ApiClient WHERE ClientUuid = @ClientUuid
+                ) THEN 1 ELSE 0 END;
+                """,
+                new { ClientUuid = clientUuid }
+            );
+            return referenced == 1
+                ? new ApiClientUuidReferenceResult.Referenced()
+                : new ApiClientUuidReferenceResult.None();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "ApiClient uuid reference check failure");
+            return new ApiClientUuidReferenceResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Rolls the transaction back without letting a rollback failure replace the intended
+    /// failure result; the disposal of the transaction remains the backstop.
+    /// </summary>
+    private async Task RollbackSafelyAsync(System.Data.Common.DbTransaction transaction)
+    {
+        try
+        {
+            await transaction.RollbackAsync();
+        }
+        catch (Exception rollbackException)
+        {
+            logger.LogError(rollbackException, "Transaction rollback failed");
         }
     }
 }

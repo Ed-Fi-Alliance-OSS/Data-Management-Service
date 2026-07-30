@@ -80,7 +80,12 @@ public static class WebApplicationBuilderExtensions
                 ClientSecretValidationOptionsValidator
             >()
             .Configure<ClaimsOptions>(webApplicationBuilder.Configuration.GetSection("ClaimsOptions"))
-            .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>();
+            .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>()
+            .AddSingleton<IValidateOptions<ApplicationLockOptions>, ApplicationLockOptionsValidator>();
+        webApplicationBuilder
+            .Services.AddOptions<ApplicationLockOptions>()
+            .Bind(webApplicationBuilder.Configuration.GetSection("ApplicationLockSettings"))
+            .ValidateOnStart();
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
@@ -152,6 +157,7 @@ public static class WebApplicationBuilderExtensions
                     ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddPostgresqlApplicationLockManager();
             webAppBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
             webAppBuilder.Services.AddTransient<IApiClientRepository, ApiClientRepository>();
             webAppBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();

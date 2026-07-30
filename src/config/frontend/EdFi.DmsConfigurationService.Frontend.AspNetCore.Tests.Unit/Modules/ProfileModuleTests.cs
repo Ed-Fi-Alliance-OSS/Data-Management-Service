@@ -375,7 +375,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task DeleteProfile_InUse_ShouldReturnBadRequest()
+    public async Task DeleteProfile_InUse_ShouldReturnConflict()
     {
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.FailureInUse(1));
@@ -384,11 +384,21 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         actualResponse!["detail"]!
             .GetValue<string>()
             .Should()
-            .Contain("Profile is assigned to applications and cannot be deleted");
+            .Be("Profile is assigned to applications and cannot be deleted.");
+        actualResponse["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:conflict:dependent-item-exists");
+        actualResponse["title"]!.GetValue<string>().Should().Be("Dependent Item Exists");
+        actualResponse["status"]!.GetValue<int>().Should().Be(409);
+        actualResponse["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]!.AsArray().Count.Should().Be(0);
     }
 
     [Test]
@@ -780,5 +790,181 @@ public class ProfileModuleTests
         var response = await client.GetAsync("/v3/profiles?orderBy=invalidField");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+}
+
+public class ProfileMissingBodyTests
+{
+    private static void AssertGenericMissingBodyContract(HttpResponseMessage response, JsonObject body)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The request could not be processed. See 'errors' for details.");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!
+            .AsArray()
+            .Select(e => e!.GetValue<string>())
+            .Should()
+            .Equal("A non-empty request body is required.");
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        var profileRepository = A.Fake<IProfileRepository>();
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (ctx, collection) =>
+                {
+                    collection.AddTestAuthentication();
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
+                    collection.AddAuthorization(options =>
+                    {
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
+                    collection.AddTransient(_ => profileRepository);
+                }
+            );
+        });
+    }
+
+    [TestFixture]
+    public class Given_a_post_with_no_body
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            _response = await _client.PostAsync("/v3/profiles/", null);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_generic_missing_body_contract() =>
+            AssertGenericMissingBodyContract(_response, _body);
+    }
+
+    [TestFixture]
+    public class Given_a_post_with_a_json_null_body
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            using var content = new StringContent("null", Encoding.UTF8, "application/json");
+            _response = await _client.PostAsync("/v3/profiles/", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_generic_missing_body_contract() =>
+            AssertGenericMissingBodyContract(_response, _body);
+    }
+
+    [TestFixture]
+    public class Given_a_put_with_a_bad_route_id_and_a_valid_body
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            var validBody = new
+            {
+                id = 1,
+                name = "ValidProfile",
+                definition = "<Profile name=\"ValidProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+            };
+            using var content = new StringContent(
+                JsonSerializer.Serialize(validBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _response = await _client.PutAsync("/v3/profiles/abc", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_parameter_validation_contract()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            _body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
+            _body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Parameter validation failed. See 'errors' for details.");
+            _body["status"]!.GetValue<int>().Should().Be(400);
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!
+                .AsArray()
+                .Select(e => e!.GetValue<string>())
+                .Should()
+                .Equal("The request contains one or more invalid parameters.");
+        }
     }
 }

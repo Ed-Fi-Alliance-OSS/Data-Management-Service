@@ -206,14 +206,14 @@ Feature: DataStoreDerivatives endpoints
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                     {
                         "detail": "The specified DataStore does not exist.",
-                        "type": "urn:ed-fi:api:bad-request",
-                        "title": "Bad Request",
-                        "status": 400,
+                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "title": "Unresolved Reference",
+                        "status": 409,
                         "validationErrors": {},
                         "errors": []
                     }

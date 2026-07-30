@@ -25,4 +25,13 @@ public static class PostgresqlServiceExtensions
         services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
         return services;
     }
+
+    /// <summary>
+    /// Registers the internal PostgreSQL application lock manager.
+    /// </summary>
+    public static IServiceCollection AddPostgresqlApplicationLockManager(this IServiceCollection services)
+    {
+        services.AddTransient<IApplicationLockManager, PostgresqlApplicationLockManager>();
+        return services;
+    }
 }
