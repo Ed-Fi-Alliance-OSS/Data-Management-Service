@@ -42,6 +42,7 @@ and the DMS retrieval, caching, tenant, and failure contracts for consuming thos
 | [DMS-1060 story mirror](../epics/14-authorization/11-ownership-auth-strategy.md) | Ownership-based CRUD and SQL semantics that consume this contract |
 | [DMS-1058 spike mirror](../epics/14-authorization/09-design-ownership-token-maintenance.md) | Spike scope, acceptance criteria, and approval gate |
 | [CMS story draft](../epics/14-authorization/23-store-api-client-ownership-tokens-in-cms.md) and [DMS story draft](../epics/14-authorization/24-load-and-cache-api-client-ownership-tokens-from-cms.md) | Proposed delivery scope and acceptance evidence; after approval they become Jira stories and must not redefine this contract |
+| [Operational-lifecycle spike draft](../epics/14-authorization/25-ownership-token-operational-lifecycle-spike.md) | Optional follow-up investigation; reviewers decide whether to create, defer, or reject it |
 
 The evidence and sources supporting this proposal are retained in
 [Evidence Baseline](#evidence-baseline).
@@ -615,23 +616,10 @@ No ownership fields are added to `/oauth/token_info`.
 ## Potential Follow-up Spike
 
 No Jira ticket currently owns the operational enhancements excluded above. At DMS-1058 approval,
-reviewers should decide whether to create, defer, or reject this candidate:
-
-> **Spike: Define ownership-token operational lifecycle and administration**
-
-Proposed acceptance criteria:
-
-1. Establish the required ownership-access revocation SLA.
-2. Compare the existing configurable TTL with manual reload and push-invalidation options.
-3. Evaluate Admin App workflows for token creation, assignment, reassignment, and revocation.
-4. Evaluate token retirement/deactivation without losing historical token identity.
-5. Confirm whether assigning an existing token to a replacement API client covers supported
-   hand-off scenarios or whether bulk document transfer is genuinely required.
-6. Validate whether ownership diagnostics in `/oauth/token_info` provide enough customer value to
-   justify exposing authorization identifiers.
-7. Quantify global ownership-token ID consumption and define monitoring and a widening strategy
-   before the positive `SMALLINT` range is exhausted.
-8. Recommend prioritized implementation stories or document why no additional work is needed.
+reviewers should decide whether to create, defer, or reject the checked-in
+[operational-lifecycle spike draft](../epics/14-authorization/25-ownership-token-operational-lifecycle-spike.md).
+It covers revocation guarantees, administration, retirement, API-client hand-off, diagnostics,
+and identifier-capacity safeguards without expanding the initial implementation stories.
 
 This candidate does not defer DMS-1058's caching acceptance criterion. The current contract must
 still approve an initial cache lifetime and failure model. The follow-up should not block DMS-1060
