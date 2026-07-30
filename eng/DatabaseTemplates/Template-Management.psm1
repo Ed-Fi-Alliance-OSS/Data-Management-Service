@@ -604,6 +604,61 @@ $$;
     }
 }
 
+function Invoke-RestoredDataStoreIdentitySourceIdentityReseed {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param (
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [string]$ContainerName,
+
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        $reseedSql = @'
+SET NOCOUNT ON;
+UPDATE [dms].[DataStoreIdentity]
+SET [SourceIdentity] = NEWID()
+WHERE [DataStoreIdentitySingletonId] = 1;
+IF @@ROWCOUNT <> 1
+    THROW 50000, N'Restored database is missing the dms.DataStoreIdentity singleton row.', 1;
+'@
+
+        & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -Q $reseedSql | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to reseed dms.DataStoreIdentity.SourceIdentity in restored database '$DatabaseName'."
+        }
+
+        return
+    }
+
+    $reseedSql = @'
+DO $$
+DECLARE
+    _updated_count integer;
+BEGIN
+    UPDATE "dms"."DataStoreIdentity"
+    SET "SourceIdentity" = gen_random_uuid()
+    WHERE "DataStoreIdentitySingletonId" = 1;
+
+    GET DIAGNOSTICS _updated_count = ROW_COUNT;
+    IF _updated_count <> 1 THEN
+        RAISE EXCEPTION 'Restored database is missing the dms.DataStoreIdentity singleton row.';
+    END IF;
+END
+$$;
+'@
+
+    & docker exec $ContainerName psql -U postgres -d $DatabaseName -v ON_ERROR_STOP=1 -c $reseedSql | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to reseed dms.DataStoreIdentity.SourceIdentity in restored database '$DatabaseName'."
+    }
+}
+
 <#
 .SYNOPSIS
     Builds a NuGet package from the .csproj.
@@ -951,6 +1006,8 @@ function Restore-TemplatePackage {
             & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -Q $restoreSql | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Restore of '$($bakFile.Name)' into '$DatabaseName' failed." }
 
+            Invoke-RestoredDataStoreIdentitySourceIdentityReseed -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $DatabaseName -MssqlPassword $MssqlPassword
+
             return $package.Name
         }
 
@@ -979,6 +1036,8 @@ function Restore-TemplatePackage {
 
         & docker exec $ContainerName psql -U postgres -d $DatabaseName -v ON_ERROR_STOP=1 -f /tmp/template-restore.sql | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Restore of '$($sqlFile.Name)' into '$DatabaseName' failed." }
+
+        Invoke-RestoredDataStoreIdentitySourceIdentityReseed -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $DatabaseName -MssqlPassword $MssqlPassword
 
         return $package.Name
     }

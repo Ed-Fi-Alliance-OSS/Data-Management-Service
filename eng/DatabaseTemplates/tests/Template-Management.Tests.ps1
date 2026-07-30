@@ -636,7 +636,7 @@ Describe "Restore-TemplatePackage" {
             $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!"
 
             $result | Should -Be "MyTemplate.nupkg"
-            $calls.Count | Should -Be 6
+            $calls.Count | Should -Be 7
 
             # [0] docker cp copies the extracted .bak into the container at a generated path;
             # capture that path so the later RESTORE FROM DISK clause can be pinned against it.
@@ -665,8 +665,21 @@ Describe "Restore-TemplatePackage" {
                     "RESTORE DATABASE [testdb] FROM DISK = N'$containerBakPath' WITH MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf', MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf', REPLACE;"
                 ) -join '|')
 
+            $expectedReseedSql = @'
+SET NOCOUNT ON;
+UPDATE [dms].[DataStoreIdentity]
+SET [SourceIdentity] = NEWID()
+WHERE [DataStoreIdentitySingletonId] = 1;
+IF @@ROWCOUNT <> 1
+    THROW 50000, N'Restored database is missing the dms.DataStoreIdentity singleton row.', 1;
+'@
+            ($calls[5] -join '|') | Should -Be (@(
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'testdb', '-C', '-b', '-Q',
+                    $expectedReseedSql
+                ) -join '|')
+
             # The transient in-container backup is removed once the restore succeeds.
-            ($calls[5] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', $containerBakPath) -join '|')
+            ($calls[6] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', $containerBakPath) -join '|')
         }
 
         It "skips the DROP DATABASE step when the target database does not already exist" {
@@ -687,11 +700,12 @@ Describe "Restore-TemplatePackage" {
 
             Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" | Out-Null
 
-            $calls.Count | Should -Be 5
+            $calls.Count | Should -Be 6
             ($calls | Where-Object { ($_ -join ' ') -match 'SET SINGLE_USER' }).Count | Should -Be 0
             ($calls[2] -join ' ') | Should -Match 'RESTORE FILELISTONLY'
             ($calls[3] -join ' ') | Should -Match 'RESTORE DATABASE \[testdb\]'
-            ($calls[4] -join ' ') | Should -Match '^exec dms-mssql rm -f /var/opt/mssql/data/template-restore-.*\.bak$'
+            ($calls[4] -join ' ') | Should -Match 'UPDATE \[dms\]\.\[DataStoreIdentity\]'
+            ($calls[5] -join ' ') | Should -Match '^exec dms-mssql rm -f /var/opt/mssql/data/template-restore-.*\.bak$'
         }
 
         It "removes the transient in-container backup even when the restore fails" {
@@ -790,7 +804,7 @@ Describe "Restore-TemplatePackage" {
             $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine postgresql -ContainerName "dms-postgresql"
 
             $result | Should -Be "MyPgTemplate.nupkg"
-            $calls.Count | Should -Be 6
+            $calls.Count | Should -Be 7
             ($calls[0][0..9] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c') -join '|')
             $calls[0][10] | Should -Match 'CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;'
             $calls[0][10] | Should -Match 'pg_catalog.pg_auth_members memberships'
@@ -799,6 +813,10 @@ Describe "Restore-TemplatePackage" {
             ($calls[3] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE DATABASE testdb;') -join '|')
             $calls[4][0] | Should -Be 'cp'
             ($calls[5] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-v', 'ON_ERROR_STOP=1', '-f', '/tmp/template-restore.sql') -join '|')
+            ($calls[6][0..9] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-v', 'ON_ERROR_STOP=1', '-c') -join '|')
+            $calls[6][10] | Should -Match 'UPDATE "dms"\."DataStoreIdentity"'
+            $calls[6][10] | Should -Match 'SET "SourceIdentity" = gen_random_uuid\(\)'
+            $calls[6][10] | Should -Match 'GET DIAGNOSTICS _updated_count = ROW_COUNT'
         }
 
         It "fails before dropping the database when restore-global role setup fails" {
