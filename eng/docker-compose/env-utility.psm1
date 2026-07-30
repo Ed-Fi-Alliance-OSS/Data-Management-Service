@@ -1124,20 +1124,31 @@ function Resolve-DatabaseEngineEnvironmentFile {
         -TemplatePackageOverride $(if ($correctedTemplatePackage -ne $templatePackage) { $correctedTemplatePackage } else { $null })
     $composedEvaluation = Resolve-DotenvFileSequentially -Line $composedLines
 
-    # A preserved caller connection string that does not resolve to an MSSQL-shaped value must not be
-    # kept: a partially-edited base file would otherwise retain a PostgreSQL-shaped target. The decision
-    # is made on the RESOLVED value, so an outer-quoted or whole-reference string - which only looks
-    # MSSQL-shaped once resolved - is preserved rather than silently replaced by the overlay default.
+    # THE AUTHORITY MODEL. For an MSSQL run the FINAL Compose-effective environment - after composition
+    # and after ambient precedence - is the only thing that decides validity, and every transformation is
+    # followed by evaluating the exact candidate artifact. Two consequences drive the shape below:
     #
-    # PER KEY, not per category. The admin and CMS connection strings are independent settings: an
-    # all-or-nothing decision keyed on the CMS string alone either wrote a PostgreSQL admin string into
-    # an MSSQL environment (valid CMS, invalid admin) or discarded a valid customized admin string
-    # (invalid CMS, valid admin).
+    #   A file rewrite can repair a FILE-AUTHORED value. It can never repair an AMBIENT override, because
+    #   ambient wins over every declaration in the file being written. Excluding a key from preservation
+    #   and recomposing in that case changes nothing about the effective value, so it must not be
+    #   attempted - it produced a derived file whose admin/CMS connection string was still
+    #   PostgreSQL-shaped on an MSSQL run.
+    #
+    #   Whatever the repairs achieve, the result is proven before anything is returned or written: an
+    #   unconditional postcondition requires EVERY overlay-owned connection-string key to be MSSQL-shaped
+    #   in the final effective environment, or the function fails.
+    #
+    # Preservation decisions are per KEY, never per category: the admin and CMS strings are independent
+    # settings, and an all-or-nothing rule keyed on the CMS string either wrote a PostgreSQL admin string
+    # into an MSSQL environment or discarded a valid customized admin one.
     $connectionStringKeys = @($overlayValueKeys | Where-Object { $_ -match 'CONNECTION_STRING' })
     $unshapedConnectionStringKeys = [System.Collections.Generic.List[string]]::new()
     foreach ($connectionStringKey in $connectionStringKeys) {
         $effective = [string](Get-SequentialEffectiveValue -Evaluation $composedEvaluation -Name $connectionStringKey)
-        if (-not (Test-MssqlConnectionStringValue -ConnectionString $effective)) {
+        if (Test-MssqlConnectionStringValue -ConnectionString $effective) { continue }
+
+        # Only a file-authored value is repairable by re-composing the file.
+        if ($null -eq [System.Environment]::GetEnvironmentVariable($connectionStringKey)) {
             $unshapedConnectionStringKeys.Add($connectionStringKey)
         }
     }
@@ -1150,6 +1161,26 @@ function Resolve-DatabaseEngineEnvironmentFile {
             -ExcludeKey @($unshapedConnectionStringKeys) `
             -TemplatePackageOverride $(if ($correctedTemplatePackage -ne $templatePackage) { $correctedTemplatePackage } else { $null })
         $composedEvaluation = Resolve-DotenvFileSequentially -Line $composedLines
+    }
+
+    # UNCONDITIONAL POSTCONDITION over every overlay-owned connection-string key, run after all repairs
+    # and before anything is returned or written. This is the single place that decides an MSSQL run is
+    # usable, so no branch can bypass it: not the already-composed early return, not a skipped CMS
+    # invariant, not a separate-topology file. Where the offending value came from the ambient
+    # environment, no rewrite of any file could fix it, and the diagnostic says so instead of writing a
+    # derived file that changes nothing.
+    #
+    # The message names ONLY the key. Connection strings carry credentials and this reaches terminals and
+    # CI logs, so no value, database name, or username is rendered.
+    foreach ($connectionStringKey in $connectionStringKeys) {
+        $finalEffective = [string](Get-SequentialEffectiveValue -Evaluation $composedEvaluation -Name $connectionStringKey)
+        if (Test-MssqlConnectionStringValue -ConnectionString $finalEffective) { continue }
+
+        if ($null -ne [System.Environment]::GetEnvironmentVariable($connectionStringKey)) {
+            throw "MSSQL engine composition cannot proceed: the ambient environment sets '$connectionStringKey' to a value that is not a SQL Server connection string. Docker Compose gives an ambient value precedence over every declaration in the environment file, so the .env.mssql overlay cannot repair it. Unset or correct '$connectionStringKey' in your shell, then re-run. (The value is withheld because a connection string contains credentials.)"
+        }
+
+        throw "MSSQL engine composition cannot proceed: '$connectionStringKey' does not resolve to a SQL Server connection string in the composed environment for '$BaseEnvironmentFile'. Correct that key, or remove it so the .env.mssql overlay supplies the SQL Server default. (The value is withheld because a connection string contains credentials.)"
     }
 
     $composedCmsConnectionString = [string](Get-SequentialEffectiveValue `
