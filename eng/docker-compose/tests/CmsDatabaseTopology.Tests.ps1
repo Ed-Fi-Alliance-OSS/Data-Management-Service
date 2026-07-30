@@ -3,16 +3,16 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# DMS-1270 Phase 1a: isolated unit coverage for the CMS database topology contract's new
-# PowerShell functions (Resolve-CmsDatabaseTopologyEnvironmentFile, Confirm-CmsDatabaseTopologyAgreement,
-# ConvertTo-DotenvSafeEnvValue, Get-DatabaseNameFromResolvedConnectionString,
-# Get-EndpointFromResolvedConnectionString, Get-CmsDatabaseTopologyDefaultConnectionString,
-# Test-PostgresDuplicateDatabaseError, Test-MssqlDuplicateDatabaseError).
+# DMS-1270: coverage for the optional separate Configuration Service database topology.
 #
-# DMS-1270 Phase 1b: wiring-level coverage (below, "Phase 1b wiring" Describe blocks) for the
-# MSSQL-only topology-write sequence now wired into start-local-dms.ps1, start-published-dms.ps1,
-# and bootstrap-wrapper.psm1's own pre-resolution chain. PostgreSQL remains untouched (a temporary
-# guard fails fast) until Phase 2.
+# Unit coverage for the contract's PowerShell functions (Resolve-CmsDatabaseTopologyEnvironmentFile,
+# Confirm-CmsDatabaseTopologyAgreement, ConvertTo-DotenvSafeEnvValue,
+# Get-DatabaseNameFromResolvedConnectionString, Get-EndpointFromResolvedConnectionString,
+# Get-CmsDatabaseTopologyDefaultConnectionString, Test-PostgresDuplicateDatabaseError,
+# Test-MssqlDuplicateDatabaseError), plus wiring-level coverage (the "wiring" Describe blocks below)
+# for the topology-write sequence in start-local-dms.ps1, start-published-dms.ps1, and
+# bootstrap-wrapper.psm1's own pre-resolution chain. Both database engines run the same sequence, so
+# shared and separate mode are symmetric across PostgreSQL and SQL Server.
 
 param()
 
@@ -189,6 +189,90 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work |
                 Should -Be $basePath
+        }
+
+        # Post-PR review: the order check must cover EVERY variable the connection string references,
+        # not only the DMS_CONFIG_DATABASE_NAME alias. A shared-mode connection string legitimately
+        # keeps its ${POSTGRES_DB_NAME} / ${MSSQL_DB_NAME} and credential references, and any of them
+        # declared below the connection string renders that segment empty. Verified live: the
+        # disordered file below rendered "password=;database=;" through a real `docker compose config`,
+        # while the healed derived file rendered the real password and database name.
+        It "does not early-return a shared-mode file whose connection string precedes the <Name> it references" -ForEach @(
+            @{ Name = 'POSTGRES_DB_NAME'; Engine = 'postgresql'; DatastoreName = 'edfi_datamanagementservice' }
+            @{ Name = 'MSSQL_DB_NAME'; Engine = 'mssql'; DatastoreName = 'edfi_datamanagementservice' }
+        ) {
+            $basePath = Join-Path $script:work ".env.forward-$($_.Name)"
+            $datastoreKey = $_.Name
+            Set-Content -LiteralPath $basePath -Value (@(
+                "DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=`${POSTGRES_PASSWORD};database=`${$datastoreKey};",
+                "$datastoreKey=$($_.DatastoreName)",
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                "DMS_CONFIG_DATABASE_NAME=`${$datastoreKey}",
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine $_.Engine -DockerComposeRoot $script:work
+
+            $result | Should -Not -Be $basePath -Because "Compose renders the forward-referenced segments empty"
+
+            # Every key the connection string references must now be declared above it.
+            $derivedLines = [System.IO.File]::ReadAllLines($result)
+            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=*' })[0])
+            foreach ($referencedKey in @($datastoreKey, 'POSTGRES_PASSWORD')) {
+                $keyIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like "$referencedKey=*" })[0])
+                $keyIndex | Should -BeGreaterThan -1 -Because "$referencedKey must survive the rewrite"
+                $keyIndex | Should -BeLessThan $connIndex -Because "$referencedKey is referenced by the connection string"
+            }
+        }
+
+        It "leaves a connection string alone when the keys it references are already declared above it" {
+            # Narrowness: an ordinary correctly-ordered profile carrying ${POSTGRES_DB_NAME} in its
+            # connection string must not be rewritten just because it references variables.
+            $basePath = Join-Path $script:work ".env.forward-ok"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work |
+                Should -Be $basePath
+        }
+
+        It "does not treat a connection-string reference resolved from the ambient environment as order-broken" {
+            # A key absent from the file is resolved by Compose from the ambient environment regardless
+            # of line order, so it is not a forward reference and must not force a rewrite.
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_PASSWORD", "ambient-pass")
+            $basePath = Join-Path $script:work ".env.ambient-ref"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work |
+                Should -Be $basePath
+        }
+
+        It "refuses to reorder a forward-referenced key that itself references other variables" {
+            # Relocating a reference-bearing line could break ITS own declaration order, so the
+            # unsupported shape fails loudly with the manual fix rather than rendering empty.
+            $basePath = Join-Path $script:work ".env.forward-chained"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CHAINED_DB_NAME};',
+                'BASE_DB_NAME=edfi_datamanagementservice',
+                'CHAINED_DB_NAME=${BASE_DB_NAME}',
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*references 'CHAINED_DB_NAME'*declared after it*"
         }
     }
 
@@ -1534,12 +1618,17 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
         }
 
-        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored source file targeting the dedicated database" {
-            # The topology marker lives only in derived files, so a documented continuation against
-            # the ORIGINAL -EnvironmentFile carries no marker. The explicit switch is the caller's
-            # declaration of separate topology, and the legacy shared-mode invariant must not judge a
-            # topology the caller explicitly declined.
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        # Two independent signals let a documented continuation past the legacy shared-mode invariant,
+        # and each is exercised on its own here: the EXPLICIT SWITCH (a caller declaration, whatever
+        # the file says) and the RESERVED DEDICATED NAME in the file's own CMS connection string (a
+        # content declaration, no switch needed). The topology marker itself lives only in derived
+        # files, so neither continuation carries it.
+        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored file the reserved-name signal alone would reject" {
+            # A third database name is not the reserved dedicated name, so only the explicit switch can
+            # carry this file through. CMS does not start in this shape at all, so judging a shared-mode
+            # invariant against a topology the caller explicitly declined would reject the documented
+            # "accepted, gated no-op" continuation.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
 
             $run = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
@@ -1549,14 +1638,28 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the continuation must reach the docker boundary"
         }
 
-        It "mssql -DmsOnly WITHOUT the switch: still rejects the same separate-target file (today's behavior preserved)" {
+        It "mssql -DmsOnly WITHOUT the switch: accepts a file whose CMS connection string targets the reserved dedicated database" {
+            # The standalone continuation passes no switch, so the file's own reserved-name target is
+            # the only separate-topology signal available.
             $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
 
             $run = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*" -Because "with no switch and no marker, today's shared-mode check runs exactly as before"
+            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty
+        }
+
+        It "mssql -DmsOnly WITHOUT the switch: still rejects a file targeting some third database (today's behavior preserved)" {
+            # Neither signal is present, so the legacy check runs exactly as it does today.
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-local-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*" -Because "with no switch and no separate-topology content, today's shared-mode check runs exactly as before"
             $run.Invocations | Should -BeNullOrEmpty
         }
     }
@@ -1648,8 +1751,8 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must proceed to the docker boundary"
         }
 
-        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored source file targeting the dedicated database" {
-            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        It "mssql -DmsOnly -SeparateConfigDatabase: accepts a caller-authored file the reserved-name signal alone would reject" {
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
 
             $run = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
@@ -1659,18 +1762,84 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the continuation must reach the docker boundary"
         }
 
+        It "mssql -DmsOnly WITHOUT the switch: accepts a file whose CMS connection string targets the reserved dedicated database" {
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -Not -BeLike "*shared-database configuration mismatch*"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty
+        }
+
+        It "mssql -DmsOnly WITHOUT the switch: still rejects a file targeting some third database (today's behavior preserved)" {
+            $envFile = New-MssqlWiringEnvFile -CmsConnectionString 'Server=dms-mssql,1433;Database=caller_authored_cms;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DmsOnly -DatabaseEngine mssql -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*shared-database configuration mismatch*" -Because "with no switch and no separate-topology content, today's shared-mode check runs exactly as before"
+            $run.Invocations | Should -BeNullOrEmpty
+        }
+
         It "rejects -DataStoreDatabaseName edfi_configurationservice with -SeparateConfigDatabase, before any docker activity" {
             # -DataStoreDatabaseName renames the DMS datastore for the CMS data-store record AFTER
             # topology validation has already run, so an unguarded collision would silently
-            # reintroduce the very sharing the switch opts out of. Case-insensitive by design.
-            foreach ($collidingName in @('edfi_configurationservice', 'EDFI_ConfigurationService')) {
+            # reintroduce the very sharing the switch opts out of. This is the full-start shape, the
+            # only one that reaches the data-store registration the parameter feeds.
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+        }
+
+        It "compares -DataStoreDatabaseName with the engine's own identifier case semantics" {
+            # SQL Server database names are case-insensitive, so a case-variant names the SAME physical
+            # database and collides. PostgreSQL names are case-sensitive (an unquoted identifier folds
+            # to lower case, so a name with upper-case characters is a genuinely different database),
+            # and rejecting it there would refuse a valid distinct target.
+            $mssqlRun = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+            $mssqlRun.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "SQL Server treats the case-variant as the same database"
+
+            $postgresRun = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+            $postgresRun.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*" -Because "PostgreSQL identifiers are case-sensitive, so this is a physically distinct database"
+        }
+
+        It "does not reject a colliding -DataStoreDatabaseName in a shape that never consumes it" {
+            # -InfraOnly, -DmsOnly, and -DbOnly all return before the data-store registration, and
+            # -NoDataStore skips it, so the parameter is inert in those shapes. Rejecting there would
+            # contradict the documented no-op continuation behavior of the switch combination.
+            foreach ($inertShape in @(
+                @{ Label = '-InfraOnly'; Args = @{ InfraOnly = $true } },
+                @{ Label = '-DmsOnly'; Args = @{ DmsOnly = $true } },
+                @{ Label = '-DbOnly'; Args = @{ DbOnly = $true } },
+                @{ Label = '-NoDataStore'; Args = @{ NoDataStore = $true } }
+            )) {
+                $shapeArgs = $inertShape.Args
                 $run = Invoke-StartScript {
-                    & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DataStoreDatabaseName $collidingName -EnvironmentFile (New-WiringEnvFile) -InfraOnly *>$null
+                    & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) @shapeArgs *>$null
                 }
 
-                $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "'$collidingName' collides with the dedicated CMS database"
-                $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+                $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*" -Because "$($inertShape.Label) never consumes -DataStoreDatabaseName"
             }
+        }
+
+        It "rejects a colliding -DataStoreDatabaseName when -SchoolYearRange revives the registration under -NoDataStore" {
+            # -NoDataStore alone skips the data-store registration, but -SchoolYearRange re-enables it,
+            # so the parameter is live again and the collision must be caught.
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -NoDataStore -SchoolYearRange '2024' -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
         }
 
         It "accepts -DataStoreDatabaseName edfi_configurationservice when the switch is not requested" {
@@ -1813,9 +1982,12 @@ Describe "CMS database creation ownership (DMS-1270)" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 
-        # Returns every setup-openiddict.ps1 -InitDb invocation in a script, paired with whether any
-        # enclosing if-clause's condition mentions the self-contained identity provider. AST-based,
-        # so it follows real block structure instead of guessing with regex distance.
+        # Returns every setup-openiddict.ps1 -InitDb invocation in a script together with the
+        # conditions of the enclosing if-clauses that actually decide on the identity provider.
+        # AST-based, so it follows real block structure instead of guessing with regex distance, and
+        # it returns the condition TEXT so the caller can evaluate it rather than pattern-match it - a
+        # test that merely looked for the substring "self-contained" would pass an inverted ('-ne')
+        # or widened ('-or ... keycloak') guard that let Keycloak run the bootstrap.
         function script:Get-InitDbInvocationGuard {
             param([Parameter(Mandatory)] [string]$ScriptPath)
 
@@ -1828,36 +2000,92 @@ Describe "CMS database creation ownership (DMS-1270)" {
             }, $true)
 
             return @($invocations | ForEach-Object {
-                $guarded = $false
-                $child = $_
-                $ancestor = $_.Parent
+                $invocation = $_
+                $conditions = [System.Collections.Generic.List[string]]::new()
+                $ancestor = $invocation.Parent
                 while ($null -ne $ancestor) {
                     if ($ancestor -is [System.Management.Automation.Language.IfStatementAst]) {
                         foreach ($clause in $ancestor.Clauses) {
                             $body = $clause.Item2
-                            if ($body.Extent.StartOffset -le $child.Extent.StartOffset -and
-                                $body.Extent.EndOffset -ge $child.Extent.EndOffset -and
-                                $clause.Item1.Extent.Text -match 'self-contained') {
-                                $guarded = $true
+                            if ($body.Extent.StartOffset -le $invocation.Extent.StartOffset -and
+                                $body.Extent.EndOffset -ge $invocation.Extent.EndOffset -and
+                                $clause.Item1.FindAll({
+                                    param($node)
+                                    $node -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                                    $node.VariablePath.UserPath -eq 'IdentityProvider'
+                                }, $true).Count -gt 0) {
+                                $conditions.Add($clause.Item1.Extent.Text)
                             }
                         }
                     }
-                    if (-not $guarded) { $child = $ancestor }
                     $ancestor = $ancestor.Parent
                 }
-                [PSCustomObject]@{ Line = $_.Extent.StartLineNumber; Guarded = $guarded }
+                [PSCustomObject]@{ Line = $invocation.Extent.StartLineNumber; Conditions = @($conditions) }
             })
+        }
+
+        # Evaluates a guard condition with $IdentityProvider bound to the given value. The condition
+        # must depend on nothing else, so the result is a deterministic function of the provider.
+        function script:Test-GuardConditionForProvider {
+            param(
+                [Parameter(Mandatory)] [string]$Condition,
+                [Parameter(Mandatory)] [string]$IdentityProviderValue
+            )
+
+            $referenced = @([System.Management.Automation.Language.Parser]::ParseInput($Condition, [ref]$null, [ref]$null).
+                FindAll({ param($node) $node -is [System.Management.Automation.Language.VariableExpressionAst] }, $true) |
+                ForEach-Object { $_.VariablePath.UserPath } | Sort-Object -Unique)
+            if (@($referenced | Where-Object { $_ -ne 'IdentityProvider' }).Count -gt 0) {
+                throw "The -InitDb guard condition '$Condition' depends on variables other than `$IdentityProvider ($($referenced -join ', ')); this test can no longer prove it by evaluation and must be updated deliberately."
+            }
+
+            $scriptBlock = [scriptblock]::Create("param(`$IdentityProvider) [bool]($Condition)")
+            return [bool](& $scriptBlock $IdentityProviderValue)
         }
     }
 
-    It "guards every setup-openiddict.ps1 -InitDb invocation behind the self-contained identity provider: <_>" -ForEach @(
+    It "the identity-provider set is exactly keycloak and self-contained: <_>" -ForEach @(
         'start-local-dms.ps1', 'start-published-dms.ps1'
     ) {
+        # The creation-ownership contract below reasons over every supported provider by name, so a
+        # newly added provider must force that reasoning to be revisited rather than silently skipped.
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:dockerComposeRoot $_), [ref]$null, [ref]$null)
+        $parameter = $ast.ParamBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'IdentityProvider' } |
+            Select-Object -First 1
+        $parameter | Should -Not -BeNullOrEmpty
+
+        $validateSet = $parameter.Attributes |
+            Where-Object { $_ -is [System.Management.Automation.Language.AttributeAst] -and $_.TypeName.Name -eq 'ValidateSet' } |
+            Select-Object -First 1
+        @($validateSet.PositionalArguments | ForEach-Object { $_.Value }) |
+            Should -Be @('keycloak', 'self-contained')
+    }
+
+    It "runs setup-openiddict.ps1 -InitDb for self-contained identity and never for Keycloak: <_>" -ForEach @(
+        'start-local-dms.ps1', 'start-published-dms.ps1'
+    ) {
+        # Ownership is asserted by EVALUATING each call site's real guard under both providers, so an
+        # inverted comparison or a guard widened to include Keycloak fails here: under Keycloak, CMS's
+        # own EnsureDatabase deploy owns creation, and a second creator would be a duplicate owner.
         $invocations = Get-InitDbInvocationGuard -ScriptPath (Join-Path $script:dockerComposeRoot $_)
 
         $invocations.Count | Should -BeGreaterThan 0 -Because "the self-contained flow must bootstrap the identity store"
         foreach ($invocation in $invocations) {
-            $invocation.Guarded | Should -BeTrue -Because "the -InitDb call at line $($invocation.Line) must run only for self-contained identity - under Keycloak, CMS owns database creation"
+            $invocation.Conditions.Count | Should -BeGreaterThan 0 -Because "the -InitDb call at line $($invocation.Line) must sit behind an identity-provider decision"
+
+            foreach ($provider in @('self-contained', 'keycloak')) {
+                # The call runs only when EVERY enclosing identity-provider condition holds.
+                $runs = @($invocation.Conditions | ForEach-Object { Test-GuardConditionForProvider -Condition $_ -IdentityProviderValue $provider })
+                $reached = @($runs | Where-Object { -not $_ }).Count -eq 0
+
+                if ($provider -eq 'self-contained') {
+                    $reached | Should -BeTrue -Because "the -InitDb call at line $($invocation.Line) creates the self-contained identity store"
+                }
+                else {
+                    $reached | Should -BeFalse -Because "the -InitDb call at line $($invocation.Line) must not run under Keycloak, where CMS owns database creation"
+                }
+            }
         }
     }
 

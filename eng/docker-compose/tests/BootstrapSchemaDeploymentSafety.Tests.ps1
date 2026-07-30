@@ -3505,4 +3505,117 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             }
         }
     }
+
+    # DMS-1270 post-PR review: start-local-dms.ps1 -InfraOnly -SeparateConfigDatabase writes the
+    # topology marker only into its own derived file, then prints terminal guidance directing the
+    # developer to run these two standalone phases. Reusing the original caller-authored MSSQL env
+    # file, both phases resolve the engine overlay with NO skip switch, so the legacy shared-only
+    # invariant used to reject the dedicated CMS target the start phase had just established. These
+    # drive the real entry points end to end (CMS calls stubbed, no network) rather than asserting on
+    # source text, so the continuation is proven at the boundary the developer actually uses.
+    Context "standalone MSSQL manual-phase continuation of a separate CMS database topology" {
+        BeforeAll {
+            function script:New-SeparateTopologyMssqlEnvFile {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$CmsDatabaseName
+                )
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-separate-topology-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabaseName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+"@ | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+        }
+
+        It "configure-local-data-store.ps1 accepts the caller-authored file targeting the dedicated CMS database" {
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @([pscustomobject]@{ id = 91; name = "Existing"; dataStoreContexts = @() })
+            }
+
+            $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName "edfi_configurationservice"
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore
+
+            $result.SelectedDataStoreIds | Should -Be @([long]91) -Because "the phase must run to completion, not merely avoid the specific rejection"
+        }
+
+        It "configure-local-data-store.ps1 still rejects a CMS connection string naming some third database" {
+            # The continuation exemption must stay narrow: only the reserved dedicated name declares
+            # the separate topology, so an ordinary misconfiguration is still caught here.
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @([pscustomobject]@{ id = 92; name = "Existing"; dataStoreContexts = @() })
+            }
+
+            $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName "legacy_config"
+
+            { Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore } |
+                Should -Throw "*shared-database configuration mismatch*"
+        }
+
+        It "provision-dms-schema.ps1 accepts the caller-authored file targeting the dedicated CMS database" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "separate-topology-schema-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 93
+                            name = "SeparateTopology"
+                            connectionString = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName "edfi_configurationservice"
+
+                { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(93) -DatabaseEngine mssql } |
+                    Should -Not -Throw
+
+                # The phase must have actually provisioned the DMS datastore, proving it ran past the
+                # resolution rather than failing somewhere harmlessly earlier.
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally {
+                Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "provision-dms-schema.ps1 still rejects a CMS connection string naming some third database" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            . $script:repo.ProvisionScript
+
+            function Get-CmsToken { return "token" }
+            function Get-DataStore { return @() }
+
+            $envFile = New-SeparateTopologyMssqlEnvFile -CmsDatabaseName "legacy_config"
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(94) -DatabaseEngine mssql } |
+                Should -Throw "*shared-database configuration mismatch*"
+        }
+    }
 }

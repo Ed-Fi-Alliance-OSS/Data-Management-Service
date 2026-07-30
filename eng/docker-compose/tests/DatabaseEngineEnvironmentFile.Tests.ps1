@@ -327,9 +327,58 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
         } | Should -Not -Throw
     }
 
-    It "still applies the shared-database invariant when the separate-topology marker is absent or false" {
-        # Guards the narrowness of the exemption above: only this design's own marker may switch the
-        # invariant off, so an ordinary mismatch is still rejected.
+    It "does not apply the shared-database invariant to a caller-authored file targeting the reserved dedicated CMS database" {
+        # Regression, DMS-1270 post-PR review: the documented standalone continuation runs a
+        # -SeparateConfigDatabase start phase and then invokes configure-local-data-store.ps1 /
+        # provision-dms-schema.ps1 directly against the SAME caller-authored source file. The
+        # topology marker exists only in the start script's derived file, so it is absent here and
+        # the reserved database name is the only separate-topology signal the file carries. Without
+        # honoring it, the terminal guidance those phases print led straight into a rejection of the
+        # topology the run had just established. Both provider synonyms are covered, since a
+        # connection string may name the database with either key.
+        foreach ($databaseKey in @('Database', 'Initial Catalog')) {
+            $path = Join-Path $script:work ".env.reserved-$([Guid]::NewGuid().ToString('N'))"
+            Set-Content -LiteralPath $path -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$databaseKey=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+            {
+                Resolve-DatabaseEngineEnvironmentFile `
+                    -DatabaseEngine "mssql" `
+                    -BaseEnvironmentFile $path `
+                    -DockerComposeRoot $script:composeRoot
+            } | Should -Not -Throw
+        }
+    }
+
+    It "treats a case-variant of the reserved dedicated CMS database name as the same declaration" {
+        # SQL Server database names are case-insensitive, so a case-variant names the same physical
+        # database and must be recognized as the same separate-topology declaration.
+        $path = Join-Path $script:work ".env.reserved-case"
+        Set-Content -LiteralPath $path -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_ConfigurationService;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Not -Throw
+    }
+
+    It "still applies the shared-database invariant when neither separate-topology signal is present" {
+        # Guards the narrowness of the two exemptions: a mismatch naming some third database is
+        # neither the marker nor the reserved dedicated name, so it is still rejected. The absent and
+        # explicitly-false marker forms are both covered.
         foreach ($markerLine in @('', 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false')) {
             $path = Join-Path $script:work ".env.marker-$([Guid]::NewGuid().ToString('N'))"
             Set-Content -LiteralPath $path -Value @"
@@ -338,7 +387,7 @@ DMS_CONFIG_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 $markerLine
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
             {
@@ -350,16 +399,40 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
         }
     }
 
+    It "does not treat a partially-reserved connection string as a separate-topology declaration" {
+        # The reserved-name signal requires EVERY recognized database-name segment to name the
+        # dedicated database. A string carrying both the reserved name and some other database is
+        # ambiguous, not a declaration, and must still fail the invariant loudly rather than be
+        # waved through - SqlClient keeps the LAST synonym, so the effective target is the one this
+        # invariant would otherwise have caught.
+        $path = Join-Path $script:work ".env.reserved-mixed"
+        Set-Content -LiteralPath $path -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Throw "*shared-database configuration mismatch*"
+    }
+
     It "does not let an ambient topology marker switch the shared-database invariant off" {
         # The marker is read raw from the file, never through Compose precedence, so a stray shell
-        # variable cannot disable a safety check.
+        # variable cannot disable a safety check. The connection string names a third database, so
+        # the reserved-name signal is not in play either.
         $path = Join-Path $script:work ".env.ambient-marker"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
 DMS_CONFIG_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
         $had = Test-Path Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE

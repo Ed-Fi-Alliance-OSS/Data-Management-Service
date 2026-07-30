@@ -1790,7 +1790,16 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
                 param(
                     [Parameter(Mandatory)]
                     [ValidateSet("start-local-dms.ps1", "start-published-dms.ps1")]
-                    [string]$StartScriptName
+                    [string]$StartScriptName,
+
+                    # The -DbOnly guards are reached with the default fixture because database-only
+                    # startup deliberately bypasses bootstrap activation and identity parsing, so the
+                    # malformed manifest and invalid identity values below prove that bypass. Shape
+                    # guards that do NOT involve -DbOnly (e.g. -InfraOnly with -DmsOnly) sit after
+                    # manifest processing and identity resolution, so reaching them needs a fixture
+                    # where both succeed: this switch supplies valid identity settings and stages no
+                    # bootstrap workspace at all. Every Docker invocation still lies beyond the guard.
+                    [switch]$AllowApplicationStartup
                 )
 
                 $repoRoot = New-TestDirectory
@@ -1809,7 +1818,19 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
                 }
 
                 $envFile = Join-Path $dockerComposeRoot ".env.guard"
-                @"
+                if ($AllowApplicationStartup) {
+                    @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+                }
+                else {
+                    @"
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
@@ -1822,9 +1843,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
-                $bootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
-                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
-                Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Value '{ malformed' -NoNewline
+                    $bootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
+                    New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+                    Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Value '{ malformed' -NoNewline
+                }
 
                 return [pscustomobject]@{
                     RepoRoot    = $repoRoot
@@ -1918,6 +1940,55 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 }
                 finally {
                     Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                }
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both reject -InfraOnly with -DmsOnly, with and without -SeparateConfigDatabase" {
+            # This combination's guard sits after bootstrap activation and identity resolution, so it
+            # needs the fixture variant where both succeed. Introducing -SeparateConfigDatabase must
+            # not weaken, reorder, or re-word the existing diagnostic for an invalid shape - the switch
+            # widens the CMS compose set, which is exactly the kind of change that could plausibly
+            # short-circuit ahead of a shape check.
+            #
+            # Reaching this guard means the identity block above it has already run, and that block
+            # publishes identity settings into the AMBIENT process environment for Compose to
+            # interpolate. Left behind, those values would silently change the outcome of any later
+            # Compose-precedence-sensitive test in the same session, so the whole environment is
+            # snapshotted and restored around these invocations. Added variables are removed with
+            # Remove-Item rather than set to $null, which on some platforms leaves an empty variable
+            # rather than truly unsetting it.
+            $environmentBefore = @{}
+            foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
+                $environmentBefore[[string]$entry.Key] = [string]$entry.Value
+            }
+            try {
+                foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                    $guardRepo = New-StartScriptGuardRepo -StartScriptName $name -AllowApplicationStartup
+                    try {
+                        {
+                            & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -InfraOnly -DmsOnly
+                        } | Should -Throw "*-InfraOnly and -DmsOnly are mutually exclusive*"
+
+                        {
+                            & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -InfraOnly -DmsOnly -SeparateConfigDatabase
+                        } | Should -Throw "*-InfraOnly and -DmsOnly are mutually exclusive*"
+                    }
+                    finally {
+                        Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                    }
+                }
+            }
+            finally {
+                foreach ($currentName in @([System.Environment]::GetEnvironmentVariables().Keys | ForEach-Object { [string]$_ })) {
+                    if (-not $environmentBefore.ContainsKey($currentName)) {
+                        Remove-Item -LiteralPath "Env:\$currentName" -ErrorAction SilentlyContinue
+                    }
+                }
+                foreach ($entry in $environmentBefore.GetEnumerator()) {
+                    if ([System.Environment]::GetEnvironmentVariable($entry.Key) -ne $entry.Value) {
+                        [System.Environment]::SetEnvironmentVariable($entry.Key, $entry.Value)
+                    }
                 }
             }
         }

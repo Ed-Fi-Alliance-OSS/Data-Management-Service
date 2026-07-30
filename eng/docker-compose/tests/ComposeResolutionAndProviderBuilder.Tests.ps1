@@ -72,10 +72,11 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         # render (Compose v2, 2026-07-28) over an env file defining CPI270_EMPTY= (set-but-empty),
         # CPI270_SET=set-value, CPI270_NESTED=nested-value, and leaving CPI270_UNSET undefined:
         # ':-' substitutes when unset OR empty, '-' only when unset; ':+' substitutes when set AND
-        # non-empty, '+' whenever set (even empty); defaults interpolate recursively, including the
-        # nested ${A:-${B}} form. Docker documents these operators for .env interpolation, and a
-        # caller-authored connection string using them must resolve here exactly as Compose renders
-        # it, or a valid configuration is rejected by validation.
+        # non-empty, '+' whenever set (even empty); '?' errors only when unset while ':?' also errors
+        # when empty; defaults interpolate recursively, including the nested ${A:-${B}} form, and an
+        # escaped '$$' inside an operator word stays literal. Docker documents these operators for
+        # .env interpolation, and a caller-authored connection string using them must resolve here
+        # exactly as Compose renders it, or a valid configuration is rejected by validation.
         BeforeAll {
             $script:interpolationValues = @{
                 CPI270_EMPTY  = ''
@@ -102,6 +103,24 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
             @{ v = '$${CPI270_NESTED}'; e = '${CPI270_NESTED}' }
             @{ v = '${1BAD}'; e = '${1BAD}' }
             @{ v = '${CPI270_SET|x}'; e = '${CPI270_SET|x}' }
+            # Every remaining set/empty/unset branch of the two "error" and two "alternate"
+            # operators, so a mutation in any one of them is observable. '?' errors only on UNSET
+            # (a set-but-empty value passes through); ':?' also errors on empty; '+' substitutes
+            # for any set value; ':+' requires non-empty. Both error branches are asserted below.
+            @{ v = '${CPI270_SET?boom}'; e = 'set-value' }
+            @{ v = '${CPI270_EMPTY?boom}'; e = '' }
+            @{ v = '${CPI270_SET:?boom}'; e = 'set-value' }
+            @{ v = '${CPI270_SET+alt}'; e = 'alt' }
+            # Escaped interpolation INSIDE an operator word stays literal, braces and all: Compose
+            # pairs every '{' with a '}' while finding the expression's end, so the escaped
+            # reference's own closing brace does not terminate the outer expression. Verified live -
+            # ${CPI270_UNSET:-pre$${X}post} rendered the literal pre${X}post. A scanner that counted
+            # only '$'-prefixed opens would close early here and corrupt the result, which for a
+            # connection-string default means silently connecting with the wrong value.
+            @{ v = '${CPI270_UNSET:-pre$${CPI270_NESTED}post}'; e = 'pre${CPI270_NESTED}post' }
+            @{ v = '${CPI270_UNSET:-a$$b}'; e = 'a$b' }
+            # A brace pair with no '$' is ordinary literal text inside the word.
+            @{ v = '${CPI270_UNSET:-{x}}'; e = '{x}' }
         ) {
             Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value $_.v |
                 Should -BeExactly $_.e
@@ -117,10 +136,14 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
 
         It "surfaces the :? and ? required-variable errors instead of resolving to empty" {
+            # Both error operators, on both of the states that must raise: ':?' on unset AND on
+            # set-but-empty, '?' on unset only. The passing states are in the matrix above.
             { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_UNSET:?var is required}' } |
                 Should -Throw "*required variable 'CPI270_UNSET'*var is required*"
             { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_EMPTY:?must be non-empty}' } |
                 Should -Throw "*required variable 'CPI270_EMPTY'*"
+            { Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_UNSET?plain form}' } |
+                Should -Throw "*required variable 'CPI270_UNSET'*plain form*"
             # '?' (without ':') accepts a set-but-empty value.
             Resolve-ComposeEnvReference -EnvironmentValues $script:interpolationValues -Value '${CPI270_EMPTY?msg}' |
                 Should -BeExactly ''
