@@ -94,7 +94,22 @@ function Write-XmlFiles {
 
     $previousForegroundColor = $host.UI.RawUI.ForegroundColor
     $host.UI.RawUI.ForegroundColor = "Cyan"
-    Write-Output $Paths.BulkLoaderExe $options
+    $redactNextOption = $false
+    $displayOptions = foreach ($option in $options) {
+        if ($redactNextOption) {
+            $redactNextOption = $false
+            "<redacted>"
+        }
+        elseif ($option -in @("-k", "-s")) {
+            $redactNextOption = $true
+            $option
+        }
+        else {
+            $option
+        }
+    }
+
+    Write-Output $Paths.BulkLoaderExe $displayOptions
     $host.UI.RawUI.ForegroundColor = $previousForegroundColor
 
     &dotnet $Paths.BulkLoaderExe $options

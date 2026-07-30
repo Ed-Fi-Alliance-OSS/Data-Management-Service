@@ -1167,6 +1167,17 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the PostgreSQL setup block that can switch the session to the generated enqueue
+    /// owner role before refreshing the enqueue <c>SECURITY DEFINER</c> functions.
+    /// </summary>
+    /// <remarks>
+    /// The role switch is conditional because initial provisioning can run before the owner role
+    /// exists. On non-superuser reruns where the session user is a direct member of the owner role,
+    /// <c>SET ROLE</c> intentionally persists beyond the emitted <c>DO</c> block so the following
+    /// <c>CREATE OR REPLACE FUNCTION</c> statements preserve the enqueue owner. The paired reset
+    /// method emits <c>RESET ROLE</c> after the function refresh completes.
+    /// </remarks>
     private void EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleSetup(SqlWriter writer)
     {
         var ownerRole = Quote(PgsqlEnqueueOwnerPrerequisiteSql.RoleName);
@@ -1202,6 +1213,8 @@ public sealed class CoreDdlEmitter
             {
                 writer.AppendLine($"EXECUTE 'GRANT USAGE ON SCHEMA {dmsSchema} TO {ownerRole}';");
                 writer.AppendLine($"EXECUTE 'GRANT CREATE ON SCHEMA {dmsSchema} TO {ownerRole}';");
+                // SET ROLE changes session state beyond this DO block; the paired reset
+                // method emits RESET ROLE after the function refresh statements.
                 writer.AppendLine($"EXECUTE 'SET ROLE {ownerRole}';");
             }
             writer.AppendLine("END IF;");
@@ -1210,6 +1223,13 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the PostgreSQL grant and cleanup block paired with
+    /// <see cref="EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleSetup"/>.
+    /// </summary>
+    /// <param name="writer">The SQL writer receiving the generated DDL.</param>
+    /// <param name="insertFunctionName">The qualified insert enqueue trigger function name.</param>
+    /// <param name="updateFunctionName">The qualified update enqueue trigger function name.</param>
     private void EmitPgsqlDocumentProjectionEnqueueFunctionRefreshRoleReset(
         SqlWriter writer,
         string insertFunctionName,
@@ -1240,6 +1260,16 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits a PostgreSQL <c>SECURITY DEFINER</c> trigger function that enqueues document
+    /// projection work for inserted or content-version-changed <c>dms.Document</c> rows.
+    /// </summary>
+    /// <param name="writer">The SQL writer receiving the generated DDL.</param>
+    /// <param name="functionName">The qualified trigger function name to create or replace.</param>
+    /// <param name="isUpdate">
+    /// When <see langword="true"/>, emits the update variant that compares old and new
+    /// <c>ContentVersion</c> values; otherwise emits the insert variant.
+    /// </param>
     private void EmitPgsqlDocumentProjectionEnqueueFunction(
         SqlWriter writer,
         string functionName,
@@ -1945,6 +1975,15 @@ public sealed class CoreDdlEmitter
         EmitPgsqlDocumentProjectionEnqueueSecurity(writer);
     }
 
+    /// <summary>
+    /// Emits PostgreSQL role ownership, execute restrictions, and table grants for document
+    /// projection enqueue processing.
+    /// </summary>
+    /// <remarks>
+    /// This phase creates or reuses the generated enqueue owner role, repairs function ownership
+    /// after initial provisioning, removes direct execute access, and grants only the table access
+    /// needed by the enqueue <c>SECURITY DEFINER</c> functions.
+    /// </remarks>
     private void EmitPgsqlDocumentProjectionEnqueueSecurity(SqlWriter writer)
     {
         var ownerRole = Quote(PgsqlEnqueueOwnerPrerequisiteSql.RoleName);
