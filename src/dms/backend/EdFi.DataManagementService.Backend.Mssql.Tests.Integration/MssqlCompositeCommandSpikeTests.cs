@@ -478,6 +478,200 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
         await commit.Should().ThrowAsync<Exception>();
     }
 
+    // --- The abort path leaves the options set, so pooled reset is its cleanup boundary ---
+
+    [TestCase(
+        true,
+        TestName = "It_resets_the_session_options_after_an_aborted_parameterized_composite_is_pooled"
+    )]
+    [TestCase(
+        false,
+        TestName = "It_resets_the_session_options_after_an_aborted_parameterless_composite_is_pooled"
+    )]
+    public async Task It_relies_on_pooled_reset_to_clear_the_session_options_after_an_abort(
+        bool parameterized
+    )
+    {
+        // An aborted batch stops before the epilogue, so both options are still set on the physical session
+        // when it is returned. Nothing in the command can restore them, which makes the client's reset of a
+        // pooled connection the only cleanup boundary the abort path has. A one-slot pool with its own
+        // identity forces the next borrow onto the same physical session so the reset is observable.
+        var pooledConnectionString = BuildIsolatedPoolConnectionString(parameterized);
+
+        try
+        {
+            short baselineSessionId;
+
+            await using (var baselineConnection = new SqlConnection(pooledConnectionString))
+            {
+                await baselineConnection.OpenAsync();
+
+                var baseline = await ReadSessionOptionStateAsync(baselineConnection);
+
+                // Self-checking assumption: if this instance defaulted either option on, the assertion after
+                // the reborrow would be measuring a server default rather than a reset.
+                baseline.XactAbortOn.Should().BeFalse();
+                baseline.NoCountOn.Should().BeFalse();
+
+                baselineSessionId = baseline.SessionId;
+            }
+
+            await using (var session = await OpenPooledSessionAsync(pooledConnectionString))
+            {
+                var builder = new RelationalCompositeCommandBuilder(
+                    IRelationalCompositeCommandDialect.Create(SqlDialect.Mssql)
+                );
+
+                if (parameterized)
+                {
+                    var parameterName = builder.Allocator.AllocateStatementScoped("probe", 0);
+                    builder.Append(
+                        "abort",
+                        $"""
+                        CREATE TABLE #pool_reset_probe (id INT NOT NULL PRIMARY KEY);
+                        INSERT INTO #pool_reset_probe (id) VALUES ({parameterName});
+                        INSERT INTO #pool_reset_probe (id) VALUES ({parameterName});
+                        """,
+                        [new RelationalParameter(parameterName, 1L)],
+                        RelationalCompositeResultShape.Sentinel
+                    );
+                }
+                else
+                {
+                    builder.Append(
+                        "abort",
+                        """
+                        CREATE TABLE #pool_reset_probe (id INT NOT NULL PRIMARY KEY);
+                        INSERT INTO #pool_reset_probe (id) VALUES (1);
+                        INSERT INTO #pool_reset_probe (id) VALUES (1);
+                        """,
+                        [],
+                        RelationalCompositeResultShape.Sentinel
+                    );
+                }
+
+                var act = async () =>
+                    await new RelationalCompositeCommandExecution().ExecuteAsync(session, builder.Seal());
+
+                // 2627 is the primary-key violation, non-fatal, so the connection stays healthy and can be
+                // pooled while the transaction is doomed.
+                (await act.Should().ThrowAsync<SqlException>())
+                    .Which.Number.Should()
+                    .Be(2627);
+
+                // The transaction is detached, which proves the options were in effect during the batch:
+                // without XACT_ABORT the violation would have aborted only its own statement.
+                session.Transaction.Should().BeOfType<SqlTransaction>().Which.Connection.Should().BeNull();
+
+                var rollback = async () => await session.RollbackAsync();
+
+                await rollback.Should().NotThrowAsync();
+
+                // Readable on a raw command because the server already completed the transaction, so the
+                // connection no longer holds a pending one.
+                var aborted = await ReadSessionOptionStateAsync((SqlConnection)session.Connection);
+
+                aborted.SessionId.Should().Be(baselineSessionId);
+
+                if (parameterized)
+                {
+                    // Measured: sp_executesql's procedure context restores the options even when the batch
+                    // aborted inside it. This shape therefore does not leak, and its reborrow below is a
+                    // reuse-and-health check rather than a proof of pooled reset.
+                    aborted.XactAbortOn.Should().BeFalse();
+                    aborted.NoCountOn.Should().BeFalse();
+                }
+                else
+                {
+                    // A plain batch has no procedure context to unwind and the epilogue is unreachable after
+                    // an abort, so both options are still set when the connection is returned. That is what
+                    // makes the assertion after the reborrow a reset rather than a value never changed.
+                    aborted.XactAbortOn.Should().BeTrue();
+                    aborted.NoCountOn.Should().BeTrue();
+                }
+            }
+
+            await using (var reusedConnection = new SqlConnection(pooledConnectionString))
+            {
+                await reusedConnection.OpenAsync();
+
+                // The first command after a reborrow is the one SqlClient carries the reset request on, so
+                // reading both the session id and the options here leaves no unreset window.
+                var reused = await ReadSessionOptionStateAsync(reusedConnection);
+
+                reused
+                    .SessionId.Should()
+                    .Be(
+                        baselineSessionId,
+                        "the borrow must land on the same physical session; a different session id means the "
+                            + "aborted connection was discarded rather than reset, so pooled reset is not the "
+                            + "abort path's cleanup boundary at all"
+                    );
+
+                reused.XactAbortOn.Should().BeFalse();
+                reused.NoCountOn.Should().BeFalse();
+
+                await using var usableCommand = reusedConnection.CreateCommand();
+                usableCommand.CommandText = "SELECT 1;";
+
+                (await usableCommand.ExecuteScalarAsync()).Should().Be(1);
+            }
+        }
+        finally
+        {
+            using SqlConnection poolKey = new(pooledConnectionString);
+            SqlConnection.ClearPool(poolKey);
+        }
+    }
+
+    /// <summary>
+    /// Derives a connection string with its own pool identity and a single slot, so the borrows in one case
+    /// are forced onto one physical session and cannot be affected by the fixture's other connections.
+    /// </summary>
+    private string BuildIsolatedPoolConnectionString(bool parameterized) =>
+        new SqlConnectionStringBuilder(_database.ConnectionString)
+        {
+            // Pool identity is the whole connection string, and the unique token keeps repeated or parallel
+            // execution from sharing a slot.
+            ApplicationName =
+                $"dms-composite-pool-reset-{(parameterized ? "parameterized" : "parameterless")}-{Guid.NewGuid():N}",
+            MaxPoolSize = 1,
+            Pooling = true,
+        }.ConnectionString;
+
+    private static async Task<RelationalWriteSession> OpenPooledSessionAsync(string connectionString)
+    {
+        var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        var transaction = (SqlTransaction)
+            await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+
+        return new RelationalWriteSession(connection, transaction, MssqlTransactionStateProbe.Instance);
+    }
+
+    /// <summary>
+    /// Reads the physical session id and both option bits in one command. Bit 16384 is
+    /// <c>XACT_ABORT</c> and bit 512 is <c>NOCOUNT</c> in <c>@@OPTIONS</c>.
+    /// </summary>
+    private static async Task<PooledSessionOptionState> ReadSessionOptionStateAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT @@SPID AS [SessionId], @@OPTIONS & 16384 AS [XactAbort], @@OPTIONS & 512 AS [NoCount];";
+
+        await using var reader = await command.ExecuteReaderAsync();
+
+        (await reader.ReadAsync()).Should().BeTrue();
+
+        return new PooledSessionOptionState(
+            reader.GetInt16(0),
+            reader.GetInt32(1) != 0,
+            reader.GetInt32(2) != 0
+        );
+    }
+
+    private sealed record PooledSessionOptionState(short SessionId, bool XactAbortOn, bool NoCountOn);
+
     private static async Task CreateOptionScopeProbeTableAsync(RelationalWriteSession session)
     {
         await using var setupCommand = session.CreateCommand(
