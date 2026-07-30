@@ -1550,7 +1550,7 @@ public class ApplicationTests : DatabaseTest
             _dataStoreId = ((DataStoreInsertResult.Success)dataStoreResult).Id;
 
             // The data store link is what makes this application visible to
-            // QueryApplicationByDataStore, one of the four read paths under test.
+            // QueryApplicationByDataStore, one of the five read paths under test.
             var insertResult = await _applicationRepository.InsertApplication(
                 new ApplicationInsertCommand
                 {
@@ -1594,7 +1594,7 @@ public class ApplicationTests : DatabaseTest
         }
 
         /// <summary>
-        /// Each of the four read paths projects EducationOrganizationId through its own Dapper type
+        /// Each of the five read paths projects EducationOrganizationId through its own Dapper type
         /// arguments and splitOn list, so each one has to be asserted separately.
         /// </summary>
         private async Task AssertEveryReadPathPreservesTheEducationOrganizationId(string when)
@@ -1639,6 +1639,22 @@ public class ApplicationTests : DatabaseTest
                     .ApplicationResponse.Single(application => application.Id == _applicationId)
                     .EducationOrganizationIds,
                 "QueryApplicationByDataStore",
+                when
+            );
+
+            // The reconciliation read behind PUT /v3/applications/{id}. It projects the ids through a
+            // standalone QueryAsync<long> rather than a multi-map, and ApplicationModule both compares
+            // them against the command and rebuilds the identity provider's educationOrganizationIds
+            // claim from them on the rollback path, so a narrowing here would corrupt an authorization
+            // scope instead of failing visibly.
+            var updateStateResult = await _applicationRepository.GetApplicationUpdateState(
+                _applicationId,
+                _clientId
+            );
+            updateStateResult.Should().BeOfType<ApplicationUpdateStateResult.Success>();
+            AssertPreserved(
+                [.. ((ApplicationUpdateStateResult.Success)updateStateResult).State.EducationOrganizationIds],
+                "GetApplicationUpdateState",
                 when
             );
         }

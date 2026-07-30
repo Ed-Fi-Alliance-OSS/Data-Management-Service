@@ -894,6 +894,15 @@ public class VendorModuleTests
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored)).MustNotHaveHappened();
+
+            // The status is only half the change. No module runs, so the 400 originates in framework
+            // route binding as a BadHttpRequestException; GlobalExceptionHandler.MapBadRequest is what
+            // classifies an unbindable route value as parameter-level and gives it an Ed-Fi envelope.
+            // Asserting the type keeps an out-of-range id from regressing to a bodiless framework 400
+            // or to the generic bad-request classification.
+            var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["status"]!.GetValue<int>().Should().Be(400);
         }
     }
 }
