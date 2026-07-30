@@ -148,6 +148,141 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         };
     }
 
+    [Test]
+    public void It_should_retain_document_metadata_columns_on_the_read_plan_model()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            WithDocumentMetadataColumns(_projectionResourceModel)
+        );
+
+        readPlan
+            .Model.Root.Columns.Select(static column => column.Kind)
+            .Should()
+            .Contain(ColumnKind.DocumentUuid)
+            .And.Contain(ColumnKind.MirroredIdentityVersion)
+            .And.Contain(ColumnKind.MirroredIdentityLastModifiedAt)
+            .And.Contain(ColumnKind.CreatedAt)
+            .And.Contain(ColumnKind.CreatedByOwnershipTokenId);
+    }
+
+    [Test]
+    public void It_should_exclude_document_metadata_columns_from_the_hydration_projection()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            WithDocumentMetadataColumns(_projectionResourceModel)
+        );
+        var rootPlan = readPlan.TablePlansInDependencyOrder.Single();
+
+        rootPlan
+            .TableModel.Columns.Where(static column =>
+                column.Kind
+                    is ColumnKind.DocumentUuid
+                        or ColumnKind.MirroredIdentityVersion
+                        or ColumnKind.MirroredIdentityLastModifiedAt
+                        or ColumnKind.CreatedAt
+                        or ColumnKind.CreatedByOwnershipTokenId
+            )
+            .Should()
+            .BeEmpty();
+
+        rootPlan
+            .SelectByKeysetSql.Should()
+            .NotContain("DocumentUuid")
+            .And.NotContain("IdentityVersion")
+            .And.NotContain("IdentityLastModifiedAt")
+            .And.NotContain("CreatedAt")
+            .And.NotContain("CreatedByOwnershipTokenId");
+    }
+
+    [Test]
+    public void It_should_keep_reference_and_descriptor_hydration_ordinals_unchanged_by_document_metadata_columns()
+    {
+        // The document-metadata columns are inserted ahead of the FK and descriptor columns, mimicking
+        // canonical ordering, which places stored columns without a source JSONPath before the FK and
+        // descriptor groups. Without hydration exclusion their presence would shift every read-plan ordinal
+        // by five. The exclusion keeps the ordinals identical to the model compiled without them.
+        var withMetadata = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            WithDocumentMetadataColumns(_projectionResourceModel)
+        );
+
+        ReferenceFkOrdinals(withMetadata).Should().Equal(ReferenceFkOrdinals(_pgsqlProjectionReadPlan));
+        DescriptorIdOrdinals(withMetadata).Should().Equal(DescriptorIdOrdinals(_pgsqlProjectionReadPlan));
+    }
+
+    private static RelationalResourceModel WithDocumentMetadataColumns(RelationalResourceModel model)
+    {
+        var existing = model.Root.Columns;
+        DbColumnModel[] metadataColumns =
+        [
+            new DbColumnModel(
+                ColumnName: new DbColumnName("DocumentUuid"),
+                Kind: ColumnKind.DocumentUuid,
+                ScalarType: null,
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                ColumnName: new DbColumnName("IdentityVersion"),
+                Kind: ColumnKind.MirroredIdentityVersion,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                ColumnName: new DbColumnName("IdentityLastModifiedAt"),
+                Kind: ColumnKind.MirroredIdentityLastModifiedAt,
+                ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                ColumnName: new DbColumnName("CreatedAt"),
+                Kind: ColumnKind.CreatedAt,
+                ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                ColumnName: new DbColumnName("CreatedByOwnershipTokenId"),
+                Kind: ColumnKind.CreatedByOwnershipTokenId,
+                ScalarType: null,
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+        ];
+
+        // Insert after the DocumentId key column to mimic canonical ordering placing the metadata columns
+        // ahead of the FK/descriptor columns; an un-excluded projection would then shift their ordinals.
+        DbColumnModel[] rebuilt = [existing[0], .. metadataColumns, .. existing.Skip(1)];
+        var rootTable = model.Root with { Columns = rebuilt };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
     private static IEnumerable<int> ReferenceFkOrdinals(ResourceReadPlan readPlan)
     {
         return readPlan
