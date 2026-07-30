@@ -474,6 +474,58 @@ public static class DocumentCachePreflightClassifier
             );
         }
 
+        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing))
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativePreflightClassification.ProviderMetadataMissing,
+                DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
+                "DocumentCache target is missing relational provider metadata.",
+                diagnostics
+            );
+        }
+
+        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown))
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativePreflightClassification.ProviderMetadataUnknown,
+                DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown,
+                "DocumentCache target has unknown relational provider metadata.",
+                diagnostics
+            );
+        }
+
+        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderMismatch))
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativePreflightClassification.ProviderMismatch,
+                DocumentCacheTargetDiagnosticCategory.ProviderMismatch,
+                "DocumentCache target provider does not match this DMS process provider.",
+                diagnostics
+            );
+        }
+
+        if (categories.Contains(DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing))
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativePreflightClassification.ConnectionInputMissing,
+                DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing,
+                "DocumentCache target has no usable connection input.",
+                diagnostics
+            );
+        }
+
         if (
             categories.Overlaps([
                 DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,

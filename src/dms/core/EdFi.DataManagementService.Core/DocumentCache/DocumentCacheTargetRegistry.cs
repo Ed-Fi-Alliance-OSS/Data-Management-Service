@@ -121,6 +121,7 @@ public sealed class DocumentCacheTargetRegistry(
                     SnapshotObservation: observation,
                     ExecutionContext: null,
                     Signature: null,
+                    ProviderMetadataStatus: null,
                     RetryAttemptCount: 0,
                     LastGenerationValue: 0
                 );
@@ -263,6 +264,26 @@ public sealed class DocumentCacheTargetRegistry(
 
         if (hasReusableGeneration)
         {
+            DocumentCacheTargetContextGeneration reusableGeneration = previousState
+                .StableObservation
+                .Generation!;
+            if (previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus)
+            {
+                DocumentCacheTargetContextBuildResult refreshedBuildResult = await targetContextBuilder
+                    .BuildAsync(targetKey, resolvedDataStore, reusableGeneration, cancellationToken)
+                    .ConfigureAwait(false);
+
+                return new TargetState(
+                    refreshedBuildResult.Observation,
+                    refreshedBuildResult.Observation,
+                    refreshedBuildResult.ExecutionContext,
+                    signature,
+                    resolvedDataStore.RelationalProviderMetadataStatus,
+                    RetryAttemptCount: 0,
+                    previousState.LastGenerationValue
+                );
+            }
+
             return previousState with
             {
                 SnapshotObservation = previousState.StableObservation,
@@ -296,6 +317,7 @@ public sealed class DocumentCacheTargetRegistry(
             stableObservation,
             buildResult.ExecutionContext,
             signature,
+            resolvedDataStore.RelationalProviderMetadataStatus,
             RetryAttemptCount: 0,
             LastGenerationValue: generation.Value
         );
@@ -350,6 +372,7 @@ public sealed class DocumentCacheTargetRegistry(
             unresolvedObservation,
             ExecutionContext: null,
             Signature: null,
+            ProviderMetadataStatus: null,
             retryState.AttemptCount,
             previousState.LastGenerationValue
         );
@@ -381,6 +404,7 @@ public sealed class DocumentCacheTargetRegistry(
             unresolvedObservation,
             ExecutionContext: null,
             Signature: null,
+            ProviderMetadataStatus: null,
             retryState.AttemptCount,
             previousState.LastGenerationValue
         );
@@ -476,12 +500,12 @@ public sealed class DocumentCacheTargetRegistry(
         DocumentCacheTargetObservation SnapshotObservation,
         DocumentCacheTargetExecutionContext? ExecutionContext,
         ResolvedTargetExecutionSignature? Signature,
+        RelationalProviderMetadataStatus? ProviderMetadataStatus,
         int RetryAttemptCount,
         long LastGenerationValue
     );
 
     private sealed record ResolvedTargetExecutionSignature(
-        RelationalProviderMetadataStatus ProviderMetadataStatus,
         RelationalProviderToken? ProviderToken,
         string? ConnectionFactoryInput
     )
@@ -493,7 +517,6 @@ public sealed class DocumentCacheTargetRegistry(
             ArgumentNullException.ThrowIfNull(resolvedDataStore);
 
             return new(
-                resolvedDataStore.RelationalProviderMetadataStatus,
                 resolvedDataStore.RelationalProviderToken,
                 string.IsNullOrWhiteSpace(resolvedDataStore.ConnectionFactoryInput)
                     ? null

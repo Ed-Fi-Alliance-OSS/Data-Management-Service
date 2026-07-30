@@ -613,6 +613,30 @@ public class DocumentCachePreflightClassifierTests
             );
         }
 
+        [TestCaseSource(nameof(TargetContextFailureClassifications))]
+        public void It_should_preserve_specific_target_context_failure_classifications(
+            DocumentCacheTargetDiagnosticCategory diagnosticCategory,
+            DocumentCacheAdministrativePreflightClassification expectedClassification
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyGuardedNewEmptyActivation(
+                    GuardedRequest(),
+                    IneligibleTargetContextObservation(diagnosticCategory),
+                    GuardedFacts()
+                );
+
+            AssertRejected(
+                result,
+                expectedClassification,
+                diagnosticCategory,
+                expectedObservedLifecycle: null
+            );
+            result.Diagnostics.Should().ContainSingle().Which.Category.Should().Be(diagnosticCategory);
+            result.TargetContextGeneration.Should().Be(_generation.Value);
+            result.PhysicalSourceFingerprint.Should().BeNull();
+        }
+
         [Test]
         public void It_should_reject_unexpected_provider_failures_without_leaking_physical_details()
         {
@@ -629,6 +653,26 @@ public class DocumentCachePreflightClassifierTests
                 DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure
             );
             result.Diagnostics.Single().Message.Should().NotContain("\r").And.NotContain("\n");
+        }
+
+        private static IEnumerable<TestCaseData> TargetContextFailureClassifications()
+        {
+            yield return new TestCaseData(
+                DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
+                DocumentCacheAdministrativePreflightClassification.ProviderMetadataMissing
+            ).SetName("Provider metadata missing");
+            yield return new TestCaseData(
+                DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown,
+                DocumentCacheAdministrativePreflightClassification.ProviderMetadataUnknown
+            ).SetName("Provider metadata unknown");
+            yield return new TestCaseData(
+                DocumentCacheTargetDiagnosticCategory.ProviderMismatch,
+                DocumentCacheAdministrativePreflightClassification.ProviderMismatch
+            ).SetName("Provider mismatch");
+            yield return new TestCaseData(
+                DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing,
+                DocumentCacheAdministrativePreflightClassification.ConnectionInputMissing
+            ).SetName("Connection input missing");
         }
     }
 
@@ -723,6 +767,61 @@ public class DocumentCachePreflightClassifierTests
             _satisfiedEnqueueTrigger,
             sqlServerPrerequisites ?? DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
         );
+
+    protected static DocumentCacheTargetObservation IneligibleTargetContextObservation(
+        DocumentCacheTargetDiagnosticCategory category
+    )
+    {
+        RelationalProviderToken? providerToken = category switch
+        {
+            DocumentCacheTargetDiagnosticCategory.ProviderMismatch => RelationalProviderToken.SqlServer,
+            DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing =>
+                RelationalProviderToken.Postgresql,
+            _ => null,
+        };
+
+        string message = category switch
+        {
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing =>
+                "Resolved target is missing relational provider metadata.",
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown =>
+                "Resolved target has unknown relational provider metadata.",
+            DocumentCacheTargetDiagnosticCategory.ProviderMismatch =>
+                "Resolved target provider does not match this DMS process provider.",
+            DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing =>
+                "Resolved target has no usable connection input.",
+            _ => throw new ArgumentOutOfRangeException(nameof(category), category, null),
+        };
+
+        return DocumentCacheTargetObservation.ResolvedIneligible(
+            _targetKey,
+            _settings,
+            _generation,
+            providerToken,
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState: null,
+            [
+                new DocumentCacheTargetDiagnostic(
+                    _targetKey,
+                    DocumentCacheTargetResolutionState.Resolved,
+                    providerToken,
+                    _generation,
+                    physicalSourceFingerprint: null,
+                    lifecycle: null,
+                    inventory: null,
+                    enqueueTrigger: null,
+                    sqlServerPrerequisites: null,
+                    retryState: null,
+                    category,
+                    message
+                ),
+            ]
+        );
+    }
 
     protected static DocumentCacheTargetObservation UnresolvedObservation()
     {

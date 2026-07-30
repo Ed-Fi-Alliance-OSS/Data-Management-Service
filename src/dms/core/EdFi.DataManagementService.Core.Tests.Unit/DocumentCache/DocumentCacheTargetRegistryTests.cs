@@ -391,6 +391,114 @@ public class DocumentCacheTargetRegistryTests
             fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
         }
 
+        [TestCase(
+            RelationalProviderMetadataStatus.Missing,
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
+            RelationalProviderMetadataStatus.Unknown,
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown
+        )]
+        [TestCase(
+            RelationalProviderMetadataStatus.Unknown,
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown,
+            RelationalProviderMetadataStatus.Missing,
+            DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing
+        )]
+        public async Task It_refreshes_provider_metadata_diagnostics_without_replacing_the_generation(
+            RelationalProviderMetadataStatus initialStatus,
+            DocumentCacheTargetDiagnosticCategory initialCategory,
+            RelationalProviderMetadataStatus refreshedStatus,
+            DocumentCacheTargetDiagnosticCategory refreshedCategory
+        )
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(
+                    7,
+                    "connection-a",
+                    RelationalProviderToken.Postgresql,
+                    relationalProviderMetadataStatus: initialStatus
+                )
+            );
+            DocumentCacheTargetRegistrySnapshot initialSnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.Startup
+            );
+            initialSnapshot
+                .Targets.Single()
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic => diagnostic.Category == initialCategory);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(
+                    7,
+                    "connection-a",
+                    RelationalProviderToken.Postgresql,
+                    relationalProviderMetadataStatus: refreshedStatus
+                )
+            );
+
+            DocumentCacheTargetRegistrySnapshot snapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.CmsRefreshNotification
+            );
+
+            DocumentCacheTargetObservation observation = snapshot.Targets.Single();
+            observation.Generation!.Value.Should().Be(1);
+            observation
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic => diagnostic.Category == refreshedCategory);
+            observation
+                .Diagnostics.Select(diagnostic => diagnostic.Category)
+                .Should()
+                .NotContain(DocumentCacheTargetDiagnosticCategory.TargetReplaced);
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 1);
+        }
+
+        [Test]
+        public async Task It_does_not_make_command_preflight_generation_stale_for_provider_metadata_status_changes()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(
+                    7,
+                    "connection-a",
+                    RelationalProviderToken.Postgresql,
+                    relationalProviderMetadataStatus: RelationalProviderMetadataStatus.Missing
+                )
+            );
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(
+                    7,
+                    "connection-a",
+                    RelationalProviderToken.Postgresql,
+                    relationalProviderMetadataStatus: RelationalProviderMetadataStatus.Unknown
+                )
+            );
+            DocumentCacheTargetObservation observation = (
+                await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.CmsRefreshNotification)
+            ).Targets.Single();
+
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyGuardedNewEmptyActivation(
+                    new DocumentCacheGuardedNewEmptyActivationRequest(
+                        DocumentCacheAdministrativeTargetKey.FromTargetKey(_tenantTargetKey)
+                    ),
+                    observation,
+                    new DocumentCacheGuardedNewEmptyActivationPreflightFacts(
+                        new DocumentCacheTargetContextGeneration(1),
+                        activationProviderPrerequisites: null,
+                        guardedNewEmptyState: null
+                    )
+                );
+
+            result
+                .Classification.Should()
+                .NotBe(DocumentCacheAdministrativePreflightClassification.TargetReplacedBeforeExecution);
+            result.TargetContextGeneration.Should().Be(1);
+        }
+
         [Test]
         public async Task It_creates_a_new_generation_when_the_connection_factory_input_changes()
         {
@@ -470,6 +578,8 @@ public class DocumentCacheTargetRegistryTests
         long id,
         string connectionString,
         RelationalProviderToken? relationalProviderToken = null,
+        RelationalProviderMetadataStatus relationalProviderMetadataStatus =
+            RelationalProviderMetadataStatus.Supported,
         string name = "Display name must not leak",
         string routeContextValue = "2025"
     ) =>
@@ -483,7 +593,7 @@ public class DocumentCacheTargetRegistryTests
                 [new RouteQualifierName("schoolYear")] = new(routeContextValue),
             },
             relationalProviderToken ?? RelationalProviderToken.Postgresql,
-            RelationalProviderMetadataStatus.Supported
+            relationalProviderMetadataStatus
         );
 
     private sealed class RegistryFixture
@@ -664,12 +774,67 @@ public class DocumentCacheTargetRegistryTests
         )
         {
             BuildCalls.Add(new BuildCall(targetKey, resolvedDataStore, generation));
+            if (
+                resolvedDataStore.RelationalProviderMetadataStatus
+                != RelationalProviderMetadataStatus.Supported
+            )
+            {
+                return Task.FromResult(
+                    CreateProviderMetadataBuildResult(targetKey, resolvedDataStore, generation)
+                );
+            }
+
             if (_ineligibleTargetKeys.Contains(targetKey))
             {
                 return Task.FromResult(CreateIneligibleBuildResult(targetKey, resolvedDataStore, generation));
             }
 
             return Task.FromResult(CreateBuildResult(targetKey, resolvedDataStore, generation));
+        }
+
+        private static DocumentCacheTargetContextBuildResult CreateProviderMetadataBuildResult(
+            DocumentCacheTargetKey targetKey,
+            DocumentCacheResolvedTargetDataStore resolvedDataStore,
+            DocumentCacheTargetContextGeneration generation
+        )
+        {
+            DocumentCacheTargetDiagnosticCategory category =
+                resolvedDataStore.RelationalProviderMetadataStatus == RelationalProviderMetadataStatus.Missing
+                    ? DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing
+                    : DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown;
+
+            DocumentCacheTargetDiagnostic diagnostic = new(
+                targetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                resolvedDataStore.RelationalProviderToken,
+                generation,
+                physicalSourceFingerprint: null,
+                lifecycle: null,
+                inventory: null,
+                enqueueTrigger: null,
+                sqlServerPrerequisites: null,
+                retryState: null,
+                category,
+                category == DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing
+                    ? "Resolved target is missing relational provider metadata."
+                    : "Resolved target has unknown relational provider metadata."
+            );
+
+            DocumentCacheTargetObservation observation = DocumentCacheTargetObservation.ResolvedIneligible(
+                targetKey,
+                _effectiveSettings,
+                generation,
+                resolvedDataStore.RelationalProviderToken,
+                physicalSourceFingerprint: null,
+                lifecycle: null,
+                inventory: null,
+                enqueueTrigger: null,
+                sqlServerPrerequisites: null,
+                retryState: null,
+                [diagnostic]
+            );
+
+            return new DocumentCacheTargetContextBuildResult(observation, ExecutionContext: null);
         }
 
         private static DocumentCacheTargetContextBuildResult CreateIneligibleBuildResult(

@@ -216,6 +216,28 @@ public class DocumentCacheAdministrativeContractsTests
             targetKey["dataStoreId"]!.GetValue<long>().Should().Be(1);
         }
 
+        [TestCaseSource(nameof(PreflightClassifications))]
+        public void It_should_round_trip_preflight_classifications_as_lower_camel(
+            DocumentCacheAdministrativePreflightClassification classification
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result = new(
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+                _defaultTargetKey,
+                classification
+            );
+
+            string json = JsonSerializer.Serialize(result);
+            DocumentCacheAdministrativeCommandResult deserialized =
+                JsonSerializer.Deserialize<DocumentCacheAdministrativeCommandResult>(json)!;
+
+            deserialized.Classification.Should().Be(classification);
+            JsonNode.Parse(json)!["classification"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ToLowerCamelCase(classification.ToString()));
+        }
+
         [Test]
         public void It_should_deserialize_rejection_classifications()
         {
@@ -344,6 +366,14 @@ public class DocumentCacheAdministrativeContractsTests
             return _producedDiagnosticCategories.Select(category =>
                 new TestCaseData(category).SetName($"Diagnostic category {category}")
             );
+        }
+
+        private static IEnumerable<TestCaseData> PreflightClassifications()
+        {
+            return Enum.GetValues<DocumentCacheAdministrativePreflightClassification>()
+                .Select(classification =>
+                    new TestCaseData(classification).SetName($"Preflight classification {classification}")
+                );
         }
 
         private static string ToLowerCamelCase(string value) => char.ToLowerInvariant(value[0]) + value[1..];
