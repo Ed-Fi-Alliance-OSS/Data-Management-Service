@@ -150,6 +150,217 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
     }
 
+    # Docker Compose resolves an --env-file sequentially, and a hashtable-based resolution cannot
+    # express that. Every expectation in this Context was captured from a real `docker compose config`
+    # render before the code was written; the comments name the captured value so a future reader can
+    # tell a pinned observation from an assumption.
+    Context "Sequential dotenv evaluation (DMS-1270)" {
+        BeforeAll {
+            # These fixtures resolve names that must not be inherited from the developer's shell.
+            $script:seqNames = @('A', 'AMB_ONLY', 'NAME', 'DUP', 'PASSWORD', 'LATE_SECRET', 'CONN')
+            $script:seqSnapshot = @{}
+            foreach ($name in $script:seqNames) {
+                $script:seqSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
+                Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+            }
+        }
+
+        AfterAll {
+            foreach ($name in $script:seqNames) {
+                if ($null -eq $script:seqSnapshot[$name]) {
+                    Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+                }
+                else {
+                    [System.Environment]::SetEnvironmentVariable($name, $script:seqSnapshot[$name])
+                }
+            }
+        }
+
+        It "freezes each line against only what precedes it, and keeps the last declaration as effective" {
+            # Captured: this exact file rendered CONN as host=h;db=first-value;pw=; while ${DUP} at the
+            # compose-file level rendered second-value. One duplicated key, two effective values.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'DUP=first-value'
+                'PASSWORD=${LATE_SECRET}'
+                'CONN=host=h;db=${DUP};pw=${PASSWORD};'
+                'LATE_SECRET=late'
+                'DUP=second-value'
+            )
+
+            ($evaluation.Declarations | Where-Object { $_.Key -eq 'CONN' }).ResolvedValue |
+                Should -BeExactly 'host=h;db=first-value;pw=;' -Because "Compose froze the first DUP and an as-yet-undeclared PASSWORD"
+            ($evaluation.Declarations | Where-Object { $_.Key -eq 'PASSWORD' }).ResolvedValue |
+                Should -BeExactly '' -Because "LATE_SECRET is declared after PASSWORD, so Compose froze it empty"
+            $evaluation.Effective['DUP'] | Should -BeExactly 'second-value' -Because "the compose file sees the last declaration"
+            $evaluation.DuplicateKeys | Should -Be @('DUP')
+        }
+
+        It "records the names each declaration actually evaluated" {
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'DUP=x'
+                'PASSWORD=y'
+                'CONN=host=h;db=${DUP};pw=${PASSWORD};'
+            )
+            ($evaluation.Declarations | Where-Object { $_.Key -eq 'CONN' }).References |
+                Should -Be @('DUP', 'PASSWORD')
+        }
+
+        It "treats an already-resolved value as terminal and never re-expands it" {
+            # Captured: with NAME=secret, A_ESCAPED=$${NAME} rendered the literal ${NAME}, and
+            # B_REFS_A=${A_ESCAPED} rendered that SAME literal - not "secret". Same for a single-quoted
+            # source value, and a literal '$' in a resolved value is not reinterpreted either. A model
+            # that fed accumulated values back through raw-value resolution would leak "secret" here.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'NAME=secret'
+                'A_ESCAPED=$${NAME}'
+                'B_REFS_A=${A_ESCAPED}'
+                "S_SQUOTED='`${NAME}'"
+                'T_REFS_S=${S_SQUOTED}'
+                'D_DQUOTED="${NAME}"'
+                'E_REFS_D=${D_DQUOTED}'
+                'F_LITERAL=pa$$word'
+                'G_REFS_F=${F_LITERAL}'
+            )
+
+            $evaluation.Effective['A_ESCAPED'] | Should -BeExactly '${NAME}'
+            $evaluation.Effective['B_REFS_A'] | Should -BeExactly '${NAME}' -Because "a resolved value is terminal"
+            $evaluation.Effective['S_SQUOTED'] | Should -BeExactly '${NAME}'
+            $evaluation.Effective['T_REFS_S'] | Should -BeExactly '${NAME}' -Because "a single-quoted literal stays literal through a reference"
+            $evaluation.Effective['D_DQUOTED'] | Should -BeExactly 'secret' -Because "double quotes do interpolate"
+            $evaluation.Effective['E_REFS_D'] | Should -BeExactly 'secret'
+            $evaluation.Effective['F_LITERAL'] | Should -BeExactly 'pa$word'
+            $evaluation.Effective['G_REFS_F'] | Should -BeExactly 'pa$word' -Because "the literal '$' must not be reinterpreted"
+        }
+
+        It "gives an ambient value precedence even over an earlier declaration in the same file" {
+            # Captured: with ambient A=ambient-a, B=${A} rendered ambient-a even though the file
+            # declares A=file-a on the preceding line.
+            [System.Environment]::SetEnvironmentVariable('A', 'ambient-a')
+            [System.Environment]::SetEnvironmentVariable('AMB_ONLY', 'ambient-only')
+            try {
+                $evaluation = Resolve-DotenvFileSequentially -Line @('A=file-a', 'B=${A}', 'C=${AMB_ONLY}')
+                $evaluation.Effective['B'] | Should -BeExactly 'ambient-a'
+                $evaluation.Effective['C'] | Should -BeExactly 'ambient-only'
+            }
+            finally {
+                Remove-Item Env:\A -ErrorAction SilentlyContinue
+                Remove-Item Env:\AMB_ONLY -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "accepts the whole assignment grammar Compose accepts" {
+            # Captured per line: value trimmed; 'KEY = value' valid with the key trimmed; leading indent
+            # valid; 'export KEY=value' valid with the prefix stripped; inline comment stripped; an
+            # empty value after whitespace is still a declaration.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'LEAD=   trimmed-value'
+                'SPACED_KEY = spaced'
+                '  INDENTED=indented'
+                'export EXPORTED=exported'
+                'INLINE=value # comment'
+                'EMPTY_SP ='
+                '# COMMENTED=ignored'
+                'not an assignment'
+            )
+
+            $evaluation.Effective['LEAD'] | Should -BeExactly 'trimmed-value'
+            $evaluation.Effective['SPACED_KEY'] | Should -BeExactly 'spaced'
+            $evaluation.Effective['INDENTED'] | Should -BeExactly 'indented'
+            $evaluation.Effective['EXPORTED'] | Should -BeExactly 'exported'
+            $evaluation.Effective['INLINE'] | Should -BeExactly 'value'
+            $evaluation.Effective['EMPTY_SP'] | Should -BeExactly ''
+            $evaluation.Effective.ContainsKey('export EXPORTED') | Should -BeFalse -Because "the export prefix is not part of the key"
+            $evaluation.Effective.ContainsKey('COMMENTED') | Should -BeFalse
+        }
+
+        It "parses '<line>' as key '<key>'" -ForEach @(
+            @{ line = 'K=v'; key = 'K' }
+            @{ line = '  K=v'; key = 'K' }
+            @{ line = 'K = v'; key = 'K' }
+            @{ line = 'export K=v'; key = 'K' }
+        ) {
+            (Get-DotenvAssignment -Line $_.line).Key | Should -BeExactly $_.key
+        }
+
+        It "does not parse '<_>' as an assignment" -ForEach @(
+            '# K=v', '', '   ', 'no-equals-here', '1BAD=v', '=novalue'
+        ) {
+            Get-DotenvAssignment -Line $_ | Should -BeNullOrEmpty
+        }
+    }
+
+    Context "Resolution-time reference reporting (DMS-1270)" {
+        # An operator word is evaluated only in the branch that fires - captured live:
+        # ${SET:-${MISSING:?boom}} rendered the set value with no error. So the names a value depends
+        # on are a function of the environment state, not of the text, and a lexical scan over-reports.
+        BeforeAll {
+            $script:refValues = @{ SEQ_SET = 'set'; SEQ_EMPTY = ''; SEQ_W = 'word' }
+        }
+
+        It "reports only the names an unfired operator actually needed" {
+            $trace = [System.Collections.Generic.List[string]]::new()
+            $value = Resolve-ComposeEnvReference -EnvironmentValues $script:refValues -Value '${SEQ_SET:-${SEQ_W}}' -ReferenceTrace $trace
+
+            $value | Should -BeExactly 'set'
+            $trace | Should -Be @('SEQ_SET') -Because "the ':-' word was never evaluated, so SEQ_W is not a dependency"
+        }
+
+        It "reports nothing for escaped dollars, which are literals and not references" {
+            $trace = [System.Collections.Generic.List[string]]::new()
+            $value = Resolve-ComposeEnvReference -EnvironmentValues @{} -Value 'pa$$word and $${NAME}' -ReferenceTrace $trace
+
+            $value | Should -BeExactly 'pa$word and ${NAME}'
+            $trace.Count | Should -Be 0
+        }
+
+        It "reports '<v>' as depending on '<expected>'" -ForEach @(
+            @{ v = '${SEQ_SET:-${SEQ_W}}';    expected = 'SEQ_SET' }
+            @{ v = '${SEQ_EMPTY:-${SEQ_W}}';  expected = 'SEQ_EMPTY,SEQ_W' }
+            @{ v = '${SEQ_MISSING:-${SEQ_W}}'; expected = 'SEQ_MISSING,SEQ_W' }
+            @{ v = '${SEQ_SET-${SEQ_W}}';     expected = 'SEQ_SET' }
+            @{ v = '${SEQ_EMPTY-${SEQ_W}}';   expected = 'SEQ_EMPTY' }
+            @{ v = '${SEQ_MISSING-${SEQ_W}}'; expected = 'SEQ_MISSING,SEQ_W' }
+            @{ v = '${SEQ_SET:+${SEQ_W}}';    expected = 'SEQ_SET,SEQ_W' }
+            @{ v = '${SEQ_EMPTY:+${SEQ_W}}';  expected = 'SEQ_EMPTY' }
+            @{ v = '${SEQ_MISSING:+${SEQ_W}}'; expected = 'SEQ_MISSING' }
+            @{ v = '${SEQ_SET+${SEQ_W}}';     expected = 'SEQ_SET,SEQ_W' }
+            @{ v = '${SEQ_EMPTY+${SEQ_W}}';   expected = 'SEQ_EMPTY,SEQ_W' }
+            @{ v = '${SEQ_MISSING+${SEQ_W}}'; expected = 'SEQ_MISSING' }
+        ) {
+            $trace = [System.Collections.Generic.List[string]]::new()
+            $null = Resolve-ComposeEnvReference -EnvironmentValues $script:refValues -Value $_.v -ReferenceTrace $trace
+            ($trace -join ',') | Should -BeExactly $_.expected
+        }
+    }
+
+    Context "Terminal-value lookup delegate (DMS-1270)" {
+        It "uses the delegate's value verbatim, without resolving it again" {
+            $lookup = { param($n) if ($n -eq 'FROZEN') { return '${INNER}' } ; return 'should-not-be-used' }
+            Resolve-ComposeEnvReference -Value '${FROZEN}' -NameLookup $lookup |
+                Should -BeExactly '${INNER}' -Because "an already-resolved value is terminal"
+        }
+
+        It "preserves unset versus set-but-empty across every operator" {
+            # The delegate returns '' for EMPTY and $null for anything else, so this pins the one
+            # distinction the ':-'/'-' and ':+'/'+' pairs key on.
+            $lookup = { param($n) if ($n -eq 'EMPTY') { return '' } ; return $null }
+
+            Resolve-ComposeEnvReference -Value '${EMPTY:-def}' -NameLookup $lookup | Should -BeExactly 'def'
+            Resolve-ComposeEnvReference -Value '${EMPTY-def}' -NameLookup $lookup | Should -BeExactly ''
+            Resolve-ComposeEnvReference -Value '${GONE-def}' -NameLookup $lookup | Should -BeExactly 'def'
+            Resolve-ComposeEnvReference -Value '${EMPTY:+alt}' -NameLookup $lookup | Should -BeExactly ''
+            Resolve-ComposeEnvReference -Value '${EMPTY+alt}' -NameLookup $lookup | Should -BeExactly 'alt'
+            Resolve-ComposeEnvReference -Value '${GONE+alt}' -NameLookup $lookup | Should -BeExactly ''
+        }
+
+        It "leaves existing raw-map callers on recursive resolution when no delegate is supplied" {
+            Resolve-ComposeEnvReference -EnvironmentValues @{ TOP = '${INNER}'; INNER = 'deep' } -Value '${TOP}' |
+                Should -BeExactly 'deep'
+            Get-ComposeResolvedEnvValue -EnvironmentValues @{ TOP = '${S}'; S = "'`${OTHER}'"; OTHER = 'x' } -Name 'TOP' |
+                Should -BeExactly '${OTHER}'
+        }
+    }
+
     Context "Get-RequiredComposeResolvedEnvValue" {
         It "returns the resolved value when present" {
             Get-RequiredComposeResolvedEnvValue -EnvironmentValues @{ K = "value" } -Name "K" | Should -Be "value"

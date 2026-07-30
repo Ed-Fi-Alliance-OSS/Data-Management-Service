@@ -276,6 +276,140 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         }
     }
 
+    # Docker Compose resolves an --env-file sequentially. Validation built on a complete hashtable
+    # answers a different question and can approve a file Compose renders differently, so these pin the
+    # required outcome for each input class. Each expectation was confirmed against a real
+    # `docker compose config` render of the same file before the behavior was implemented.
+    Context "sequential evaluation classes (DMS-1270)" {
+        BeforeAll {
+            $script:seamConnectionString = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+        }
+
+        It "rejects a duplicated seam dependency instead of silently approving it" {
+            # Verified live: this file renders the CMS database as edfi_datamanagementservice (the FIRST
+            # POSTGRES_DB_NAME, frozen into the alias) while the datastore container is created as
+            # some_other_db (the LAST one, which the compose file sees). The old hashtable resolution saw
+            # only some_other_db for both and passed the agreement check. Reordering cannot fix this:
+            # every line between the two declarations legitimately sees the earlier value.
+            $basePath = Join-Path $script:work ".env.duplicate"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString,
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
+                'POSTGRES_DB_NAME=some_other_db'
+            ) -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*'POSTGRES_DB_NAME' is declared more than once*"
+        }
+
+        It "names both declaration line numbers in the duplicate diagnostic" {
+            $basePath = Join-Path $script:work ".env.duplicate-lines"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=first_db',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString,
+                'POSTGRES_DB_NAME=second_db'
+            ) -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*lines 1, 5*"
+        }
+
+        It "rejects a transitive forward dependency and reports the chain" {
+            # Verified live: POSTGRES_PASSWORD freezes empty because LATE_PW is declared after it, so the
+            # connection string renders password= with no value. A multi-line reorder could change other
+            # lines' frozen values, so this fails closed with the chain rather than being repaired.
+            $basePath = Join-Path $script:work ".env.transitive"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_PASSWORD=${LATE_PW}',
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString,
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
+                'LATE_PW=abcdefgh1!'
+            ) -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING -> POSTGRES_PASSWORD -> LATE_PW*"
+        }
+
+        It "repairs a simple forward reference written as '<_>'" -ForEach @(
+            'POSTGRES_PASSWORD = abcdefgh1!'
+            'export POSTGRES_PASSWORD=abcdefgh1!'
+            '  POSTGRES_PASSWORD=abcdefgh1!'
+        ) {
+            # All three are valid dotenv assignments Compose honors. The detection grammar used to be
+            # wider than the write grammar, so a spaced assignment was routed to repair, never matched,
+            # and the file was returned still rendering password= empty.
+            $basePath = Join-Path $script:work ".env.simple-$([Guid]::NewGuid().ToString('N'))"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString,
+                $_,
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+            $result | Should -Not -Be $basePath
+
+            # The repaired file must RENDER correctly, not merely contain the right lines: the password
+            # key has to precede the connection string that references it.
+            $repaired = Resolve-DotenvFileSequentially -Path $result
+            $repaired.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+        }
+
+        It "moves a literal-dollar password rather than refusing it" {
+            # pa$$word is a literal pa$word that references nothing. The old guard rejected any value
+            # containing '$', so a perfectly safe credential blocked the run.
+            $basePath = Join-Path $script:work ".env.literal-dollar"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString,
+                'POSTGRES_PASSWORD=pa$$word',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=pa$word;database=edfi_datamanagementservice;'
+        }
+
+        It "catches a datastore/CMS database disagreement the hashtable resolution used to pass" {
+            # The agreement validator's whole job. With the datastore name duplicated, Compose puts CMS
+            # on the first value and the datastore container on the last; the two genuinely disagree.
+            $basePath = Join-Path $script:work ".env.agreement"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString,
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
+                'POSTGRES_DB_NAME=some_other_db'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $basePath -DatabaseEngine "postgresql" } |
+                Should -Throw "*topology mismatch*"
+        }
+
+        It "still early-returns the checked-in profiles untouched: <_>" -ForEach @(
+            '.env.e2e', '.env.example', '.env.multitenancy', '.env.routeContext.e2e',
+            '.env.smoke', '.env.smoke.ds61', '.env.template', '.env.template.ds61'
+        ) {
+            # The stricter model must not turn every ordinary run into a rewrite.
+            $profilePath = Join-Path $script:dockerComposeRoot $_
+            Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $profilePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work |
+                Should -Be $profilePath
+        }
+    }
+
     Context "separate mode" {
         It "sets DMS_CONFIG_DATABASE_NAME to the fixed edfi_configurationservice literal" {
             $basePath = Join-Path $script:work ".env.base"
