@@ -457,6 +457,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."NamingStressItem"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "NamingStressItemId" integer NOT NULL,
     "Order" integer NULL,
     "ShortName" varchar(60) NULL,
@@ -464,6 +469,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."NamingStressItem"
     "ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgre_e2f35e760a" varchar(100) NULL,
     "VeryLongIdentifierNameThatExceedsSixtyThreeCharacter_21402e5f2e" varchar(100) NULL,
     CONSTRAINT "PK_NamingStressItem" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_NamingStressItem_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_NamingStressItem_NK" UNIQUE ("NamingStressItemId")
 );
 
@@ -495,6 +501,8 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_NamingStressItem_ContentVersion" ON "edfi"."NamingStressItem" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_NamingStressItem_CreatedByOwnershipTokenId" ON "edfi"."NamingStressItem" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_NamingStressItem_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

@@ -48,6 +48,18 @@
       ]
     },
     {
+      "name": "IX_Program_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_Program",
       "table": {
         "schema": "edfi",
@@ -57,6 +69,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Program_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -97,6 +121,18 @@
       ]
     },
     {
+      "name": "IX_School_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_School",
       "table": {
         "schema": "edfi",
@@ -106,6 +142,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_School_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -824,6 +872,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ProgramName",
               "kind": "Scalar",
               "type": {
@@ -851,6 +955,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_Program_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_Program_NK",
@@ -952,6 +1063,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "SchoolId",
               "kind": "Scalar",
               "type": {
@@ -978,6 +1145,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_School_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_School_NK",

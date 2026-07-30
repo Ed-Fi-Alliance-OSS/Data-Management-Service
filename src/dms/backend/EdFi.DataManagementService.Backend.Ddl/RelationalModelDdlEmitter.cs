@@ -456,11 +456,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Resolves the named default constraint for a synthesized change-version mirror column:
-    /// <c>ContentVersion</c> defaults to a non-null sentinel and
-    /// <c>ContentLastModifiedAt</c> defaults to the current UTC timestamp. Both use a
+    /// Resolves the named default constraint for a synthesized <c>dms.Document</c> mirror column:
+    /// <c>ContentVersion</c> and <c>IdentityVersion</c> default to a non-null sentinel,
+    /// <c>ContentLastModifiedAt</c> / <c>IdentityLastModifiedAt</c> / <c>CreatedAt</c> default to the current
+    /// UTC timestamp, and <c>DocumentUuid</c> defaults to a freshly generated UUID. All use a
     /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by PostgreSQL),
     /// matching the <c>dms.Document</c> convention. The trigger overwrites these defaults at write time.
+    /// The nullable <c>CreatedByOwnershipTokenId</c> mirror has no default.
     /// </summary>
     private bool TryResolveMirrorNamedDefault(
         DbTableModel table,
@@ -472,12 +474,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         switch (column.Kind)
         {
             case ColumnKind.MirroredContentVersion:
+            case ColumnKind.MirroredIdentityVersion:
                 constraintName = BuildMirrorDefaultConstraintName(table, column);
                 defaultExpression = "0";
                 return true;
             case ColumnKind.MirroredContentLastModifiedAt:
+            case ColumnKind.MirroredIdentityLastModifiedAt:
+            case ColumnKind.CreatedAt:
                 constraintName = BuildMirrorDefaultConstraintName(table, column);
                 defaultExpression = _dialect.CurrentTimestampDefaultExpression;
+                return true;
+            case ColumnKind.DocumentUuid:
+                constraintName = BuildMirrorDefaultConstraintName(table, column);
+                defaultExpression = _dialect.NewGuidDefaultExpression;
                 return true;
             default:
                 constraintName = string.Empty;
@@ -2664,8 +2673,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Resolves the SQL type for a column using explicit scalar type metadata or dialect defaults.
     /// For columns with an explicit <see cref="RelationalScalarType"/>, delegates to
-    /// <see cref="ISqlDialect.RenderColumnType"/>. For implicit key columns (Ordinal, FK, etc.),
-    /// falls back to dialect-specific integer defaults.
+    /// <see cref="ISqlDialect.RenderColumnType"/>. For implicit system columns (Ordinal, FK, and the
+    /// synthesized <c>DocumentUuid</c> / <c>CreatedByOwnershipTokenId</c> metadata mirrors), falls back to the
+    /// dialect type dedicated to that column kind, because those kinds have no dialect-neutral
+    /// <see cref="ScalarKind"/>.
     /// </summary>
     private string ResolveColumnType(DbColumnModel column)
     {
@@ -2680,6 +2691,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 ColumnKind.Ordinal => _dialect.OrdinalColumnType,
                 ColumnKind.DocumentFk or ColumnKind.DescriptorFk or ColumnKind.ParentKeyPart =>
                     _dialect.DocumentIdColumnType,
+                ColumnKind.DocumentUuid => _dialect.UuidColumnType,
+                ColumnKind.CreatedByOwnershipTokenId => _dialect.SmallintColumnType,
                 _ => throw new InvalidOperationException(
                     $"Column '{column.ColumnName.Value}' of kind {column.Kind} has no ScalarType."
                 ),
@@ -3128,15 +3141,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string triggerName
     )
     {
-        // Exclude the synthesized change-version mirror columns: they are stamp targets, not client
+        // Exclude every synthesized dms.Document mirror column: they are stamp targets, not client
         // content, so a stamp-only mirror update must not be treated as a representation change. This
         // matches change-queries.md invariant #5 (affectedDocs excludes rows differing only in stamp
         // columns) and keeps mirror columns out of the no-op diff predicate.
         var storedColumns = tableModel
             .Columns.Where(column =>
-                column.Storage is ColumnStorage.Stored
-                && column.Kind
-                    is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                column.Storage is ColumnStorage.Stored && !IsDocumentMetadataMirrorColumn(column.Kind)
             )
             .Select(column => column.ColumnName)
             .ToArray();
@@ -3149,6 +3160,24 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         return storedColumns;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> for the synthesized root-table columns that mirror
+    /// <c>dms.Document</c> metadata. These are system columns maintained only by document-stamping
+    /// triggers, never client content, so they are excluded wherever the emitter reasons about a row's
+    /// client-visible representation.
+    /// </summary>
+    private static bool IsDocumentMetadataMirrorColumn(ColumnKind kind)
+    {
+        return kind
+            is ColumnKind.MirroredContentVersion
+                or ColumnKind.MirroredContentLastModifiedAt
+                or ColumnKind.DocumentUuid
+                or ColumnKind.MirroredIdentityVersion
+                or ColumnKind.MirroredIdentityLastModifiedAt
+                or ColumnKind.CreatedAt
+                or ColumnKind.CreatedByOwnershipTokenId;
     }
 
     private static IReadOnlyList<DbColumnName> GetKeyColumnsForDocumentStamping(

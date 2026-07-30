@@ -458,8 +458,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EventTimestamp" timestamp with time zone NOT NULL,
     CONSTRAINT "PK_DateTimeKeyResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DateTimeKeyResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_DateTimeKeyResource_NK" UNIQUE ("EventTimestamp")
 );
 
@@ -468,8 +474,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "DecimalKey" numeric(9,2) NOT NULL,
     CONSTRAINT "PK_DecimalKeyResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DecimalKeyResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_DecimalKeyResource_NK" UNIQUE ("DecimalKey"),
     CONSTRAINT "UX_DecimalKeyResource_RefKey" UNIQUE ("DecimalKey", "DocumentId")
 );
@@ -479,10 +491,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "DecimalKeyReference_DocumentId" bigint NOT NULL,
     "DecimalKeyReference_DecimalKey" numeric(9,2) NOT NULL,
     "RefResourceId" varchar(64) NOT NULL,
     CONSTRAINT "PK_DecimalRefResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DecimalRefResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_DecimalRefResource_NK" UNIQUE ("RefResourceId", "DecimalKeyReference_DocumentId"),
     CONSTRAINT "CK_DecimalRefResource_DecimalKeyReference_AllNone" CHECK (("DecimalKeyReference_DocumentId" IS NULL AND "DecimalKeyReference_DecimalKey" IS NULL) OR ("DecimalKeyReference_DocumentId" IS NOT NULL AND "DecimalKeyReference_DecimalKey" IS NOT NULL))
 );
@@ -492,11 +510,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EdOrgDependentResourceReference_DocumentId" bigint NOT NULL,
     "EdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NOT NULL,
     "EdOrgDependentResourceReference_EducationOrganizationId" integer NOT NULL,
     "EdOrgDependentChildResourceId" varchar(64) NOT NULL,
     CONSTRAINT "PK_EdOrgDependentChildResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EdOrgDependentChildResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EdOrgDependentChildResource_NK" UNIQUE ("EdOrgDependentChildResourceId", "EdOrgDependentResourceReference_DocumentId"),
     CONSTRAINT "CK_EdOrgDependentChildResource_EdOrgDependentResourc_eef3efb07d" CHECK (("EdOrgDependentResourceReference_DocumentId" IS NULL AND "EdOrgDependentResourceReference_EdOrgDependentResourceId" IS NULL AND "EdOrgDependentResourceReference_EducationOrganizationId" IS NULL) OR ("EdOrgDependentResourceReference_DocumentId" IS NOT NULL AND "EdOrgDependentResourceReference_EdOrgDependentResourceId" IS NOT NULL AND "EdOrgDependentResourceReference_EducationOrganizationId" IS NOT NULL))
 );
@@ -506,10 +530,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" integer NOT NULL,
     "EdOrgDependentResourceId" varchar(64) NOT NULL,
     CONSTRAINT "PK_EdOrgDependentResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EdOrgDependentResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EdOrgDependentResource_NK" UNIQUE ("EdOrgDependentResourceId", "EducationOrganization_DocumentId"),
     CONSTRAINT "UX_EdOrgDependentResource_RefKey" UNIQUE ("EdOrgDependentResourceId", "EducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_EdOrgDependentResource_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -520,6 +550,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "StudentUniqueId_Unified" varchar(32) NOT NULL,
     "ResourceAReference_DocumentId" bigint NOT NULL,
     "ResourceAReference_ResourceAId" varchar(64) NOT NULL,
@@ -529,6 +564,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
     "ResourceBReference_StudentUniqueId" varchar(32) GENERATED ALWAYS AS (CASE WHEN "ResourceBReference_DocumentId" IS NULL THEN NULL ELSE "StudentUniqueId_Unified" END) STORED,
     "KeyUnifiedResourceId" varchar(64) NOT NULL,
     CONSTRAINT "PK_KeyUnifiedResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_KeyUnifiedResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_KeyUnifiedResource_NK" UNIQUE ("KeyUnifiedResourceId", "ResourceAReference_DocumentId", "ResourceBReference_DocumentId"),
     CONSTRAINT "CK_KeyUnifiedResource_ResourceAReference_AllNone" CHECK (("ResourceAReference_DocumentId" IS NULL AND "ResourceAReference_ResourceAId" IS NULL AND "ResourceAReference_StudentUniqueId" IS NULL) OR ("ResourceAReference_DocumentId" IS NOT NULL AND "ResourceAReference_ResourceAId" IS NOT NULL AND "ResourceAReference_StudentUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_KeyUnifiedResource_ResourceBReference_AllNone" CHECK (("ResourceBReference_DocumentId" IS NULL AND "ResourceBReference_ResourceBId" IS NULL AND "ResourceBReference_StudentUniqueId" IS NULL) OR ("ResourceBReference_DocumentId" IS NOT NULL AND "ResourceBReference_ResourceBId" IS NOT NULL AND "ResourceBReference_StudentUniqueId" IS NOT NULL))
@@ -539,10 +575,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "StudentReference_DocumentId" bigint NOT NULL,
     "StudentReference_StudentUniqueId" varchar(32) NOT NULL,
     "ResourceAId" varchar(64) NOT NULL,
     CONSTRAINT "PK_ResourceA" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ResourceA_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ResourceA_NK" UNIQUE ("ResourceAId", "StudentReference_DocumentId"),
     CONSTRAINT "UX_ResourceA_RefKey" UNIQUE ("ResourceAId", "StudentReference_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_ResourceA_StudentReference_AllNone" CHECK (("StudentReference_DocumentId" IS NULL AND "StudentReference_StudentUniqueId" IS NULL) OR ("StudentReference_DocumentId" IS NOT NULL AND "StudentReference_StudentUniqueId" IS NOT NULL))
@@ -553,10 +595,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "StudentReference_DocumentId" bigint NOT NULL,
     "StudentReference_StudentUniqueId" varchar(32) NOT NULL,
     "ResourceBId" varchar(64) NOT NULL,
     CONSTRAINT "PK_ResourceB" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ResourceB_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ResourceB_NK" UNIQUE ("ResourceBId", "StudentReference_DocumentId"),
     CONSTRAINT "UX_ResourceB_RefKey" UNIQUE ("ResourceBId", "StudentReference_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_ResourceB_StudentReference_AllNone" CHECK (("StudentReference_DocumentId" IS NULL AND "StudentReference_StudentUniqueId" IS NULL) OR ("StudentReference_DocumentId" IS NOT NULL AND "StudentReference_StudentUniqueId" IS NOT NULL))
@@ -567,10 +615,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationId" integer NOT NULL,
     "NameOfInstitution" varchar(75) NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_School_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId"),
     CONSTRAINT "UX_School_RefKey" UNIQUE ("SchoolId", "DocumentId")
 );
@@ -580,9 +634,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "FirstName" varchar(75) NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Student_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId"),
     CONSTRAINT "UX_Student_RefKey" UNIQUE ("StudentUniqueId", "DocumentId")
 );
@@ -592,10 +652,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolReference_DocumentId" bigint NOT NULL,
     "SchoolReference_SchoolId" integer NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentSchoolAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSchoolAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSchoolAssociation_NK" UNIQUE ("StudentUniqueId", "SchoolReference_DocumentId"),
     CONSTRAINT "CK_StudentSchoolAssociation_SchoolReference_AllNone" CHECK (("SchoolReference_DocumentId" IS NULL AND "SchoolReference_SchoolId" IS NULL) OR ("SchoolReference_DocumentId" IS NOT NULL AND "SchoolReference_SchoolId" IS NOT NULL))
 );
@@ -1091,21 +1157,33 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_
 
 CREATE INDEX IF NOT EXISTS "IX_DateTimeKeyResource_ContentVersion" ON "edfi"."DateTimeKeyResource" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_DateTimeKeyResource_CreatedByOwnershipTokenId" ON "edfi"."DateTimeKeyResource" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_DecimalKeyResource_ContentVersion" ON "edfi"."DecimalKeyResource" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_DecimalKeyResource_CreatedByOwnershipTokenId" ON "edfi"."DecimalKeyResource" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_ContentVersion" ON "edfi"."DecimalRefResource" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_CreatedByOwnershipTokenId" ON "edfi"."DecimalRefResource" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_DecimalKeyReference_DecimalKey_d031852f35" ON "edfi"."DecimalRefResource" ("DecimalKeyReference_DecimalKey", "DecimalKeyReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_ContentVersion" ON "edfi"."EdOrgDependentChildResource" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_CreatedByOwnershipTokenId" ON "edfi"."EdOrgDependentChildResource" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_EdOrgDependentResourc_3459d40e7c" ON "edfi"."EdOrgDependentChildResource" ("EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId", "EdOrgDependentResourceReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_ContentVersion" ON "edfi"."EdOrgDependentResource" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_CreatedByOwnershipTokenId" ON "edfi"."EdOrgDependentResource" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_EducationOrganization_Educ_18a40a602a" ON "edfi"."EdOrgDependentResource" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ContentVersion" ON "edfi"."KeyUnifiedResource" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_CreatedByOwnershipTokenId" ON "edfi"."KeyUnifiedResource" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceAReference_ResourceAId_858ee7fc27" ON "edfi"."KeyUnifiedResource" ("ResourceAReference_ResourceAId", "StudentUniqueId_Unified", "ResourceAReference_DocumentId");
 
@@ -1113,17 +1191,27 @@ CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceBReference_ResourceBId
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceA_ContentVersion" ON "edfi"."ResourceA" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_ResourceA_CreatedByOwnershipTokenId" ON "edfi"."ResourceA" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_ResourceA_StudentReference_StudentUniqueId_Studen_01f592da4e" ON "edfi"."ResourceA" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceB_ContentVersion" ON "edfi"."ResourceB" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ResourceB_CreatedByOwnershipTokenId" ON "edfi"."ResourceB" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceB_StudentReference_StudentUniqueId_Studen_a5dd41ea49" ON "edfi"."ResourceB" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Student_CreatedByOwnershipTokenId" ON "edfi"."Student" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ContentVersion" ON "edfi"."StudentSchoolAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentSchoolAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolReference_SchoolId_d4059e9cc0" ON "edfi"."StudentSchoolAssociation" ("SchoolReference_SchoolId", "SchoolReference_DocumentId");
 

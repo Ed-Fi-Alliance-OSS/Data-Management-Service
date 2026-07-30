@@ -472,6 +472,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "PrimarySchoolTypeDescriptor_DescriptorId_Present" boolean NULL,
     "PrimarySchoolTypeDescriptor_Unified_DescriptorId" bigint NULL,
     "SecondarySchoolTypeDescriptor_DescriptorId_Present" boolean NULL,
@@ -484,6 +489,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
     "ProfileScopeClearableText" varchar(100) NULL,
     "ProfileScopePreservedText" varchar(100) NULL,
     CONSTRAINT "PK_ProfileRootOnlyMergeItem" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ProfileRootOnlyMergeItem_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ProfileRootOnlyMergeItem_NK" UNIQUE ("ProfileRootOnlyMergeItemId"),
     CONSTRAINT "CK_ProfileRootOnlyMergeItem_StudentReference_AllNone" CHECK (("StudentReference_DocumentId" IS NULL AND "StudentReference_StudentUniqueId" IS NULL) OR ("StudentReference_DocumentId" IS NOT NULL AND "StudentReference_StudentUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescrip_61d9cbded7" CHECK ("PrimarySchoolTypeDescriptor_DescriptorId_Present" IS NULL OR "PrimarySchoolTypeDescriptor_DescriptorId_Present" = true),
@@ -495,9 +501,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "FirstName" varchar(75) NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Student_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId"),
     CONSTRAINT "UX_Student_RefKey" UNIQUE ("StudentUniqueId", "DocumentId")
 );
@@ -607,11 +619,15 @@ CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"
 
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_ContentVersion" ON "edfi"."ProfileRootOnlyMergeItem" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_CreatedByOwnershipTokenId" ON "edfi"."ProfileRootOnlyMergeItem" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescrip_5313ae7036" ON "edfi"."ProfileRootOnlyMergeItem" ("PrimarySchoolTypeDescriptor_Unified_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_StudentReference_Student_706047d2af" ON "edfi"."ProfileRootOnlyMergeItem" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Student_CreatedByOwnershipTokenId" ON "edfi"."Student" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProfileRootOnlyMergeItem_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

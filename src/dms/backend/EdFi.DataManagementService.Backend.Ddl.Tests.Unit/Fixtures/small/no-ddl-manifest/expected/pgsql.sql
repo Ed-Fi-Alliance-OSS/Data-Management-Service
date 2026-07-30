@@ -457,8 +457,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "PersonId" integer NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Person_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Person_NK" UNIQUE ("PersonId")
 );
 
@@ -490,6 +496,8 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Person_ContentVersion" ON "edfi"."Person" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Person_CreatedByOwnershipTokenId" ON "edfi"."Person" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

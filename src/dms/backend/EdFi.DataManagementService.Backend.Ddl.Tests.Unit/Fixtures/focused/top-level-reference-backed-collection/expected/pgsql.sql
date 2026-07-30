@@ -457,10 +457,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Description" varchar(1024) NULL,
     "ProgramId" integer NOT NULL,
     "ProgramName" varchar(60) NOT NULL,
     CONSTRAINT "PK_Program" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Program_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Program_NK" UNIQUE ("ProgramId", "ProgramName"),
     CONSTRAINT "UX_Program_RefKey" UNIQUE ("ProgramId", "ProgramName", "DocumentId")
 );
@@ -470,8 +476,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_School_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId")
 );
 
@@ -582,7 +594,11 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Program_CreatedByOwnershipTokenId" ON "edfi"."Program" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolProgram_ProgramReference_ProgramId_ProgramR_b374fb5c0b" ON "edfi"."SchoolProgram" ("ProgramReference_ProgramId", "ProgramReference_ProgramName", "ProgramReference_DocumentId");
 

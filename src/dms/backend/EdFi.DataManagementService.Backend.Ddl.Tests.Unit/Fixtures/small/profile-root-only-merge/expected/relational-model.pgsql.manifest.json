@@ -60,6 +60,18 @@
       ]
     },
     {
+      "name": "IX_ProfileRootOnlyMergeItem_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescrip_5313ae7036",
       "table": {
         "schema": "edfi",
@@ -97,6 +109,18 @@
       ]
     },
     {
+      "name": "UX_ProfileRootOnlyMergeItem_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_ProfileRootOnlyMergeItem_NK",
       "table": {
         "schema": "edfi",
@@ -121,6 +145,18 @@
       ]
     },
     {
+      "name": "IX_Student_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_Student",
       "table": {
         "schema": "edfi",
@@ -130,6 +166,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Student_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -531,6 +579,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
               "kind": "Scalar",
               "type": {
@@ -702,6 +806,13 @@
             }
           ],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ProfileRootOnlyMergeItem_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_ProfileRootOnlyMergeItem_NK",
@@ -926,6 +1037,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "FirstName",
               "kind": "Scalar",
               "type": {
@@ -966,6 +1133,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_Student_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_Student_NK",

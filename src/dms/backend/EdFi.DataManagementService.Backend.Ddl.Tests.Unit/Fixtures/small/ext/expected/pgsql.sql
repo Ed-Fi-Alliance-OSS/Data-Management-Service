@@ -458,8 +458,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_School_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId")
 );
 
@@ -568,6 +574,8 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolExtensionAddress_BaseCollectionItemId_Schoo_8db7cde2b1" ON "sample"."SchoolExtensionAddress" ("BaseCollectionItemId", "School_DocumentId");
 

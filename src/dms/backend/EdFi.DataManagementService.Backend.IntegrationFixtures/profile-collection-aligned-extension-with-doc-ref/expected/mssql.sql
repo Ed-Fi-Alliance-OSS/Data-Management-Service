@@ -444,8 +444,14 @@ CREATE TABLE [edfi].[ParentResource]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ParentResource_ContentVersion] DEFAULT 0,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_CreatedAt] DEFAULT (sysutcdatetime()),
+    [CreatedByOwnershipTokenId] smallint NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_ParentResource_DocumentUuid] DEFAULT newid(),
+    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_ParentResource_IdentityVersion] DEFAULT 0,
     [ParentResourceId] int NOT NULL,
     CONSTRAINT [PK_ParentResource] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_ParentResource_DocumentUuid] UNIQUE ([DocumentUuid]),
     CONSTRAINT [UX_ParentResource_NK] UNIQUE ([ParentResourceId])
 );
 
@@ -480,8 +486,14 @@ CREATE TABLE [edfi].[Sponsor]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Sponsor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Sponsor_ContentVersion] DEFAULT 0,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Sponsor_CreatedAt] DEFAULT (sysutcdatetime()),
+    [CreatedByOwnershipTokenId] smallint NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_Sponsor_DocumentUuid] DEFAULT newid(),
+    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Sponsor_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Sponsor_IdentityVersion] DEFAULT 0,
     [SponsorName] nvarchar(30) NOT NULL,
     CONSTRAINT [PK_Sponsor] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_Sponsor_DocumentUuid] UNIQUE ([DocumentUuid]),
     CONSTRAINT [UX_Sponsor_NK] UNIQUE ([SponsorName]),
     CONSTRAINT [UX_Sponsor_RefKey] UNIQUE ([SponsorName], [DocumentId])
 );
@@ -591,9 +603,25 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ParentResource' AND i.name = N'IX_ParentResource_CreatedByOwnershipTokenId'
+)
+CREATE INDEX [IX_ParentResource_CreatedByOwnershipTokenId] ON [edfi].[ParentResource] ([CreatedByOwnershipTokenId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Sponsor' AND i.name = N'IX_Sponsor_ContentVersion'
 )
 CREATE INDEX [IX_Sponsor_ContentVersion] ON [edfi].[Sponsor] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Sponsor' AND i.name = N'IX_Sponsor_CreatedByOwnershipTokenId'
+)
+CREATE INDEX [IX_Sponsor_CreatedByOwnershipTokenId] ON [edfi].[Sponsor] ([CreatedByOwnershipTokenId]);
 
 GO
 CREATE OR ALTER TRIGGER [aligned].[TR_ParentResourceExtensionParent_Stamp]

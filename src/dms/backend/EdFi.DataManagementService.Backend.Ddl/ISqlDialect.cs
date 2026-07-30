@@ -304,6 +304,12 @@ public interface ISqlDialect
     /// </summary>
     string CurrentTimestampDefaultExpression { get; }
 
+    /// <summary>
+    /// Gets the dialect's DEFAULT expression for a newly generated UUID.
+    /// PostgreSQL: <c>gen_random_uuid()</c>. SQL Server: <c>newid()</c>.
+    /// </summary>
+    string NewGuidDefaultExpression { get; }
+
     // ── Core-table type methods ─────────────────────────────────────────
 
     /// <summary>

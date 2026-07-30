@@ -444,8 +444,14 @@ CREATE TABLE [edfi].[ParentResource]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ParentResource_ContentVersion] DEFAULT 0,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_CreatedAt] DEFAULT (sysutcdatetime()),
+    [CreatedByOwnershipTokenId] smallint NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_ParentResource_DocumentUuid] DEFAULT newid(),
+    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_ParentResource_IdentityVersion] DEFAULT 0,
     [ParentResourceId] int NOT NULL,
     CONSTRAINT [PK_ParentResource] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_ParentResource_DocumentUuid] UNIQUE ([DocumentUuid]),
     CONSTRAINT [UX_ParentResource_NK] UNIQUE ([ParentResourceId])
 );
 
@@ -592,6 +598,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ParentResource' AND i.name = N'IX_ParentResource_ContentVersion'
 )
 CREATE INDEX [IX_ParentResource_ContentVersion] ON [edfi].[ParentResource] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ParentResource' AND i.name = N'IX_ParentResource_CreatedByOwnershipTokenId'
+)
+CREATE INDEX [IX_ParentResource_CreatedByOwnershipTokenId] ON [edfi].[ParentResource] ([CreatedByOwnershipTokenId]);
 
 GO
 CREATE OR ALTER TRIGGER [aligned].[TR_ParentResourceExtensionParent_Stamp]

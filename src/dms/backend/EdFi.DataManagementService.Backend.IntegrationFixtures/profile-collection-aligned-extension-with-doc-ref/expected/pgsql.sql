@@ -458,8 +458,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ParentResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ParentResourceId" integer NOT NULL,
     CONSTRAINT "PK_ParentResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ParentResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ParentResource_NK" UNIQUE ("ParentResourceId")
 );
 
@@ -491,8 +497,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."Sponsor"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SponsorName" varchar(30) NOT NULL,
     CONSTRAINT "PK_Sponsor" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Sponsor_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Sponsor_NK" UNIQUE ("SponsorName"),
     CONSTRAINT "UX_Sponsor_RefKey" UNIQUE ("SponsorName", "DocumentId")
 );
@@ -608,7 +620,11 @@ CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParent_Sponsor_SponsorName
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_ParentResource_CreatedByOwnershipTokenId" ON "edfi"."ParentResource" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Sponsor_ContentVersion" ON "edfi"."Sponsor" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Sponsor_CreatedByOwnershipTokenId" ON "edfi"."Sponsor" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"()
 RETURNS TRIGGER AS $func$

@@ -473,6 +473,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
@@ -480,6 +485,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
     "TotalInstructionalDays" integer NOT NULL,
     "WeekIdentifier" varchar(80) NOT NULL,
     CONSTRAINT "PK_AcademicWeek" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_AcademicWeek_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_AcademicWeek_NK" UNIQUE ("School_DocumentId", "WeekIdentifier"),
     CONSTRAINT "UX_AcademicWeek_RefKey" UNIQUE ("School_SchoolId", "WeekIdentifier", "DocumentId"),
     CONSTRAINT "CK_AcademicWeek_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
@@ -490,6 +496,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."AccountabilityRating"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NOT NULL,
@@ -500,6 +511,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AccountabilityRating"
     "RatingProgram" varchar(30) NULL,
     "RatingTitle" varchar(60) NOT NULL,
     CONSTRAINT "PK_AccountabilityRating" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_AccountabilityRating_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_AccountabilityRating_NK" UNIQUE ("EducationOrganization_DocumentId", "RatingTitle", "SchoolYear_DocumentId"),
     CONSTRAINT "CK_AccountabilityRating_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_AccountabilityRating_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL))
@@ -510,6 +522,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NULL,
     "EducationOrganization_EducationOrganizationId" bigint NULL,
     "MandatingEducationOrganization_DocumentId" bigint NULL,
@@ -534,6 +551,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
     "Nomenclature" varchar(100) NULL,
     "RevisionDate" date NULL,
     CONSTRAINT "PK_Assessment" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Assessment_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Assessment_NK" UNIQUE ("AssessmentIdentifier", "Namespace"),
     CONSTRAINT "UX_Assessment_RefKey" UNIQUE ("AssessmentIdentifier", "Namespace", "DocumentId"),
     CONSTRAINT "CK_Assessment_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -688,6 +706,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
@@ -695,6 +718,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
     "AssigningEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "AdministrationIdentifier" varchar(255) NOT NULL,
     CONSTRAINT "PK_AssessmentAdministration" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_AssessmentAdministration_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_AssessmentAdministration_NK" UNIQUE ("AdministrationIdentifier", "Assessment_DocumentId", "AssigningEducationOrganization_DocumentId"),
     CONSTRAINT "UX_AssessmentAdministration_RefKey" UNIQUE ("AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_AssessmentAdministration_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL)),
@@ -733,6 +757,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
     "AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
@@ -741,6 +770,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
     "ParticipatingEducationOrganization_DocumentId" bigint NOT NULL,
     "ParticipatingEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     CONSTRAINT "PK_AssessmentAdministrationParticipation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_AssessmentAdministrationParticipation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_AssessmentAdministrationParticipation_NK" UNIQUE ("AssessmentAdministration_DocumentId", "ParticipatingEducationOrganization_DocumentId"),
     CONSTRAINT "CK_AssessmentAdministrationParticipation_AssessmentA_050786432e" CHECK (("AssessmentAdministration_DocumentId" IS NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NULL AND "AssessmentAdministration_Namespace" IS NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NULL) OR ("AssessmentAdministration_DocumentId" IS NOT NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NOT NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NOT NULL AND "AssessmentAdministration_Namespace" IS NOT NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_AssessmentAdministrationParticipation_Participati_81559058fc" CHECK (("ParticipatingEducationOrganization_DocumentId" IS NULL AND "ParticipatingEducationOrganization_EducationOrganizationId" IS NULL) OR ("ParticipatingEducationOrganization_DocumentId" IS NOT NULL AND "ParticipatingEducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -768,11 +798,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPart"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
     "AssessmentBatteryPartName" varchar(65) NOT NULL,
     CONSTRAINT "PK_AssessmentBatteryPart" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_AssessmentBatteryPart_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_AssessmentBatteryPart_NK" UNIQUE ("AssessmentBatteryPartName", "Assessment_DocumentId"),
     CONSTRAINT "UX_AssessmentBatteryPart_RefKey" UNIQUE ("AssessmentBatteryPartName", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "DocumentId"),
     CONSTRAINT "CK_AssessmentBatteryPart_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL))
@@ -798,6 +834,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
@@ -809,6 +850,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
     "MaxRawScore" numeric(15,5) NULL,
     "Nomenclature" varchar(100) NULL,
     CONSTRAINT "PK_AssessmentItem" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_AssessmentItem_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_AssessmentItem_NK" UNIQUE ("Assessment_DocumentId", "IdentificationCode"),
     CONSTRAINT "UX_AssessmentItem_RefKey" UNIQUE ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "IdentificationCode", "DocumentId"),
     CONSTRAINT "CK_AssessmentItem_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL))
@@ -846,6 +888,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandard"
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "Assessment_DocumentId" IS NULL THEN NULL ELSE "AssessmentIdentifier_Unified" END) STORED,
@@ -859,6 +906,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandard"
     "MinimumScore" varchar(35) NOT NULL,
     "ScoreRangeId" varchar(60) NOT NULL,
     CONSTRAINT "PK_AssessmentScoreRangeLearningStandard" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_AssessmentScoreRangeLearningStandard_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_AssessmentScoreRangeLearningStandard_NK" UNIQUE ("Assessment_DocumentId", "ScoreRangeId"),
     CONSTRAINT "CK_AssessmentScoreRangeLearningStandard_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL)),
     CONSTRAINT "CK_AssessmentScoreRangeLearningStandard_ObjectiveAss_63ec4bde4d" CHECK (("ObjectiveAssessment_DocumentId" IS NULL AND "ObjectiveAssessment_AssessmentIdentifier" IS NULL AND "ObjectiveAssessment_Namespace" IS NULL AND "ObjectiveAssessment_IdentificationCode" IS NULL) OR ("ObjectiveAssessment_DocumentId" IS NOT NULL AND "ObjectiveAssessment_AssessmentIdentifier" IS NOT NULL AND "ObjectiveAssessment_Namespace" IS NOT NULL AND "ObjectiveAssessment_IdentificationCode" IS NOT NULL))
@@ -882,10 +930,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_BalanceSheetDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_BalanceSheetDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_BalanceSheetDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_BalanceSheetDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -906,6 +960,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "AlternateDayName" varchar(20) NULL,
@@ -914,6 +973,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
     "StartTime" time NULL,
     "TotalInstructionalTime" integer NULL,
     CONSTRAINT "PK_BellSchedule" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_BellSchedule_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_BellSchedule_NK" UNIQUE ("BellScheduleName", "School_DocumentId"),
     CONSTRAINT "CK_BellSchedule_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
@@ -959,6 +1019,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -966,6 +1031,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
     "CalendarTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CalendarCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_Calendar" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Calendar_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Calendar_NK" UNIQUE ("CalendarCode", "School_DocumentId", "SchoolYear_DocumentId"),
     CONSTRAINT "UX_Calendar_RefKey" UNIQUE ("CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId"),
     CONSTRAINT "CK_Calendar_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
@@ -988,12 +1054,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Calendar_DocumentId" bigint NOT NULL,
     "Calendar_CalendarCode" varchar(60) NOT NULL,
     "Calendar_SchoolId" bigint NOT NULL,
     "Calendar_SchoolYear" integer NOT NULL,
     "Date" date NOT NULL,
     CONSTRAINT "PK_CalendarDate" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CalendarDate_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CalendarDate_NK" UNIQUE ("Calendar_DocumentId", "Date"),
     CONSTRAINT "UX_CalendarDate_RefKey" UNIQUE ("Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear", "Date", "DocumentId"),
     CONSTRAINT "CK_CalendarDate_Calendar_AllNone" CHECK (("Calendar_DocumentId" IS NULL AND "Calendar_CalendarCode" IS NULL AND "Calendar_SchoolId" IS NULL AND "Calendar_SchoolYear" IS NULL) OR ("Calendar_DocumentId" IS NOT NULL AND "Calendar_CalendarCode" IS NOT NULL AND "Calendar_SchoolId" IS NOT NULL AND "Calendar_SchoolYear" IS NOT NULL))
@@ -1015,7 +1087,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
     "FiscalYear_Unified" integer NOT NULL,
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "BalanceSheetBalanceSheetDimension_DocumentId" bigint NULL,
     "BalanceSheetBalanceSheetDimension_Code" varchar(16) NULL,
     "BalanceSheetBalanceSheetDimension_FiscalYear" integer GENERATED ALWAYS AS (CASE WHEN "BalanceSheetBalanceSheetDimension_DocumentId" IS NULL THEN NULL ELSE "FiscalYear_Unified" END) STORED,
@@ -1047,6 +1124,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
     "AccountName" varchar(100) NULL,
     "FiscalYear" integer GENERATED ALWAYS AS ("FiscalYear_Unified") STORED,
     CONSTRAINT "PK_ChartOfAccount" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ChartOfAccount_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ChartOfAccount_NK" UNIQUE ("AccountIdentifier", "EducationOrganization_DocumentId", "FiscalYear"),
     CONSTRAINT "UX_ChartOfAccount_RefKey" UNIQUE ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId"),
     CONSTRAINT "CK_ChartOfAccount_BalanceSheetBalanceSheetDimension_AllNone" CHECK (("BalanceSheetBalanceSheetDimension_DocumentId" IS NULL AND "BalanceSheetBalanceSheetDimension_Code" IS NULL AND "BalanceSheetBalanceSheetDimension_FiscalYear" IS NULL) OR ("BalanceSheetBalanceSheetDimension_DocumentId" IS NOT NULL AND "BalanceSheetBalanceSheetDimension_Code" IS NOT NULL AND "BalanceSheetBalanceSheetDimension_FiscalYear" IS NOT NULL)),
@@ -1077,11 +1155,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "ClassPeriodName" varchar(60) NOT NULL,
     "OfficialAttendancePeriod" boolean NULL,
     CONSTRAINT "PK_ClassPeriod" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ClassPeriod_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ClassPeriod_NK" UNIQUE ("ClassPeriodName", "School_DocumentId"),
     CONSTRAINT "UX_ClassPeriod_RefKey" UNIQUE ("ClassPeriodName", "School_SchoolId", "DocumentId"),
     CONSTRAINT "CK_ClassPeriod_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
@@ -1104,6 +1188,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
@@ -1112,6 +1201,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
     "CohortDescription" varchar(1024) NULL,
     "CohortIdentifier" varchar(36) NOT NULL,
     CONSTRAINT "PK_Cohort" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Cohort_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Cohort_NK" UNIQUE ("CohortIdentifier", "EducationOrganization_DocumentId"),
     CONSTRAINT "UX_Cohort_RefKey" UNIQUE ("CohortIdentifier", "EducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_Cohort_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -1137,12 +1227,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "CommunityOrganizationId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_CommunityOrganization" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CommunityOrganization_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CommunityOrganization_NK" UNIQUE ("CommunityOrganizationId"),
     CONSTRAINT "UX_CommunityOrganization_RefKey" UNIQUE ("CommunityOrganizationId", "DocumentId")
 );
@@ -1274,6 +1370,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CommunityOrganization_DocumentId" bigint NULL,
     "CommunityOrganization_CommunityOrganizationId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
@@ -1287,6 +1388,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_CommunityProvider" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CommunityProvider_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CommunityProvider_NK" UNIQUE ("CommunityProviderId"),
     CONSTRAINT "UX_CommunityProvider_RefKey" UNIQUE ("CommunityProviderId", "DocumentId"),
     CONSTRAINT "CK_CommunityProvider_CommunityOrganization_AllNone" CHECK (("CommunityOrganization_DocumentId" IS NULL AND "CommunityOrganization_CommunityOrganizationId" IS NULL) OR ("CommunityOrganization_DocumentId" IS NOT NULL AND "CommunityOrganization_CommunityOrganizationId" IS NOT NULL))
@@ -1419,6 +1521,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "CommunityProvider_CommunityProviderId" bigint NOT NULL,
     "LicenseStatusDescriptor_DescriptorId" bigint NULL,
@@ -1432,6 +1539,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
     "OldestAgeAuthorizedToServe" integer NULL,
     "YoungestAgeAuthorizedToServe" integer NULL,
     CONSTRAINT "PK_CommunityProviderLicense" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CommunityProviderLicense_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CommunityProviderLicense_NK" UNIQUE ("CommunityProvider_DocumentId", "LicenseIdentifier", "LicensingOrganization"),
     CONSTRAINT "CK_CommunityProviderLicense_CommunityProvider_AllNone" CHECK (("CommunityProvider_DocumentId" IS NULL AND "CommunityProvider_CommunityProviderId" IS NULL) OR ("CommunityProvider_DocumentId" IS NOT NULL AND "CommunityProvider_CommunityProviderId" IS NOT NULL))
 );
@@ -1441,6 +1549,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ObjectiveGradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -1449,6 +1562,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
     "Objective" varchar(60) NOT NULL,
     "SuccessCriteria" varchar(150) NULL,
     CONSTRAINT "PK_CompetencyObjective" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CompetencyObjective_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CompetencyObjective_NK" UNIQUE ("EducationOrganization_DocumentId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_CompetencyObjective_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_CompetencyObjective_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -1459,6 +1573,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Contact"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
     "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
@@ -1476,6 +1595,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Contact"
     "PreferredFirstName" varchar(75) NULL,
     "PreferredLastSurname" varchar(75) NULL,
     CONSTRAINT "PK_Contact" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Contact_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Contact_NK" UNIQUE ("ContactUniqueId"),
     CONSTRAINT "UX_Contact_RefKey" UNIQUE ("ContactUniqueId", "DocumentId"),
     CONSTRAINT "CK_Contact_Person_AllNone" CHECK (("Person_DocumentId" IS NULL AND "Person_PersonId" IS NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NULL) OR ("Person_DocumentId" IS NOT NULL AND "Person_PersonId" IS NOT NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NOT NULL))
@@ -1630,6 +1750,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Course"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "CareerPathwayDescriptor_DescriptorId" bigint NULL,
@@ -1650,6 +1775,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Course"
     "NumberOfParts" integer NOT NULL,
     "TimeRequiredForCompletion" integer NULL,
     CONSTRAINT "PK_Course" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Course_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Course_NK" UNIQUE ("CourseCode", "EducationOrganization_DocumentId"),
     CONSTRAINT "UX_Course_RefKey" UNIQUE ("CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_Course_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -1731,6 +1857,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Course_CourseCode" varchar(60) NOT NULL,
@@ -1745,6 +1876,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
     "LocalCourseCode" varchar(60) NOT NULL,
     "LocalCourseTitle" varchar(60) NULL,
     CONSTRAINT "PK_CourseOffering" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CourseOffering_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CourseOffering_NK" UNIQUE ("LocalCourseCode", "School_DocumentId", "Session_DocumentId"),
     CONSTRAINT "UX_CourseOffering_RefKey" UNIQUE ("LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "DocumentId"),
     CONSTRAINT "CK_CourseOffering_Course_AllNone" CHECK (("Course_DocumentId" IS NULL AND "Course_CourseCode" IS NULL AND "Course_EducationOrganizationId" IS NULL) OR ("Course_DocumentId" IS NOT NULL AND "Course_CourseCode" IS NOT NULL AND "Course_EducationOrganizationId" IS NOT NULL)),
@@ -1790,6 +1922,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CourseCourse_DocumentId" bigint NOT NULL,
     "CourseCourse_CourseCode" varchar(60) NOT NULL,
     "CourseCourse_EducationOrganizationId" bigint NOT NULL,
@@ -1820,6 +1957,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
     "FinalLetterGradeEarned" varchar(20) NULL,
     "FinalNumericGradeEarned" numeric(9,2) NULL,
     CONSTRAINT "PK_CourseTranscript" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CourseTranscript_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CourseTranscript_NK" UNIQUE ("CourseAttemptResultDescriptor_DescriptorId", "CourseCourse_DocumentId", "StudentAcademicRecord_DocumentId"),
     CONSTRAINT "CK_CourseTranscript_CourseCourse_AllNone" CHECK (("CourseCourse_DocumentId" IS NULL AND "CourseCourse_CourseCode" IS NULL AND "CourseCourse_EducationOrganizationId" IS NULL) OR ("CourseCourse_DocumentId" IS NOT NULL AND "CourseCourse_CourseCode" IS NOT NULL AND "CourseCourse_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_CourseTranscript_ExternalEducationOrganization_AllNone" CHECK (("ExternalEducationOrganization_DocumentId" IS NULL AND "ExternalEducationOrganization_EducationOrganizationId" IS NULL) OR ("ExternalEducationOrganization_DocumentId" IS NOT NULL AND "ExternalEducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -1927,6 +2065,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Credential"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CredentialFieldDescriptor_DescriptorId" bigint NULL,
     "CredentialTypeDescriptor_DescriptorId" bigint NOT NULL,
     "StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -1938,6 +2081,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Credential"
     "IssuanceDate" date NOT NULL,
     "Namespace" varchar(255) NOT NULL,
     CONSTRAINT "PK_Credential" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Credential_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Credential_NK" UNIQUE ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId"),
     CONSTRAINT "UX_Credential_RefKey" UNIQUE ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
 );
@@ -1980,12 +2124,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CrisisTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CrisisDescription" varchar(1024) NULL,
     "CrisisEndDate" date NULL,
     "CrisisEventName" varchar(100) NOT NULL,
     "CrisisStartDate" date NULL,
     CONSTRAINT "PK_CrisisEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_CrisisEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_CrisisEvent_NK" UNIQUE ("CrisisEventName"),
     CONSTRAINT "UX_CrisisEvent_RefKey" UNIQUE ("CrisisEventName", "DocumentId")
 );
@@ -1995,11 +2145,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMapping"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "MappedNamespace" varchar(255) NOT NULL,
     "MappedValue" varchar(50) NOT NULL,
     "Namespace" varchar(255) NOT NULL,
     "Value" varchar(50) NOT NULL,
     CONSTRAINT "PK_DescriptorMapping" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DescriptorMapping_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_DescriptorMapping_NK" UNIQUE ("MappedNamespace", "MappedValue", "Namespace", "Value")
 );
 
@@ -2019,6 +2175,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "AssignmentSchool_DocumentId" bigint NULL,
     "AssignmentSchool_SchoolId" bigint NULL,
     "ResponsibilitySchool_DocumentId" bigint NOT NULL,
@@ -2033,6 +2194,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
     "IepPlacementMeetingIndicator" boolean NULL,
     "RelatedToZeroTolerancePolicy" boolean NULL,
     CONSTRAINT "PK_DisciplineAction" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DisciplineAction_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_DisciplineAction_NK" UNIQUE ("DisciplineActionIdentifier", "DisciplineDate", "Student_DocumentId"),
     CONSTRAINT "CK_DisciplineAction_AssignmentSchool_AllNone" CHECK (("AssignmentSchool_DocumentId" IS NULL AND "AssignmentSchool_SchoolId" IS NULL) OR ("AssignmentSchool_DocumentId" IS NOT NULL AND "AssignmentSchool_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_DisciplineAction_ResponsibilitySchool_AllNone" CHECK (("ResponsibilitySchool_DocumentId" IS NULL AND "ResponsibilitySchool_SchoolId" IS NULL) OR ("ResponsibilitySchool_DocumentId" IS NOT NULL AND "ResponsibilitySchool_SchoolId" IS NOT NULL)),
@@ -2084,6 +2246,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "IncidentLocationDescriptor_DescriptorId" bigint NULL,
@@ -2097,6 +2264,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
     "ReportedToLawEnforcement" boolean NULL,
     "ReporterName" varchar(75) NULL,
     CONSTRAINT "PK_DisciplineIncident" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_DisciplineIncident_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_DisciplineIncident_NK" UNIQUE ("IncidentIdentifier", "School_DocumentId"),
     CONSTRAINT "UX_DisciplineIncident_RefKey" UNIQUE ("IncidentIdentifier", "School_SchoolId", "DocumentId"),
     CONSTRAINT "CK_DisciplineIncident_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
@@ -2143,6 +2311,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" bigint NULL,
     "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" varchar(60) NULL,
     "ContentClassDescriptor_DescriptorId" bigint NULL,
@@ -2162,6 +2335,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
     "UseRightsURL" varchar(255) NULL,
     "Version" varchar(10) NULL,
     CONSTRAINT "PK_EducationContent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EducationContent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EducationContent_NK" UNIQUE ("ContentIdentifier"),
     CONSTRAINT "UX_EducationContent_RefKey" UNIQUE ("ContentIdentifier", "DocumentId"),
     CONSTRAINT "CK_EducationContent_LearningResourceChoiceLearningRe_0e9435128b" CHECK (("LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" IS NULL AND "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" IS NULL) OR ("LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" IS NOT NULL AND "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" IS NOT NULL))
@@ -2251,6 +2425,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescription
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NOT NULL,
@@ -2259,6 +2438,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescription
     "BeginDate" date NULL,
     "EndDate" date NULL,
     CONSTRAINT "PK_EducationOrganizationInterventionPrescriptionAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EducationOrganizationInterventionPrescriptionAsso_20e153bc2a" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EducationOrganizationInterventionPrescriptionAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "InterventionPrescriptionInterventionPrescription_DocumentId"),
     CONSTRAINT "CK_EducationOrganizationInterventionPrescriptionAsso_4d9ce46462" CHECK (("InterventionPrescriptionInterventionPrescription_DocumentId" IS NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NULL) OR ("InterventionPrescriptionInterventionPrescription_DocumentId" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NOT NULL)),
     CONSTRAINT "CK_EducationOrganizationInterventionPrescriptionAsso_bfbbc63999" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -2269,6 +2449,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "NetworkPurposeDescriptor_DescriptorId" bigint NOT NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "EducationOrganizationNetworkId" bigint NOT NULL,
@@ -2276,6 +2461,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_EducationOrganizationNetwork" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EducationOrganizationNetwork_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EducationOrganizationNetwork_NK" UNIQUE ("EducationOrganizationNetworkId"),
     CONSTRAINT "UX_EducationOrganizationNetwork_RefKey" UNIQUE ("EducationOrganizationNetworkId", "DocumentId")
 );
@@ -2407,6 +2593,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "EducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NOT NULL,
     "MemberEducationOrganization_DocumentId" bigint NOT NULL,
@@ -2414,6 +2605,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
     "BeginDate" date NULL,
     "EndDate" date NULL,
     CONSTRAINT "PK_EducationOrganizationNetworkAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EducationOrganizationNetworkAssociation_NK" UNIQUE ("EducationOrganizationNetwork_DocumentId", "MemberEducationOrganization_DocumentId"),
     CONSTRAINT "CK_EducationOrganizationNetworkAssociation_Education_9095535ee0" CHECK (("EducationOrganizationNetwork_DocumentId" IS NULL AND "EducationOrganizationNetwork_EducationOrganizationNetworkId" IS NULL) OR ("EducationOrganizationNetwork_DocumentId" IS NOT NULL AND "EducationOrganizationNetwork_EducationOrganizationNetworkId" IS NOT NULL)),
     CONSTRAINT "CK_EducationOrganizationNetworkAssociation_MemberEdu_1e222d63b2" CHECK (("MemberEducationOrganization_DocumentId" IS NULL AND "MemberEducationOrganization_EducationOrganizationId" IS NULL) OR ("MemberEducationOrganization_DocumentId" IS NOT NULL AND "MemberEducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -2424,11 +2616,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationPeerAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "PeerEducationOrganization_DocumentId" bigint NOT NULL,
     "PeerEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     CONSTRAINT "PK_EducationOrganizationPeerAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EducationOrganizationPeerAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EducationOrganizationPeerAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "PeerEducationOrganization_DocumentId"),
     CONSTRAINT "CK_EducationOrganizationPeerAssociation_EducationOrg_cf46bd2870" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_EducationOrganizationPeerAssociation_PeerEducatio_1db5b7f399" CHECK (("PeerEducationOrganization_DocumentId" IS NULL AND "PeerEducationOrganization_EducationOrganizationId" IS NULL) OR ("PeerEducationOrganization_DocumentId" IS NOT NULL AND "PeerEducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -2439,6 +2637,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "StateEducationAgency_DocumentId" bigint NULL,
     "StateEducationAgency_StateEducationAgencyId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
@@ -2447,6 +2650,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_EducationServiceCenter" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EducationServiceCenter_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EducationServiceCenter_NK" UNIQUE ("EducationServiceCenterId"),
     CONSTRAINT "UX_EducationServiceCenter_RefKey" UNIQUE ("EducationServiceCenterId", "DocumentId"),
     CONSTRAINT "CK_EducationServiceCenter_StateEducationAgency_AllNone" CHECK (("StateEducationAgency_DocumentId" IS NULL AND "StateEducationAgency_StateEducationAgencyId" IS NULL) OR ("StateEducationAgency_DocumentId" IS NOT NULL AND "StateEducationAgency_StateEducationAgencyId" IS NOT NULL))
@@ -2579,6 +2783,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
     "ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NOT NULL,
@@ -2592,6 +2801,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
     "EvaluationRubricRating" integer NOT NULL,
     "RubricDimensionSortOrder" integer NULL,
     CONSTRAINT "PK_EvaluationRubricDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_EvaluationRubricDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_EvaluationRubricDimension_NK" UNIQUE ("EvaluationRubricRating", "ProgramEvaluationElement_DocumentId"),
     CONSTRAINT "CK_EvaluationRubricDimension_ProgramEvaluationElement_AllNone" CHECK (("ProgramEvaluationElement_DocumentId" IS NULL AND "ProgramEvaluationElement_ProgramEvaluationElementTitle" IS NULL AND "ProgramEvaluationElement_ProgramEducationOrganizationId" IS NULL AND "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" IS NULL AND "ProgramEvaluationElement_ProgramEvaluationTitle" IS NULL AND "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" IS NULL AND "ProgramEvaluationElement_ProgramName" IS NULL AND "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramEvaluationElement_DocumentId" IS NOT NULL AND "ProgramEvaluationElement_ProgramEvaluationElementTitle" IS NOT NULL AND "ProgramEvaluationElement_ProgramEducationOrganizationId" IS NOT NULL AND "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" IS NOT NULL AND "ProgramEvaluationElement_ProgramEvaluationTitle" IS NOT NULL AND "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" IS NOT NULL AND "ProgramEvaluationElement_ProgramName" IS NOT NULL AND "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
@@ -2601,6 +2811,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."FeederSchoolAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "FeederSchool_DocumentId" bigint NOT NULL,
     "FeederSchool_SchoolId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -2609,6 +2824,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FeederSchoolAssociation"
     "EndDate" date NULL,
     "FeederRelationshipDescription" varchar(1024) NULL,
     CONSTRAINT "PK_FeederSchoolAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_FeederSchoolAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_FeederSchoolAssociation_NK" UNIQUE ("BeginDate", "FeederSchool_DocumentId", "School_DocumentId"),
     CONSTRAINT "CK_FeederSchoolAssociation_FeederSchool_AllNone" CHECK (("FeederSchool_DocumentId" IS NULL AND "FeederSchool_SchoolId" IS NULL) OR ("FeederSchool_DocumentId" IS NOT NULL AND "FeederSchool_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_FeederSchoolAssociation_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
@@ -2619,10 +2835,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_FunctionDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_FunctionDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_FunctionDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_FunctionDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -2643,10 +2865,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_FundDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_FundDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_FundDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_FundDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -2667,6 +2895,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Grade"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
@@ -2691,6 +2924,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Grade"
     "LetterGradeEarned" varchar(20) NULL,
     "NumericGradeEarned" numeric(9,2) NULL,
     CONSTRAINT "PK_Grade" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Grade_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Grade_NK" UNIQUE ("GradeTypeDescriptor_DescriptorId", "GradingPeriodGradingPeriod_DocumentId", "StudentSectionAssociation_DocumentId"),
     CONSTRAINT "UX_Grade_RefKey" UNIQUE ("GradeTypeDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_Grade_GradingPeriodGradingPeriod_AllNone" CHECK (("GradingPeriodGradingPeriod_DocumentId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriodGradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NOT NULL)),
@@ -2719,6 +2953,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NULL,
     "SchoolYear_Unified" integer NULL,
     "GradingPeriod_DocumentId" bigint NULL,
@@ -2743,6 +2982,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
     "SourceSectionIdentifier" varchar(255) NOT NULL,
     "Title" varchar(100) NOT NULL,
     CONSTRAINT "PK_GradebookEntry" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_GradebookEntry_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_GradebookEntry_NK" UNIQUE ("GradebookEntryIdentifier", "Namespace"),
     CONSTRAINT "UX_GradebookEntry_RefKey" UNIQUE ("GradebookEntryIdentifier", "Namespace", "DocumentId"),
     CONSTRAINT "CK_GradebookEntry_GradingPeriod_AllNone" CHECK (("GradingPeriod_DocumentId" IS NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriod_SchoolId" IS NULL AND "GradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriod_SchoolYear" IS NOT NULL)),
@@ -2767,6 +3007,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -2778,6 +3023,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
     "PeriodSequence" integer NULL,
     "TotalInstructionalDays" integer NOT NULL,
     CONSTRAINT "PK_GradingPeriod" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_GradingPeriod_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_GradingPeriod_NK" UNIQUE ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_DocumentId", "SchoolYear_DocumentId"),
     CONSTRAINT "UX_GradingPeriod_RefKey" UNIQUE ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId"),
     CONSTRAINT "CK_GradingPeriod_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
@@ -2789,6 +3035,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GraduationSchoolYear_DocumentId" bigint NOT NULL,
@@ -2799,6 +3050,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
     "TotalRequiredCreditConversion" numeric(9,2) NULL,
     "TotalRequiredCredits" numeric(9,3) NOT NULL,
     CONSTRAINT "PK_GraduationPlan" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_GraduationPlan_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_GraduationPlan_NK" UNIQUE ("EducationOrganization_DocumentId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_DocumentId"),
     CONSTRAINT "UX_GraduationPlan_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear", "DocumentId"),
     CONSTRAINT "CK_GraduationPlan_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -2905,6 +3157,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -2916,6 +3173,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
     "MinDosage" integer NULL,
     "Namespace" varchar(255) NULL,
     CONSTRAINT "PK_Intervention" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Intervention_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Intervention_NK" UNIQUE ("EducationOrganization_DocumentId", "InterventionIdentificationCode"),
     CONSTRAINT "UX_Intervention_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode", "DocumentId"),
     CONSTRAINT "CK_Intervention_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -3044,6 +3302,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -3053,6 +3316,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
     "MinDosage" integer NULL,
     "Namespace" varchar(255) NULL,
     CONSTRAINT "PK_InterventionPrescription" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_InterventionPrescription_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_InterventionPrescription_NK" UNIQUE ("EducationOrganization_DocumentId", "InterventionPrescriptionIdentificationCode"),
     CONSTRAINT "UX_InterventionPrescription_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode", "DocumentId"),
     CONSTRAINT "CK_InterventionPrescription_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -3142,6 +3406,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NOT NULL,
@@ -3152,6 +3421,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
     "InterventionStudyIdentificationCode" varchar(60) NOT NULL,
     "Participants" integer NOT NULL,
     CONSTRAINT "PK_InterventionStudy" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_InterventionStudy_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_InterventionStudy_NK" UNIQUE ("EducationOrganization_DocumentId", "InterventionStudyIdentificationCode"),
     CONSTRAINT "CK_InterventionStudy_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_InterventionStudy_InterventionPrescriptionInterve_adfed3c6b2" CHECK (("InterventionPrescriptionInterventionPrescription_DocumentId" IS NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NULL) OR ("InterventionPrescriptionInterventionPrescription_DocumentId" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NOT NULL))
@@ -3256,6 +3526,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "MandatingEducationOrganization_DocumentId" bigint NULL,
     "MandatingEducationOrganization_EducationOrganizationId" bigint NULL,
     "ParentLearningStandard_DocumentId" bigint NULL,
@@ -3278,6 +3553,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
     "SuccessCriteria" varchar(150) NULL,
     "Uri" varchar(255) NULL,
     CONSTRAINT "PK_LearningStandard" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LearningStandard_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LearningStandard_NK" UNIQUE ("LearningStandardId"),
     CONSTRAINT "UX_LearningStandard_RefKey" UNIQUE ("LearningStandardId", "DocumentId"),
     CONSTRAINT "CK_LearningStandard_MandatingEducationOrganization_AllNone" CHECK (("MandatingEducationOrganization_DocumentId" IS NULL AND "MandatingEducationOrganization_EducationOrganizationId" IS NULL) OR ("MandatingEducationOrganization_DocumentId" IS NOT NULL AND "MandatingEducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -3334,6 +3610,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SourceLearningStandard_DocumentId" bigint NOT NULL,
     "SourceLearningStandard_LearningStandardId" varchar(60) NOT NULL,
     "TargetLearningStandard_DocumentId" bigint NOT NULL,
@@ -3343,6 +3624,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
     "LearningStandardEquivalenceStrengthDescription" varchar(255) NULL,
     "Namespace" varchar(255) NOT NULL,
     CONSTRAINT "PK_LearningStandardEquivalenceAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LearningStandardEquivalenceAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LearningStandardEquivalenceAssociation_NK" UNIQUE ("Namespace", "SourceLearningStandard_DocumentId", "TargetLearningStandard_DocumentId"),
     CONSTRAINT "CK_LearningStandardEquivalenceAssociation_SourceLear_16d5f8c99e" CHECK (("SourceLearningStandard_DocumentId" IS NULL AND "SourceLearningStandard_LearningStandardId" IS NULL) OR ("SourceLearningStandard_DocumentId" IS NOT NULL AND "SourceLearningStandard_LearningStandardId" IS NOT NULL)),
     CONSTRAINT "CK_LearningStandardEquivalenceAssociation_TargetLear_2efdc31d19" CHECK (("TargetLearningStandard_DocumentId" IS NULL AND "TargetLearningStandard_LearningStandardId" IS NULL) OR ("TargetLearningStandard_DocumentId" IS NOT NULL AND "TargetLearningStandard_LearningStandardId" IS NOT NULL))
@@ -3353,7 +3635,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
     "FiscalYear_Unified" integer NOT NULL,
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ChartOfAccountChartOfAccount_DocumentId" bigint NOT NULL,
     "ChartOfAccountChartOfAccount_AccountIdentifier" varchar(50) NOT NULL,
     "ChartOfAccountChartOfAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3364,6 +3651,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
     "AccountName" varchar(100) NULL,
     "FiscalYear" integer GENERATED ALWAYS AS ("FiscalYear_Unified") STORED,
     CONSTRAINT "PK_LocalAccount" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalAccount_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalAccount_NK" UNIQUE ("AccountIdentifier", "EducationOrganization_DocumentId", "FiscalYear"),
     CONSTRAINT "UX_LocalAccount_RefKey" UNIQUE ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId"),
     CONSTRAINT "CK_LocalAccount_ChartOfAccountChartOfAccount_AllNone" CHECK (("ChartOfAccountChartOfAccount_DocumentId" IS NULL AND "ChartOfAccountChartOfAccount_AccountIdentifier" IS NULL AND "ChartOfAccountChartOfAccount_EducationOrganizationId" IS NULL AND "ChartOfAccountChartOfAccount_FiscalYear" IS NULL) OR ("ChartOfAccountChartOfAccount_DocumentId" IS NOT NULL AND "ChartOfAccountChartOfAccount_AccountIdentifier" IS NOT NULL AND "ChartOfAccountChartOfAccount_EducationOrganizationId" IS NOT NULL AND "ChartOfAccountChartOfAccount_FiscalYear" IS NOT NULL)),
@@ -3387,6 +3675,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3395,6 +3688,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalActual" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalActual_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalActual_NK" UNIQUE ("AsOfDate", "LocalAccount_DocumentId"),
     CONSTRAINT "CK_LocalActual_LocalAccount_AllNone" CHECK (("LocalAccount_DocumentId" IS NULL AND "LocalAccount_AccountIdentifier" IS NULL AND "LocalAccount_EducationOrganizationId" IS NULL AND "LocalAccount_FiscalYear" IS NULL) OR ("LocalAccount_DocumentId" IS NOT NULL AND "LocalAccount_AccountIdentifier" IS NOT NULL AND "LocalAccount_EducationOrganizationId" IS NOT NULL AND "LocalAccount_FiscalYear" IS NOT NULL))
 );
@@ -3404,6 +3698,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3412,6 +3711,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalBudget" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalBudget_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalBudget_NK" UNIQUE ("AsOfDate", "LocalAccount_DocumentId"),
     CONSTRAINT "CK_LocalBudget_LocalAccount_AllNone" CHECK (("LocalAccount_DocumentId" IS NULL AND "LocalAccount_AccountIdentifier" IS NULL AND "LocalAccount_EducationOrganizationId" IS NULL AND "LocalAccount_FiscalYear" IS NULL) OR ("LocalAccount_DocumentId" IS NOT NULL AND "LocalAccount_AccountIdentifier" IS NOT NULL AND "LocalAccount_EducationOrganizationId" IS NOT NULL AND "LocalAccount_FiscalYear" IS NOT NULL))
 );
@@ -3421,6 +3721,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3431,6 +3736,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalContractedStaff" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalContractedStaff_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalContractedStaff_NK" UNIQUE ("AsOfDate", "LocalAccount_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_LocalContractedStaff_LocalAccount_AllNone" CHECK (("LocalAccount_DocumentId" IS NULL AND "LocalAccount_AccountIdentifier" IS NULL AND "LocalAccount_EducationOrganizationId" IS NULL AND "LocalAccount_FiscalYear" IS NULL) OR ("LocalAccount_DocumentId" IS NOT NULL AND "LocalAccount_AccountIdentifier" IS NOT NULL AND "LocalAccount_EducationOrganizationId" IS NOT NULL AND "LocalAccount_FiscalYear" IS NOT NULL)),
     CONSTRAINT "CK_LocalContractedStaff_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -3441,6 +3747,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationServiceCenter_DocumentId" bigint NULL,
     "EducationServiceCenter_EducationServiceCenterId" bigint NULL,
     "ParentLocalEducationAgency_DocumentId" bigint NULL,
@@ -3455,6 +3766,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalEducationAgency_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalEducationAgency_NK" UNIQUE ("LocalEducationAgencyId"),
     CONSTRAINT "UX_LocalEducationAgency_RefKey" UNIQUE ("LocalEducationAgencyId", "DocumentId"),
     CONSTRAINT "CK_LocalEducationAgency_EducationServiceCenter_AllNone" CHECK (("EducationServiceCenter_DocumentId" IS NULL AND "EducationServiceCenter_EducationServiceCenterId" IS NULL) OR ("EducationServiceCenter_DocumentId" IS NOT NULL AND "EducationServiceCenter_EducationServiceCenterId" IS NOT NULL)),
@@ -3623,6 +3935,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3631,6 +3948,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalEncumbrance" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalEncumbrance_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalEncumbrance_NK" UNIQUE ("AsOfDate", "LocalAccount_DocumentId"),
     CONSTRAINT "CK_LocalEncumbrance_LocalAccount_AllNone" CHECK (("LocalAccount_DocumentId" IS NULL AND "LocalAccount_AccountIdentifier" IS NULL AND "LocalAccount_EducationOrganizationId" IS NULL AND "LocalAccount_FiscalYear" IS NULL) OR ("LocalAccount_DocumentId" IS NOT NULL AND "LocalAccount_AccountIdentifier" IS NOT NULL AND "LocalAccount_EducationOrganizationId" IS NOT NULL AND "LocalAccount_FiscalYear" IS NOT NULL))
 );
@@ -3640,6 +3958,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3650,6 +3973,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalPayroll" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalPayroll_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalPayroll_NK" UNIQUE ("AsOfDate", "LocalAccount_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_LocalPayroll_LocalAccount_AllNone" CHECK (("LocalAccount_DocumentId" IS NULL AND "LocalAccount_AccountIdentifier" IS NULL AND "LocalAccount_EducationOrganizationId" IS NULL AND "LocalAccount_FiscalYear" IS NULL) OR ("LocalAccount_DocumentId" IS NOT NULL AND "LocalAccount_AccountIdentifier" IS NOT NULL AND "LocalAccount_EducationOrganizationId" IS NOT NULL AND "LocalAccount_FiscalYear" IS NOT NULL)),
     CONSTRAINT "CK_LocalPayroll_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -3660,12 +3984,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."Location"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "ClassroomIdentificationCode" varchar(60) NOT NULL,
     "MaximumNumberOfSeats" integer NULL,
     "OptimalNumberOfSeats" integer NULL,
     CONSTRAINT "PK_Location" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Location_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Location_NK" UNIQUE ("ClassroomIdentificationCode", "School_DocumentId"),
     CONSTRAINT "UX_Location_RefKey" UNIQUE ("ClassroomIdentificationCode", "School_SchoolId", "DocumentId"),
     CONSTRAINT "CK_Location_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
@@ -3676,10 +4006,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_ObjectDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ObjectDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ObjectDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_ObjectDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -3701,6 +4037,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "Assessment_DocumentId" IS NULL THEN NULL ELSE "AssessmentIdentifier_Unified" END) STORED,
@@ -3716,6 +4057,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
     "Nomenclature" varchar(100) NULL,
     "PercentOfAssessment" numeric(5,4) NULL,
     CONSTRAINT "PK_ObjectiveAssessment" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ObjectiveAssessment_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ObjectiveAssessment_NK" UNIQUE ("Assessment_DocumentId", "IdentificationCode"),
     CONSTRAINT "UX_ObjectiveAssessment_RefKey" UNIQUE ("AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode", "DocumentId"),
     CONSTRAINT "CK_ObjectiveAssessment_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL)),
@@ -3785,6 +4127,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "EmploymentStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -3796,6 +4143,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
     "PositionTitle" varchar(100) NULL,
     "RequisitionNumber" varchar(20) NOT NULL,
     CONSTRAINT "PK_OpenStaffPosition" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_OpenStaffPosition_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_OpenStaffPosition_NK" UNIQUE ("EducationOrganization_DocumentId", "RequisitionNumber"),
     CONSTRAINT "CK_OpenStaffPosition_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
@@ -3827,10 +4175,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_OperationalUnitDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_OperationalUnitDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_OperationalUnitDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_OperationalUnitDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -3851,6 +4205,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ParentEducationOrganization_DocumentId" bigint NULL,
     "ParentEducationOrganization_EducationOrganizationId" bigint NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
@@ -3860,6 +4219,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_OrganizationDepartment" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_OrganizationDepartment_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_OrganizationDepartment_NK" UNIQUE ("OrganizationDepartmentId"),
     CONSTRAINT "CK_OrganizationDepartment_ParentEducationOrganization_AllNone" CHECK (("ParentEducationOrganization_DocumentId" IS NULL AND "ParentEducationOrganization_EducationOrganizationId" IS NULL) OR ("ParentEducationOrganization_DocumentId" IS NOT NULL AND "ParentEducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
@@ -3991,9 +4351,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SourceSystemDescriptor_DescriptorId" bigint NOT NULL,
     "PersonId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Person_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Person_NK" UNIQUE ("PersonId", "SourceSystemDescriptor_DescriptorId"),
     CONSTRAINT "UX_Person_RefKey" UNIQUE ("PersonId", "SourceSystemDescriptor_DescriptorId", "DocumentId")
 );
@@ -4003,6 +4369,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "PostSecondaryInstitution_DocumentId" bigint NULL,
     "PostSecondaryInstitution_PostSecondaryInstitutionId" bigint NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -4010,6 +4381,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
     "PostSecondaryEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
     "EventDate" date NOT NULL,
     CONSTRAINT "PK_PostSecondaryEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_PostSecondaryEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_PostSecondaryEvent_NK" UNIQUE ("EventDate", "PostSecondaryEventCategoryDescriptor_DescriptorId", "Student_DocumentId"),
     CONSTRAINT "CK_PostSecondaryEvent_PostSecondaryInstitution_AllNone" CHECK (("PostSecondaryInstitution_DocumentId" IS NULL AND "PostSecondaryInstitution_PostSecondaryInstitutionId" IS NULL) OR ("PostSecondaryInstitution_DocumentId" IS NOT NULL AND "PostSecondaryInstitution_PostSecondaryInstitutionId" IS NOT NULL)),
     CONSTRAINT "CK_PostSecondaryEvent_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -4020,6 +4392,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "AdministrativeFundingControlDescriptor_DescriptorId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "PostSecondaryInstitutionLevelDescriptor_DescriptorId" bigint NULL,
@@ -4028,6 +4405,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_PostSecondaryInstitution" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_PostSecondaryInstitution_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_PostSecondaryInstitution_NK" UNIQUE ("PostSecondaryInstitutionId"),
     CONSTRAINT "UX_PostSecondaryInstitution_RefKey" UNIQUE ("PostSecondaryInstitutionId", "DocumentId")
 );
@@ -4170,12 +4548,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "ProgramId" varchar(20) NULL,
     "ProgramName" varchar(60) NOT NULL,
     CONSTRAINT "PK_Program" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Program_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Program_NK" UNIQUE ("EducationOrganization_DocumentId", "ProgramName", "ProgramTypeDescriptor_DescriptorId"),
     CONSTRAINT "UX_Program_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_Program_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -4221,10 +4605,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_ProgramDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ProgramDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ProgramDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_ProgramDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -4245,6 +4635,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
@@ -4256,6 +4651,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
     "ProgramEvaluationDescription" varchar(255) NULL,
     "ProgramEvaluationTitle" varchar(50) NOT NULL,
     CONSTRAINT "PK_ProgramEvaluation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ProgramEvaluation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ProgramEvaluation_NK" UNIQUE ("ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId"),
     CONSTRAINT "UX_ProgramEvaluation_RefKey" UNIQUE ("ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_ProgramEvaluation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
@@ -4279,6 +4675,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEducationOrganizationId_Unified" bigint NOT NULL,
     "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" bigint NOT NULL,
     "ProgramEvaluationTitle_Unified" varchar(50) NOT NULL,
@@ -4306,6 +4707,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
     "ProgramEvaluationElementDescription" varchar(255) NULL,
     "ProgramEvaluationElementTitle" varchar(50) NOT NULL,
     CONSTRAINT "PK_ProgramEvaluationElement" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ProgramEvaluationElement_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ProgramEvaluationElement_NK" UNIQUE ("ProgramEvaluationElementTitle", "ProgramEvaluation_DocumentId"),
     CONSTRAINT "UX_ProgramEvaluationElement_RefKey" UNIQUE ("ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_ProgramEvaluationElement_ProgramEvaluationObjective_AllNone" CHECK (("ProgramEvaluationObjective_DocumentId" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" IS NULL AND "ProgramEvaluationObjective_ProgramEducationOrganizationId" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationTitle" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb" IS NULL AND "ProgramEvaluationObjective_ProgramName" IS NULL AND "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramEvaluationObjective_DocumentId" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEducationOrganizationId" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationTitle" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb" IS NOT NULL AND "ProgramEvaluationObjective_ProgramName" IS NOT NULL AND "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -4330,6 +4732,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
     "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
@@ -4343,6 +4750,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
     "ProgramEvaluationObjectiveDescription" varchar(255) NULL,
     "ProgramEvaluationObjectiveTitle" varchar(50) NOT NULL,
     CONSTRAINT "PK_ProgramEvaluationObjective" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ProgramEvaluationObjective_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ProgramEvaluationObjective_NK" UNIQUE ("ProgramEvaluationObjectiveTitle", "ProgramEvaluation_DocumentId"),
     CONSTRAINT "UX_ProgramEvaluationObjective_RefKey" UNIQUE ("ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_ProgramEvaluationObjective_ProgramEvaluation_AllNone" CHECK (("ProgramEvaluation_DocumentId" IS NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NULL AND "ProgramEvaluation_ProgramName" IS NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramEvaluation_DocumentId" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NOT NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NOT NULL AND "ProgramEvaluation_ProgramName" IS NOT NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
@@ -4366,10 +4774,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_ProjectDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ProjectDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ProjectDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_ProjectDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -4390,6 +4804,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
@@ -4403,6 +4822,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
     "NumberOfDaysInAttendance" numeric(18,4) NULL,
     "NumberOfDaysTardy" integer NULL,
     CONSTRAINT "PK_ReportCard" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ReportCard_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ReportCard_NK" UNIQUE ("EducationOrganization_DocumentId", "GradingPeriodGradingPeriod_DocumentId", "Student_DocumentId"),
     CONSTRAINT "UX_ReportCard_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_ReportCard_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -4474,6 +4894,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
@@ -4486,6 +4911,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
     "EventDate" date NOT NULL,
     "RestraintEventIdentifier" varchar(36) NOT NULL,
     CONSTRAINT "PK_RestraintEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_RestraintEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_RestraintEvent_NK" UNIQUE ("RestraintEventIdentifier", "School_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_RestraintEvent_DisciplineIncident_AllNone" CHECK (("DisciplineIncident_DocumentId" IS NULL AND "DisciplineIncident_IncidentIdentifier" IS NULL AND "DisciplineIncident_SchoolId" IS NULL) OR ("DisciplineIncident_DocumentId" IS NOT NULL AND "DisciplineIncident_IncidentIdentifier" IS NOT NULL AND "DisciplineIncident_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_RestraintEvent_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL)),
@@ -4523,6 +4949,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CharterApprovalSchoolYear_DocumentId" bigint NULL,
     "CharterApprovalSchoolYear_CharterApprovalSchoolYear" integer NULL,
     "LocalEducationAgency_DocumentId" bigint NULL,
@@ -4540,6 +4971,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_School_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId"),
     CONSTRAINT "UX_School_RefKey" UNIQUE ("SchoolId", "DocumentId"),
     CONSTRAINT "CK_School_CharterApprovalSchoolYear_AllNone" CHECK (("CharterApprovalSchoolYear_DocumentId" IS NULL AND "CharterApprovalSchoolYear_CharterApprovalSchoolYear" IS NULL) OR ("CharterApprovalSchoolYear_DocumentId" IS NOT NULL AND "CharterApprovalSchoolYear_CharterApprovalSchoolYear" IS NOT NULL)),
@@ -4695,10 +5127,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CurrentSchoolYear" boolean NOT NULL,
     "SchoolYear" integer NOT NULL,
     "SchoolYearDescription" varchar(50) NOT NULL,
     CONSTRAINT "PK_SchoolYearType" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SchoolYearType_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SchoolYearType_NK" UNIQUE ("SchoolYear"),
     CONSTRAINT "UX_SchoolYearType_RefKey" UNIQUE ("SchoolYear", "DocumentId")
 );
@@ -4708,6 +5146,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Section"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_U35501e03_Unified" bigint NULL,
     "SchoolId_Unified" bigint NOT NULL,
     "CourseOffering_DocumentId" bigint NOT NULL,
@@ -4734,6 +5177,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Section"
     "SectionName" varchar(100) NULL,
     "SequenceOfCourse" integer NULL,
     CONSTRAINT "PK_Section" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Section_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Section_NK" UNIQUE ("CourseOffering_DocumentId", "SectionIdentifier"),
     CONSTRAINT "UX_Section_RefKey" UNIQUE ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId"),
     CONSTRAINT "CK_Section_CourseOffering_AllNone" CHECK (("CourseOffering_DocumentId" IS NULL AND "CourseOffering_LocalCourseCode" IS NULL AND "CourseOffering_SchoolReferenceSchoolId" IS NULL AND "CourseOffering_SessionReferenceSchoolId" IS NULL AND "CourseOffering_SchoolYear" IS NULL AND "CourseOffering_SessionName" IS NULL) OR ("CourseOffering_DocumentId" IS NOT NULL AND "CourseOffering_LocalCourseCode" IS NOT NULL AND "CourseOffering_SchoolReferenceSchoolId" IS NOT NULL AND "CourseOffering_SessionReferenceSchoolId" IS NOT NULL AND "CourseOffering_SchoolYear" IS NOT NULL AND "CourseOffering_SessionName" IS NOT NULL)),
@@ -4808,6 +5252,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionAttendanceTakenEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "CalendarDate_DocumentId" bigint NOT NULL,
@@ -4825,6 +5274,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionAttendanceTakenEvent"
     "Staff_StaffUniqueId" varchar(32) NULL,
     "EventDate" date NOT NULL,
     CONSTRAINT "PK_SectionAttendanceTakenEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SectionAttendanceTakenEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SectionAttendanceTakenEvent_NK" UNIQUE ("CalendarDate_DocumentId", "Section_DocumentId"),
     CONSTRAINT "CK_SectionAttendanceTakenEvent_CalendarDate_AllNone" CHECK (("CalendarDate_DocumentId" IS NULL AND "CalendarDate_CalendarCode" IS NULL AND "CalendarDate_SchoolId" IS NULL AND "CalendarDate_SchoolYear" IS NULL AND "CalendarDate_Date" IS NULL) OR ("CalendarDate_DocumentId" IS NOT NULL AND "CalendarDate_CalendarCode" IS NOT NULL AND "CalendarDate_SchoolId" IS NOT NULL AND "CalendarDate_SchoolYear" IS NOT NULL AND "CalendarDate_Date" IS NOT NULL)),
     CONSTRAINT "CK_SectionAttendanceTakenEvent_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL)),
@@ -4836,6 +5286,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Session"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -4846,6 +5301,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Session"
     "SessionName" varchar(60) NOT NULL,
     "TotalInstructionalDays" integer NOT NULL,
     CONSTRAINT "PK_Session" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Session_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Session_NK" UNIQUE ("School_DocumentId", "SchoolYear_DocumentId", "SessionName"),
     CONSTRAINT "UX_Session_RefKey" UNIQUE ("School_SchoolId", "SchoolYear_SchoolYear", "SessionName", "DocumentId"),
     CONSTRAINT "CK_Session_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
@@ -4887,10 +5343,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."SourceDimension"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_SourceDimension" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SourceDimension_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SourceDimension_NK" UNIQUE ("Code", "FiscalYear"),
     CONSTRAINT "UX_SourceDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
@@ -4911,6 +5373,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Staff"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
     "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
@@ -4934,6 +5401,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Staff"
     "YearsOfPriorProfessionalExperience" numeric(5,2) NULL,
     "YearsOfPriorTeachingExperience" numeric(5,2) NULL,
     CONSTRAINT "PK_Staff" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Staff_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Staff_NK" UNIQUE ("StaffUniqueId"),
     CONSTRAINT "UX_Staff_RefKey" UNIQUE ("StaffUniqueId", "DocumentId"),
     CONSTRAINT "CK_Staff_Person_AllNone" CHECK (("Person_DocumentId" IS NULL AND "Person_PersonId" IS NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NULL) OR ("Person_DocumentId" IS NOT NULL AND "Person_PersonId" IS NOT NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NOT NULL))
@@ -5199,6 +5667,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "AbsenceEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -5206,6 +5679,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
     "EventDate" date NOT NULL,
     "HoursAbsent" numeric(18,2) NULL,
     CONSTRAINT "PK_StaffAbsenceEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffAbsenceEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffAbsenceEvent_NK" UNIQUE ("AbsenceEventCategoryDescriptor_DescriptorId", "EventDate", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffAbsenceEvent_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
 );
@@ -5215,6 +5689,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCohortAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Cohort_DocumentId" bigint NOT NULL,
     "Cohort_CohortIdentifier" varchar(36) NOT NULL,
     "Cohort_EducationOrganizationId" bigint NOT NULL,
@@ -5224,6 +5703,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCohortAssociation"
     "EndDate" date NULL,
     "StudentRecordAccess" boolean NULL,
     CONSTRAINT "PK_StaffCohortAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffCohortAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffCohortAssociation_NK" UNIQUE ("BeginDate", "Cohort_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffCohortAssociation_Cohort_AllNone" CHECK (("Cohort_DocumentId" IS NULL AND "Cohort_CohortIdentifier" IS NULL AND "Cohort_EducationOrganizationId" IS NULL) OR ("Cohort_DocumentId" IS NOT NULL AND "Cohort_CohortIdentifier" IS NOT NULL AND "Cohort_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StaffCohortAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -5234,12 +5714,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
     "DisciplineIncident_SchoolId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StaffDisciplineIncidentAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffDisciplineIncidentAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffDisciplineIncidentAssociation_NK" UNIQUE ("DisciplineIncident_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffDisciplineIncidentAssociation_DisciplineInci_c3c9a66cca" CHECK (("DisciplineIncident_DocumentId" IS NULL AND "DisciplineIncident_IncidentIdentifier" IS NULL AND "DisciplineIncident_SchoolId" IS NULL) OR ("DisciplineIncident_DocumentId" IS NOT NULL AND "DisciplineIncident_IncidentIdentifier" IS NOT NULL AND "DisciplineIncident_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_StaffDisciplineIncidentAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -5261,6 +5747,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociati
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "StaffUniqueId_Unified" varchar(32) NOT NULL,
     "Credential_DocumentId" bigint NULL,
     "Credential_CredentialIdentifier" varchar(60) NULL,
@@ -5281,6 +5772,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociati
     "OrderOfAssignment" integer NULL,
     "PositionTitle" varchar(100) NULL,
     CONSTRAINT "PK_StaffEducationOrganizationAssignmentAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffEducationOrganizationAssignmentAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffEducationOrganizationAssignmentAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "StaffClassificationDescriptor_DescriptorId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffEducationOrganizationAssignmentAssociation_C_ac55841e59" CHECK (("Credential_DocumentId" IS NULL AND "Credential_CredentialIdentifier" IS NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NULL) OR ("Credential_DocumentId" IS NOT NULL AND "Credential_CredentialIdentifier" IS NOT NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NOT NULL)),
     CONSTRAINT "CK_StaffEducationOrganizationAssignmentAssociation_E_6cd44df452" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -5293,6 +5785,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
@@ -5315,6 +5812,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
     "ContactTitle" varchar(75) NOT NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     CONSTRAINT "PK_StaffEducationOrganizationContactAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffEducationOrganizationContactAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffEducationOrganizationContactAssociation_NK" UNIQUE ("ContactTitle", "EducationOrganization_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffEducationOrganizationContactAssociation_Educ_9d056ac09d" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StaffEducationOrganizationContactAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -5352,6 +5850,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociati
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Credential_DocumentId" bigint NULL,
     "Credential_CredentialIdentifier" varchar(60) NULL,
     "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
@@ -5370,6 +5873,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociati
     "HourlyWage" numeric(19,4) NULL,
     "OfferDate" date NULL,
     CONSTRAINT "PK_StaffEducationOrganizationEmploymentAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffEducationOrganizationEmploymentAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffEducationOrganizationEmploymentAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_DocumentId"),
     CONSTRAINT "UX_StaffEducationOrganizationEmploymentAssociation_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId", "DocumentId"),
     CONSTRAINT "CK_StaffEducationOrganizationEmploymentAssociation_C_f6eabb8a0f" CHECK (("Credential_DocumentId" IS NULL AND "Credential_CredentialIdentifier" IS NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NULL) OR ("Credential_DocumentId" IS NOT NULL AND "Credential_CredentialIdentifier" IS NOT NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NOT NULL)),
@@ -5382,6 +5886,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLeave"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "StaffLeaveEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -5390,6 +5899,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLeave"
     "Reason" varchar(40) NULL,
     "SubstituteAssigned" boolean NULL,
     CONSTRAINT "PK_StaffLeave" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffLeave_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffLeave_NK" UNIQUE ("BeginDate", "StaffLeaveEventCategoryDescriptor_DescriptorId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffLeave_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
 );
@@ -5399,6 +5909,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
@@ -5409,6 +5924,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
     "EndDate" date NULL,
     "StudentRecordAccess" boolean NULL,
     CONSTRAINT "PK_StaffProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffProgramAssociation_NK" UNIQUE ("BeginDate", "ProgramProgram_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffProgramAssociation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
     CONSTRAINT "CK_StaffProgramAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -5419,6 +5935,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NULL,
     "Calendar_DocumentId" bigint NULL,
@@ -5433,6 +5954,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "ProgramAssignmentDescriptor_DescriptorId" bigint NOT NULL,
     CONSTRAINT "PK_StaffSchoolAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffSchoolAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffSchoolAssociation_NK" UNIQUE ("ProgramAssignmentDescriptor_DescriptorId", "School_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffSchoolAssociation_Calendar_AllNone" CHECK (("Calendar_DocumentId" IS NULL AND "Calendar_CalendarCode" IS NULL AND "Calendar_SchoolId" IS NULL AND "Calendar_SchoolYear" IS NULL) OR ("Calendar_DocumentId" IS NOT NULL AND "Calendar_CalendarCode" IS NOT NULL AND "Calendar_SchoolId" IS NOT NULL AND "Calendar_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_StaffSchoolAssociation_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
@@ -5467,6 +5989,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
     "Section_SchoolId" bigint NOT NULL,
@@ -5482,6 +6009,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
     "PercentageContribution" numeric(5,4) NULL,
     "TeacherStudentDataLinkExclusion" boolean NULL,
     CONSTRAINT "PK_StaffSectionAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StaffSectionAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StaffSectionAssociation_NK" UNIQUE ("BeginDate", "Section_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffSectionAssociation_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL)),
     CONSTRAINT "CK_StaffSectionAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -5492,12 +6020,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "StateEducationAgencyId" bigint NOT NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_StateEducationAgency" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StateEducationAgency_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StateEducationAgency_NK" UNIQUE ("StateEducationAgencyId"),
     CONSTRAINT "UX_StateEducationAgency_RefKey" UNIQUE ("StateEducationAgencyId", "DocumentId")
 );
@@ -5655,6 +6189,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
     "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
@@ -5677,6 +6216,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "PreferredLastSurname" varchar(75) NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Student_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId"),
     CONSTRAINT "UX_Student_RefKey" UNIQUE ("StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_Student_Person_AllNone" CHECK (("Person_DocumentId" IS NULL AND "Person_PersonId" IS NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NULL) OR ("Person_DocumentId" IS NOT NULL AND "Person_PersonId" IS NOT NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NOT NULL))
@@ -5748,6 +6288,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NOT NULL,
@@ -5773,6 +6318,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
     "SessionEarnedCreditConversion" numeric(9,2) NULL,
     "SessionEarnedCredits" numeric(9,3) NULL,
     CONSTRAINT "PK_StudentAcademicRecord" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentAcademicRecord_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentAcademicRecord_NK" UNIQUE ("EducationOrganization_DocumentId", "SchoolYear_DocumentId", "Student_DocumentId", "TermDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentAcademicRecord_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "SchoolYear_SchoolYear", "Student_StudentUniqueId", "TermDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_StudentAcademicRecord_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -5888,6 +6434,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
@@ -5915,6 +6466,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
     "SerialNumber" varchar(60) NULL,
     "StudentAssessmentIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_StudentAssessment" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentAssessment_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentAssessment_NK" UNIQUE ("Assessment_DocumentId", "StudentAssessmentIdentifier", "Student_DocumentId"),
     CONSTRAINT "UX_StudentAssessment_RefKey" UNIQUE ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "StudentAssessmentIdentifier", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentAssessment_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL)),
@@ -6034,6 +6586,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssocia
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NULL,
@@ -6045,6 +6602,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssocia
     "StudentAssessment_StudentUniqueId" varchar(32) NOT NULL,
     "EducationOrganizationAssociationTypeDescriptor_DescriptorId" bigint NOT NULL,
     CONSTRAINT "PK_StudentAssessmentEducationOrganizationAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentAssessmentEducationOrganizationAssociation_7782db5730" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentAssessmentEducationOrganizationAssociation_NK" UNIQUE ("EducationOrganizationAssociationTypeDescriptor_DescriptorId", "EducationOrganization_DocumentId", "StudentAssessment_DocumentId"),
     CONSTRAINT "CK_StudentAssessmentEducationOrganizationAssociation_0514ddc8b9" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_StudentAssessmentEducationOrganizationAssociation_297d5f2144" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -6056,6 +6614,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "StudentUniqueId_Unified" varchar(32) NOT NULL,
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
@@ -6079,6 +6642,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
     "AssessmentGradeLevelDescriptor_DescriptorId" bigint NULL,
     "PlatformTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentAssessmentRegistration" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentAssessmentRegistration_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentAssessmentRegistration_NK" UNIQUE ("AssessmentAdministration_DocumentId", "StudentEducationOrganizationAssociation_DocumentId"),
     CONSTRAINT "UX_StudentAssessmentRegistration_RefKey" UNIQUE ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified", "DocumentId"),
     CONSTRAINT "CK_StudentAssessmentRegistration_AssessmentAdministr_768d8c93a1" CHECK (("AssessmentAdministration_DocumentId" IS NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NULL AND "AssessmentAdministration_Namespace" IS NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NULL) OR ("AssessmentAdministration_DocumentId" IS NOT NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NOT NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NOT NULL AND "AssessmentAdministration_Namespace" IS NOT NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NOT NULL)),
@@ -6118,6 +6682,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "AssessmentBatteryPart_DocumentId" bigint NOT NULL,
     "AssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NOT NULL,
@@ -6131,6 +6700,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
     "StudentAssessmentRegistration_EducationOrganizationId" bigint NOT NULL,
     "StudentAssessmentRegistration_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentAssessmentRegistrationBatteryPartAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentAssessmentRegistrationBatteryPartAssociati_c93e0b5e80" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentAssessmentRegistrationBatteryPartAssociation_NK" UNIQUE ("AssessmentBatteryPart_DocumentId", "StudentAssessmentRegistration_DocumentId"),
     CONSTRAINT "CK_StudentAssessmentRegistrationBatteryPartAssociati_40890b3dda" CHECK (("StudentAssessmentRegistration_DocumentId" IS NULL AND "StudentAssessmentRegistration_AdministrationIdentifier" IS NULL AND "StudentAssessmentRegistration_AssessmentIdentifier" IS NULL AND "StudentAssessmentRegistration_AssigningEducationOrganizationId" IS NULL AND "StudentAssessmentRegistration_Namespace" IS NULL AND "StudentAssessmentRegistration_EducationOrganizationId" IS NULL AND "StudentAssessmentRegistration_StudentUniqueId" IS NULL) OR ("StudentAssessmentRegistration_DocumentId" IS NOT NULL AND "StudentAssessmentRegistration_AdministrationIdentifier" IS NOT NULL AND "StudentAssessmentRegistration_AssessmentIdentifier" IS NOT NULL AND "StudentAssessmentRegistration_AssigningEducationOrganizationId" IS NOT NULL AND "StudentAssessmentRegistration_Namespace" IS NOT NULL AND "StudentAssessmentRegistration_EducationOrganizationId" IS NOT NULL AND "StudentAssessmentRegistration_StudentUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_StudentAssessmentRegistrationBatteryPartAssociati_88ca7acaeb" CHECK (("AssessmentBatteryPart_DocumentId" IS NULL AND "AssessmentBatteryPart_AssessmentBatteryPartName" IS NULL AND "AssessmentBatteryPart_AssessmentIdentifier" IS NULL AND "AssessmentBatteryPart_Namespace" IS NULL) OR ("AssessmentBatteryPart_DocumentId" IS NOT NULL AND "AssessmentBatteryPart_AssessmentBatteryPartName" IS NOT NULL AND "AssessmentBatteryPart_AssessmentIdentifier" IS NOT NULL AND "AssessmentBatteryPart_Namespace" IS NOT NULL))
@@ -6152,6 +6722,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6168,6 +6743,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
     "PrivateCTEProgram" boolean NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentCTEProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentCTEProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentCTEProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentCTEProgramAssociation_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentCTEProgramAssociation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -6208,6 +6784,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Cohort_DocumentId" bigint NOT NULL,
     "Cohort_CohortIdentifier" varchar(36) NOT NULL,
     "Cohort_EducationOrganizationId" bigint NOT NULL,
@@ -6216,6 +6797,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociation"
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     CONSTRAINT "PK_StudentCohortAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentCohortAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentCohortAssociation_NK" UNIQUE ("BeginDate", "Cohort_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentCohortAssociation_Cohort_AllNone" CHECK (("Cohort_DocumentId" IS NULL AND "Cohort_CohortIdentifier" IS NULL AND "Cohort_EducationOrganizationId" IS NULL) OR ("Cohort_DocumentId" IS NOT NULL AND "Cohort_CohortIdentifier" IS NOT NULL AND "Cohort_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentCohortAssociation_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -6243,6 +6825,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
@@ -6257,6 +6844,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
     "CompetencyLevelDescriptor_DescriptorId" bigint NOT NULL,
     "DiagnosticStatement" varchar(1024) NULL,
     CONSTRAINT "PK_StudentCompetencyObjective" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentCompetencyObjective_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentCompetencyObjective_NK" UNIQUE ("GradingPeriodGradingPeriod_DocumentId", "ObjectiveCompetencyObjective_DocumentId", "Student_DocumentId"),
     CONSTRAINT "UX_StudentCompetencyObjective_RefKey" UNIQUE ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentCompetencyObjective_GradingPeriodGradingPe_124c87b518" CHECK (("GradingPeriodGradingPeriod_DocumentId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriodGradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NOT NULL)),
@@ -6306,6 +6894,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentContactAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Contact_DocumentId" bigint NOT NULL,
     "Contact_ContactUniqueId" varchar(32) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6318,6 +6911,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentContactAssociation"
     "LivesWith" boolean NULL,
     "PrimaryContactStatus" boolean NULL,
     CONSTRAINT "PK_StudentContactAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentContactAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentContactAssociation_NK" UNIQUE ("Contact_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentContactAssociation_Contact_AllNone" CHECK (("Contact_DocumentId" IS NULL AND "Contact_ContactUniqueId" IS NULL) OR ("Contact_DocumentId" IS NOT NULL AND "Contact_ContactUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_StudentContactAssociation_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -6328,6 +6922,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
     "DisciplineIncident_SchoolId" bigint NOT NULL,
@@ -6336,6 +6935,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
     "BehaviorDescriptor_DescriptorId" bigint NOT NULL,
     "BehaviorDetailedDescription" varchar(1024) NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociation_NK" UNIQUE ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_DocumentId", "Student_DocumentId"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociation_RefKey" UNIQUE ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentDisciplineIncidentBehaviorAssociation_Disc_486f8a9d88" CHECK (("DisciplineIncident_DocumentId" IS NULL AND "DisciplineIncident_IncidentIdentifier" IS NULL AND "DisciplineIncident_SchoolId" IS NULL) OR ("DisciplineIncident_DocumentId" IS NOT NULL AND "DisciplineIncident_IncidentIdentifier" IS NOT NULL AND "DisciplineIncident_SchoolId" IS NOT NULL)),
@@ -6369,12 +6969,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociati
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
     "DisciplineIncident_SchoolId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentNonOffenderAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentDisciplineIncidentNonOffenderAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentDisciplineIncidentNonOffenderAssociation_NK" UNIQUE ("DisciplineIncident_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentDisciplineIncidentNonOffenderAssociation_D_eb7c4fe349" CHECK (("DisciplineIncident_DocumentId" IS NULL AND "DisciplineIncident_IncidentIdentifier" IS NULL AND "DisciplineIncident_SchoolId" IS NULL) OR ("DisciplineIncident_DocumentId" IS NOT NULL AND "DisciplineIncident_IncidentIdentifier" IS NOT NULL AND "DisciplineIncident_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_StudentDisciplineIncidentNonOffenderAssociation_S_7a9dc798a7" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -6396,11 +7002,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssessmentAccommodation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodati_edec50a71d" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodation_NK" UNIQUE ("EducationOrganization_DocumentId", "Student_DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodation_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentEducationOrganizationAssessmentAccommodati_17bf3c1ee3" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -6423,6 +7035,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6442,6 +7059,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
     "LoginId" varchar(60) NULL,
     "ProfileThumbnail" varchar(255) NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "Student_DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociation_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentEducationOrganizationAssociation_Education_6df5c23bec" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -6723,6 +7341,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAss
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6731,6 +7354,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAss
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     CONSTRAINT "PK_StudentEducationOrganizationResponsibilityAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationResponsibilityAssocia_20da5da2b7" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentEducationOrganizationResponsibilityAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ResponsibilityDescriptor_DescriptorId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentEducationOrganizationResponsibilityAssocia_55c549385d" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_StudentEducationOrganizationResponsibilityAssocia_f5c0718cf8" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -6741,6 +7365,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentGradebookEntry"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "GradebookEntry_DocumentId" bigint NOT NULL,
     "GradebookEntry_GradebookEntryIdentifier" varchar(60) NOT NULL,
     "GradebookEntry_Namespace" varchar(255) NOT NULL,
@@ -6756,6 +7385,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentGradebookEntry"
     "PointsEarned" numeric(9,2) NULL,
     "TimeFulfilled" time NULL,
     CONSTRAINT "PK_StudentGradebookEntry" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentGradebookEntry_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentGradebookEntry_NK" UNIQUE ("GradebookEntry_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentGradebookEntry_GradebookEntry_AllNone" CHECK (("GradebookEntry_DocumentId" IS NULL AND "GradebookEntry_GradebookEntryIdentifier" IS NULL AND "GradebookEntry_Namespace" IS NULL) OR ("GradebookEntry_DocumentId" IS NOT NULL AND "GradebookEntry_GradebookEntryIdentifier" IS NOT NULL AND "GradebookEntry_Namespace" IS NOT NULL)),
     CONSTRAINT "CK_StudentGradebookEntry_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -6766,6 +7396,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6774,6 +7409,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
     "AsOfDate" date NOT NULL,
     "NonMedicalImmunizationExemptionDate" date NULL,
     CONSTRAINT "PK_StudentHealth" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentHealth_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentHealth_NK" UNIQUE ("EducationOrganization_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentHealth_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentHealth_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -6834,6 +7470,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6850,6 +7491,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
     "HomelessUnaccompaniedYouth" boolean NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentHomelessProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentHomelessProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentHomelessProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentHomelessProgramAssociation_EducationOrgani_91c02110b8" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentHomelessProgramAssociation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -6889,6 +7531,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "CohortCohort_DocumentId" bigint NULL,
     "CohortCohort_CohortIdentifier" varchar(36) NULL,
     "CohortCohort_EducationOrganizationId" bigint NULL,
@@ -6900,6 +7547,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociation"
     "DiagnosticStatement" varchar(1024) NULL,
     "Dosage" integer NULL,
     CONSTRAINT "PK_StudentInterventionAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentInterventionAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentInterventionAssociation_NK" UNIQUE ("Intervention_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentInterventionAssociation_CohortCohort_AllNone" CHECK (("CohortCohort_DocumentId" IS NULL AND "CohortCohort_CohortIdentifier" IS NULL AND "CohortCohort_EducationOrganizationId" IS NULL) OR ("CohortCohort_DocumentId" IS NOT NULL AND "CohortCohort_CohortIdentifier" IS NOT NULL AND "CohortCohort_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentInterventionAssociation_Intervention_AllNone" CHECK (("Intervention_DocumentId" IS NULL AND "Intervention_EducationOrganizationId" IS NULL AND "Intervention_InterventionIdentificationCode" IS NULL) OR ("Intervention_DocumentId" IS NOT NULL AND "Intervention_EducationOrganizationId" IS NOT NULL AND "Intervention_InterventionIdentificationCode" IS NOT NULL)),
@@ -6926,6 +7574,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Intervention_DocumentId" bigint NOT NULL,
     "Intervention_EducationOrganizationId" bigint NOT NULL,
     "Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
@@ -6938,6 +7591,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
     "EventDuration" numeric(3,2) NULL,
     "InterventionDuration" integer NULL,
     CONSTRAINT "PK_StudentInterventionAttendanceEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentInterventionAttendanceEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentInterventionAttendanceEvent_NK" UNIQUE ("AttendanceEventCategoryDescriptor_DescriptorId", "EventDate", "Intervention_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentInterventionAttendanceEvent_Intervention_AllNone" CHECK (("Intervention_DocumentId" IS NULL AND "Intervention_EducationOrganizationId" IS NULL AND "Intervention_InterventionIdentificationCode" IS NULL) OR ("Intervention_DocumentId" IS NOT NULL AND "Intervention_EducationOrganizationId" IS NOT NULL AND "Intervention_InterventionIdentificationCode" IS NOT NULL)),
     CONSTRAINT "CK_StudentInterventionAttendanceEvent_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -6948,6 +7602,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6963,6 +7622,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
     "EnglishLearnerParticipation" boolean NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentLanguageInstructionProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentLanguageInstructionProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentLanguageInstructionProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentLanguageInstructionProgramAssociation_Educ_2e330753eb" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentLanguageInstructionProgramAssociation_Prog_4f47c6fa3a" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7019,6 +7679,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7041,6 +7706,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
     "UsInitialSchoolEntry" date NULL,
     "UsMostRecentEntry" date NULL,
     CONSTRAINT "PK_StudentMigrantEducationProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentMigrantEducationProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentMigrantEducationProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentMigrantEducationProgramAssociation_Educati_1efe2371bc" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentMigrantEducationProgramAssociation_Program_5a9236be89" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7080,6 +7746,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7096,6 +7767,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
     "EndDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentNeglectedOrDelinquentProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentNeglectedOrDelinquentProgramAssociation_Ed_b370c469b3" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentNeglectedOrDelinquentProgramAssociation_Pr_09ba35b2e1" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7135,6 +7807,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7148,6 +7825,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
     "EndDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentProgramAssociation_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentProgramAssociation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7187,6 +7865,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7202,6 +7885,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
     "EventDuration" numeric(3,2) NULL,
     "ProgramAttendanceDuration" integer NULL,
     CONSTRAINT "PK_StudentProgramAttendanceEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentProgramAttendanceEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentProgramAttendanceEvent_NK" UNIQUE ("AttendanceEventCategoryDescriptor_DescriptorId", "EducationOrganization_DocumentId", "EventDate", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentProgramAttendanceEvent_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentProgramAttendanceEvent_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7213,6 +7897,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NULL,
     "EducationOrganization_EducationOrganizationId" bigint NULL,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
@@ -7232,6 +7921,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
     "SummaryEvaluationComment" varchar(1024) NULL,
     "SummaryEvaluationNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_StudentProgramEvaluation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentProgramEvaluation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentProgramEvaluation_NK" UNIQUE ("EvaluationDate", "ProgramEvaluation_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentProgramEvaluation_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentProgramEvaluation_ProgramEvaluation_AllNone" CHECK (("ProgramEvaluation_DocumentId" IS NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NULL AND "ProgramEvaluation_ProgramName" IS NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramEvaluation_DocumentId" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NOT NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NOT NULL AND "ProgramEvaluation_ProgramName" IS NOT NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7297,6 +7987,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NULL,
     "Calendar_DocumentId" bigint NULL,
@@ -7335,6 +8030,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
     "SchoolChoiceTransfer" boolean NULL,
     "TermCompletionIndicator" boolean NULL,
     CONSTRAINT "PK_StudentSchoolAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSchoolAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSchoolAssociation_NK" UNIQUE ("EntryDate", "School_DocumentId", "Student_DocumentId"),
     CONSTRAINT "UX_StudentSchoolAssociation_RefKey" UNIQUE ("EntryDate", "SchoolId_Unified", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentSchoolAssociation_Calendar_AllNone" CHECK (("Calendar_DocumentId" IS NULL AND "Calendar_CalendarCode" IS NULL AND "Calendar_SchoolId" IS NULL AND "Calendar_SchoolYear" IS NULL) OR ("Calendar_DocumentId" IS NOT NULL AND "Calendar_CalendarCode" IS NOT NULL AND "Calendar_SchoolId" IS NOT NULL AND "Calendar_SchoolYear" IS NOT NULL)),
@@ -7377,6 +8073,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
@@ -7395,6 +8096,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
     "EventDuration" numeric(3,2) NULL,
     "SchoolAttendanceDuration" integer NULL,
     CONSTRAINT "PK_StudentSchoolAttendanceEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSchoolAttendanceEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSchoolAttendanceEvent_NK" UNIQUE ("AttendanceEventCategoryDescriptor_DescriptorId", "EventDate", "School_DocumentId", "Session_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentSchoolAttendanceEvent_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_StudentSchoolAttendanceEvent_Session_AllNone" CHECK (("Session_DocumentId" IS NULL AND "Session_SchoolId" IS NULL AND "Session_SchoolYear" IS NULL AND "Session_SessionName" IS NULL) OR ("Session_DocumentId" IS NOT NULL AND "Session_SchoolId" IS NOT NULL AND "Session_SchoolYear" IS NOT NULL AND "Session_SessionName" IS NOT NULL)),
@@ -7406,6 +8108,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7420,6 +8127,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
     "EndDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentSchoolFoodServiceProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentSchoolFoodServiceProgramAssociation_Educat_a763bc2590" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentSchoolFoodServiceProgramAssociation_Progra_d74bbd985e" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7459,6 +8167,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7477,6 +8190,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
     "Section504MeetingDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentSection504ProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSection504ProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSection504ProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentSection504ProgramAssociation_EducationOrga_dd84b8209a" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentSection504ProgramAssociation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7502,6 +8216,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "DualCreditEducationOrganization_DocumentId" bigint NULL,
     "DualCreditEducationOrganization_EducationOrganizationId" bigint NULL,
     "Section_DocumentId" bigint NOT NULL,
@@ -7523,6 +8242,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
     "HomeroomIndicator" boolean NULL,
     "TeacherStudentDataLinkExclusion" boolean NULL,
     CONSTRAINT "PK_StudentSectionAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSectionAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSectionAssociation_NK" UNIQUE ("BeginDate", "Section_DocumentId", "Student_DocumentId"),
     CONSTRAINT "UX_StudentSectionAssociation_RefKey" UNIQUE ("BeginDate", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SectionIdentifier", "Section_SessionName", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentSectionAssociation_DualCreditEducationOrga_a1d2845e68" CHECK (("DualCreditEducationOrganization_DocumentId" IS NULL AND "DualCreditEducationOrganization_EducationOrganizationId" IS NULL) OR ("DualCreditEducationOrganization_DocumentId" IS NOT NULL AND "DualCreditEducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -7550,6 +8270,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
     "Section_SchoolId" bigint NOT NULL,
@@ -7567,6 +8292,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
     "EventDuration" numeric(3,2) NULL,
     "SectionAttendanceDuration" integer NULL,
     CONSTRAINT "PK_StudentSectionAttendanceEvent" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSectionAttendanceEvent_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSectionAttendanceEvent_NK" UNIQUE ("AttendanceEventCategoryDescriptor_DescriptorId", "EventDate", "Section_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentSectionAttendanceEvent_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL)),
     CONSTRAINT "CK_StudentSectionAttendanceEvent_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -7591,6 +8317,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7619,6 +8350,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
     "SpecialEducationExitExplained" varchar(1024) NULL,
     "SpecialEducationHoursPerWeek" numeric(5,2) NULL,
     CONSTRAINT "PK_StudentSpecialEducationProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSpecialEducationProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentSpecialEducationProgramAssociation_Educati_58509e7aa0" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentSpecialEducationProgramAssociation_Program_a33c7b5d70" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7715,6 +8447,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAsso
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7740,6 +8477,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAsso
     "TransitionConferenceDate" date NULL,
     "TransitionNotificationDate" date NULL,
     CONSTRAINT "PK_StudentSpecialEducationProgramEligibilityAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramEligibilityAssociat_3ce9ec7e47" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentSpecialEducationProgramEligibilityAssociation_NK" UNIQUE ("ConsentToEvaluationReceivedDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentSpecialEducationProgramEligibilityAssociat_1b5b6667a3" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentSpecialEducationProgramEligibilityAssociat_97661d3771" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL)),
@@ -7751,6 +8489,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7765,6 +8508,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
     "EndDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
     CONSTRAINT "PK_StudentTitleIPartAProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentTitleIPartAProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentTitleIPartAProgramAssociation_NK" UNIQUE ("BeginDate", "EducationOrganization_DocumentId", "ProgramProgram_DocumentId", "Student_DocumentId"),
     CONSTRAINT "CK_StudentTitleIPartAProgramAssociation_EducationOrg_403fc192d5" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentTitleIPartAProgramAssociation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
@@ -7804,6 +8548,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "TransportationEducationOrganization_DocumentId" bigint NOT NULL,
@@ -7815,6 +8564,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
     "StudentBusDetailsBusNumber" varchar(36) NULL,
     "StudentBusDetailsMileage" numeric(5,2) NULL,
     CONSTRAINT "PK_StudentTransportation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentTransportation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_StudentTransportation_NK" UNIQUE ("Student_DocumentId", "TransportationEducationOrganization_DocumentId"),
     CONSTRAINT "CK_StudentTransportation_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_StudentTransportation_TransportationEducationOrga_d06eaca351" CHECK (("TransportationEducationOrganization_DocumentId" IS NULL AND "TransportationEducationOrganization_EducationOrganizationId" IS NULL) OR ("TransportationEducationOrganization_DocumentId" IS NOT NULL AND "TransportationEducationOrganization_EducationOrganizationId" IS NOT NULL))
@@ -7847,6 +8597,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Survey"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_Unified" integer NOT NULL,
     "EducationOrganization_DocumentId" bigint NULL,
     "EducationOrganization_EducationOrganizationId" bigint NULL,
@@ -7862,6 +8617,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Survey"
     "SurveyIdentifier" varchar(60) NOT NULL,
     "SurveyTitle" varchar(255) NOT NULL,
     CONSTRAINT "PK_Survey" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Survey_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_Survey_NK" UNIQUE ("Namespace", "SurveyIdentifier"),
     CONSTRAINT "UX_Survey_RefKey" UNIQUE ("Namespace", "SurveyIdentifier", "DocumentId"),
     CONSTRAINT "CK_Survey_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -7874,6 +8630,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyCourseAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Course_DocumentId" bigint NOT NULL,
     "Course_CourseCode" varchar(60) NOT NULL,
     "Course_EducationOrganizationId" bigint NOT NULL,
@@ -7881,6 +8642,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyCourseAssociation"
     "Survey_Namespace" varchar(255) NOT NULL,
     "Survey_SurveyIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_SurveyCourseAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveyCourseAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveyCourseAssociation_NK" UNIQUE ("Course_DocumentId", "Survey_DocumentId"),
     CONSTRAINT "CK_SurveyCourseAssociation_Course_AllNone" CHECK (("Course_DocumentId" IS NULL AND "Course_CourseCode" IS NULL AND "Course_EducationOrganizationId" IS NULL) OR ("Course_DocumentId" IS NOT NULL AND "Course_CourseCode" IS NOT NULL AND "Course_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_SurveyCourseAssociation_Survey_AllNone" CHECK (("Survey_DocumentId" IS NULL AND "Survey_Namespace" IS NULL AND "Survey_SurveyIdentifier" IS NULL) OR ("Survey_DocumentId" IS NOT NULL AND "Survey_Namespace" IS NOT NULL AND "Survey_SurveyIdentifier" IS NOT NULL))
@@ -7891,6 +8653,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Program_DocumentId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
@@ -7899,6 +8666,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
     "Survey_Namespace" varchar(255) NOT NULL,
     "Survey_SurveyIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_SurveyProgramAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveyProgramAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveyProgramAssociation_NK" UNIQUE ("Program_DocumentId", "Survey_DocumentId"),
     CONSTRAINT "CK_SurveyProgramAssociation_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
     CONSTRAINT "CK_SurveyProgramAssociation_Survey_AllNone" CHECK (("Survey_DocumentId" IS NULL AND "Survey_Namespace" IS NULL AND "Survey_SurveyIdentifier" IS NULL) OR ("Survey_DocumentId" IS NOT NULL AND "Survey_Namespace" IS NOT NULL AND "Survey_SurveyIdentifier" IS NOT NULL))
@@ -7909,6 +8677,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "SurveySection_DocumentId" bigint NULL,
@@ -7922,6 +8695,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
     "QuestionCode" varchar(60) NOT NULL,
     "QuestionText" varchar(1024) NOT NULL,
     CONSTRAINT "PK_SurveyQuestion" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveyQuestion_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveyQuestion_NK" UNIQUE ("QuestionCode", "Survey_DocumentId"),
     CONSTRAINT "UX_SurveyQuestion_RefKey" UNIQUE ("QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified", "DocumentId"),
     CONSTRAINT "CK_SurveyQuestion_SurveySection_AllNone" CHECK (("SurveySection_DocumentId" IS NULL AND "SurveySection_Namespace" IS NULL AND "SurveySection_SurveyIdentifier" IS NULL AND "SurveySection_SurveySectionTitle" IS NULL) OR ("SurveySection_DocumentId" IS NOT NULL AND "SurveySection_Namespace" IS NOT NULL AND "SurveySection_SurveyIdentifier" IS NOT NULL AND "SurveySection_SurveySectionTitle" IS NOT NULL)),
@@ -7959,6 +8733,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponse"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "SurveyQuestion_DocumentId" bigint NOT NULL,
@@ -7972,6 +8751,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponse"
     "Comment" varchar(1024) NULL,
     "NoResponse" boolean NULL,
     CONSTRAINT "PK_SurveyQuestionResponse" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveyQuestionResponse_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveyQuestionResponse_NK" UNIQUE ("SurveyQuestion_DocumentId", "SurveyResponse_DocumentId"),
     CONSTRAINT "CK_SurveyQuestionResponse_SurveyQuestion_AllNone" CHECK (("SurveyQuestion_DocumentId" IS NULL AND "SurveyQuestion_QuestionCode" IS NULL AND "SurveyQuestion_Namespace" IS NULL AND "SurveyQuestion_SurveyIdentifier" IS NULL) OR ("SurveyQuestion_DocumentId" IS NOT NULL AND "SurveyQuestion_QuestionCode" IS NOT NULL AND "SurveyQuestion_Namespace" IS NOT NULL AND "SurveyQuestion_SurveyIdentifier" IS NOT NULL)),
     CONSTRAINT "CK_SurveyQuestionResponse_SurveyResponse_AllNone" CHECK (("SurveyResponse_DocumentId" IS NULL AND "SurveyResponse_Namespace" IS NULL AND "SurveyResponse_SurveyIdentifier" IS NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NULL) OR ("SurveyResponse_DocumentId" IS NOT NULL AND "SurveyResponse_Namespace" IS NOT NULL AND "SurveyResponse_SurveyIdentifier" IS NOT NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NOT NULL))
@@ -8011,6 +8791,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponse"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "SurveyResponderChoiceContact_DocumentId" bigint NULL,
     "SurveyResponderChoiceContact_ContactUniqueId" varchar(32) NULL,
     "SurveyResponderChoiceStaff_DocumentId" bigint NULL,
@@ -8027,6 +8812,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponse"
     "ResponseTime" integer NULL,
     "SurveyResponseIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_SurveyResponse" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveyResponse_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveyResponse_NK" UNIQUE ("Survey_DocumentId", "SurveyResponseIdentifier"),
     CONSTRAINT "UX_SurveyResponse_RefKey" UNIQUE ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier", "DocumentId"),
     CONSTRAINT "CK_SurveyResponse_SurveyResponderChoiceContact_AllNone" CHECK (("SurveyResponderChoiceContact_DocumentId" IS NULL AND "SurveyResponderChoiceContact_ContactUniqueId" IS NULL) OR ("SurveyResponderChoiceContact_DocumentId" IS NOT NULL AND "SurveyResponderChoiceContact_ContactUniqueId" IS NOT NULL)),
@@ -8051,6 +8837,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseEducationOrganizationTargetAsso
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
@@ -8058,6 +8849,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseEducationOrganizationTargetAsso
     "SurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
     "SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_SurveyResponseEducationOrganizationTargetAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveyResponseEducationOrganizationTargetAssociat_8fbd981297" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveyResponseEducationOrganizationTargetAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "SurveyResponse_DocumentId"),
     CONSTRAINT "CK_SurveyResponseEducationOrganizationTargetAssociat_2e5b9a06e1" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_SurveyResponseEducationOrganizationTargetAssociat_ac8bf64d28" CHECK (("SurveyResponse_DocumentId" IS NULL AND "SurveyResponse_Namespace" IS NULL AND "SurveyResponse_SurveyIdentifier" IS NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NULL) OR ("SurveyResponse_DocumentId" IS NOT NULL AND "SurveyResponse_Namespace" IS NOT NULL AND "SurveyResponse_SurveyIdentifier" IS NOT NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NOT NULL))
@@ -8068,6 +8860,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseStaffTargetAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
@@ -8075,6 +8872,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseStaffTargetAssociation"
     "SurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
     "SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_SurveyResponseStaffTargetAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveyResponseStaffTargetAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveyResponseStaffTargetAssociation_NK" UNIQUE ("Staff_DocumentId", "SurveyResponse_DocumentId"),
     CONSTRAINT "CK_SurveyResponseStaffTargetAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_SurveyResponseStaffTargetAssociation_SurveyResponse_AllNone" CHECK (("SurveyResponse_DocumentId" IS NULL AND "SurveyResponse_Namespace" IS NULL AND "SurveyResponse_SurveyIdentifier" IS NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NULL) OR ("SurveyResponse_DocumentId" IS NOT NULL AND "SurveyResponse_Namespace" IS NOT NULL AND "SurveyResponse_SurveyIdentifier" IS NOT NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NOT NULL))
@@ -8085,11 +8883,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySection"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Survey_DocumentId" bigint NOT NULL,
     "Survey_Namespace" varchar(255) NOT NULL,
     "Survey_SurveyIdentifier" varchar(60) NOT NULL,
     "SurveySectionTitle" varchar(255) NOT NULL,
     CONSTRAINT "PK_SurveySection" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveySection_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveySection_NK" UNIQUE ("Survey_DocumentId", "SurveySectionTitle"),
     CONSTRAINT "UX_SurveySection_RefKey" UNIQUE ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveySectionTitle", "DocumentId"),
     CONSTRAINT "CK_SurveySection_Survey_AllNone" CHECK (("Survey_DocumentId" IS NULL AND "Survey_Namespace" IS NULL AND "Survey_SurveyIdentifier" IS NULL) OR ("Survey_DocumentId" IS NOT NULL AND "Survey_Namespace" IS NOT NULL AND "Survey_SurveyIdentifier" IS NOT NULL))
@@ -8100,6 +8904,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
     "Section_SchoolId" bigint NOT NULL,
@@ -8110,6 +8919,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionAssociation"
     "Survey_Namespace" varchar(255) NOT NULL,
     "Survey_SurveyIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_SurveySectionAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveySectionAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveySectionAssociation_NK" UNIQUE ("Section_DocumentId", "Survey_DocumentId"),
     CONSTRAINT "CK_SurveySectionAssociation_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL)),
     CONSTRAINT "CK_SurveySectionAssociation_Survey_AllNone" CHECK (("Survey_DocumentId" IS NULL AND "Survey_Namespace" IS NULL AND "Survey_SurveyIdentifier" IS NULL) OR ("Survey_DocumentId" IS NOT NULL AND "Survey_Namespace" IS NOT NULL AND "Survey_SurveyIdentifier" IS NOT NULL))
@@ -8120,6 +8930,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponse"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
@@ -8132,6 +8947,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponse"
     "SurveySection_SurveySectionTitle" varchar(255) NOT NULL,
     "SectionRating" numeric(9,3) NULL,
     CONSTRAINT "PK_SurveySectionResponse" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveySectionResponse_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveySectionResponse_NK" UNIQUE ("SurveyResponse_DocumentId", "SurveySection_DocumentId"),
     CONSTRAINT "UX_SurveySectionResponse_RefKey" UNIQUE ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveySection_SurveySectionTitle", "DocumentId"),
     CONSTRAINT "CK_SurveySectionResponse_SurveyResponse_AllNone" CHECK (("SurveyResponse_DocumentId" IS NULL AND "SurveyResponse_Namespace" IS NULL AND "SurveyResponse_SurveyIdentifier" IS NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NULL) OR ("SurveyResponse_DocumentId" IS NOT NULL AND "SurveyResponse_Namespace" IS NOT NULL AND "SurveyResponse_SurveyIdentifier" IS NOT NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NOT NULL)),
@@ -8143,6 +8959,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseEducationOrganizationTar
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8156,6 +8977,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseEducationOrganizationTar
     "SurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
     CONSTRAINT "PK_SurveySectionResponseEducationOrganizationTargetAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_SurveySectionResponseEducationOrganizationTargetA_1f30488b77" UNIQUE ("EducationOrganization_DocumentId", "SurveySectionResponse_DocumentId"),
+    CONSTRAINT "UX_SurveySectionResponseEducationOrganizationTargetA_b928398df7" UNIQUE ("DocumentUuid"),
     CONSTRAINT "CK_SurveySectionResponseEducationOrganizationTargetA_8b1938665b" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_SurveySectionResponseEducationOrganizationTargetA_e9c90e7f55" CHECK (("SurveySectionResponse_DocumentId" IS NULL AND "SurveySectionResponse_SurveyResponseReferenceNamespace" IS NULL AND "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier" IS NULL AND "SurveySectionResponse_SurveyResponseIdentifier" IS NULL AND "SurveySectionResponse_SurveySectionReferenceNamespace" IS NULL AND "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier" IS NULL AND "SurveySectionResponse_SurveySectionTitle" IS NULL) OR ("SurveySectionResponse_DocumentId" IS NOT NULL AND "SurveySectionResponse_SurveyResponseReferenceNamespace" IS NOT NULL AND "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveyResponseIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveySectionReferenceNamespace" IS NOT NULL AND "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveySectionTitle" IS NOT NULL))
 );
@@ -8165,6 +8987,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseStaffTargetAssociation"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
@@ -8177,6 +9004,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseStaffTargetAssociation"
     "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "SurveySectionResponse_DocumentId" IS NULL THEN NULL ELSE "SurveyIdentifier_Unified" END) STORED,
     "SurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
     CONSTRAINT "PK_SurveySectionResponseStaffTargetAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_SurveySectionResponseStaffTargetAssociation_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_SurveySectionResponseStaffTargetAssociation_NK" UNIQUE ("Staff_DocumentId", "SurveySectionResponse_DocumentId"),
     CONSTRAINT "CK_SurveySectionResponseStaffTargetAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_SurveySectionResponseStaffTargetAssociation_Surve_333f48f5b2" CHECK (("SurveySectionResponse_DocumentId" IS NULL AND "SurveySectionResponse_SurveyResponseReferenceNamespace" IS NULL AND "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier" IS NULL AND "SurveySectionResponse_SurveyResponseIdentifier" IS NULL AND "SurveySectionResponse_SurveySectionReferenceNamespace" IS NULL AND "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier" IS NULL AND "SurveySectionResponse_SurveySectionTitle" IS NULL) OR ("SurveySectionResponse_DocumentId" IS NOT NULL AND "SurveySectionResponse_SurveyResponseReferenceNamespace" IS NOT NULL AND "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveyResponseIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveySectionReferenceNamespace" IS NOT NULL AND "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveySectionTitle" IS NOT NULL))
@@ -34026,9 +34854,13 @@ CREATE INDEX IF NOT EXISTS "IX_Descriptor_Namespace_Auth" ON "dms"."Descriptor" 
 
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_ContentVersion" ON "edfi"."AcademicWeek" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_CreatedByOwnershipTokenId" ON "edfi"."AcademicWeek" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_SchoolId_School_DocumentId" ON "edfi"."AcademicWeek" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_ContentVersion" ON "edfi"."AccountabilityRating" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_CreatedByOwnershipTokenId" ON "edfi"."AccountabilityRating" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Educat_dd1ab833cb" ON "edfi"."AccountabilityRating" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -34041,6 +34873,8 @@ CREATE INDEX IF NOT EXISTS "IX_Assessment_AssessmentCategoryDescriptor_Descripto
 CREATE INDEX IF NOT EXISTS "IX_Assessment_ContentStandardPublicationStatusDescri_2220b2b562" ON "edfi"."Assessment" ("ContentStandardPublicationStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_ContentVersion" ON "edfi"."Assessment" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Assessment_CreatedByOwnershipTokenId" ON "edfi"."Assessment" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_EducationOrganization_EducationOrganiz_b72944ca3f" ON "edfi"."Assessment" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -34058,6 +34892,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_AssigningEducationOrgani
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_ContentVersion" ON "edfi"."AssessmentAdministration" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_CreatedByOwnershipTokenId" ON "edfi"."AssessmentAdministration" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_2f81256ce2" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace", "AssessmentBatteryPart_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_6a08acacdc" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_Namespace");
@@ -34067,6 +34903,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_be9dd67666" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_ContentVersion" ON "edfi"."AssessmentAdministrationParticipation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_CreatedByOw_ac768b24aa" ON "edfi"."AssessmentAdministrationParticipation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_Participati_2e0d5b4318" ON "edfi"."AssessmentAdministrationParticipation" ("ParticipatingEducationOrganization_EducationOrganizationId", "ParticipatingEducationOrganization_DocumentId");
 
@@ -34079,6 +34917,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_AssessmentIdenti
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_Namespace_Auth" ON "edfi"."AssessmentBatteryPart" ("Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_ContentVersion" ON "edfi"."AssessmentBatteryPart" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_CreatedByOwnershipTokenId" ON "edfi"."AssessmentBatteryPart" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_5d59d3ea25" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode", "ObjectiveAssessment_DocumentId");
 
@@ -34093,6 +34933,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_AssessmentIdentifier_As
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_Namespace_Auth" ON "edfi"."AssessmentItem" ("Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_ContentVersion" ON "edfi"."AssessmentItem" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_CreatedByOwnershipTokenId" ON "edfi"."AssessmentItem" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItemLearningStandard_LearningStandard_L_d508ef6769" ON "edfi"."AssessmentItemLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
 
@@ -34124,6 +34966,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_AssessmentRe
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_ContentVersion" ON "edfi"."AssessmentScoreRangeLearningStandard" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_CreatedByOwn_5a3e2e4ba9" ON "edfi"."AssessmentScoreRangeLearningStandard" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth" ON "edfi"."AssessmentScoreRangeLearningStandard" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandardLearningStand_f87334cd35" ON "edfi"."AssessmentScoreRangeLearningStandardLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
@@ -34132,9 +34976,13 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentSection_SectionOrProgramChoiceSection_L
 
 CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimension_ContentVersion" ON "edfi"."BalanceSheetDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimension_CreatedByOwnershipTokenId" ON "edfi"."BalanceSheetDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimensionReportingTag_ReportingTagDes_4acd49a94e" ON "edfi"."BalanceSheetDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_BellSchedule_ContentVersion" ON "edfi"."BellSchedule" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_BellSchedule_CreatedByOwnershipTokenId" ON "edfi"."BellSchedule" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_BellSchedule_School_SchoolId_Auth" ON "edfi"."BellSchedule" ("School_SchoolId");
 
@@ -34148,6 +34996,8 @@ CREATE INDEX IF NOT EXISTS "IX_Calendar_CalendarTypeDescriptor_DescriptorId" ON 
 
 CREATE INDEX IF NOT EXISTS "IX_Calendar_ContentVersion" ON "edfi"."Calendar" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Calendar_CreatedByOwnershipTokenId" ON "edfi"."Calendar" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Calendar_SchoolYear_SchoolYear_SchoolYear_DocumentId" ON "edfi"."Calendar" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Calendar_School_SchoolId_Auth" ON "edfi"."Calendar" ("School_SchoolId");
@@ -34160,6 +35010,8 @@ CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_SchoolId_Auth" ON "edfi"."C
 
 CREATE INDEX IF NOT EXISTS "IX_CalendarDate_ContentVersion" ON "edfi"."CalendarDate" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_CalendarDate_CreatedByOwnershipTokenId" ON "edfi"."CalendarDate" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_CalendarDateCalendarEvent_CalendarEventDescriptor_af9d32ea95" ON "edfi"."CalendarDateCalendarEvent" ("CalendarEventDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CalendarGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."CalendarGradeLevel" ("GradeLevelDescriptor_DescriptorId");
@@ -34169,6 +35021,8 @@ CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_AccountTypeDescriptor_DescriptorId
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_BalanceSheetBalanceSheetDimension__c233c68f59" ON "edfi"."ChartOfAccount" ("BalanceSheetBalanceSheetDimension_Code", "FiscalYear_Unified", "BalanceSheetBalanceSheetDimension_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ContentVersion" ON "edfi"."ChartOfAccount" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_CreatedByOwnershipTokenId" ON "edfi"."ChartOfAccount" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_EducationOrganization_EducationOrg_1df8d3a1a1" ON "edfi"."ChartOfAccount" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -34192,6 +35046,8 @@ CREATE INDEX IF NOT EXISTS "IX_ChartOfAccountReportingTag_ReportingTagDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_ContentVersion" ON "edfi"."ClassPeriod" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_CreatedByOwnershipTokenId" ON "edfi"."ClassPeriod" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_SchoolId_Auth" ON "edfi"."ClassPeriod" ("School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_SchoolId_School_DocumentId" ON "edfi"."ClassPeriod" ("School_SchoolId", "School_DocumentId");
@@ -34204,6 +35060,8 @@ CREATE INDEX IF NOT EXISTS "IX_Cohort_CohortTypeDescriptor_DescriptorId" ON "edf
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_ContentVersion" ON "edfi"."Cohort" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Cohort_CreatedByOwnershipTokenId" ON "edfi"."Cohort" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_EducationOrganizatio_b15b3f31e6" ON "edfi"."Cohort" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Cohort" ("EducationOrganization_EducationOrganizationId");
@@ -34213,6 +35071,8 @@ CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_EducationOrganizatio
 CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_ProgramTypeDescripto_e0981001db" ON "edfi"."CohortProgram" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganization_ContentVersion" ON "edfi"."CommunityOrganization" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityOrganization_CreatedByOwnershipTokenId" ON "edfi"."CommunityOrganization" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganization_OperationalStatusDescriptor_38236c5b77" ON "edfi"."CommunityOrganization" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -34245,6 +35105,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInternationalAddress_Country
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_CommunityOrganization_Community_b8bc431183" ON "edfi"."CommunityProvider" ("CommunityOrganization_CommunityOrganizationId", "CommunityOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_ContentVersion" ON "edfi"."CommunityProvider" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_CreatedByOwnershipTokenId" ON "edfi"."CommunityProvider" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_OperationalStatusDescriptor_DescriptorId" ON "edfi"."CommunityProvider" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -34286,17 +35148,23 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Commun
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_ContentVersion" ON "edfi"."CommunityProviderLicense" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CreatedByOwnershipTokenId" ON "edfi"."CommunityProviderLicense" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseStatusDescriptor__6e90582275" ON "edfi"."CommunityProviderLicense" ("LicenseStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseTypeDescriptor_DescriptorId" ON "edfi"."CommunityProviderLicense" ("LicenseTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_ContentVersion" ON "edfi"."CompetencyObjective" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_CreatedByOwnershipTokenId" ON "edfi"."CompetencyObjective" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Educati_6e0bfa585a" ON "edfi"."CompetencyObjective" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_73996cb9eb" ON "edfi"."CompetencyObjective" ("ObjectiveGradeLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Contact_ContentVersion" ON "edfi"."Contact" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Contact_CreatedByOwnershipTokenId" ON "edfi"."Contact" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_Contact_HighestCompletedLevelOfEducationDescripto_6ea90ad0b5" ON "edfi"."Contact" ("HighestCompletedLevelOfEducationDescriptor_DescriptorId");
 
@@ -34344,6 +35212,8 @@ CREATE INDEX IF NOT EXISTS "IX_Course_CourseDefinedByDescriptor_DescriptorId" ON
 
 CREATE INDEX IF NOT EXISTS "IX_Course_CourseGPAApplicabilityDescriptor_DescriptorId" ON "edfi"."Course" ("CourseGPAApplicabilityDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Course_CreatedByOwnershipTokenId" ON "edfi"."Course" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Course_EducationOrganization_EducationOrganizatio_af622fa9ad" ON "edfi"."Course" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Course_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Course" ("EducationOrganization_EducationOrganizationId");
@@ -34368,6 +35238,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseOffering_ContentVersion" ON "edfi"."CourseO
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_Course_CourseCode_Course_Education_a873b036cc" ON "edfi"."CourseOffering" ("Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId");
 
+CREATE INDEX IF NOT EXISTS "IX_CourseOffering_CreatedByOwnershipTokenId" ON "edfi"."CourseOffering" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_SchoolId_Unified_Auth" ON "edfi"."CourseOffering" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_SchoolId_Unified_School_DocumentId" ON "edfi"."CourseOffering" ("SchoolId_Unified", "School_DocumentId");
@@ -34387,6 +35259,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ContentVersion" ON "edfi"."Cours
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_CourseCourse_CourseCode_CourseCo_ea46a01e41" ON "edfi"."CourseTranscript" ("CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId", "CourseCourse_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_CourseRepeatCodeDescriptor_DescriptorId" ON "edfi"."CourseTranscript" ("CourseRepeatCodeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_CreatedByOwnershipTokenId" ON "edfi"."CourseTranscript" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_EarnedCreditTypeDescriptor_DescriptorId" ON "edfi"."CourseTranscript" ("EarnedCreditTypeDescriptor_DescriptorId");
 
@@ -34424,6 +35298,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptSection_Section_LocalCourseCode_S
 
 CREATE INDEX IF NOT EXISTS "IX_Credential_ContentVersion" ON "edfi"."Credential" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Credential_CreatedByOwnershipTokenId" ON "edfi"."Credential" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Credential_CredentialFieldDescriptor_DescriptorId" ON "edfi"."Credential" ("CredentialFieldDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Credential_CredentialTypeDescriptor_DescriptorId" ON "edfi"."Credential" ("CredentialTypeDescriptor_DescriptorId");
@@ -34442,9 +35318,13 @@ CREATE INDEX IF NOT EXISTS "IX_CredentialGradeLevel_GradeLevelDescriptor_Descrip
 
 CREATE INDEX IF NOT EXISTS "IX_CrisisEvent_ContentVersion" ON "edfi"."CrisisEvent" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_CrisisEvent_CreatedByOwnershipTokenId" ON "edfi"."CrisisEvent" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_CrisisEvent_CrisisTypeDescriptor_DescriptorId" ON "edfi"."CrisisEvent" ("CrisisTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_DescriptorMapping_ContentVersion" ON "edfi"."DescriptorMapping" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_DescriptorMapping_CreatedByOwnershipTokenId" ON "edfi"."DescriptorMapping" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_DescriptorMapping_Namespace_Auth" ON "edfi"."DescriptorMapping" ("Namespace");
 
@@ -34453,6 +35333,8 @@ CREATE INDEX IF NOT EXISTS "IX_DescriptorMappingModelEntity_ModelEntityDescripto
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_AssignmentSchool_SchoolId_Assign_5b3cc56fc5" ON "edfi"."DisciplineAction" ("AssignmentSchool_SchoolId", "AssignmentSchool_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ContentVersion" ON "edfi"."DisciplineAction" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_CreatedByOwnershipTokenId" ON "edfi"."DisciplineAction" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_DisciplineActionLengthDifference_9e7f788653" ON "edfi"."DisciplineAction" ("DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId");
 
@@ -34471,6 +35353,8 @@ CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStaff_Staff_StaffUniqueId_Staff_D
 CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStudentDisciplineIncidentBehavior_bc780ecadc" ON "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation" ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId", "StudentDisciplineIncidentBehaviorAssociation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_ContentVersion" ON "edfi"."DisciplineIncident" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_CreatedByOwnershipTokenId" ON "edfi"."DisciplineIncident" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_IncidentLocationDescriptor_DescriptorId" ON "edfi"."DisciplineIncident" ("IncidentLocationDescriptor_DescriptorId");
 
@@ -34492,6 +35376,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationContent_ContentVersion" ON "edfi"."Educa
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_CostRateDescriptor_DescriptorId" ON "edfi"."EducationContent" ("CostRateDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationContent_CreatedByOwnershipTokenId" ON "edfi"."EducationContent" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_InteractivityStyleDescriptor_DescriptorId" ON "edfi"."EducationContent" ("InteractivityStyleDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_LearningResourceChoiceLearningRe_8b0d0e277e" ON "edfi"."EducationContent" ("LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0", "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2");
@@ -34512,9 +35398,13 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_d23e7089b6" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_e45eba2d3d" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_faa726922d" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_ContentVersion" ON "edfi"."EducationOrganizationNetwork" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_CreatedByOwnershipTokenId" ON "edfi"."EducationOrganizationNetwork" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_NetworkPurposeDescri_3bf9370c0c" ON "edfi"."EducationOrganizationNetwork" ("NetworkPurposeDescriptor_DescriptorId");
 
@@ -34529,6 +35419,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddress_StateAbbrevia
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddressPeriod_ParentC_114960f234" ON "edfi"."EducationOrganizationNetworkAddressPeriod" ("ParentCollectionItemId", "EducationOrganizationNetwork_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_ContentVersion" ON "edfi"."EducationOrganizationNetworkAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_CreatedBy_d01c2b9a28" ON "edfi"."EducationOrganizationNetworkAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_226e756ed2" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_EducationOrganizationNetworkId", "EducationOrganizationNetwork_DocumentId");
 
@@ -34556,6 +35448,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkInternationalAddress_
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_ContentVersion" ON "edfi"."EducationOrganizationPeerAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_CreatedByOwn_c185d401d6" ON "edfi"."EducationOrganizationPeerAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_3eda9f3368" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_57fb1f9ac8" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -34563,6 +35457,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_PeerEducatio_8e87e68b21" ON "edfi"."EducationOrganizationPeerAssociation" ("PeerEducationOrganization_EducationOrganizationId", "PeerEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_ContentVersion" ON "edfi"."EducationServiceCenter" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_CreatedByOwnershipTokenId" ON "edfi"."EducationServiceCenter" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_OperationalStatusDescripto_dc50e6e0cc" ON "edfi"."EducationServiceCenter" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -34596,6 +35492,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterInternationalAddress_Countr
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ContentVersion" ON "edfi"."EvaluationRubricDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_CreatedByOwnershipTokenId" ON "edfi"."EvaluationRubricDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_EvaluationRubricRatingL_b9dfdd7a3d" ON "edfi"."EvaluationRubricDimension" ("EvaluationRubricRatingLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_5fb0559117" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluationElement_DocumentId");
@@ -34610,6 +35508,8 @@ CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen
 
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_ContentVersion" ON "edfi"."FeederSchoolAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_CreatedByOwnershipTokenId" ON "edfi"."FeederSchoolAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_FeederSchool_SchoolId_Fee_9abcd64702" ON "edfi"."FeederSchoolAssociation" ("FeederSchool_SchoolId", "FeederSchool_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_SchoolId_Auth" ON "edfi"."FeederSchoolAssociation" ("School_SchoolId");
@@ -34618,13 +35518,19 @@ CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_SchoolId_School_Do
 
 CREATE INDEX IF NOT EXISTS "IX_FunctionDimension_ContentVersion" ON "edfi"."FunctionDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_FunctionDimension_CreatedByOwnershipTokenId" ON "edfi"."FunctionDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_FunctionDimensionReportingTag_ReportingTagDescrip_8c091e28ad" ON "edfi"."FunctionDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_FundDimension_ContentVersion" ON "edfi"."FundDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_FundDimension_CreatedByOwnershipTokenId" ON "edfi"."FundDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_FundDimensionReportingTag_ReportingTagDescriptor__571cece1e9" ON "edfi"."FundDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_ContentVersion" ON "edfi"."Grade" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Grade_CreatedByOwnershipTokenId" ON "edfi"."Grade" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_GradingPeriodGradingPeriod_GradingPeriodDes_040f0a871b" ON "edfi"."Grade" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "GradingPeriodGradingPeriod_DocumentId");
 
@@ -34642,6 +35548,8 @@ CREATE INDEX IF NOT EXISTS "IX_GradeLearningStandardGrade_PerformanceBaseConvers
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_ContentVersion" ON "edfi"."GradebookEntry" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_CreatedByOwnershipTokenId" ON "edfi"."GradebookEntry" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradebookEntryTypeDescriptor_DescriptorId" ON "edfi"."GradebookEntry" ("GradebookEntryTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradingPeriod_GradingPeriodDescrip_367b02b8b0" ON "edfi"."GradebookEntry" ("GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "GradingPeriod_DocumentId");
@@ -34654,6 +35562,8 @@ CREATE INDEX IF NOT EXISTS "IX_GradebookEntryLearningStandard_LearningStandard_L
 
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_ContentVersion" ON "edfi"."GradingPeriod" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_CreatedByOwnershipTokenId" ON "edfi"."GradingPeriod" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_SchoolYear_SchoolYear_SchoolYear_DocumentId" ON "edfi"."GradingPeriod" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_SchoolId_Auth" ON "edfi"."GradingPeriod" ("School_SchoolId");
@@ -34661,6 +35571,8 @@ CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_SchoolId_Auth" ON "edfi"."Gr
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_SchoolId_School_DocumentId" ON "edfi"."GradingPeriod" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_ContentVersion" ON "edfi"."GraduationPlan" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_CreatedByOwnershipTokenId" ON "edfi"."GraduationPlan" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_EducationOrganization_EducationOrg_95c1a905ae" ON "edfi"."GraduationPlan" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -34704,6 +35616,8 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_ResultDatat
 
 CREATE INDEX IF NOT EXISTS "IX_Intervention_ContentVersion" ON "edfi"."Intervention" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Intervention_CreatedByOwnershipTokenId" ON "edfi"."Intervention" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Intervention_DeliveryMethodDescriptor_DescriptorId" ON "edfi"."Intervention" ("DeliveryMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Intervention_EducationOrganization_EducationOrgan_8393f9138f" ON "edfi"."Intervention" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -34724,6 +35638,8 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionPopulationServed_PopulationServedDesc
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_ContentVersion" ON "edfi"."InterventionPrescription" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_CreatedByOwnershipTokenId" ON "edfi"."InterventionPrescription" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_DeliveryMethodDescriptor_dea82e8205" ON "edfi"."InterventionPrescription" ("DeliveryMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_EducationOrganization_Ed_71f81814ab" ON "edfi"."InterventionPrescription" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -34743,6 +35659,8 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionPopulationServed_Populati
 CREATE INDEX IF NOT EXISTS "IX_InterventionStaff_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."InterventionStaff" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_ContentVersion" ON "edfi"."InterventionStudy" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_CreatedByOwnershipTokenId" ON "edfi"."InterventionStudy" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_DeliveryMethodDescriptor_DescriptorId" ON "edfi"."InterventionStudy" ("DeliveryMethodDescriptor_DescriptorId");
 
@@ -34776,6 +35694,8 @@ CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ContentStandardPublicationStatus
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ContentVersion" ON "edfi"."LearningStandard" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_LearningStandard_CreatedByOwnershipTokenId" ON "edfi"."LearningStandard" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_LearningStandardCategoryDescript_3410267b85" ON "edfi"."LearningStandard" ("LearningStandardCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_LearningStandardScopeDescriptor__91a8efe8f7" ON "edfi"."LearningStandard" ("LearningStandardScopeDescriptor_DescriptorId");
@@ -34790,6 +35710,8 @@ CREATE INDEX IF NOT EXISTS "IX_LearningStandardAcademicSubject_AcademicSubjectDe
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_ContentVersion" ON "edfi"."LearningStandardEquivalenceAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_CreatedByO_59b9e14fef" ON "edfi"."LearningStandardEquivalenceAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_LearningSt_dfff6c8d02" ON "edfi"."LearningStandardEquivalenceAssociation" ("LearningStandardEquivalenceStrengthDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_SourceLear_f7961d6d60" ON "edfi"."LearningStandardEquivalenceAssociation" ("SourceLearningStandard_LearningStandardId", "SourceLearningStandard_DocumentId");
@@ -34802,6 +35724,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ChartOfAccountChartOfAccount_Account
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ContentVersion" ON "edfi"."LocalAccount" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalAccount_CreatedByOwnershipTokenId" ON "edfi"."LocalAccount" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_EducationOrgan_8d61178531" ON "edfi"."LocalAccount" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_EducationOrgan_b7d3637739" ON "edfi"."LocalAccount" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -34809,6 +35733,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_EducationOrgan
 CREATE INDEX IF NOT EXISTS "IX_LocalAccountReportingTag_ReportingTagDescriptor_DescriptorId" ON "edfi"."LocalAccountReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_ContentVersion" ON "edfi"."LocalActual" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalActual_CreatedByOwnershipTokenId" ON "edfi"."LocalActual" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalActual" ("FinancialCollectionDescriptor_DescriptorId");
 
@@ -34818,6 +35744,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_EducationOrganizationId_
 
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_ContentVersion" ON "edfi"."LocalBudget" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalBudget_CreatedByOwnershipTokenId" ON "edfi"."LocalBudget" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalBudget" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_AccountIdentifier_LocalA_1305cf33df" ON "edfi"."LocalBudget" ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId");
@@ -34825,6 +35753,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_AccountIdentifier_LocalA
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalBudget" ("LocalAccount_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_ContentVersion" ON "edfi"."LocalContractedStaff" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_CreatedByOwnershipTokenId" ON "edfi"."LocalContractedStaff" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_FinancialCollectionDescripto_76ed6e7e39" ON "edfi"."LocalContractedStaff" ("FinancialCollectionDescriptor_DescriptorId");
 
@@ -34839,6 +35769,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_Staff_StaffUniqueId_Staff_Do
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_CharterStatusDescriptor_DescriptorId" ON "edfi"."LocalEducationAgency" ("CharterStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ContentVersion" ON "edfi"."LocalEducationAgency" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_CreatedByOwnershipTokenId" ON "edfi"."LocalEducationAgency" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_EducationServiceCenter_Educa_ffa5cbefb4" ON "edfi"."LocalEducationAgency" ("EducationServiceCenter_EducationServiceCenterId", "EducationServiceCenter_DocumentId");
 
@@ -34884,6 +35816,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyInternationalAddress_CountryD
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_ContentVersion" ON "edfi"."LocalEncumbrance" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_CreatedByOwnershipTokenId" ON "edfi"."LocalEncumbrance" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalEncumbrance" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_AccountIdentifier_L_ecc99e94e9" ON "edfi"."LocalEncumbrance" ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId");
@@ -34891,6 +35825,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_AccountIdentifier_L
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalEncumbrance" ("LocalAccount_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_ContentVersion" ON "edfi"."LocalPayroll" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_CreatedByOwnershipTokenId" ON "edfi"."LocalPayroll" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalPayroll" ("FinancialCollectionDescriptor_DescriptorId");
 
@@ -34904,11 +35840,15 @@ CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_Staff_StaffUniqueId_Staff_DocumentId
 
 CREATE INDEX IF NOT EXISTS "IX_Location_ContentVersion" ON "edfi"."Location" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Location_CreatedByOwnershipTokenId" ON "edfi"."Location" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Location_School_SchoolId_Auth" ON "edfi"."Location" ("School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_Location_School_SchoolId_School_DocumentId" ON "edfi"."Location" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectDimension_ContentVersion" ON "edfi"."ObjectDimension" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ObjectDimension_CreatedByOwnershipTokenId" ON "edfi"."ObjectDimension" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectDimensionReportingTag_ReportingTagDescripto_0c90e3a14c" ON "edfi"."ObjectDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
@@ -34919,6 +35859,8 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AssessmentIdentifier_Unified_
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AssessmentIdentifier_Unified__9d98161ea2" ON "edfi"."ObjectiveAssessment" ("AssessmentIdentifier_Unified", "Namespace_Unified", "Assessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_ContentVersion" ON "edfi"."ObjectiveAssessment" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_CreatedByOwnershipTokenId" ON "edfi"."ObjectiveAssessment" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Namespace_Unified_Auth" ON "edfi"."ObjectiveAssessment" ("Namespace_Unified");
 
@@ -34940,6 +35882,8 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentScore_ResultDatatypeTypeDescri
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_ContentVersion" ON "edfi"."OpenStaffPosition" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_CreatedByOwnershipTokenId" ON "edfi"."OpenStaffPosition" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_Education_36b4b22ff8" ON "edfi"."OpenStaffPosition" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_Education_eaaa372ab2" ON "edfi"."OpenStaffPosition" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -34958,11 +35902,15 @@ CREATE INDEX IF NOT EXISTS "IX_OpenStaffPositionInstructionalGradeLevel_GradeLev
 
 CREATE INDEX IF NOT EXISTS "IX_OperationalUnitDimension_ContentVersion" ON "edfi"."OperationalUnitDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_OperationalUnitDimension_CreatedByOwnershipTokenId" ON "edfi"."OperationalUnitDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_OperationalUnitDimensionReportingTag_ReportingTag_d598c00e12" ON "edfi"."OperationalUnitDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_AcademicSubjectDescriptor__3a211a66fb" ON "edfi"."OrganizationDepartment" ("AcademicSubjectDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ContentVersion" ON "edfi"."OrganizationDepartment" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_CreatedByOwnershipTokenId" ON "edfi"."OrganizationDepartment" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_OperationalStatusDescripto_d9b294e2d3" ON "edfi"."OrganizationDepartment" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -34998,9 +35946,13 @@ CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentInternationalAddress_Countr
 
 CREATE INDEX IF NOT EXISTS "IX_Person_ContentVersion" ON "edfi"."Person" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Person_CreatedByOwnershipTokenId" ON "edfi"."Person" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Person" ("SourceSystemDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_ContentVersion" ON "edfi"."PostSecondaryEvent" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_CreatedByOwnershipTokenId" ON "edfi"."PostSecondaryEvent" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_PostSecondaryEventCategoryDesc_e674e7d53f" ON "edfi"."PostSecondaryEvent" ("PostSecondaryEventCategoryDescriptor_DescriptorId");
 
@@ -35013,6 +35965,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_Student_StudentUniqueId_Studen
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_AdministrativeFundingCon_00a0c3d7a3" ON "edfi"."PostSecondaryInstitution" ("AdministrativeFundingControlDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_ContentVersion" ON "edfi"."PostSecondaryInstitution" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_CreatedByOwnershipTokenId" ON "edfi"."PostSecondaryInstitution" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_OperationalStatusDescrip_d282b12817" ON "edfi"."PostSecondaryInstitution" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -35048,6 +36002,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionMediumOfInstruction_Mediu
 
 CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Program_CreatedByOwnershipTokenId" ON "edfi"."Program" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_EducationOrganizati_c73e683cad" ON "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Program_ProgramTypeDescriptor_DescriptorId" ON "edfi"."Program" ("ProgramTypeDescriptor_DescriptorId");
@@ -35056,9 +36012,13 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramCharacteristic_ProgramCharacteristicDescri
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramDimension_ContentVersion" ON "edfi"."ProgramDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_ProgramDimension_CreatedByOwnershipTokenId" ON "edfi"."ProgramDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_ProgramDimensionReportingTag_ReportingTagDescript_2aa4a9eab7" ON "edfi"."ProgramDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ContentVersion" ON "edfi"."ProgramEvaluation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_CreatedByOwnershipTokenId" ON "edfi"."ProgramEvaluation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramEvaluationTypeDescriptor_86cf40c548" ON "edfi"."ProgramEvaluation" ("ProgramEvaluationTypeDescriptor_DescriptorId");
 
@@ -35069,6 +36029,8 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_EducationOrganiz
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_ProgramTypeDescr_16081c538e" ON "edfi"."ProgramEvaluation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ContentVersion" ON "edfi"."ProgramEvaluationElement" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_CreatedByOwnershipTokenId" ON "edfi"."ProgramEvaluationElement" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEducationOrganiza_4723285757" ON "edfi"."ProgramEvaluationElement" ("ProgramEducationOrganizationId_Unified");
 
@@ -35086,6 +36048,8 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationLevel_RatingLevelDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ContentVersion" ON "edfi"."ProgramEvaluationObjective" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_CreatedByOwnershipTokenId" ON "edfi"."ProgramEvaluationObjective" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_43d0a0b880" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_b57b2d1caa" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluation_DocumentId");
@@ -35102,9 +36066,13 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramSponsor_ProgramSponsorDescriptor_Descripto
 
 CREATE INDEX IF NOT EXISTS "IX_ProjectDimension_ContentVersion" ON "edfi"."ProjectDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_ProjectDimension_CreatedByOwnershipTokenId" ON "edfi"."ProjectDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_ProjectDimensionReportingTag_ReportingTagDescript_8001d885c1" ON "edfi"."ProjectDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCard_ContentVersion" ON "edfi"."ReportCard" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ReportCard_CreatedByOwnershipTokenId" ON "edfi"."ReportCard" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCard_EducationOrganization_EducationOrganiz_31c899dab0" ON "edfi"."ReportCard" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -35125,6 +36093,8 @@ CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe
 CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe_ad05459c4b" ON "edfi"."ReportCardStudentCompetencyObjective" ("StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_ContentVersion" ON "edfi"."RestraintEvent" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_CreatedByOwnershipTokenId" ON "edfi"."RestraintEvent" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_DisciplineIncident_IncidentIdentif_2759348d12" ON "edfi"."RestraintEvent" ("DisciplineIncident_IncidentIdentifier", "SchoolId_Unified", "DisciplineIncident_DocumentId");
 
@@ -35153,6 +36123,8 @@ CREATE INDEX IF NOT EXISTS "IX_School_CharterApprovalSchoolYear_CharterApprovalS
 CREATE INDEX IF NOT EXISTS "IX_School_CharterStatusDescriptor_DescriptorId" ON "edfi"."School" ("CharterStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_InternetAccessDescriptor_DescriptorId" ON "edfi"."School" ("InternetAccessDescriptor_DescriptorId");
 
@@ -35198,11 +36170,15 @@ CREATE INDEX IF NOT EXISTS "IX_SchoolInternationalAddress_CountryDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolYearType_ContentVersion" ON "edfi"."SchoolYearType" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SchoolYearType_CreatedByOwnershipTokenId" ON "edfi"."SchoolYearType" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Section_AvailableCreditTypeDescriptor_DescriptorId" ON "edfi"."Section" ("AvailableCreditTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_ContentVersion" ON "edfi"."Section" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_CourseOffering_LocalCourseCode_SchoolId_U_1e931bf166" ON "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "CourseOffering_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_Section_CreatedByOwnershipTokenId" ON "edfi"."Section" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_EducationalEnvironmentDescriptor_DescriptorId" ON "edfi"."Section" ("EducationalEnvironmentDescriptor_DescriptorId");
 
@@ -35224,6 +36200,8 @@ CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_CalendarDate_Calendar
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_ContentVersion" ON "edfi"."SectionAttendanceTakenEvent" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_CreatedByOwnershipTokenId" ON "edfi"."SectionAttendanceTakenEvent" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_SchoolId_Unified_Auth" ON "edfi"."SectionAttendanceTakenEvent" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_Section_LocalCourseCo_58e450d99a" ON "edfi"."SectionAttendanceTakenEvent" ("Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
@@ -35244,6 +36222,8 @@ CREATE INDEX IF NOT EXISTS "IX_SectionProgram_Program_ProgramTypeDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_Session_ContentVersion" ON "edfi"."Session" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Session_CreatedByOwnershipTokenId" ON "edfi"."Session" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Session_SchoolYear_SchoolYear_SchoolYear_DocumentId" ON "edfi"."Session" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Session_School_SchoolId_School_DocumentId" ON "edfi"."Session" ("School_SchoolId", "School_DocumentId");
@@ -35256,11 +36236,15 @@ CREATE INDEX IF NOT EXISTS "IX_SessionGradingPeriod_GradingPeriod_GradingPeriodD
 
 CREATE INDEX IF NOT EXISTS "IX_SourceDimension_ContentVersion" ON "edfi"."SourceDimension" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SourceDimension_CreatedByOwnershipTokenId" ON "edfi"."SourceDimension" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SourceDimensionReportingTag_ReportingTagDescripto_bed807c34e" ON "edfi"."SourceDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_CitizenshipStatusDescriptor_DescriptorId" ON "edfi"."Staff" ("CitizenshipStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_ContentVersion" ON "edfi"."Staff" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Staff_CreatedByOwnershipTokenId" ON "edfi"."Staff" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_HighestCompletedLevelOfEducationDescriptor__484b34eed2" ON "edfi"."Staff" ("HighestCompletedLevelOfEducationDescriptor_DescriptorId");
 
@@ -35271,6 +36255,8 @@ CREATE INDEX IF NOT EXISTS "IX_Staff_Person_SourceSystemDescriptor_DescriptorId"
 CREATE INDEX IF NOT EXISTS "IX_Staff_SexDescriptor_DescriptorId" ON "edfi"."Staff" ("SexDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_ContentVersion" ON "edfi"."StaffAbsenceEvent" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_CreatedByOwnershipTokenId" ON "edfi"."StaffAbsenceEvent" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_Staff_DocumentId_Auth" ON "edfi"."StaffAbsenceEvent" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
@@ -35292,6 +36278,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_EducationOrganizati
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_ContentVersion" ON "edfi"."StaffCohortAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_CreatedByOwnershipTokenId" ON "edfi"."StaffCohortAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_DocumentId_Auth" ON "edfi"."StaffCohortAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."StaffCohortAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
@@ -35301,6 +36289,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_CredentialIdentifier_C
 CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_StateOfIssueStateAbbre_f0c3524f11" ON "edfi"."StaffCredential" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_ContentVersion" ON "edfi"."StaffDisciplineIncidentAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_CreatedByOwnershipTokenId" ON "edfi"."StaffDisciplineIncidentAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_DisciplineInci_33bd5cd4d2" ON "edfi"."StaffDisciplineIncidentAssociation" ("DisciplineIncident_SchoolId");
 
@@ -35313,6 +36303,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_Staff_StaffUni
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociationDisciplineIncid_53415fc03f" ON "edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_14fdacf69a" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_2e6bebc85d" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_498ab48fba" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("ContentVersion");
 
@@ -35342,6 +36334,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Cont
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_ContentVersion" ON "edfi"."StaffEducationOrganizationContactAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Crea_1a707f3bc9" ON "edfi"."StaffEducationOrganizationContactAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_ac57af64ae" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_d6cec125db" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -35351,6 +36345,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Staf
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Staf_e45c1dfb00" ON "edfi"."StaffEducationOrganizationContactAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociationTelep_38c9ca72f5" ON "edfi"."StaffEducationOrganizationContactAssociationTelephone" ("TelephoneNumberTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_026d1316fc" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_15132b4b8e" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId");
 
@@ -35394,6 +36390,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffLanguageUs_ParentCollectionItemId_Staff_Docu
 
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_ContentVersion" ON "edfi"."StaffLeave" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffLeave_CreatedByOwnershipTokenId" ON "edfi"."StaffLeave" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_StaffLeaveEventCategoryDescriptor_DescriptorId" ON "edfi"."StaffLeave" ("StaffLeaveEventCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_Staff_DocumentId_Auth" ON "edfi"."StaffLeave" ("Staff_DocumentId") INCLUDE ("DocumentId");
@@ -35409,6 +36407,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffPersonalIdentificationDocument_IssuerCountry
 CREATE INDEX IF NOT EXISTS "IX_StaffPersonalIdentificationDocument_PersonalInfor_5d56c02119" ON "edfi"."StaffPersonalIdentificationDocument" ("PersonalInformationVerificationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ContentVersion" ON "edfi"."StaffProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_CreatedByOwnershipTokenId" ON "edfi"."StaffProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ProgramProgram_EducationO_3a595541d2" ON "edfi"."StaffProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
@@ -35428,6 +36428,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Calendar_CalendarCode_Scho
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_ContentVersion" ON "edfi"."StaffSchoolAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_CreatedByOwnershipTokenId" ON "edfi"."StaffSchoolAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolId_Unified_Auth" ON "edfi"."StaffSchoolAssociation" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolId_Unified_School_DocumentId" ON "edfi"."StaffSchoolAssociation" ("SchoolId_Unified", "School_DocumentId");
@@ -35446,6 +36448,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_ClassroomPositionDescript
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_ContentVersion" ON "edfi"."StaffSectionAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_CreatedByOwnershipTokenId" ON "edfi"."StaffSectionAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_LocalCourseCode_S_2909ffaba7" ON "edfi"."StaffSectionAssociation" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_SchoolId_Auth" ON "edfi"."StaffSectionAssociation" ("Section_SchoolId");
@@ -35461,6 +36465,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffTribalAffiliation_TribalAffiliationDescripto
 CREATE INDEX IF NOT EXISTS "IX_StaffVisa_VisaDescriptor_DescriptorId" ON "edfi"."StaffVisa" ("VisaDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_ContentVersion" ON "edfi"."StateEducationAgency" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_CreatedByOwnershipTokenId" ON "edfi"."StateEducationAgency" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_OperationalStatusDescriptor__773cf45140" ON "edfi"."StateEducationAgency" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -35502,11 +36508,15 @@ CREATE INDEX IF NOT EXISTS "IX_Student_CitizenshipStatusDescriptor_DescriptorId"
 
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Student_CreatedByOwnershipTokenId" ON "edfi"."Student" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Student_Person_PersonId_Person_SourceSystemDescri_90a32608d7" ON "edfi"."Student" ("Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId", "Person_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Student_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Student" ("Person_SourceSystemDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_ContentVersion" ON "edfi"."StudentAcademicRecord" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_CreatedByOwnershipTokenId" ON "edfi"."StudentAcademicRecord" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_CumulativeAttemptedCreditTy_320bf549fc" ON "edfi"."StudentAcademicRecord" ("CumulativeAttemptedCreditTypeDescriptor_DescriptorId");
 
@@ -35556,6 +36566,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_Namespace_Auth" ON "
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ContentVersion" ON "edfi"."StudentAssessment" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_CreatedByOwnershipTokenId" ON "edfi"."StudentAssessment" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_EventCircumstanceDescriptor_DescriptorId" ON "edfi"."StudentAssessment" ("EventCircumstanceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_PeriodAssessmentPeriodDescripto_f4d2af6ce9" ON "edfi"."StudentAssessment" ("PeriodAssessmentPeriodDescriptor_DescriptorId");
@@ -35590,6 +36602,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_87e18ac858" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_9950c47339" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_9c99996727" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_cda9ff5801" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
@@ -35613,6 +36627,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentAdministr
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentGradeLeve_1aa8eac80e" ON "edfi"."StudentAssessmentRegistration" ("AssessmentGradeLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ContentVersion" ON "edfi"."StudentAssessmentRegistration" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_CreatedByOwnershipTokenId" ON "edfi"."StudentAssessmentRegistration" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_PlatformTypeDescrip_cd62a7c323" ON "edfi"."StudentAssessmentRegistration" ("PlatformTypeDescriptor_DescriptorId");
 
@@ -35644,6 +36660,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_dc158ce025" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("Namespace_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_f122e54c31" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_706762e59a" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociationA_c87694eb5a" ("AccommodationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentScoreResult_AssessmentReportingM_b46ee6ff10" ON "edfi"."StudentAssessmentScoreResult" ("AssessmentReportingMethodDescriptor_DescriptorId");
@@ -35667,6 +36685,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR_cef8b8adde" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult" ("ParentCollectionItemId", "StudentAssessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ContentVersion" ON "edfi"."StudentCTEProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentCTEProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_414d23dc2f" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -35694,6 +36714,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_EducationOrganiza
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_ContentVersion" ON "edfi"."StudentCohortAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentCohortAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_DocumentId_Auth" ON "edfi"."StudentCohortAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_StudentUniqueId__911c47d365" ON "edfi"."StudentCohortAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
@@ -35703,6 +36725,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociationSection_Section_LocalCour
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_CompetencyLevelDescrip_660dc38c15" ON "edfi"."StudentCompetencyObjective" ("CompetencyLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_ContentVersion" ON "edfi"."StudentCompetencyObjective" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_CreatedByOwnershipTokenId" ON "edfi"."StudentCompetencyObjective" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_GradingPeriodGradingPe_05081eb695" ON "edfi"."StudentCompetencyObjective" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "GradingPeriodGradingPeriod_DocumentId");
 
@@ -35726,6 +36750,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Contact_DocumentId_Auth
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_ContentVersion" ON "edfi"."StudentContactAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentContactAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_RelationDescriptor_DescriptorId" ON "edfi"."StudentContactAssociation" ("RelationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Auth" ON "edfi"."StudentContactAssociation" ("Student_DocumentId") INCLUDE ("Contact_DocumentId", "DocumentId");
@@ -35733,6 +36759,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Auth
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_StudentUniqueId_c3f46f648c" ON "edfi"."StudentContactAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_ContentVersion" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Crea_91d136fd3a" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_b4c3146661" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DisciplineIncident_SchoolId");
 
@@ -35745,6 +36773,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Stud
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociationDisci_b27920c969" ON "edfi"."StudentDisciplineIncidentBehaviorAssociationDiscipli_ae6a215eae" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociationWeapo_1b7c73665e" ON "edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon" ("WeaponDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_C_45ac7b1b54" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_C_d84252cf33" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("ContentVersion");
 
@@ -35764,6 +36794,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_880dfa419d" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_94c53c6485" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_b38d5d4184" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_c631e6ce43" ON "edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462" ("AccommodationDescriptor_DescriptorId");
@@ -35771,6 +36803,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_BarrierTo_9e67db587a" ON "edfi"."StudentEducationOrganizationAssociation" ("BarrierToInternetAccessInResidenceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_ContentVersion" ON "edfi"."StudentEducationOrganizationAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_CreatedBy_247bbc4282" ON "edfi"."StudentEducationOrganizationAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Education_f59717589b" ON "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -35860,11 +36894,15 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_e83f6d6aca" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("EducationOrganization_EducationOrganizationId") INCLUDE ("Student_DocumentId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_f2b324b1e3" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_AssignmentLateStatusDescrip_bb0713f47c" ON "edfi"."StudentGradebookEntry" ("AssignmentLateStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_CompetencyLevelDescriptor_DescriptorId" ON "edfi"."StudentGradebookEntry" ("CompetencyLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_ContentVersion" ON "edfi"."StudentGradebookEntry" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_CreatedByOwnershipTokenId" ON "edfi"."StudentGradebookEntry" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_GradebookEntry_GradebookEnt_fdd9a4facc" ON "edfi"."StudentGradebookEntry" ("GradebookEntry_GradebookEntryIdentifier", "GradebookEntry_Namespace", "GradebookEntry_DocumentId");
 
@@ -35877,6 +36915,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_Student_StudentUniqueId_Stu
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_SubmissionStatusDescriptor__1eea51a13a" ON "edfi"."StudentGradebookEntry" ("SubmissionStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_ContentVersion" ON "edfi"."StudentHealth" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHealth_CreatedByOwnershipTokenId" ON "edfi"."StudentHealth" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_EducationOrganization_EducationOrga_01ecd04719" ON "edfi"."StudentHealth" ("EducationOrganization_EducationOrganizationId");
 
@@ -35895,6 +36935,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunization_ImmunizationTyp
 CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunizationDate_ParentColle_ba182f2b4a" ON "edfi"."StudentHealthRequiredImmunizationDate" ("ParentCollectionItemId", "StudentHealth_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_ContentVersion" ON "edfi"."StudentHomelessProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentHomelessProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_2047d9eebb" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -35926,6 +36968,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_CohortCohort_Cohor
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_ContentVersion" ON "edfi"."StudentInterventionAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentInterventionAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Educa_24864c0613" ON "edfi"."StudentInterventionAssociation" ("Intervention_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Educa_843bfbff49" ON "edfi"."StudentInterventionAssociation" ("Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode", "Intervention_DocumentId");
@@ -35944,6 +36988,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociationInterventionEffecti
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_ContentVersion" ON "edfi"."StudentInterventionAttendanceEvent" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_CreatedByOwnershipTokenId" ON "edfi"."StudentInterventionAttendanceEvent" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_EducationalEnv_2ae994b350" ON "edfi"."StudentInterventionAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_E_6d4301989e" ON "edfi"."StudentInterventionAttendanceEvent" ("Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode", "Intervention_DocumentId");
@@ -35955,6 +37001,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_Docume
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_Studen_d5a97cb905" ON "edfi"."StudentInterventionAttendanceEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_ContentVersion" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Crea_6161953482" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Educ_bd67e2f5a6" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -35988,6 +37036,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Content
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Continu_8fc5e83374" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ContinuationOfServicesReasonDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Created_798df63470" ON "edfi"."StudentMigrantEducationProgramAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_6878a0d7bc" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_ad9da3e674" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId");
@@ -36007,6 +37057,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociationMigrantE
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociationProgramP_b04d211a15" ON "edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2" ("ParticipationStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Co_50ffb531ab" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Cr_d65e16e0e0" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_5772886723" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -36042,6 +37094,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentPersonalIdentificationDocument_PersonalInf
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ContentVersion" ON "edfi"."StudentProgramAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentProgramAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_E_68167ca6f9" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_E_a021f06b61" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -36062,6 +37116,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociationService_ServiceDescripto
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_ContentVersion" ON "edfi"."StudentProgramAttendanceEvent" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_CreatedByOwnershipTokenId" ON "edfi"."StudentProgramAttendanceEvent" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_9b81579ba6" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_a0d9b2fa4b" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
@@ -36077,6 +37133,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_Student_DocumentId_
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_Student_StudentUniq_563f568861" ON "edfi"."StudentProgramAttendanceEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ContentVersion" ON "edfi"."StudentProgramEvaluation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_CreatedByOwnershipTokenId" ON "edfi"."StudentProgramEvaluation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_EducationOrganization_Ed_09f92ae049" ON "edfi"."StudentProgramEvaluation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -36120,6 +37178,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ClassOfSchoolYear_ClassO
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ContentVersion" ON "edfi"."StudentSchoolAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentSchoolAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_EnrollmentTypeDescriptor_899f3172eb" ON "edfi"."StudentSchoolAssociation" ("EnrollmentTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_EntryGradeLevelDescripto_3810677a1b" ON "edfi"."StudentSchoolAssociation" ("EntryGradeLevelDescriptor_DescriptorId");
@@ -36160,6 +37220,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociationEducationPlan_EducationPl
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_ContentVersion" ON "edfi"."StudentSchoolAttendanceEvent" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_CreatedByOwnershipTokenId" ON "edfi"."StudentSchoolAttendanceEvent" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_EducationalEnvironme_4b728e9a05" ON "edfi"."StudentSchoolAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Auth" ON "edfi"."StudentSchoolAttendanceEvent" ("SchoolId_Unified");
@@ -36173,6 +37235,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_DocumentId_A
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_StudentUniqu_932fdceacc" ON "edfi"."StudentSchoolAttendanceEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_ContentVersion" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Create_793715e7cf" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Educat_5ae4197f95" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -36193,6 +37257,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationProgram
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationSchoolF_90f931a2b4" ON "edfi"."StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c" ("SchoolFoodServiceProgramServiceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ContentVersion" ON "edfi"."StudentSection504ProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_CreatedByOwne_1b0ed033b7" ON "edfi"."StudentSection504ProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_EducationOrga_5f7d2a6663" ON "edfi"."StudentSection504ProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -36216,6 +37282,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_AttemptStatusDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_ContentVersion" ON "edfi"."StudentSectionAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentSectionAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditEducationOrga_704572a803" ON "edfi"."StudentSectionAssociation" ("DualCreditEducationOrganization_EducationOrganizationId", "DualCreditEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditInstitutionDe_bc1a30fea4" ON "edfi"."StudentSectionAssociation" ("DualCreditInstitutionDescriptor_DescriptorId");
@@ -36238,6 +37306,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociationProgram_Program_ProgramT
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_ContentVersion" ON "edfi"."StudentSectionAttendanceEvent" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_CreatedByOwnershipTokenId" ON "edfi"."StudentSectionAttendanceEvent" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_EducationalEnvironm_9584d3d9fc" ON "edfi"."StudentSectionAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Section_LocalCourse_60167725fa" ON "edfi"."StudentSectionAttendanceEvent" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
@@ -36251,6 +37321,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Student_StudentUniq
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEventClassPeriod_ClassPer_88f6eab26a" ON "edfi"."StudentSectionAttendanceEventClassPeriod" ("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_ContentVersion" ON "edfi"."StudentSpecialEducationProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Created_f52b9e74da" ON "edfi"."StudentSpecialEducationProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Educati_1ca44c4444" ON "edfi"."StudentSpecialEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -36300,6 +37372,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_938243b5f7" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_98fd25ccdc" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_b6ffda8fb7" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_bcdcc5d691" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("IdeaPartDescriptor_DescriptorId");
@@ -36311,6 +37385,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_f2af1e91cd" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EligibilityDelayReasonDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_ContentVersion" ON "edfi"."StudentTitleIPartAProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_CreatedByOwn_1a1a68f857" ON "edfi"."StudentTitleIPartAProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_EducationOrg_003342ed88" ON "edfi"."StudentTitleIPartAProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
@@ -36334,6 +37410,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociationTitleIPartAPr
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_ContentVersion" ON "edfi"."StudentTransportation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_CreatedByOwnershipTokenId" ON "edfi"."StudentTransportation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_StudentBusDetailsBusRouteDe_4335be5ade" ON "edfi"."StudentTransportation" ("StudentBusDetailsBusRouteDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_Student_DocumentId_Auth" ON "edfi"."StudentTransportation" ("Student_DocumentId") INCLUDE ("DocumentId");
@@ -36354,6 +37432,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentVisa_VisaDescriptor_DescriptorId" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_ContentVersion" ON "edfi"."Survey" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_Survey_CreatedByOwnershipTokenId" ON "edfi"."Survey" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_Survey_EducationOrganization_EducationOrganizatio_43bc586855" ON "edfi"."Survey" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_SchoolYear_Unified_SchoolYear_DocumentId" ON "edfi"."Survey" ("SchoolYear_Unified", "SchoolYear_DocumentId");
@@ -36368,11 +37448,15 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_CourseCode_Course_
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_EducationOrganizationId_Auth" ON "edfi"."SurveyCourseAssociation" ("Course_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_CreatedByOwnershipTokenId" ON "edfi"."SurveyCourseAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_Namespace_Auth" ON "edfi"."SurveyCourseAssociation" ("Survey_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_Namespace_Survey_S_116c509643" ON "edfi"."SurveyCourseAssociation" ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_ContentVersion" ON "edfi"."SurveyProgramAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_CreatedByOwnershipTokenId" ON "edfi"."SurveyProgramAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_EducationOrganiz_24093b3ee8" ON "edfi"."SurveyProgramAssociation" ("Program_EducationOrganizationId");
 
@@ -36386,6 +37470,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_Namespace_Survey_
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_ContentVersion" ON "edfi"."SurveyQuestion" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_CreatedByOwnershipTokenId" ON "edfi"."SurveyQuestion" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Namespace_Unified_Auth" ON "edfi"."SurveyQuestion" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Namespace_Unified_SurveyIdentifier_19721b5319" ON "edfi"."SurveyQuestion" ("Namespace_Unified", "SurveyIdentifier_Unified", "Survey_DocumentId");
@@ -36396,6 +37482,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_QuestionFormDescriptor_DescriptorI
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_ContentVersion" ON "edfi"."SurveyQuestionResponse" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_CreatedByOwnershipTokenId" ON "edfi"."SurveyQuestionResponse" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_Namespace_Unified_Auth" ON "edfi"."SurveyQuestionResponse" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_Namespace_Unified_SurveyId_ed830fa803" ON "edfi"."SurveyQuestionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId");
@@ -36403,6 +37491,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_Namespace_Unified_SurveyId
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_SurveyQuestion_QuestionCod_b435200767" ON "edfi"."SurveyQuestionResponse" ("SurveyQuestion_QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyQuestion_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_ContentVersion" ON "edfi"."SurveyResponse" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_CreatedByOwnershipTokenId" ON "edfi"."SurveyResponse" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceContact_Conta_8c6fb504aa" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceContact_ContactUniqueId", "SurveyResponderChoiceContact_DocumentId");
 
@@ -36420,9 +37510,13 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_a5259b8ffc" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_c488d0bfb1" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_f0bf597951" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_ContentVersion" ON "edfi"."SurveyResponseStaffTargetAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_CreatedByOwn_1918fc016b" ON "edfi"."SurveyResponseStaffTargetAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_Staff_DocumentId_Auth" ON "edfi"."SurveyResponseStaffTargetAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
@@ -36436,9 +37530,13 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_D
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySection_ContentVersion" ON "edfi"."SurveySection" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySection_CreatedByOwnershipTokenId" ON "edfi"."SurveySection" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_Namespace_Survey_SurveyIdent_10a9c6f322" ON "edfi"."SurveySection" ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_ContentVersion" ON "edfi"."SurveySectionAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_CreatedByOwnershipTokenId" ON "edfi"."SurveySectionAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Section_LocalCourseCode__3cd789a4ce" ON "edfi"."SurveySectionAssociation" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
@@ -36450,9 +37548,13 @@ CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_Namespace_Survey_
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_ContentVersion" ON "edfi"."SurveySectionResponse" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_CreatedByOwnershipTokenId" ON "edfi"."SurveySectionResponse" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_Namespace_Unified_SurveyIde_20a9094c27" ON "edfi"."SurveySectionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle", "SurveySection_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_Namespace_Unified_SurveyIde_c78c4f20e6" ON "edfi"."SurveySectionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_48f1ce0ab7" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_653199d4b1" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("ContentVersion");
 
@@ -36465,6 +37567,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_d589c9b11c" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_ContentVersion" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Creat_530882c303" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Names_2898ea2b06" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle", "SurveySectionResponse_DocumentId");
 

@@ -351,6 +351,9 @@ public sealed class PgsqlDialect : SqlDialectBase
     /// <inheritdoc />
     public override string CurrentTimestampDefaultExpression => "now()";
 
+    /// <inheritdoc />
+    public override string NewGuidDefaultExpression => "gen_random_uuid()";
+
     // ── Core-table type methods ─────────────────────────────────────────
 
     /// <inheritdoc />

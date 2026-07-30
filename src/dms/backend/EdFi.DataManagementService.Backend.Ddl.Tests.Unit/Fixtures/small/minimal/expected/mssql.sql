@@ -442,8 +442,14 @@ CREATE TABLE [edfi].[Person]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Person_ContentVersion] DEFAULT 0,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_CreatedAt] DEFAULT (sysutcdatetime()),
+    [CreatedByOwnershipTokenId] smallint NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_Person_DocumentUuid] DEFAULT newid(),
+    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Person_IdentityVersion] DEFAULT 0,
     [PersonId] int NOT NULL,
     CONSTRAINT [PK_Person] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_Person_DocumentUuid] UNIQUE ([DocumentUuid]),
     CONSTRAINT [UX_Person_NK] UNIQUE ([PersonId])
 );
 
@@ -476,6 +482,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'Person' AND i.name = N'IX_Person_ContentVersion'
 )
 CREATE INDEX [IX_Person_ContentVersion] ON [edfi].[Person] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Person' AND i.name = N'IX_Person_CreatedByOwnershipTokenId'
+)
+CREATE INDEX [IX_Person_CreatedByOwnershipTokenId] ON [edfi].[Person] ([CreatedByOwnershipTokenId]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_Person_ReferentialIdentity]

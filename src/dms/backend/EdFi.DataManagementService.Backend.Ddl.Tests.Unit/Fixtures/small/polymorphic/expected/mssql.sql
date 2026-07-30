@@ -444,9 +444,15 @@ CREATE TABLE [edfi].[LocalEducationAgency]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEducationAgency_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalEducationAgency_ContentVersion] DEFAULT 0,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEducationAgency_CreatedAt] DEFAULT (sysutcdatetime()),
+    [CreatedByOwnershipTokenId] smallint NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_LocalEducationAgency_DocumentUuid] DEFAULT newid(),
+    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEducationAgency_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_LocalEducationAgency_IdentityVersion] DEFAULT 0,
     [EducationOrganizationId] int NOT NULL,
     [LocalEducationAgencyId] int NOT NULL,
     CONSTRAINT [PK_LocalEducationAgency] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_LocalEducationAgency_DocumentUuid] UNIQUE ([DocumentUuid]),
     CONSTRAINT [UX_LocalEducationAgency_NK] UNIQUE ([LocalEducationAgencyId])
 );
 
@@ -456,9 +462,15 @@ CREATE TABLE [edfi].[School]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_School_ContentVersion] DEFAULT 0,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_CreatedAt] DEFAULT (sysutcdatetime()),
+    [CreatedByOwnershipTokenId] smallint NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_School_DocumentUuid] DEFAULT newid(),
+    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_School_IdentityVersion] DEFAULT 0,
     [EducationOrganizationId] int NOT NULL,
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_School_DocumentUuid] UNIQUE ([DocumentUuid]),
     CONSTRAINT [UX_School_NK] UNIQUE ([SchoolId])
 );
 
@@ -556,9 +568,25 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'LocalEducationAgency' AND i.name = N'IX_LocalEducationAgency_CreatedByOwnershipTokenId'
+)
+CREATE INDEX [IX_LocalEducationAgency_CreatedByOwnershipTokenId] ON [edfi].[LocalEducationAgency] ([CreatedByOwnershipTokenId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_ContentVersion'
 )
 CREATE INDEX [IX_School_ContentVersion] ON [edfi].[School] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_CreatedByOwnershipTokenId'
+)
+CREATE INDEX [IX_School_CreatedByOwnershipTokenId] ON [edfi].[School] ([CreatedByOwnershipTokenId]);
 
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS

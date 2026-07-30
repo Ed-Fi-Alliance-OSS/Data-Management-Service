@@ -445,6 +445,9 @@ public sealed class MssqlDialect : SqlDialectBase
     /// <inheritdoc />
     public override string CurrentTimestampDefaultExpression => "(sysutcdatetime())";
 
+    /// <inheritdoc />
+    public override string NewGuidDefaultExpression => "newid()";
+
     // ── Core-table type methods ─────────────────────────────────────────
 
     /// <inheritdoc />

@@ -272,6 +272,18 @@
       ]
     },
     {
+      "name": "IX_DateTimeKeyResource_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_DateTimeKeyResource",
       "table": {
         "schema": "edfi",
@@ -281,6 +293,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DateTimeKeyResource_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -308,6 +332,18 @@
       ]
     },
     {
+      "name": "IX_DecimalKeyResource_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_DecimalKeyResource",
       "table": {
         "schema": "edfi",
@@ -317,6 +353,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DecimalKeyResource_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -357,6 +405,18 @@
       ]
     },
     {
+      "name": "IX_DecimalRefResource_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_DecimalRefResource_DecimalKeyReference_DecimalKey_DecimalKeyReference_DocumentId",
       "table": {
         "schema": "edfi",
@@ -379,6 +439,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DecimalRefResource_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -407,6 +479,18 @@
       ]
     },
     {
+      "name": "IX_EdOrgDependentChildResource_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_DocumentId",
       "table": {
         "schema": "edfi",
@@ -428,6 +512,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EdOrgDependentChildResource_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -456,6 +552,18 @@
       ]
     },
     {
+      "name": "IX_EdOrgDependentResource_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_EdOrgDependentResource_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -477,6 +585,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EdOrgDependentResource_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -556,6 +676,18 @@
       ]
     },
     {
+      "name": "IX_KeyUnifiedResource_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_KeyUnifiedResource_ResourceAReference_DocumentId",
       "table": {
         "schema": "edfi",
@@ -592,6 +724,18 @@
       ]
     },
     {
+      "name": "UX_KeyUnifiedResource_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_KeyUnifiedResource_NK",
       "table": {
         "schema": "edfi",
@@ -618,6 +762,18 @@
       ]
     },
     {
+      "name": "IX_ResourceA_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_ResourceA_StudentReference_DocumentId",
       "table": {
         "schema": "edfi",
@@ -639,6 +795,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ResourceA_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -681,6 +849,18 @@
       ]
     },
     {
+      "name": "IX_ResourceB_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_ResourceB_StudentReference_DocumentId",
       "table": {
         "schema": "edfi",
@@ -702,6 +882,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ResourceB_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -744,6 +936,18 @@
       ]
     },
     {
+      "name": "IX_School_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_School",
       "table": {
         "schema": "edfi",
@@ -753,6 +957,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_School_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -793,6 +1009,18 @@
       ]
     },
     {
+      "name": "IX_Student_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_Student",
       "table": {
         "schema": "edfi",
@@ -802,6 +1030,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Student_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -842,6 +1082,18 @@
       ]
     },
     {
+      "name": "IX_StudentSchoolAssociation_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAssociation"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "IX_StudentSchoolAssociation_SchoolReference_DocumentId",
       "table": {
         "schema": "edfi",
@@ -863,6 +1115,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentSchoolAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -2602,6 +2866,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "EventTimestamp",
               "kind": "Scalar",
               "type": {
@@ -2628,6 +2948,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_DateTimeKeyResource_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_DateTimeKeyResource_NK",
@@ -2721,6 +3048,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "DecimalKey",
               "kind": "Scalar",
               "type": {
@@ -2749,6 +3132,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_DecimalKeyResource_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_DecimalKeyResource_NK",
@@ -2850,6 +3240,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "DecimalKeyReference_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -2903,6 +3349,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_DecimalRefResource_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_DecimalRefResource_NK",
@@ -3044,6 +3497,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "EdOrgDependentResourceReference_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -3108,6 +3617,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_EdOrgDependentChildResource_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_EdOrgDependentChildResource_NK",
@@ -3253,6 +3769,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "EducationOrganization_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -3304,6 +3876,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_EdOrgDependentResource_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_EdOrgDependentResource_NK",
@@ -3452,6 +4031,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "StudentUniqueId_Unified",
               "kind": "Scalar",
               "type": {
@@ -3580,6 +4215,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_KeyUnifiedResource_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_KeyUnifiedResource_NK",
@@ -3788,6 +4430,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "StudentReference_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -3840,6 +4538,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ResourceA_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_ResourceA_NK",
@@ -3988,6 +4693,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "StudentReference_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -4040,6 +4801,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ResourceB_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_ResourceB_NK",
@@ -4188,6 +4956,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "EducationOrganizationId",
               "kind": "Scalar",
               "type": {
@@ -4239,6 +5063,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_School_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_School_NK",
@@ -4340,6 +5171,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "FirstName",
               "kind": "Scalar",
               "type": {
@@ -4380,6 +5267,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_Student_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_Student_NK",
@@ -4481,6 +5375,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "SchoolReference_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -4532,6 +5482,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociation_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_StudentSchoolAssociation_NK",

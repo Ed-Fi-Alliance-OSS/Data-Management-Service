@@ -215,6 +215,9 @@ public abstract class SqlDialectBase : ISqlDialect
     /// <inheritdoc />
     public abstract string CurrentTimestampDefaultExpression { get; }
 
+    /// <inheritdoc />
+    public abstract string NewGuidDefaultExpression { get; }
+
     // ── Core-table type methods ─────────────────────────────────────────
 
     /// <inheritdoc />

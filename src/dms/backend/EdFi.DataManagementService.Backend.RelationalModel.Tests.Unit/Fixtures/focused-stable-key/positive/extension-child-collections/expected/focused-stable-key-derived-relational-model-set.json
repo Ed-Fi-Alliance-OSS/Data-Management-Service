@@ -48,6 +48,18 @@
       ]
     },
     {
+      "name": "IX_Program_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
+      ]
+    },
+    {
       "name": "PK_Program",
       "table": {
         "schema": "edfi",
@@ -106,6 +118,18 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
+      ]
+    },
+    {
+      "name": "IX_School_CreatedByOwnershipTokenId",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "CreatedByOwnershipTokenId"
       ]
     },
     {

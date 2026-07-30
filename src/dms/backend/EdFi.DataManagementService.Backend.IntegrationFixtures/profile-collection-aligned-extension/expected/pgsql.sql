@@ -458,8 +458,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ParentResource"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "ParentResourceId" integer NOT NULL,
     CONSTRAINT "PK_ParentResource" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_ParentResource_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_ParentResource_NK" UNIQUE ("ParentResourceId")
 );
 
@@ -613,6 +619,8 @@ CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParentChildren_BaseCollect
 CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParentChildrenExtensionChi_372c0cacd4" ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren" ("ParentCollectionItemId", "ParentResource_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ParentResource_CreatedByOwnershipTokenId" ON "edfi"."ParentResource" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"()
 RETURNS TRIGGER AS $func$

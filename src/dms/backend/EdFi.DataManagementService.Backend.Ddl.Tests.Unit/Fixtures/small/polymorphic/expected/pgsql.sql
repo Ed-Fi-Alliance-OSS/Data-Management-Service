@@ -458,9 +458,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationId" integer NOT NULL,
     "LocalEducationAgencyId" integer NOT NULL,
     CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_LocalEducationAgency_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_LocalEducationAgency_NK" UNIQUE ("LocalEducationAgencyId")
 );
 
@@ -469,9 +475,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationId" integer NOT NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_School_DocumentUuid" UNIQUE ("DocumentUuid"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId")
 );
 
@@ -567,7 +579,11 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ContentVersion" ON "edfi"."LocalEducationAgency" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_CreatedByOwnershipTokenId" ON "edfi"."LocalEducationAgency" ("CreatedByOwnershipTokenId");
+
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
 SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
