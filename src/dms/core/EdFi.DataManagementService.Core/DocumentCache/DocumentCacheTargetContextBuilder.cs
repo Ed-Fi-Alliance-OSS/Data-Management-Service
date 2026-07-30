@@ -267,6 +267,11 @@ public sealed class DocumentCacheTargetContextBuilder(
                 cancellationToken
             )
             .ConfigureAwait(false);
+        DocumentCacheProviderInventoryValidationResult combinedInventoryResult =
+            CombineInventoryValidationResults(
+                inventoryResult,
+                fingerprintResult.ToInventoryValidationResult()
+            );
 
         DocumentCacheProviderPrerequisiteValidationResult? prerequisiteResult = null;
         if (lifecycleResult.Lifecycle is not null)
@@ -285,14 +290,14 @@ public sealed class DocumentCacheTargetContextBuilder(
             providerToken,
             fingerprintResult,
             lifecycleResult,
-            inventoryResult,
+            combinedInventoryResult,
             prerequisiteResult
         );
 
         bool eligible =
             fingerprintResult.Fingerprint is not null
             && lifecycleResult.Lifecycle is not null
-            && inventoryResult.IsSatisfied
+            && combinedInventoryResult.IsSatisfied
             && prerequisiteResult?.IsSatisfied == true;
 
         if (!eligible)
@@ -305,8 +310,8 @@ public sealed class DocumentCacheTargetContextBuilder(
                     providerToken,
                     fingerprintResult.Fingerprint,
                     lifecycleResult.Lifecycle,
-                    inventoryResult.Inventory,
-                    inventoryResult.EnqueueTrigger,
+                    combinedInventoryResult.Inventory,
+                    combinedInventoryResult.EnqueueTrigger,
                     prerequisiteResult?.SqlServerPrerequisites,
                     retryState: null,
                     diagnostics
@@ -324,8 +329,8 @@ public sealed class DocumentCacheTargetContextBuilder(
             connectionInput,
             fingerprintResult.Fingerprint!,
             lifecycleResult.Lifecycle!,
-            inventoryResult.Inventory,
-            inventoryResult.EnqueueTrigger,
+            combinedInventoryResult.Inventory,
+            combinedInventoryResult.EnqueueTrigger,
             prerequisiteResult!.SqlServerPrerequisites
         );
 
@@ -337,8 +342,8 @@ public sealed class DocumentCacheTargetContextBuilder(
                 providerToken,
                 fingerprintResult.Fingerprint!,
                 lifecycleResult.Lifecycle!,
-                inventoryResult.Inventory,
-                inventoryResult.EnqueueTrigger,
+                combinedInventoryResult.Inventory,
+                combinedInventoryResult.EnqueueTrigger,
                 prerequisiteResult.SqlServerPrerequisites
             ),
             executionContext
@@ -427,6 +432,78 @@ public sealed class DocumentCacheTargetContextBuilder(
             );
         }
     }
+
+    private static DocumentCacheProviderInventoryValidationResult CombineInventoryValidationResults(
+        DocumentCacheProviderInventoryValidationResult providerInventoryResult,
+        DocumentCacheInventoryValidationResult sourceIdentityInventory
+    )
+    {
+        if (sourceIdentityInventory.Status == DocumentCacheInventoryStatus.Satisfied)
+        {
+            return providerInventoryResult;
+        }
+
+        if (providerInventoryResult.Inventory.Status == DocumentCacheInventoryStatus.Satisfied)
+        {
+            return new DocumentCacheProviderInventoryValidationResult(
+                sourceIdentityInventory,
+                providerInventoryResult.EnqueueTrigger
+            );
+        }
+
+        return new DocumentCacheProviderInventoryValidationResult(
+            new DocumentCacheInventoryValidationResult(
+                CombineInventoryStatus(
+                    providerInventoryResult.Inventory.Status,
+                    sourceIdentityInventory.Status
+                ),
+                CombineInventoryMessages(
+                    providerInventoryResult.Inventory.Message,
+                    sourceIdentityInventory.Message
+                )
+            ),
+            providerInventoryResult.EnqueueTrigger
+        );
+    }
+
+    private static DocumentCacheInventoryStatus CombineInventoryStatus(
+        DocumentCacheInventoryStatus providerStatus,
+        DocumentCacheInventoryStatus sourceIdentityStatus
+    )
+    {
+        if (
+            providerStatus == DocumentCacheInventoryStatus.Unreadable
+            || sourceIdentityStatus == DocumentCacheInventoryStatus.Unreadable
+        )
+        {
+            return DocumentCacheInventoryStatus.Unreadable;
+        }
+
+        if (
+            providerStatus == DocumentCacheInventoryStatus.Invalid
+            || sourceIdentityStatus == DocumentCacheInventoryStatus.Invalid
+        )
+        {
+            return DocumentCacheInventoryStatus.Invalid;
+        }
+
+        if (
+            providerStatus == DocumentCacheInventoryStatus.Missing
+            || sourceIdentityStatus == DocumentCacheInventoryStatus.Missing
+        )
+        {
+            return DocumentCacheInventoryStatus.Missing;
+        }
+
+        return sourceIdentityStatus == DocumentCacheInventoryStatus.NotEvaluated
+            ? providerStatus
+            : sourceIdentityStatus;
+    }
+
+    private static string CombineInventoryMessages(string providerMessage, string sourceIdentityMessage) =>
+        providerMessage == sourceIdentityMessage
+            ? providerMessage
+            : $"{providerMessage} {sourceIdentityMessage}";
 
     private async Task<DocumentCacheProviderPrerequisiteValidationResult> ValidatePrerequisitesAsync(
         string connectionValue,

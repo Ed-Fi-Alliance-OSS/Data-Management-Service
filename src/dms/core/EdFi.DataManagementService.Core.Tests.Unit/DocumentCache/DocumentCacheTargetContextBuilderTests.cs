@@ -285,6 +285,67 @@ public class DocumentCacheTargetContextBuilderTests
                 ]);
         }
 
+        [TestCase(
+            DocumentCachePhysicalSourceFingerprintReadStatus.DataStoreIdentityMissing,
+            DocumentCacheInventoryStatus.Missing
+        )]
+        [TestCase(
+            DocumentCachePhysicalSourceFingerprintReadStatus.DataStoreIdentitySingletonMissing,
+            DocumentCacheInventoryStatus.Missing
+        )]
+        [TestCase(
+            DocumentCachePhysicalSourceFingerprintReadStatus.SourceIdentityMalformed,
+            DocumentCacheInventoryStatus.Invalid
+        )]
+        [TestCase(
+            DocumentCachePhysicalSourceFingerprintReadStatus.SourceIdentityAllZero,
+            DocumentCacheInventoryStatus.Invalid
+        )]
+        [TestCase(
+            DocumentCachePhysicalSourceFingerprintReadStatus.SourceIdentityUnreadable,
+            DocumentCacheInventoryStatus.Unreadable
+        )]
+        public async Task It_surfaces_source_identity_read_failures_through_inventory_observation(
+            DocumentCachePhysicalSourceFingerprintReadStatus fingerprintStatus,
+            DocumentCacheInventoryStatus expectedInventoryStatus
+        )
+        {
+            BuilderFixture fixture = new(
+                FingerprintResult: DocumentCachePhysicalSourceFingerprintReadResult.Failure(
+                    fingerprintStatus,
+                    "Source identity inventory failure."
+                )
+            );
+
+            DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
+                _targetKey,
+                _generation
+            );
+
+            result.HasExecutionContext.Should().BeFalse();
+            result.Observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Ineligible);
+            result.Observation.PhysicalSourceFingerprint.Should().BeNull();
+            result.Observation.Inventory!.Status.Should().Be(expectedInventoryStatus);
+            result.Observation.Inventory.Message.Should().Be("Source identity inventory failure.");
+            result
+                .Observation.EnqueueTrigger!.Status.Should()
+                .Be(DocumentCacheEnqueueTriggerStatus.Satisfied);
+
+            result
+                .Observation.Diagnostics.Select(diagnostic => diagnostic.Category)
+                .Should()
+                .BeEquivalentTo([
+                    DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,
+                    DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+                ]);
+
+            DocumentCacheTargetDiagnostic inventoryDiagnostic = result.Observation.Diagnostics.Single(
+                diagnostic => diagnostic.Category == DocumentCacheTargetDiagnosticCategory.InventoryFailure
+            );
+            inventoryDiagnostic.Inventory!.Status.Should().Be(expectedInventoryStatus);
+            inventoryDiagnostic.Message.Should().Be("Source identity inventory failure.");
+        }
+
         [Test]
         public async Task It_marks_lifecycle_read_failures_ineligible_without_running_prerequisites()
         {

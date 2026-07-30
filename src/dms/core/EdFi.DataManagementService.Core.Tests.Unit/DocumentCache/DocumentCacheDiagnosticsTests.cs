@@ -216,6 +216,61 @@ public class DocumentCacheDiagnosticsTests
         }
 
         [Test]
+        public void It_preserves_source_identity_inventory_failures_in_target_snapshots()
+        {
+            DocumentCacheTargetKey targetKey = TargetKey("TenantA", 7);
+            DocumentCacheInventoryValidationResult sourceIdentityInventory = new(
+                DocumentCacheInventoryStatus.Missing,
+                "Source identity inventory failure."
+            );
+            DocumentCacheTargetDiagnostic inventoryDiagnostic = new(
+                targetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                RelationalProviderToken.Postgresql,
+                Generation(5),
+                null,
+                _trackingLifecycle,
+                sourceIdentityInventory,
+                _satisfiedEnqueueTrigger,
+                _notApplicablePrerequisites,
+                retryState: null,
+                DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+                "Source identity inventory failure."
+            );
+
+            DocumentCacheDiagnosticSnapshot snapshot = DocumentCacheDiagnosticSnapshot.FromRegistrySnapshot(
+                new DocumentCacheTargetRegistrySnapshot(
+                    [
+                        DocumentCacheTargetObservation.ResolvedIneligible(
+                            targetKey,
+                            _effectiveSettings,
+                            Generation(5),
+                            RelationalProviderToken.Postgresql,
+                            null,
+                            _trackingLifecycle,
+                            sourceIdentityInventory,
+                            _satisfiedEnqueueTrigger,
+                            _notApplicablePrerequisites,
+                            retryState: null,
+                            [inventoryDiagnostic]
+                        ),
+                    ],
+                    _observedAt
+                )
+            );
+
+            DocumentCacheTargetDiagnosticSnapshot targetSnapshot = snapshot.Targets.Single();
+            targetSnapshot.PhysicalSourceFingerprint.Should().BeNull();
+            targetSnapshot.Inventory!.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+            targetSnapshot.Inventory.Should().NotBe(_satisfiedInventory);
+            targetSnapshot
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.Category == DocumentCacheTargetDiagnosticCategory.InventoryFailure
+                );
+        }
+
+        [Test]
         public void It_preserves_bounded_sanitized_failure_messages()
         {
             DocumentCacheTargetKey targetKey = TargetKey("TenantA", 7);
