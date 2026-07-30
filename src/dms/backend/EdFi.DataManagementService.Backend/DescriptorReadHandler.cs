@@ -449,7 +449,7 @@ internal sealed class DescriptorReadHandler(
             edfiDocs.Add(
                 MaterializeDescriptorDocument(
                     descriptorRow,
-                    RelationalGetRequestReadMode.ExternalResponse,
+                    RelationalReadMaterializationMode.ExternalResponse,
                     request.ReadableProfileProjectionContext,
                     request.MappingSet.Key.EffectiveSchemaHash,
                     request.ResponseContentCoding
@@ -463,24 +463,25 @@ internal sealed class DescriptorReadHandler(
     // Descriptors carry no reference links and are always served as JSON, so the served etag's
     // linkFlag/format components are the fixed descriptor values ("n" / "j"). Profile varies only
     // for ExternalResponse reads that a readable profile actually projects; content coding varies
-    // with response compression. This condition mirrors
+    // with response compression. CacheProjection is internal and intentionally skips etag injection
+    // and readable-profile projection. This condition mirrors
     // RelationalDocumentStoreRepository.ShouldApplyReadableProfileProjection so the descriptor and
     // non-descriptor read paths stay in lockstep.
     private JsonNode MaterializeDescriptorDocument(
         DescriptorReadRow descriptorRow,
-        RelationalGetRequestReadMode readMode,
+        RelationalReadMaterializationMode materializationMode,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         string effectiveSchemaHash,
         ResponseContentCoding responseContentCoding
     )
     {
         var appliesReadableProfileProjection =
-            readMode == RelationalGetRequestReadMode.ExternalResponse
+            materializationMode == RelationalReadMaterializationMode.ExternalResponse
             && readableProfileProjectionContext is not null;
 
         string? composedEtag = null;
 
-        if (readMode == RelationalGetRequestReadMode.ExternalResponse)
+        if (materializationMode == RelationalReadMaterializationMode.ExternalResponse)
         {
             string? etagProfileName = appliesReadableProfileProjection
                 ? readableProfileProjectionContext!.ProfileName
@@ -500,7 +501,7 @@ internal sealed class DescriptorReadHandler(
 
         var materializedDocument = DescriptorDocumentMaterializer.Materialize(
             descriptorRow,
-            readMode,
+            materializationMode,
             composedEtag
         );
 
@@ -524,11 +525,26 @@ internal sealed class DescriptorReadHandler(
     ) =>
         MaterializeDescriptorDocument(
             descriptorRow,
-            request.ReadMode,
+            ToMaterializationMode(request.ReadMode),
             request.ReadableProfileProjectionContext,
             request.MappingSet.Key.EffectiveSchemaHash,
             request.ResponseContentCoding
         );
+
+    private static RelationalReadMaterializationMode ToMaterializationMode(
+        RelationalGetRequestReadMode readMode
+    ) =>
+        readMode switch
+        {
+            RelationalGetRequestReadMode.StoredDocument => RelationalReadMaterializationMode.StoredDocument,
+            RelationalGetRequestReadMode.ExternalResponse =>
+                RelationalReadMaterializationMode.ExternalResponse,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(readMode),
+                readMode,
+                "Unsupported relational GET read mode."
+            ),
+        };
 
     private static RelationalCommand BuildQueryCommand(SqlDialect dialect, PageKeysetSpec.Query plannedQuery)
     {
