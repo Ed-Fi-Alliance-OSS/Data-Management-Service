@@ -428,6 +428,88 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
         }
 
+        It "migrates the legacy token through export, whitespace around '=', an outer quote, and a trailing comment" {
+            # All four are individually valid and Compose accepts the combination. The raw value then
+            # BEGINS WITH WHITESPACE, so the wrapper quote is not at index zero; detecting it only there
+            # left the value unwrapped, and the connection-string scanner mistook the wrapper quote for
+            # an ADO.NET value quote and found no segment to migrate.
+            $basePath = Join-Path $script:work ".env.wrapped-combined"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'export DMS_CONFIG_DATABASE_CONNECTION_STRING = "host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};" # cms'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            $derivedLine = @([System.IO.File]::ReadAllLines($result) | Where-Object { $_ -like '*DMS_CONFIG_DATABASE_CONNECTION_STRING*' })[0]
+            $derivedLine | Should -BeLike '*database=${DMS_CONFIG_DATABASE_NAME};*' -Because "the legacy token must be migrated to the seam alias"
+            $derivedLine | Should -BeLike '*"host=*;"*' -Because "the authored outer quote is preserved"
+            $derivedLine | Should -BeLike '*# cms' -Because "the trailing comment is preserved"
+
+            # And it must RENDER against the dedicated database with the real password intact.
+            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
+        }
+
+        It "does not relocate a lowercase decoy in place of the real uppercase key" {
+            # Movement keys off the shared assignment grammar. A case-insensitive match would move the
+            # decoy and leave the real key below the connection string, still rendering empty.
+            $basePath = Join-Path $script:work ".env.move-decoy"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString,
+                'postgres_password=DECOY',
+                'POSTGRES_PASSWORD=abcdefgh1!'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+        }
+
+        It "does not treat a case-variant of the seam alias as the seam alias itself" {
+            # Only the exact DMS_CONFIG_DATABASE_NAME identifier is healed structurally. A case-variant
+            # is an ordinary dependency, so a forward-referencing one must be reported as a chain rather
+            # than silently assumed to be repaired by the alias literalization.
+            $basePath = Join-Path $script:work ".env.alias-case-variant"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${dms_config_database_name};',
+                'dms_config_database_name=${LATE_ONE}',
+                'LATE_ONE=late'
+            ) -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*dms_config_database_name -> LATE_ONE*"
+        }
+
+        It "repairs a case-variant alias reference as an ordinary forward reference, using its own value" {
+            # The connection string references a LOWERCASE variant declared after it, with a literal
+            # value deliberately different from the datastore name. Two things must hold: the reference
+            # is an ordinary forward reference to be moved (not the seam alias, which is instead healed
+            # by literalization and would never be moved), and resolving the repair target must not let
+            # that lowercase name pick up the uppercase alias's override value. Either mistake makes the
+            # rendered result disagree with the target.
+            $basePath = Join-Path $script:work ".env.alias-variant-forward"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${dms_config_database_name};',
+                'dms_config_database_name=lowercase_target_db'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=lowercase_target_db;'
+        }
+
         It "does not let a case-variant declaration satisfy the seam's uppercase reference" {
             # Compose is case-sensitive on the Linux CI/runtime path, so a lowercase typo leaves
             # POSTGRES_DB_NAME unset and the alias renders empty. The preflight must not accept it.

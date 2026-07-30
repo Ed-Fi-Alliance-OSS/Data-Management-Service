@@ -163,6 +163,8 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
                 $script:seqSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
                 Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
             }
+            $script:seqWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seq-eval-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $script:seqWork -Force | Out-Null
         }
 
         AfterAll {
@@ -173,6 +175,9 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
                 else {
                     [System.Environment]::SetEnvironmentVariable($name, $script:seqSnapshot[$name])
                 }
+            }
+            if (Test-Path -LiteralPath $script:seqWork) {
+                Remove-Item -LiteralPath $script:seqWork -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
@@ -310,6 +315,29 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
             $evaluation.Effective['KEY'] | Should -BeExactly 'upper'
             $evaluation.Effective['key'] | Should -BeExactly 'lower'
             $evaluation.DuplicateKeys.Count | Should -Be 0 -Because "different spellings are not duplicates of each other"
+        }
+
+        It "evaluates a file that declares exactly one key" {
+            # PowerShell unwraps a single-element array argument to a scalar, and under Set-StrictMode a
+            # scalar string has no .Count - so the line loop ran zero times and a one-line file produced
+            # an empty evaluation. Covered for both input forms because ReadAllLines has the same shape.
+            $fromLines = Resolve-DotenvFileSequentially -Line @('ONE=single')
+            $fromLines.Declarations.Count | Should -Be 1
+            $fromLines.Effective['ONE'] | Should -BeExactly 'single'
+
+            $path = Join-Path $script:seqWork "one-line.env"
+            Set-Content -LiteralPath $path -Value 'ONLY=fromfile' -NoNewline
+            $fromPath = Resolve-DotenvFileSequentially -Path $path
+            $fromPath.Declarations.Count | Should -Be 1
+            $fromPath.Effective['ONLY'] | Should -BeExactly 'fromfile'
+        }
+
+        It "matches an assignment line to a key ordinally" {
+            # Replacement and movement both key off this. A case-insensitive match would let a lowercase
+            # decoy declaration be relocated or rewritten in place of the real uppercase key.
+            Test-DotenvAssignmentLine -Line 'POSTGRES_PASSWORD=v' -Key 'POSTGRES_PASSWORD' | Should -BeTrue
+            Test-DotenvAssignmentLine -Line 'export POSTGRES_PASSWORD = v' -Key 'POSTGRES_PASSWORD' | Should -BeTrue
+            Test-DotenvAssignmentLine -Line 'postgres_password=decoy' -Key 'POSTGRES_PASSWORD' | Should -BeFalse
         }
 
         It "trims a whitespace-only unquoted value to empty but preserves quoted whitespace" {
