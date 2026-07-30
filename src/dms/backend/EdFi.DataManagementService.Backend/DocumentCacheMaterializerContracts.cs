@@ -341,7 +341,6 @@ public enum DocumentCacheProjectionProcessingFailureReason
     DocumentJsonIdMismatch = 3,
     DocumentJsonLastModifiedDateMismatch = 4,
     DocumentJsonContainsEtag = 5,
-    StreamEtagMismatch = 6,
 }
 
 /// <summary>

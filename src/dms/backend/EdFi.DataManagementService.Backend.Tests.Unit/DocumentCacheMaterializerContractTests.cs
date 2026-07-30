@@ -192,8 +192,7 @@ public class Given_DocumentCacheMaterializerContract
                 "DocumentJsonNotObject",
                 "DocumentJsonIdMismatch",
                 "DocumentJsonLastModifiedDateMismatch",
-                "DocumentJsonContainsEtag",
-                "StreamEtagMismatch"
+                "DocumentJsonContainsEtag"
             );
     }
 

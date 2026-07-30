@@ -30,7 +30,7 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
     {
         var testContext = CreateMaterializerTestContext();
         var readMaterializer = new RecordingReadMaterializer { Result = new JsonArray("not-an-object") };
-        var servedEtagComposer = new SequencedServedEtagComposer("stream-etag");
+        var servedEtagComposer = new RecordingServedEtagComposer("stream-etag");
         var sut = CreateSut(testContext, readMaterializer, servedEtagComposer);
 
         Func<Task> act = () => sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
@@ -113,39 +113,6 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
     }
 
     [Test]
-    public async Task It_throws_Invariant_failure_when_StreamEtag_does_not_match_the_fixed_cache_representation()
-    {
-        var testContext = CreateMaterializerTestContext();
-        var servedEtagComposer = new SequencedServedEtagComposer("candidate-etag", "expected-etag");
-        var sut = CreateSut(
-            testContext,
-            new RecordingReadMaterializer { Result = CreateValidDocumentJson(testContext.Source) },
-            servedEtagComposer
-        );
-
-        Func<Task> act = () => sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
-
-        var exception = (
-            await act.Should().ThrowAsync<DocumentCacheProjectionProcessingException>()
-        ).Subject.Single();
-        exception.Reason.Should().Be(DocumentCacheProjectionProcessingFailureReason.StreamEtagMismatch);
-        servedEtagComposer.CapturedContexts.Should().HaveCount(2);
-        servedEtagComposer
-            .CapturedContexts.Should()
-            .OnlyContain(context =>
-                context
-                == new ServedEtagContext(
-                    testContext.MappingSet.Key.EffectiveSchemaHash,
-                    ResponseFormat.Json,
-                    ProfileName: null,
-                    LinksEnabled: true,
-                    ContentVersion,
-                    ResponseContentCoding.Identity
-                )
-            );
-    }
-
-    [Test]
     public async Task It_throws_Invariant_failure_with_bounded_Diagnostics_without_DocumentJson()
     {
         var testContext = CreateMaterializerTestContext();
@@ -183,14 +150,14 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
     private static DocumentCacheMaterializer CreateSut(
         MaterializerTestContext testContext,
         RecordingReadMaterializer readMaterializer,
-        SequencedServedEtagComposer? servedEtagComposer = null
+        RecordingServedEtagComposer? servedEtagComposer = null
     ) =>
         new(
             new StubSourceMetadataReader(new DocumentCacheSourceMetadataReadResult.Found(testContext.Source)),
             new ThrowingDescriptorHydrator(),
             new SuccessfulDocumentHydrator(CreateHydratedPage(testContext.ReadPlan, testContext.Source)),
             readMaterializer,
-            servedEtagComposer ?? new SequencedServedEtagComposer("stream-etag")
+            servedEtagComposer ?? new RecordingServedEtagComposer("stream-etag")
         );
 
     private static DocumentCacheMaterializationRequest CreateRequest(
@@ -452,17 +419,13 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
         public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) { }
     }
 
-    private sealed class SequencedServedEtagComposer(params string[] returnValues) : IServedEtagComposer
+    private sealed class RecordingServedEtagComposer(string returnValue) : IServedEtagComposer
     {
-        private int _returnValueIndex;
-
         public List<ServedEtagContext> CapturedContexts { get; } = [];
 
         public string Compose(ServedEtagContext context)
         {
             CapturedContexts.Add(context);
-            var returnValue = returnValues[Math.Min(_returnValueIndex, returnValues.Length - 1)];
-            _returnValueIndex++;
             return returnValue;
         }
     }

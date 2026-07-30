@@ -93,6 +93,7 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
                     ResponseContentCoding.Identity
                 )
             );
+        servedEtagComposer.CallCount.Should().Be(1);
     }
 
     [Test]
@@ -472,8 +473,11 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
     {
         public ServedEtagContext? CapturedContext { get; private set; }
 
+        public int CallCount { get; private set; }
+
         public string Compose(ServedEtagContext context)
         {
+            CallCount++;
             CapturedContext = context;
             return returnValue;
         }

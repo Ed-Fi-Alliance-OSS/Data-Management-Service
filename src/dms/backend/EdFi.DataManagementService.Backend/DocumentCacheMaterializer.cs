@@ -118,7 +118,7 @@ internal sealed class DocumentCacheMaterializer(
             source.ContentVersion
         );
 
-        ValidateCandidate(request, source, documentJson, streamEtag);
+        ValidateCandidate(request, source, documentJson);
 
         return CreateSuccess(source, streamEtag, documentJson);
     }
@@ -188,7 +188,7 @@ internal sealed class DocumentCacheMaterializer(
             source.ContentVersion
         );
 
-        ValidateCandidate(request, source, documentJson, streamEtag);
+        ValidateCandidate(request, source, documentJson);
 
         return CreateSuccess(source, streamEtag, documentJson);
     }
@@ -366,11 +366,10 @@ internal sealed class DocumentCacheMaterializer(
         );
     }
 
-    private void ValidateCandidate(
+    private static void ValidateCandidate(
         DocumentCacheMaterializationRequest request,
         DocumentCacheResolvedSourceMetadata source,
-        JsonObject documentJson,
-        string streamEtag
+        JsonObject documentJson
     )
     {
         if (
@@ -413,39 +412,7 @@ internal sealed class DocumentCacheMaterializer(
                 DocumentCacheProjectionProcessingFailureReason.DocumentJsonContainsEtag
             );
         }
-
-        if (!string.Equals(streamEtag, ComposeExpectedStreamEtag(request, source), StringComparison.Ordinal))
-        {
-            throw BuildProjectionProcessingException(
-                request,
-                source,
-                DocumentCacheProjectionProcessingFailureReason.StreamEtagMismatch
-            );
-        }
     }
-
-    private string ComposeExpectedStreamEtag(
-        DocumentCacheMaterializationRequest request,
-        DocumentCacheResolvedSourceMetadata source
-    ) =>
-        source switch
-        {
-            DocumentCacheResolvedSourceMetadata.OrdinaryResource =>
-                DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
-                    _servedEtagComposer,
-                    request.TargetContext.MappingSet,
-                    source.ContentVersion
-                ),
-            DocumentCacheResolvedSourceMetadata.DescriptorResource =>
-                DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
-                    _servedEtagComposer,
-                    request.TargetContext.MappingSet,
-                    source.ContentVersion
-                ),
-            _ => throw new InvalidOperationException(
-                $"DocumentCache materializer received unsupported source metadata type '{source.GetType().Name}'."
-            ),
-        };
 
     private static bool TryGetStringProperty(JsonObject documentJson, string propertyName, out string value)
     {
