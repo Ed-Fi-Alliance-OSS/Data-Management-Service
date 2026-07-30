@@ -310,6 +310,8 @@ public enum DocumentCacheTargetMappingFailureReason
     ReadPlanMissing = 2,
     DescriptorMaterializationPathMissing = 3,
     UnsupportedResourceStorageKind = 4,
+    ConcreteResourceModelMissing = 5,
+    ConcreteResourceModelMismatch = 6,
 }
 
 /// <summary>

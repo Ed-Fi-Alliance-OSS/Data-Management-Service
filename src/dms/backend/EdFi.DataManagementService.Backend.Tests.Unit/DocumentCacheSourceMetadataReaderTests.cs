@@ -205,11 +205,37 @@ public class Given_DocumentCacheSourceMetadataReader
         var exception = (
             await act.Should().ThrowAsync<DocumentCacheTargetMappingException>()
         ).Subject.Single();
-        exception
-            .Reason.Should()
-            .Be(DocumentCacheTargetMappingFailureReason.ResourceKeyMissingFromMappingSet);
+        exception.Reason.Should().Be(DocumentCacheTargetMappingFailureReason.ConcreteResourceModelMissing);
         exception.FailureMetadata.ResourceKeyId.Should().Be(40);
         exception.FailureMetadata.ResourceName.Should().Be("MissingModel");
+    }
+
+    [Test]
+    public async Task It_throws_target_mapping_failure_when_resource_key_metadata_does_not_match_the_concrete_model()
+    {
+        var resourceKey = new ResourceKeyEntry(41, SchoolResource, "2.0", false);
+        var mappingSet = CreateMappingSetWithReadPlan() with
+        {
+            ResourceKeyById = new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+        };
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 41)]),
+        ]);
+        var sut = new DocumentCacheSourceMetadataReader(executor);
+
+        Func<Task> act = () => sut.ReadAsync(CreateRequest(mappingSet));
+
+        var exception = (
+            await act.Should().ThrowAsync<DocumentCacheTargetMappingException>()
+        ).Subject.Single();
+        exception.Reason.Should().Be(DocumentCacheTargetMappingFailureReason.ConcreteResourceModelMismatch);
+        exception.FailureMetadata.ResourceKeyId.Should().Be(41);
+        exception.FailureMetadata.ProjectName.Should().Be("Ed-Fi");
+        exception.FailureMetadata.ResourceName.Should().Be("School");
+        exception.FailureMetadata.ResourceVersion.Should().Be("2.0");
     }
 
     private static DocumentCacheMaterializationRequest CreateRequest(MappingSet mappingSet) =>

@@ -183,7 +183,9 @@ public class Given_DocumentCacheMaterializerContract
                 "ResourceKeyMissingFromMappingSet",
                 "ReadPlanMissing",
                 "DescriptorMaterializationPathMissing",
-                "UnsupportedResourceStorageKind"
+                "UnsupportedResourceStorageKind",
+                "ConcreteResourceModelMissing",
+                "ConcreteResourceModelMismatch"
             );
     }
 

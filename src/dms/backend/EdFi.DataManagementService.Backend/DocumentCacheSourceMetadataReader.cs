@@ -312,7 +312,21 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
             throw BuildTargetMappingException(
                 request,
                 source,
-                DocumentCacheTargetMappingFailureReason.ResourceKeyMissingFromMappingSet,
+                DocumentCacheTargetMappingFailureReason.ConcreteResourceModelMissing,
+                resourceKey
+            );
+        }
+
+        if (
+            concreteResourceModel.ResourceKey != resourceKey
+            || concreteResourceModel.RelationalModel.Resource != resourceKey.Resource
+            || concreteResourceModel.RelationalModel.StorageKind != concreteResourceModel.StorageKind
+        )
+        {
+            throw BuildTargetMappingException(
+                request,
+                source,
+                DocumentCacheTargetMappingFailureReason.ConcreteResourceModelMismatch,
                 resourceKey
             );
         }
