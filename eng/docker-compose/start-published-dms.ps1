@@ -267,12 +267,20 @@ if (-not $d) {
     # -DataStoreDatabaseName renames the DMS datastore database for the CMS data-store record,
     # AFTER topology validation has already run - so it could silently reintroduce the very
     # sharing -SeparateConfigDatabase exists to remove. Distinctness is enforced here, at the same
-    # fail-fast boundary as the other parameter rules. Case-insensitive deliberately: SQL Server
-    # database names are case-insensitive, and on PostgreSQL a case-variant collision is far more
-    # likely a mistake than a genuinely intended distinct database.
-    if ($SeparateConfigDatabase -and
+    # fail-fast boundary as the other parameter rules, but only for the startup shape that reaches
+    # the data-store registration below: -InfraOnly, -DmsOnly, and -DbOnly return before it, and
+    # -NoDataStore (without -SchoolYearRange) skips it, so the parameter is inert there and the
+    # switch combination stays a no-op, matching continuation behavior. The comparison follows the
+    # engine's identifier semantics: SQL Server database names are case-insensitive; PostgreSQL
+    # names are case-sensitive, so a case-variant IS a physically distinct database there.
+    $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly) -and
+        (-not $NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange))
+    $databaseNameComparison =
+        if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase }
+        else { [System.StringComparison]::Ordinal }
+    if ($SeparateConfigDatabase -and $dataStoreRegistrationRuns -and
         -not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName) -and
-        [string]::Equals($DataStoreDatabaseName, "edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)) {
+        [string]::Equals($DataStoreDatabaseName, "edfi_configurationservice", $databaseNameComparison)) {
         throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of."
     }
 

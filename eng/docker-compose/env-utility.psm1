@@ -931,8 +931,11 @@ function Resolve-DatabaseEngineEnvironmentFile {
         when they contain a SQL Server data-source keyword; PostgreSQL-shaped values inherited from
         a partially edited base file are replaced by the MSSQL overlay. A caller-authored CMS MSSQL
         connection string must resolve to MSSQL_DB_NAME so CMS and self-contained OpenIddict cannot
-        silently target different databases; a mismatch fails before any derived file is written.
-        DMS_DATASTORE and DMS_CONFIG_DATASTORE are always forced to mssql.
+        silently target different databases; a mismatch fails before any derived file is written -
+        unless the file declares the separate CMS database topology (marker or reserved
+        'edfi_configurationservice' target; see the -SkipMssqlCmsDatabaseValidation note), which is
+        outside that shared-mode invariant by definition. DMS_DATASTORE and DMS_CONFIG_DATASTORE
+        are always forced to mssql.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -957,13 +960,18 @@ function Resolve-DatabaseEngineEnvironmentFile {
         The invariant is also skipped automatically, regardless of this switch, when the base env file
         declares the separate CMS database topology (DMS-1270). That check asserts a *shared-mode*
         invariant - CMS and OpenIddict must both target MSSQL_DB_NAME - which is by definition false
-        for a file declaring a dedicated CMS database, whatever the file's provenance. The marker
-        (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true) is a raw topology declaration read from the
-        file's own content, not an authenticity signal: a hand-authored or copied file carrying it is
-        exempted exactly like one this design's own migration wrote, and that is the intended
+        for a file declaring a dedicated CMS database, whatever the file's provenance. Two content
+        signals declare it: the marker (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true), and a CMS
+        connection string whose every recognized database-name segment resolves to the reserved
+        dedicated name 'edfi_configurationservice'. Both are raw topology declarations read from the
+        file's own content, not authenticity signals: a hand-authored or copied file carrying either
+        is exempted exactly like one this design's own migration wrote, and that is the intended
         semantics - the file has declared itself outside the shared-mode contract, and the paths
         that actually operate CMS validate it with the topology-aware
-        Confirm-CmsDatabaseTopologyAgreement instead.
+        Confirm-CmsDatabaseTopologyAgreement instead. The reserved-name signal is what lets the
+        documented standalone continuation (a -SeparateConfigDatabase start phase followed by direct
+        configure/provision invocations against the same caller-authored source file) proceed: the
+        marker exists only in the start script's derived file, never in the caller's source file.
 
         This matters for every caller that passes no switch here - the configure and provision
         phases, build-dms.ps1's E2E environment resolutions, and provision-e2e-database.ps1 - all of
@@ -1023,9 +1031,45 @@ function Resolve-DatabaseEngineEnvironmentFile {
                 $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
             }
 
-            Assert-MssqlCmsDatabaseIsShared `
-                -ConnectionString $baseCmsConnectionString `
-                -EnvValues $effectiveMssqlValues
+            # A CMS connection string targeting the reserved dedicated database name is ALSO a
+            # separate-topology declaration - content, not provenance, the same doctrine as the
+            # marker above. The documented standalone continuation (start-local-dms.ps1 -InfraOnly
+            # -SeparateConfigDatabase, then configure-local-data-store.ps1 / provision-dms-schema.ps1
+            # against the SAME caller-authored source file) reaches this gate with no switch and no
+            # marker (the marker lives only in the start script's derived file), and the reserved
+            # name is the only signal left. Only an unambiguous declaration skips the invariant:
+            # every recognized database-name segment must resolve to 'edfi_configurationservice'; a
+            # mixed or unparseable connection string still runs the invariant and fails loudly there.
+            $targetsDedicatedCmsDatabase = $false
+            try {
+                $candidateBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+                $candidateBuilder.set_ConnectionString($baseCmsConnectionString)
+                $candidateDatabaseNames = @(
+                    foreach ($candidateKey in $candidateBuilder.get_Keys()) {
+                        if ([string]$candidateKey -imatch '^(database|initial\s+catalog)$') {
+                            Resolve-MssqlDatabaseNameReference `
+                                -Value ([string]$candidateBuilder.get_Item($candidateKey)) `
+                                -EnvValues $effectiveMssqlValues
+                        }
+                    }
+                )
+                $targetsDedicatedCmsDatabase =
+                    $candidateDatabaseNames.Count -gt 0 -and
+                    @($candidateDatabaseNames | Where-Object {
+                        -not [string]::Equals($_, "edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)
+                    }).Count -eq 0
+            }
+            catch {
+                # Unparseable string or unresolvable reference: let the invariant below produce its
+                # canonical diagnostic instead of masking it here.
+                $targetsDedicatedCmsDatabase = $false
+            }
+
+            if (-not $targetsDedicatedCmsDatabase) {
+                Assert-MssqlCmsDatabaseIsShared `
+                    -ConnectionString $baseCmsConnectionString `
+                    -EnvValues $effectiveMssqlValues
+            }
         }
     }
 
@@ -1533,13 +1577,35 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
                 break
             }
         }
+    }
 
-        # And the connection string, when it references the alias, must be declared after it.
-        if (-not $declarationOrderBroken) {
-            $connectionLineIndex = & $indexOfKeyLine 'DMS_CONFIG_DATABASE_CONNECTION_STRING'
-            if ($connectionLineIndex -ge 0 -and $connectionLineIndex -lt $aliasLineIndex -and
-                $currentConnectionString -match '\$\{?DMS_CONFIG_DATABASE_NAME') {
+    # The connection string in effect (the intended value: in separate mode the legacy token has
+    # already been rewritten to the alias) must have EVERY variable it references declared before
+    # it, not only the DMS_CONFIG_DATABASE_NAME alias. A shared-mode connection string keeps its
+    # supported ${POSTGRES_DB_NAME}/${MSSQL_DB_NAME} (or credential) references untouched, and any
+    # of them declared below the connection string passes the order-blind resolution above while
+    # Compose renders that segment empty. A key absent from the file is not order-broken: Compose
+    # resolves it from the ambient environment independent of line order, and a genuinely undefined
+    # key is a separate failure the topology validator reports on resolution.
+    $connectionStringForwardReferencedKeys = [System.Collections.Generic.List[string]]::new()
+    $connectionLineIndex = & $indexOfKeyLine 'DMS_CONFIG_DATABASE_CONNECTION_STRING'
+    if ($connectionLineIndex -ge 0 -and -not [string]::IsNullOrEmpty($intendedConnectionString)) {
+        foreach ($referenceMatch in [regex]::Matches($intendedConnectionString, '\$\{?([A-Za-z_][A-Za-z0-9_]*)')) {
+            $referencedKey = $referenceMatch.Groups[1].Value
+            if ($referencedKey -eq 'DMS_CONFIG_DATABASE_NAME') {
+                # The alias is healed structurally: the writer serializes it as a resolved literal
+                # and the Move below places it ahead of the connection string.
+                if ($aliasLineIndex -ge 0 -and $connectionLineIndex -lt $aliasLineIndex) {
+                    $declarationOrderBroken = $true
+                }
+                continue
+            }
+            $referenceLineIndex = & $indexOfKeyLine $referencedKey
+            if ($referenceLineIndex -gt $connectionLineIndex) {
                 $declarationOrderBroken = $true
+                if (-not $connectionStringForwardReferencedKeys.Contains($referencedKey)) {
+                    $connectionStringForwardReferencedKeys.Add($referencedKey)
+                }
             }
         }
     }
@@ -1578,6 +1644,19 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     # defined before any line that references it via ${DMS_CONFIG_DATABASE_NAME}, or that reference
     # resolves to empty at real Compose render time. See Move-EnvFileKeyBeforeAnotherKey.
     Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove "DMS_CONFIG_DATABASE_NAME" -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+
+    # Heal the connection string's OTHER forward references the same way: each referenced key found
+    # declared below the connection string is moved ahead of it in the derived file. Moving is only
+    # safe when the moved line's own value is reference-free (relocating a reference-bearing line
+    # could break ITS declaration order); every supported profile declares these keys as literals,
+    # so a reference-bearing one fails loudly with the manual fix instead of rendering empty.
+    foreach ($referencedKey in $connectionStringForwardReferencedKeys) {
+        $referencedRawValue = [string](Get-EnvValue -EnvValues $baseValues -Name $referencedKey -DefaultValue '')
+        if ($referencedRawValue.Contains('$')) {
+            throw "CMS database topology: DMS_CONFIG_DATABASE_CONNECTION_STRING references '$referencedKey', which is declared after it in '$BaseEnvironmentFile' and itself references other variables, so it cannot be reordered automatically. Docker Compose resolves --env-file references in declaration order; declare '$referencedKey' (and the variables it references) above the connection string."
+        }
+        Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove $referencedKey -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+    }
 
     return $derivedPath
 }

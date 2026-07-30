@@ -319,8 +319,18 @@ CMS-starting invocations validate the result before any container starts: the re
 string's database, host, and port must agree with the selected topology, and a hand-edited
 `DMS_CONFIG_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
 `CMS database topology mismatch` error rather than silently starting CMS against the wrong
-database. Shared-mode environment files on non-CMS shapes keep today's shared-database check
-unchanged.
+database. In separate mode the datastore database must also be genuinely distinct from
+`edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that collides with it
+is rejected rather than quietly re-sharing the database the switch exists to split.
+
+Shared-mode environment files on non-CMS shapes keep today's shared-database check unchanged. That
+check asserts a shared-mode invariant, so it does not apply to a configuration that has declared
+itself separate — by the internal marker, by an explicit `-SeparateConfigDatabase`, or by a CMS
+connection string that targets `edfi_configurationservice` outright. The last of those is what lets
+the manual phases continue from a `-SeparateConfigDatabase -InfraOnly` start: the marker lives only
+in the derived file, so `configure-local-data-store.ps1` and `provision-dms-schema.ps1` invoked
+directly against your original `-EnvironmentFile` recognize the dedicated target from the file's own
+content. A connection string naming some other third database is still rejected.
 
 Switching an existing stack between modes re-points CMS but does not move data: `dmscs` content
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start

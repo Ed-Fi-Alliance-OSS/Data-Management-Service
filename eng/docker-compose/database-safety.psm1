@@ -187,11 +187,15 @@ function Resolve-ComposeInterpolatedText {
         $next = $Text[$i + 1]
 
         if ($next -eq '{') {
-            # Find the matching close brace, counting nested '${' opens.
+            # Find the matching close brace. Compose pairs EVERY '{' with a '}' during matching, not
+            # only '${' opens - verified live: ${PA:-pre$$'{PD}'post} keeps the escaped reference
+            # intact as literal pre${PD}post, and ${PA:-{x}} yields literal {x}. Counting only
+            # '$'-prefixed opens would let the escaped reference's '}' close the outer expression
+            # early and corrupt the resolved value.
             $scan = $i + 2
             $nesting = 1
             while ($scan -lt $Text.Length -and $nesting -gt 0) {
-                if ($Text[$scan] -eq '{' -and $Text[$scan - 1] -eq '$') { $nesting++ }
+                if ($Text[$scan] -eq '{') { $nesting++ }
                 elseif ($Text[$scan] -eq '}') { $nesting--; if ($nesting -eq 0) { break } }
                 $scan++
             }
