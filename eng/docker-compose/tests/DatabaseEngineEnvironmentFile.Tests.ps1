@@ -328,6 +328,150 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         [string]$builder['Password'] | Should -BeExactly $_.expectedPassword
     }
 
+    # Preservation is decided per connection-string KEY, not for all of them together. The admin and CMS
+    # strings are independent settings, so an all-or-nothing decision keyed on the CMS string either
+    # carried a PostgreSQL admin string into an MSSQL environment or discarded a valid custom admin one.
+    It "decides connection-string preservation per key: <_.label>" -ForEach @(
+        @{
+            label = 'valid MSSQL CMS with a PostgreSQL admin replaces only the admin'
+            adminLine = 'DATABASE_CONNECTION_STRING_ADMIN=host=dms-postgresql;port=5432;username=postgres;password=pg;database=postgres;'
+            cmsLine = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            expectedAdmin = 'Server=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            expectedCms = 'Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        }
+        @{
+            label = 'PostgreSQL CMS with a valid custom MSSQL admin keeps the admin customization'
+            adminLine = 'DATABASE_CONNECTION_STRING_ADMIN=Server=custom-admin,1444;Database=master;User Id=custom;Password=secret;'
+            cmsLine = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
+            expectedAdmin = 'Server=custom-admin,1444;Database=master;User Id=custom;Password=secret;'
+            expectedCms = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        }
+    ) {
+        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $path = Join-Path $script:work ".env.mixed-shape-$([Guid]::NewGuid().ToString('N'))"
+        Set-Content -LiteralPath $path -Value ((@(
+            'MSSQL_SA_PASSWORD=abcdefgh1!'
+            'MSSQL_DB_NAME=edfi_datamanagementservice'
+            'DMS_DATASTORE=mssql'
+            'DMS_CONFIG_DATASTORE=mssql'
+            $_.adminLine
+            $_.cmsLine
+        )) -join "`n") -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $realComposeRoot
+
+        $composed = Resolve-DotenvFileSequentially -Path $result
+        [string](Get-SequentialEffectiveValue -Evaluation $composed -Name 'DATABASE_CONNECTION_STRING_ADMIN') |
+            Should -BeExactly $_.expectedAdmin
+        [string](Get-SequentialEffectiveValue -Evaluation $composed -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+            Should -BeExactly $_.expectedCms
+    }
+
+    It "repairs a fully populated MSSQL file whose declarations are ordered unsafely" {
+        # Every overlay key is present and the CMS string's raw text contains 'Server=', so the
+        # completeness proof accepts it - but the connection string is declared BEFORE the seam alias it
+        # references, so the ORIGINAL file freezes an empty database. Returning it unchanged would hand
+        # back an artifact that was never validated; the composition relocates both into safe order.
+        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $path = Join-Path $script:work ".env.complete-but-reordered"
+        Set-Content -LiteralPath $path -Value (@(
+            'MSSQL_SA_PASSWORD=abcdefgh1!'
+            'MSSQL_DB_NAME=edfi_datamanagementservice'
+            'MSSQL_PORT=1435'
+            'MSSQL_PID=Developer'
+            'MSSQL_MEMORY_LIMIT_MB=4096'
+            'DMS_DATASTORE=mssql'
+            'DMS_CONFIG_DATASTORE=mssql'
+            'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+        ) -join "`n") -NoNewline
+
+        # The original really is broken as authored.
+        [string](Get-SequentialEffectiveValue `
+            -Evaluation (Resolve-DotenvFileSequentially -Path $path) `
+            -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+            Should -BeLike '*Database=;*' -Because "the alias is declared after the string that references it"
+
+        $result = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $realComposeRoot
+
+        $result | Should -Not -Be $path -Because "an unchanged return would hand back the broken original"
+        [string](Get-SequentialEffectiveValue `
+            -Evaluation (Resolve-DotenvFileSequentially -Path $result) `
+            -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+            Should -BeExactly 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+    }
+
+    It "repairs a complete MSSQL file whose ADMIN string is ordered before its dependency" {
+        # The equivalence proof covers every overlay-owned key, not just the CMS one. Here the CMS string
+        # renders correctly but DATABASE_CONNECTION_STRING_ADMIN precedes MSSQL_DB_NAME, so the original
+        # renders an empty admin database. It still passes the completeness proof - the raw text contains
+        # 'Server=' - so a CMS-only equivalence check would hand the broken original back.
+        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $path = Join-Path $script:work ".env.admin-reordered"
+        Set-Content -LiteralPath $path -Value (@(
+            'MSSQL_SA_PASSWORD=abcdefgh1!'
+            'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'MSSQL_DB_NAME=edfi_datamanagementservice'
+            'MSSQL_PORT=1435'
+            'MSSQL_PID=Developer'
+            'MSSQL_MEMORY_LIMIT_MB=4096'
+            'DMS_DATASTORE=mssql'
+            'DMS_CONFIG_DATASTORE=mssql'
+            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+        ) -join "`n") -NoNewline
+
+        # The original is broken only in the ADMIN string; the CMS string is fine.
+        $original = Resolve-DotenvFileSequentially -Path $path
+        [string](Get-SequentialEffectiveValue -Evaluation $original -Name 'DATABASE_CONNECTION_STRING_ADMIN') |
+            Should -BeLike '*Database=;*'
+        [string](Get-SequentialEffectiveValue -Evaluation $original -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+            Should -BeLike '*Database=edfi_datamanagementservice;*'
+
+        $result = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $realComposeRoot
+
+        $result | Should -Not -Be $path -Because "the original renders an empty admin database"
+        [string](Get-SequentialEffectiveValue `
+            -Evaluation (Resolve-DotenvFileSequentially -Path $result) `
+            -Name 'DATABASE_CONNECTION_STRING_ADMIN') |
+            Should -BeExactly 'Server=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+    }
+
+    It "still returns a correctly-ordered complete MSSQL file unchanged" {
+        # Narrowness for the equivalence check: idempotent recognition must survive it, or every
+        # already-composed handoff would start re-deriving.
+        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $path = Join-Path $script:work ".env.complete-ordered"
+        Set-Content -LiteralPath $path -Value (@(
+            'MSSQL_SA_PASSWORD=abcdefgh1!'
+            'MSSQL_DB_NAME=edfi_datamanagementservice'
+            'MSSQL_PORT=1435'
+            'MSSQL_PID=Developer'
+            'MSSQL_MEMORY_LIMIT_MB=4096'
+            'DMS_DATASTORE=mssql'
+            'DMS_CONFIG_DATASTORE=mssql'
+            'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+        ) -join "`n") -NoNewline
+
+        Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $realComposeRoot |
+            Should -Be $path
+    }
+
     It "recognizes an export-spelled, quoted topology marker in the engine gate too" {
         # The marker's third consumer read it through the legacy parser, so the exported and quoted
         # spellings approved elsewhere in this design were not recognized here and the shared-mode
@@ -811,23 +955,63 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_conf
     }
 
     It "requires every current overlay key before short-circuiting composition" {
+        # The overlay inventory comes from the SHARED assignment model, the same source the production
+        # completeness proof now uses. Deriving it here with ReadValuesFromEnvFile instead made the test
+        # blind to exactly the divergence that mattered: that parser stores `export KEY=...` under an
+        # `export `-prefixed name, so a key declared that way in the overlay was inventoried under the
+        # wrong name and its absence from a base file could never be detected.
         $overlayPath = Join-Path $script:composeRoot ".env.mssql"
-        $overlayValues = ReadValuesFromEnvFile $overlayPath
-        $overlayLines = @(Get-Content -LiteralPath $overlayPath)
+        $overlayLines = @([System.IO.File]::ReadAllLines($overlayPath))
+        $overlayKeys = @(Resolve-DotenvFileSequentially -Line $overlayLines).Declarations |
+            ForEach-Object { $_.Key } | Sort-Object -Unique
 
-        foreach ($missingKey in $overlayValues.Keys) {
+        foreach ($missingKey in $overlayKeys) {
             $partialPath = Join-Path $script:work ".env.missing-$missingKey"
-            $partialLines = @($overlayLines | Where-Object { $_ -notmatch "^$([regex]::Escape([string]$missingKey))=" })
+            $partialLines = @($overlayLines | Where-Object { -not (Test-DotenvAssignmentLine -Line $_ -Key $missingKey) })
             Set-Content -LiteralPath $partialPath -Value (($partialLines -join "`n") + "`n") -NoNewline
 
             $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
             $result | Should -Not -Be $partialPath -Because "missing overlay key '$missingKey' must force completion"
 
-            $values = ReadValuesFromEnvFile $result
-            foreach ($requiredKey in $overlayValues.Keys) {
-                $values[[string]$requiredKey] | Should -Not -BeNullOrEmpty -Because "composition must restore required key '$requiredKey'"
+            $completed = Resolve-DotenvFileSequentially -Path $result
+            foreach ($requiredKey in $overlayKeys) {
+                [string](Get-SequentialEffectiveValue -Evaluation $completed -Name $requiredKey) |
+                    Should -Not -BeNullOrEmpty -Because "composition must restore required key '$requiredKey'"
             }
         }
+    }
+
+    It "recognizes an export-spelled overlay declaration as composed instead of re-deriving" {
+        # The overlay inventory used the legacy parser, which mis-keys `export KEY=...`. That key could
+        # then never be proven present in a base file, so an already-composed file was re-derived on
+        # every re-entry - the derived-of-derived case the idempotency guard exists to prevent.
+        # Built from the REAL overlay: which keys the overlay owns decides what composition can relocate,
+        # and the minimal stand-in overlay does not declare the seam alias.
+        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $altRoot = Join-Path $script:work "export-overlay-root"
+        New-Item -ItemType Directory -Path $altRoot -Force | Out-Null
+        $overlayText = [System.IO.File]::ReadAllText((Join-Path $realComposeRoot ".env.mssql"))
+        [System.IO.File]::WriteAllText(
+            (Join-Path $altRoot ".env.mssql"),
+            $overlayText.Replace('MSSQL_PORT=', 'export MSSQL_PORT='))
+
+        # A file already carrying every overlay key, in an order that renders correctly.
+        $composedPath = Join-Path $script:work ".env.already-composed-export"
+        Set-Content -LiteralPath $composedPath -Value (@(
+            'MSSQL_SA_PASSWORD=abcdefgh1!'
+            'MSSQL_DB_NAME=edfi_datamanagementservice'
+            'MSSQL_PORT=1435'
+            'MSSQL_PID=Developer'
+            'MSSQL_MEMORY_LIMIT_MB=4096'
+            'DMS_DATASTORE=mssql'
+            'DMS_CONFIG_DATASTORE=mssql'
+            'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+        ) -join "`n") -NoNewline
+
+        Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $composedPath -DockerComposeRoot $altRoot |
+            Should -Be $composedPath
     }
 
     It "fails fast when no .env.mssql overlay exists at the docker-compose root" {
