@@ -17,7 +17,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 [Category("DocumentCacheAdministrativeContracts")]
 public class DocumentCacheAdministrativeContractsTests
 {
-    private const string Fingerprint = "sha256:0123456789abcdef";
+    private const string Fingerprint =
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private const string MixedCaseFingerprint =
+        "sha256:0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef";
 
     private static readonly DocumentCacheAdministrativeTargetKey _defaultTargetKey = new(
         tenantKey: "",
@@ -56,7 +59,7 @@ public class DocumentCacheAdministrativeContractsTests
             const string json = """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
-                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef"
+                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 }
                 """;
 
@@ -67,13 +70,34 @@ public class DocumentCacheAdministrativeContractsTests
             request.ExpectedPhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
         }
 
+        [TestCase(" ")]
+        [TestCase("SHA256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")]
+        [TestCase(MixedCaseFingerprint)]
+        [TestCase("sha256:0123456789abcdef")]
+        [TestCase("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg")]
+        [TestCase(Fingerprint + "\r\n")]
+        public void It_should_reject_noncanonical_expected_fingerprints(string fingerprint)
+        {
+            string serializedFingerprint = JsonSerializer.Serialize(fingerprint);
+            string json = $$"""
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "expectedPhysicalSourceFingerprint": {{serializedFingerprint}}
+                }
+                """;
+
+            Action act = () => JsonSerializer.Deserialize<DocumentCacheOfflineDeactivationRequest>(json);
+
+            act.Should().Throw<JsonException>();
+        }
+
         [Test]
         public void It_should_reject_nonpositive_data_store_ids()
         {
             const string json = """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 0 },
-                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef"
+                  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 }
                 """;
 
@@ -177,7 +201,7 @@ public class DocumentCacheAdministrativeContractsTests
                   "classification": "unsupportedPrerequisiteIncident",
                   "observedLifecycle": "tracking",
                   "cacheAheadRecoveryRequired": true,
-                  "physicalSourceFingerprint": "sha256:0123456789abcdef",
+                  "physicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                   "targetContextGeneration": 9,
                   "downstreamPublicationStatus": "unknown",
                   "diagnostics": [

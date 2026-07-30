@@ -143,19 +143,56 @@ public sealed record DocumentCacheTargetContextGeneration
 
 public sealed record DocumentCachePhysicalSourceFingerprint
 {
+    private const string Prefix = "sha256:";
+    private const int PrefixLength = 7;
+    private const int HexDigestLength = 64;
+    private const int ExpectedLength = PrefixLength + HexDigestLength;
+
     public DocumentCachePhysicalSourceFingerprint(string value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        ArgumentNullException.ThrowIfNull(value);
+
+        if (!IsCanonical(value))
         {
-            throw new ArgumentException("Fingerprint must not be blank.", nameof(value));
+            throw new ArgumentException(
+                "Fingerprint must use the canonical sha256 lowercase hexadecimal format.",
+                nameof(value)
+            );
         }
 
-        Value = DocumentCacheDiagnosticText.Sanitize(value);
+        Value = value;
     }
 
     public string Value { get; }
 
     public override string ToString() => Value;
+
+    private static bool IsCanonical(string value)
+    {
+        if (value.Length != ExpectedLength)
+        {
+            return false;
+        }
+
+        if (!value.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        for (int index = PrefixLength; index < value.Length; index++)
+        {
+            char character = value[index];
+            if (!IsLowercaseHex(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsLowercaseHex(char character) =>
+        (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
 }
 
 public sealed record DocumentCacheTargetEffectiveSettings

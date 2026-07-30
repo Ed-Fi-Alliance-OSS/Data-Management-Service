@@ -37,7 +37,8 @@ public class DocumentCacheTargetContractTests
     private static DocumentCacheLifecycleObservation TrackingLifecycle =>
         new(DocumentCacheLifecycleState.Tracking, CacheAheadRecoveryRequired: false);
 
-    private static DocumentCachePhysicalSourceFingerprint Fingerprint => new("sha256:0123456789abcdef");
+    private static DocumentCachePhysicalSourceFingerprint Fingerprint =>
+        new("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
 
     private static DocumentCacheTargetContextGeneration Generation(long value) => new(value);
 

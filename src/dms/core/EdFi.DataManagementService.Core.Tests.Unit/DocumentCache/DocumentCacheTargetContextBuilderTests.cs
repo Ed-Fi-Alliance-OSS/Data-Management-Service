@@ -30,7 +30,7 @@ public class DocumentCacheTargetContextBuilderTests
     private static readonly DocumentCacheTargetContextGeneration _generation = new(3);
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(
-        "sha256:0123456789abcdef"
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
 
     private static readonly DocumentCacheLifecycleObservation _trackingLifecycle = new(

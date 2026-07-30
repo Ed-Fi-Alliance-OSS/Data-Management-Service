@@ -35,7 +35,7 @@ public class DocumentCacheTargetRegistryTests
         DocumentCacheTargetEffectiveSettings.FromOptions(CreateOptions([("", 1)]));
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(
-        "sha256:0123456789abcdef"
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
 
     private static readonly DocumentCacheLifecycleObservation _trackingLifecycle = new(

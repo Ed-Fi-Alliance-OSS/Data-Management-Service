@@ -268,6 +268,11 @@ public sealed class DocumentCachePhysicalSourceFingerprintJsonConverter
         JsonSerializerOptions options
     )
     {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("Physical-source fingerprint must be a string.");
+        }
+
         string? value = reader.GetString();
         if (value is null)
         {
@@ -280,7 +285,10 @@ public sealed class DocumentCachePhysicalSourceFingerprintJsonConverter
         }
         catch (ArgumentException exception)
         {
-            throw new JsonException("Physical-source fingerprint must be a nonblank string.", exception);
+            throw new JsonException(
+                "Physical-source fingerprint must be `sha256:` followed by 64 lowercase hexadecimal characters.",
+                exception
+            );
         }
     }
 

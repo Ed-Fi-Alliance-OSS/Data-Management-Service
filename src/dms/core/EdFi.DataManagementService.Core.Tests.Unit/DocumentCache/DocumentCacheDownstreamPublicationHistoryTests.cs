@@ -21,11 +21,11 @@ public class DocumentCacheDownstreamPublicationHistoryTests
     private static readonly DocumentCacheTargetKey _targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(
-        "sha256:0123456789abcdef"
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
 
     private static readonly DocumentCachePhysicalSourceFingerprint _otherFingerprint = new(
-        "sha256:fedcba9876543210"
+        "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
     );
 
     [TestFixture]

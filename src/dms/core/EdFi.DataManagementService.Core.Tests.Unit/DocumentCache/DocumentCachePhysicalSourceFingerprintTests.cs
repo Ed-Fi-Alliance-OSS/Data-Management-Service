@@ -14,9 +14,49 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 [Parallelizable]
 public class DocumentCachePhysicalSourceFingerprintTests
 {
+    private const string CanonicalFingerprint =
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    private const string MixedCaseFingerprint =
+        "sha256:0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef";
+
     private static readonly Guid _conformanceSourceIdentity = Guid.Parse(
         "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
     );
+
+    [Test]
+    public void It_should_preserve_canonical_fingerprint_values_exactly()
+    {
+        DocumentCachePhysicalSourceFingerprint fingerprint = new(CanonicalFingerprint);
+
+        fingerprint.Value.Should().Be(CanonicalFingerprint);
+        fingerprint.ToString().Should().Be(CanonicalFingerprint);
+    }
+
+    [TestCase("")]
+    [TestCase(" ")]
+    [TestCase("SHA256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")]
+    [TestCase(MixedCaseFingerprint)]
+    [TestCase("sha256:0123456789abcdef")]
+    [TestCase("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg")]
+    public void It_should_reject_noncanonical_fingerprint_values(string value)
+    {
+        Action create = () => _ = new DocumentCachePhysicalSourceFingerprint(value);
+
+        create.Should().Throw<ArgumentException>();
+    }
+
+    [Test]
+    public void It_should_reject_values_that_would_sanitize_to_an_existing_fingerprint()
+    {
+        DocumentCachePhysicalSourceFingerprint accepted = new(CanonicalFingerprint);
+
+        Action createSanitizedEquivalent = () =>
+            _ = new DocumentCachePhysicalSourceFingerprint(CanonicalFingerprint + "\r\n");
+
+        accepted.Value.Should().Be(CanonicalFingerprint);
+        createSanitizedEquivalent.Should().Throw<ArgumentException>();
+    }
 
     [TestCase(
         RelationalProviderToken.PostgresqlValue,
@@ -62,11 +102,11 @@ public class DocumentCachePhysicalSourceFingerprintTests
     {
         DocumentCachePhysicalSourceFingerprintReadResult result =
             DocumentCachePhysicalSourceFingerprintReadResult.Success(
-                new DocumentCachePhysicalSourceFingerprint("sha256:0123456789abcdef")
+                new DocumentCachePhysicalSourceFingerprint(CanonicalFingerprint)
             );
 
         result.Succeeded.Should().BeTrue();
-        result.Fingerprint!.Value.Should().Be("sha256:0123456789abcdef");
+        result.Fingerprint!.Value.Should().Be(CanonicalFingerprint);
         result.ToInventoryValidationResult().Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
     }
 
