@@ -238,6 +238,59 @@ public class Given_DocumentCacheSourceMetadataReader
         exception.FailureMetadata.ResourceVersion.Should().Be("2.0");
     }
 
+    [Test]
+    public async Task It_throws_target_mapping_failure_when_the_selected_resource_key_entry_is_malformed()
+    {
+        var resourceKey = new ResourceKeyEntry(12, SchoolResource, "1.0", false);
+        var mappingSet = CreateMappingSetWithReadPlan() with
+        {
+            ResourceKeyById = new Dictionary<short, ResourceKeyEntry> { [11] = resourceKey },
+        };
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
+        ]);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
+
+        Func<Task> act = () => sut.ReadAsync(CreateRequest(mappingSet));
+
+        var exception = (
+            await act.Should().ThrowAsync<DocumentCacheTargetMappingException>()
+        ).Subject.Single();
+        exception.Reason.Should().Be(DocumentCacheTargetMappingFailureReason.ResourceKeyMetadataMismatch);
+        exception.FailureMetadata.ResourceKeyId.Should().Be(11);
+        exception.FailureMetadata.ProjectName.Should().Be("Ed-Fi");
+        exception.FailureMetadata.ResourceName.Should().Be("School");
+        exception.FailureMetadata.ResourceVersion.Should().Be("1.0");
+    }
+
+    [Test]
+    public async Task It_throws_target_mapping_failure_when_the_selected_read_plan_metadata_is_malformed()
+    {
+        var readPlan = CreateReadPlan(new QualifiedResourceName("Ed-Fi", "Student"), SqlDialect.Pgsql);
+        var mappingSet = CreateMappingSet() with
+        {
+            ReadPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [SchoolResource] = readPlan,
+            },
+        };
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
+        ]);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
+
+        Func<Task> act = () => sut.ReadAsync(CreateRequest(mappingSet));
+
+        var exception = (
+            await act.Should().ThrowAsync<DocumentCacheTargetMappingException>()
+        ).Subject.Single();
+        exception.Reason.Should().Be(DocumentCacheTargetMappingFailureReason.ReadPlanMetadataMismatch);
+        exception.FailureMetadata.ResourceKeyId.Should().Be(11);
+        exception.FailureMetadata.ProjectName.Should().Be("Ed-Fi");
+        exception.FailureMetadata.ResourceName.Should().Be("School");
+        exception.FailureMetadata.ResourceVersion.Should().Be("1.0");
+    }
+
     private static DocumentCacheMaterializationRequest CreateRequest(MappingSet mappingSet) =>
         new(
             new DocumentCacheMaterializationTargetContext(

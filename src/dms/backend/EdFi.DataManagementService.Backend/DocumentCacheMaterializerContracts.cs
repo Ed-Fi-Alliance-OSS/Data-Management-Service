@@ -299,7 +299,6 @@ public enum DocumentCacheProjectionProcessingFailureReason
     DocumentJsonLastModifiedDateMismatch = 4,
     DocumentJsonContainsEtag = 5,
     StreamEtagMismatch = 6,
-    ResourceMetadataMismatch = 7,
 }
 
 /// <summary>
@@ -313,6 +312,8 @@ public enum DocumentCacheTargetMappingFailureReason
     UnsupportedResourceStorageKind = 4,
     ConcreteResourceModelMissing = 5,
     ConcreteResourceModelMismatch = 6,
+    ResourceKeyMetadataMismatch = 7,
+    ReadPlanMetadataMismatch = 8,
 }
 
 /// <summary>

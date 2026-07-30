@@ -373,8 +373,6 @@ internal sealed class DocumentCacheMaterializer(
         string streamEtag
     )
     {
-        ValidateResourceMetadata(request, source);
-
         if (
             !TryGetStringProperty(documentJson, IdPropertyName, out var documentJsonId)
             || !string.Equals(documentJsonId, source.DocumentUuid.Value.ToString(), StringComparison.Ordinal)
@@ -448,52 +446,6 @@ internal sealed class DocumentCacheMaterializer(
                 $"DocumentCache materializer received unsupported source metadata type '{source.GetType().Name}'."
             ),
         };
-
-    private static void ValidateResourceMetadata(
-        DocumentCacheMaterializationRequest request,
-        DocumentCacheResolvedSourceMetadata source
-    )
-    {
-        if (
-            source.ResourceKeyId != source.ResourceKey.ResourceKeyId
-            || source.ProjectName != source.ResourceKey.Resource.ProjectName
-            || source.ResourceName != source.ResourceKey.Resource.ResourceName
-            || source.ResourceVersion != source.ResourceKey.ResourceVersion
-            || source.ConcreteResourceModel.ResourceKey != source.ResourceKey
-            || source.ConcreteResourceModel.RelationalModel.Resource != source.ResourceKey.Resource
-        )
-        {
-            throw BuildProjectionProcessingException(
-                request,
-                source,
-                DocumentCacheProjectionProcessingFailureReason.ResourceMetadataMismatch
-            );
-        }
-
-        switch (source)
-        {
-            case DocumentCacheResolvedSourceMetadata.OrdinaryResource ordinaryResource
-                when source.ConcreteResourceModel.StorageKind != ResourceStorageKind.RelationalTables
-                    || source.ConcreteResourceModel.RelationalModel.StorageKind
-                        != ResourceStorageKind.RelationalTables
-                    || ordinaryResource.ReadPlan.Model.Resource != source.ResourceKey.Resource:
-                throw BuildProjectionProcessingException(
-                    request,
-                    source,
-                    DocumentCacheProjectionProcessingFailureReason.ResourceMetadataMismatch
-                );
-
-            case DocumentCacheResolvedSourceMetadata.DescriptorResource
-                when source.ConcreteResourceModel.StorageKind != ResourceStorageKind.SharedDescriptorTable
-                    || source.ConcreteResourceModel.RelationalModel.StorageKind
-                        != ResourceStorageKind.SharedDescriptorTable:
-                throw BuildProjectionProcessingException(
-                    request,
-                    source,
-                    DocumentCacheProjectionProcessingFailureReason.ResourceMetadataMismatch
-                );
-        }
-    }
 
     private static bool TryGetStringProperty(JsonObject documentJson, string propertyName, out string value)
     {

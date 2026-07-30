@@ -156,8 +156,7 @@ public class Given_DocumentCacheMaterializerContract
                 "DocumentJsonIdMismatch",
                 "DocumentJsonLastModifiedDateMismatch",
                 "DocumentJsonContainsEtag",
-                "StreamEtagMismatch",
-                "ResourceMetadataMismatch"
+                "StreamEtagMismatch"
             );
     }
 
@@ -184,7 +183,9 @@ public class Given_DocumentCacheMaterializerContract
                 "ReadPlanMissing",
                 "UnsupportedResourceStorageKind",
                 "ConcreteResourceModelMissing",
-                "ConcreteResourceModelMismatch"
+                "ConcreteResourceModelMismatch",
+                "ResourceKeyMetadataMismatch",
+                "ReadPlanMetadataMismatch"
             );
     }
 

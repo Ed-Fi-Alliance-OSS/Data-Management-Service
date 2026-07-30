@@ -146,23 +146,6 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
     }
 
     [Test]
-    public async Task It_throws_Invariant_failure_when_denormalized_resource_metadata_does_not_match_the_read_plan()
-    {
-        var testContext = CreateMaterializerTestContext(readPlanResource: new("Ed-Fi", "Student"));
-        var sut = CreateSut(
-            testContext,
-            new RecordingReadMaterializer { Result = CreateValidDocumentJson(testContext.Source) }
-        );
-
-        Func<Task> act = () => sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
-
-        var exception = (
-            await act.Should().ThrowAsync<DocumentCacheProjectionProcessingException>()
-        ).Subject.Single();
-        exception.Reason.Should().Be(DocumentCacheProjectionProcessingFailureReason.ResourceMetadataMismatch);
-    }
-
-    [Test]
     public async Task It_throws_Invariant_failure_with_bounded_Diagnostics_without_DocumentJson()
     {
         var testContext = CreateMaterializerTestContext();

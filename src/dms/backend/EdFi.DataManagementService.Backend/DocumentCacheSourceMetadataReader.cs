@@ -309,6 +309,16 @@ internal sealed class DocumentCacheSourceMetadataReader(
             );
         }
 
+        if (resourceKey.ResourceKeyId != source.ResourceKeyId)
+        {
+            throw BuildTargetMappingException(
+                request,
+                source,
+                DocumentCacheTargetMappingFailureReason.ResourceKeyMetadataMismatch,
+                resourceKey
+            );
+        }
+
         if (!mappingSet.TryGetConcreteResourceModel(resourceKey.Resource, out var concreteResourceModel))
         {
             throw BuildTargetMappingException(
@@ -375,6 +385,19 @@ internal sealed class DocumentCacheSourceMetadataReader(
                 request,
                 source,
                 DocumentCacheTargetMappingFailureReason.ReadPlanMissing,
+                resourceKey
+            );
+        }
+
+        if (
+            readPlan.Model.Resource != resourceKey.Resource
+            || readPlan.Model.StorageKind != ResourceStorageKind.RelationalTables
+        )
+        {
+            throw BuildTargetMappingException(
+                request,
+                source,
+                DocumentCacheTargetMappingFailureReason.ReadPlanMetadataMismatch,
                 resourceKey
             );
         }
