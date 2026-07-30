@@ -46,7 +46,6 @@ public sealed record DocumentCacheTargetDiagnosticSnapshot
         DocumentCacheTargetEligibilityState eligibilityState,
         DocumentCacheTargetEffectiveSettings effectiveSettings,
         DocumentCacheTargetContextGeneration? generation,
-        DocumentCacheTargetContextGeneration? replacedByGeneration,
         RelationalProviderToken? providerToken,
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
@@ -62,7 +61,6 @@ public sealed record DocumentCacheTargetDiagnosticSnapshot
         EligibilityState = eligibilityState;
         EffectiveSettings = effectiveSettings;
         Generation = generation;
-        ReplacedByGeneration = replacedByGeneration;
         ProviderToken = providerToken;
         PhysicalSourceFingerprint = physicalSourceFingerprint;
         Lifecycle = lifecycle;
@@ -82,8 +80,6 @@ public sealed record DocumentCacheTargetDiagnosticSnapshot
     public DocumentCacheTargetEffectiveSettings EffectiveSettings { get; }
 
     public DocumentCacheTargetContextGeneration? Generation { get; }
-
-    public DocumentCacheTargetContextGeneration? ReplacedByGeneration { get; }
 
     public RelationalProviderToken? ProviderToken { get; }
 
@@ -113,7 +109,6 @@ public sealed record DocumentCacheTargetDiagnosticSnapshot
             observation.EligibilityState,
             observation.EffectiveSettings,
             observation.Generation,
-            observation.ReplacedByGeneration,
             observation.ProviderToken,
             observation.PhysicalSourceFingerprint,
             observation.Lifecycle,

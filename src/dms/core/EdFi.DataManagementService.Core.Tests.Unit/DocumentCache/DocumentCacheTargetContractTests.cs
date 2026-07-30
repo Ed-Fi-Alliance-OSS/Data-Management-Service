@@ -189,26 +189,45 @@ public class DocumentCacheTargetContractTests
         }
 
         [Test]
-        public void It_should_represent_replaced_target_context_generations()
+        public void It_should_represent_replacement_as_a_diagnostic_on_the_current_generation()
         {
-            DocumentCacheTargetObservation observation = DocumentCacheTargetObservation.ReplacedGeneration(
+            DocumentCacheTargetContextGeneration generation = Generation(5);
+            DocumentCacheTargetDiagnostic diagnostic = new(
+                TargetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                RelationalProviderToken.Postgresql,
+                generation,
+                Fingerprint,
+                TrackingLifecycle,
+                SatisfiedInventory,
+                SatisfiedEnqueueTrigger,
+                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
+                retryState: null,
+                DocumentCacheTargetDiagnosticCategory.TargetReplaced,
+                "Target generation was replaced."
+            );
+
+            DocumentCacheTargetObservation observation = DocumentCacheTargetObservation.ResolvedEligible(
                 TargetKey,
                 EffectiveSettings,
-                Generation(4),
-                replacedByGeneration: Generation(5),
+                generation,
                 RelationalProviderToken.Postgresql,
                 Fingerprint,
                 TrackingLifecycle,
                 SatisfiedInventory,
                 SatisfiedEnqueueTrigger,
                 DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
-                diagnostics: []
+                [diagnostic]
             );
 
-            observation.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.ReplacedGeneration);
-            observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Ineligible);
-            observation.Generation.Should().Be(Generation(4));
-            observation.ReplacedByGeneration.Should().Be(Generation(5));
+            observation.ResolutionState.Should().Be(DocumentCacheTargetResolutionState.Resolved);
+            observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
+            observation.Generation.Should().Be(generation);
+            observation
+                .Diagnostics.Should()
+                .ContainSingle()
+                .Which.Category.Should()
+                .Be(DocumentCacheTargetDiagnosticCategory.TargetReplaced);
         }
     }
 

@@ -390,11 +390,8 @@ public static class DocumentCachePreflightClassifier
         }
 
         if (
-            targetObservation.ResolutionState == DocumentCacheTargetResolutionState.ReplacedGeneration
-            || (
-                expectedTargetContextGeneration is not null
-                && targetObservation.Generation?.Value != expectedTargetContextGeneration.Value
-            )
+            expectedTargetContextGeneration is not null
+            && targetObservation.Generation?.Value != expectedTargetContextGeneration.Value
         )
         {
             return Rejected(

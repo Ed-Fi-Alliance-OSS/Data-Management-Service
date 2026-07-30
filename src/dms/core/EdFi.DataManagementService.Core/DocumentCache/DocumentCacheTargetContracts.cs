@@ -14,7 +14,6 @@ public enum DocumentCacheTargetResolutionState
     Configured,
     Unresolved,
     Resolved,
-    ReplacedGeneration,
 }
 
 public enum DocumentCacheTargetEligibilityState
@@ -645,7 +644,6 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheTargetEligibilityState eligibilityState,
         DocumentCacheTargetEffectiveSettings effectiveSettings,
         DocumentCacheTargetContextGeneration? generation,
-        DocumentCacheTargetContextGeneration? replacedByGeneration,
         RelationalProviderToken? providerToken,
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
@@ -661,7 +659,6 @@ public sealed record DocumentCacheTargetObservation
         EligibilityState = eligibilityState;
         EffectiveSettings = effectiveSettings;
         Generation = generation;
-        ReplacedByGeneration = replacedByGeneration;
         ProviderToken = providerToken;
         PhysicalSourceFingerprint = physicalSourceFingerprint;
         Lifecycle = lifecycle;
@@ -681,8 +678,6 @@ public sealed record DocumentCacheTargetObservation
     public DocumentCacheTargetEffectiveSettings EffectiveSettings { get; }
 
     public DocumentCacheTargetContextGeneration? Generation { get; }
-
-    public DocumentCacheTargetContextGeneration? ReplacedByGeneration { get; }
 
     public RelationalProviderToken? ProviderToken { get; }
 
@@ -710,7 +705,6 @@ public sealed record DocumentCacheTargetObservation
             DocumentCacheTargetEligibilityState.NotEvaluated,
             effectiveSettings,
             generation: null,
-            replacedByGeneration: null,
             providerToken: null,
             physicalSourceFingerprint: null,
             lifecycle: null,
@@ -733,7 +727,6 @@ public sealed record DocumentCacheTargetObservation
             DocumentCacheTargetEligibilityState.Ineligible,
             effectiveSettings,
             generation: null,
-            replacedByGeneration: null,
             providerToken: null,
             physicalSourceFingerprint: null,
             lifecycle: null,
@@ -762,7 +755,6 @@ public sealed record DocumentCacheTargetObservation
             DocumentCacheTargetEligibilityState.Eligible,
             effectiveSettings,
             generation,
-            replacedByGeneration: null,
             providerToken,
             physicalSourceFingerprint,
             lifecycle,
@@ -792,7 +784,6 @@ public sealed record DocumentCacheTargetObservation
             DocumentCacheTargetEligibilityState.Ineligible,
             effectiveSettings,
             generation,
-            replacedByGeneration: null,
             providerToken,
             physicalSourceFingerprint,
             lifecycle,
@@ -800,36 +791,6 @@ public sealed record DocumentCacheTargetObservation
             enqueueTrigger,
             sqlServerPrerequisites,
             retryState,
-            diagnostics
-        );
-
-    public static DocumentCacheTargetObservation ReplacedGeneration(
-        DocumentCacheTargetKey targetKey,
-        DocumentCacheTargetEffectiveSettings effectiveSettings,
-        DocumentCacheTargetContextGeneration generation,
-        DocumentCacheTargetContextGeneration replacedByGeneration,
-        RelationalProviderToken? providerToken,
-        DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
-        DocumentCacheLifecycleObservation? lifecycle,
-        DocumentCacheInventoryValidationResult? inventory,
-        DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
-        DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
-        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics
-    ) =>
-        new(
-            targetKey,
-            DocumentCacheTargetResolutionState.ReplacedGeneration,
-            DocumentCacheTargetEligibilityState.Ineligible,
-            effectiveSettings,
-            generation,
-            replacedByGeneration,
-            providerToken,
-            physicalSourceFingerprint,
-            lifecycle,
-            inventory,
-            enqueueTrigger,
-            sqlServerPrerequisites,
-            retryState: null,
             diagnostics
         );
 
@@ -843,7 +804,6 @@ public sealed record DocumentCacheTargetObservation
             EligibilityState,
             EffectiveSettings,
             Generation,
-            ReplacedByGeneration,
             ProviderToken,
             PhysicalSourceFingerprint,
             Lifecycle,
@@ -869,7 +829,6 @@ public sealed record DocumentCacheTargetObservation
             EligibilityState,
             EffectiveSettings,
             Generation,
-            ReplacedByGeneration,
             ProviderToken,
             PhysicalSourceFingerprint,
             Lifecycle,

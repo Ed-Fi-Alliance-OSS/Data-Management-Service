@@ -562,30 +562,13 @@ public class DocumentCachePreflightClassifierTests
         }
 
         [Test]
-        public void It_should_reject_target_replacement_before_execution()
+        public void It_should_reject_current_observations_when_expected_generation_is_stale()
         {
             DocumentCacheAdministrativeCommandResult result =
                 DocumentCachePreflightClassifier.ClassifyGuardedNewEmptyActivation(
                     GuardedRequest(),
                     EligibleObservation(DocumentCacheLifecycleState.Disabled),
                     GuardedFacts(expectedTargetContextGeneration: new DocumentCacheTargetContextGeneration(2))
-                );
-
-            AssertRejected(
-                result,
-                DocumentCacheAdministrativePreflightClassification.TargetReplacedBeforeExecution,
-                DocumentCacheTargetDiagnosticCategory.TargetReplaced
-            );
-        }
-
-        [Test]
-        public void It_should_reject_replaced_generation_observations()
-        {
-            DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyGuardedNewEmptyActivation(
-                    GuardedRequest(),
-                    ReplacedObservation(),
-                    GuardedFacts()
                 );
 
             AssertRejected(
@@ -773,36 +756,6 @@ public class DocumentCachePreflightClassifierTests
             ]
         );
     }
-
-    protected static DocumentCacheTargetObservation ReplacedObservation() =>
-        DocumentCacheTargetObservation.ReplacedGeneration(
-            _targetKey,
-            _settings,
-            _generation,
-            replacedByGeneration: new DocumentCacheTargetContextGeneration(4),
-            RelationalProviderToken.Postgresql,
-            _fingerprint,
-            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Disabled, false),
-            _satisfiedInventory,
-            _satisfiedEnqueueTrigger,
-            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
-            [
-                new DocumentCacheTargetDiagnostic(
-                    _targetKey,
-                    DocumentCacheTargetResolutionState.ReplacedGeneration,
-                    RelationalProviderToken.Postgresql,
-                    _generation,
-                    _fingerprint,
-                    new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Disabled, false),
-                    _satisfiedInventory,
-                    _satisfiedEnqueueTrigger,
-                    DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
-                    retryState: null,
-                    DocumentCacheTargetDiagnosticCategory.TargetReplaced,
-                    "Target generation was replaced."
-                ),
-            ]
-        );
 
     protected static DocumentCacheTargetObservation IneligibleInventoryObservation()
     {
