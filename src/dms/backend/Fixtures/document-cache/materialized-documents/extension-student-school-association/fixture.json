@@ -1,10 +1,13 @@
 {
   "fixtureVersion": "materialized-document-fixture-v1",
-  "caseName": "layout-contract-school",
+  "caseName": "extension-student-school-association",
   "coverageTags": [
-    "layout-contract",
     "success",
-    "ordinary-resource"
+    "ordinary-resource",
+    "link-bearing",
+    "extension",
+    "nested-collection",
+    "public-cdc"
   ],
   "sourceSetupPath": "source-setup.json",
   "expectedCacheRowPath": "expected-cache-row.json",

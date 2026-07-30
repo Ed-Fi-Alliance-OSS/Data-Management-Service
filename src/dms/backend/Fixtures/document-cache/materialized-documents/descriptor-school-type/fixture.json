@@ -1,10 +1,11 @@
 {
   "fixtureVersion": "materialized-document-fixture-v1",
-  "caseName": "layout-contract-school",
+  "caseName": "descriptor-school-type",
   "coverageTags": [
-    "layout-contract",
     "success",
-    "ordinary-resource"
+    "descriptor",
+    "no-link-stream",
+    "public-cdc"
   ],
   "sourceSetupPath": "source-setup.json",
   "expectedCacheRowPath": "expected-cache-row.json",

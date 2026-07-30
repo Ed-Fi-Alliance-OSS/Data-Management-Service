@@ -46,10 +46,12 @@ public class Given_MaterializedDocumentFixtureCatalog
                 new MaterializedDocumentFixtureManifest(
                     FixtureVersion: "materialized-document-fixture-v1",
                     CaseName: "layout-contract-school",
+                    CoverageTags: ["layout-contract", "success", "ordinary-resource"],
                     SourceSetupPath: "source-setup.json",
                     ExpectedCacheRowPath: "expected-cache-row.json",
                     ExpectedStreamEtagPath: "expected-stream-etag.json",
-                    ExpectedPublicCdcDocumentPath: "expected-public-cdc-document.json"
+                    ExpectedPublicCdcDocumentPath: "expected-public-cdc-document.json",
+                    ExpectedProjectionFailurePath: null
                 )
             );
 
@@ -97,7 +99,7 @@ public class Given_MaterializedDocumentFixtureCatalog
     [Test]
     public void It_keeps_cache_row_json_free_of_etag_and_returns_stream_etag_separately()
     {
-        _fixture.ExpectedCacheRow.DocumentId.Should().Be(1001);
+        _fixture.ExpectedCacheRow!.DocumentId.Should().Be(1001);
         _fixture.ExpectedCacheRow.DocumentUuid.Should().Be("11111111-1111-1111-1111-111111111111");
         _fixture.ExpectedCacheRow.ProjectName.Should().Be("Ed-Fi");
         _fixture.ExpectedCacheRow.ResourceName.Should().Be("School");
@@ -112,7 +114,7 @@ public class Given_MaterializedDocumentFixtureCatalog
     public void It_models_the_public_cdc_document_as_cache_json_plus_stream_etag()
     {
         var expectedPublicDocument = JsonNode
-            .Parse(_fixture.ExpectedCacheRow.DocumentJson.ToJsonString())!
+            .Parse(_fixture.ExpectedCacheRow!.DocumentJson.ToJsonString())!
             .AsObject();
         expectedPublicDocument["_etag"] = _fixture.ExpectedStreamEtag;
 
@@ -122,15 +124,103 @@ public class Given_MaterializedDocumentFixtureCatalog
             .BeTrue();
     }
 
+    [Test]
+    public void It_includes_the_representative_DMS_1312_materialized_document_cases()
+    {
+        _allFixtures
+            .Where(fixture => HasTags(fixture, "success", "ordinary-resource", "link-bearing"))
+            .Select(fixture => fixture.CaseName)
+            .Should()
+            .Contain("ordinary-link-bearing-student-school-association");
+
+        _allFixtures
+            .Where(fixture => HasTags(fixture, "success", "descriptor", "no-link-stream"))
+            .Select(fixture => fixture.CaseName)
+            .Should()
+            .Contain("descriptor-school-type");
+
+        _allFixtures
+            .Where(fixture => HasTags(fixture, "success", "extension", "nested-collection"))
+            .Select(fixture => fixture.CaseName)
+            .Should()
+            .Contain("extension-student-school-association");
+
+        _allFixtures
+            .Where(fixture => HasTags(fixture, "projection-failure", "invariant-failure"))
+            .Select(fixture => fixture.CaseName)
+            .Should()
+            .Contain("invariant-missing-school-body");
+    }
+
+    [Test]
+    public void It_keeps_each_success_fixture_cache_row_complete_and_free_of_etag()
+    {
+        _allFixtures
+            .Where(fixture => fixture.HasSuccessExpectation)
+            .Should()
+            .AllSatisfy(fixture =>
+            {
+                var cacheRow = fixture.ExpectedCacheRow!;
+                cacheRow.DocumentId.Should().BePositive();
+                cacheRow.DocumentUuid.Should().NotBeNullOrWhiteSpace();
+                cacheRow.ProjectName.Should().NotBeNullOrWhiteSpace();
+                cacheRow.ResourceName.Should().NotBeNullOrWhiteSpace();
+                cacheRow.ResourceVersion.Should().NotBeNullOrWhiteSpace();
+                cacheRow.ContentVersion.Should().BePositive();
+                cacheRow.LastModifiedAt.Should().NotBe(default);
+                cacheRow.StreamEtag.Should().Be(fixture.ExpectedStreamEtag);
+                cacheRow.DocumentJson.Should().ContainKey("id");
+                cacheRow.DocumentJson.Should().ContainKey("_lastModifiedDate");
+                cacheRow.DocumentJson.Should().NotContainKey("_etag");
+            });
+    }
+
+    [Test]
+    public void It_models_projection_failure_fixtures_without_cache_candidates()
+    {
+        _allFixtures.Should().ContainSingle(fixture => fixture.CaseName == "invariant-missing-school-body");
+        var failureFixture = _allFixtures.Single(fixture =>
+            fixture.CaseName == "invariant-missing-school-body"
+        );
+
+        failureFixture.HasProjectionFailureExpectation.Should().BeTrue();
+        failureFixture.ExpectedCacheRow.Should().BeNull();
+        failureFixture.ExpectedStreamEtag.Should().BeNull();
+        failureFixture.ExpectedPublicCdcDocument.Should().BeNull();
+
+        failureFixture.ExpectedProjectionFailure!.Reason.Should().Be("StableSourceBodyMissing");
+        failureFixture.ExpectedProjectionFailure.DocumentId.Should().Be(972101);
+        failureFixture.ExpectedProjectionFailure.ResourceName.Should().Be("School");
+    }
+
     private static IEnumerable<string> ReferencedManifestPaths(MaterializedDocumentFixtureManifest manifest)
     {
-        yield return manifest.SourceSetupPath;
-        yield return manifest.ExpectedCacheRowPath;
-        yield return manifest.ExpectedStreamEtagPath;
+        if (manifest.SourceSetupPath is not null)
+        {
+            yield return manifest.SourceSetupPath;
+        }
+
+        if (manifest.ExpectedCacheRowPath is not null)
+        {
+            yield return manifest.ExpectedCacheRowPath;
+        }
+
+        if (manifest.ExpectedStreamEtagPath is not null)
+        {
+            yield return manifest.ExpectedStreamEtagPath;
+        }
 
         if (manifest.ExpectedPublicCdcDocumentPath is not null)
         {
             yield return manifest.ExpectedPublicCdcDocumentPath;
         }
+
+        if (manifest.ExpectedProjectionFailurePath is not null)
+        {
+            yield return manifest.ExpectedProjectionFailurePath;
+        }
     }
+
+    private static bool HasTags(MaterializedDocumentFixture fixture, params string[] tags) =>
+        Array.TrueForAll(tags, tag => fixture.Manifest.CoverageTags?.Contains(tag) == true);
 }

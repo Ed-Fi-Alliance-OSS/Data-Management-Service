@@ -1,0 +1,73 @@
+{
+  "documents": [
+    {
+      "documentId": 970101,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000000101",
+      "resourceKeyId": 11,
+      "contentVersion": 222,
+      "contentLastModifiedAt": "2026-07-30T14:15:16.1234567Z"
+    },
+    {
+      "documentId": 970201,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000000201",
+      "resourceKeyId": 30,
+      "contentVersion": 101,
+      "contentLastModifiedAt": "2026-07-29T14:15:16Z"
+    }
+  ],
+  "descriptors": [],
+  "concreteRootRows": [
+    {
+      "schema": "edfi",
+      "table": "StudentSchoolAssociation",
+      "documentId": 970101,
+      "values": {
+        "School_DocumentId": 970201,
+        "SchoolReference_SchoolId": 255901
+      }
+    },
+    {
+      "schema": "edfi",
+      "table": "School",
+      "documentId": 970201,
+      "values": {
+        "SchoolId": 255901,
+        "NameOfInstitution": "Reference Target School"
+      }
+    }
+  ],
+  "childRows": [],
+  "extensionRows": [],
+  "referenceRows": [
+    {
+      "schema": "edfi",
+      "table": "StudentSchoolAssociation",
+      "referenceName": "SchoolReference",
+      "documentId": 970101,
+      "referencedDocumentId": 970201,
+      "values": {
+        "schoolId": 255901,
+        "linkRel": "School",
+        "linkHref": "/ed-fi/schools/aaaaaaaa-bbbb-cccc-dddd-000000000201"
+      }
+    }
+  ],
+  "referentialIdentityRows": [
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000010101",
+      "documentId": 970101,
+      "resourceKeyId": 11,
+      "values": {
+        "identity": "studentSchoolAssociation=970101"
+      }
+    },
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000010201",
+      "documentId": 970201,
+      "resourceKeyId": 30,
+      "values": {
+        "schoolId": 255901
+      }
+    }
+  ]
+}

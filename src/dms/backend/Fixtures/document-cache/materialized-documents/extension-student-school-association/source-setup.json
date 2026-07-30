@@ -1,0 +1,215 @@
+{
+  "documents": [
+    {
+      "documentId": 971101,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001101",
+      "resourceKeyId": 310,
+      "contentVersion": 333,
+      "contentLastModifiedAt": "2026-07-31T10:11:12.9876543Z"
+    },
+    {
+      "documentId": 971201,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001201",
+      "resourceKeyId": 244,
+      "contentVersion": 201,
+      "contentLastModifiedAt": "2026-07-30T10:11:12Z"
+    },
+    {
+      "documentId": 971202,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001202",
+      "resourceKeyId": 282,
+      "contentVersion": 202,
+      "contentLastModifiedAt": "2026-07-30T10:11:13Z"
+    },
+    {
+      "documentId": 971301,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001301",
+      "resourceKeyId": 356,
+      "contentVersion": 203,
+      "contentLastModifiedAt": "2026-07-30T10:11:14Z"
+    },
+    {
+      "documentId": 971302,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001302",
+      "resourceKeyId": 103,
+      "contentVersion": 204,
+      "contentLastModifiedAt": "2026-07-30T10:11:15Z"
+    },
+    {
+      "documentId": 971303,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001303",
+      "resourceKeyId": 123,
+      "contentVersion": 205,
+      "contentLastModifiedAt": "2026-07-30T10:11:16Z"
+    }
+  ],
+  "descriptors": [
+    {
+      "documentId": 971301,
+      "resourceKeyId": 356,
+      "namespace": "uri://sample.ed-fi.org/MembershipTypeDescriptor",
+      "codeValue": "Member",
+      "shortDescription": "Member",
+      "values": {
+        "Discriminator": "MembershipTypeDescriptor"
+      }
+    },
+    {
+      "documentId": 971302,
+      "resourceKeyId": 103,
+      "namespace": "uri://ed-fi.org/EducationPlanDescriptor",
+      "codeValue": "IEP",
+      "shortDescription": "IEP",
+      "values": {
+        "Discriminator": "EducationPlanDescriptor"
+      }
+    },
+    {
+      "documentId": 971303,
+      "resourceKeyId": 123,
+      "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+      "codeValue": "Ninth grade",
+      "shortDescription": "Ninth grade",
+      "values": {
+        "Discriminator": "GradeLevelDescriptor"
+      }
+    }
+  ],
+  "concreteRootRows": [
+    {
+      "schema": "edfi",
+      "table": "StudentSchoolAssociation",
+      "documentId": 971101,
+      "values": {
+        "SchoolId_Unified": 255902,
+        "School_DocumentId": 971201,
+        "School_SchoolId": 255902,
+        "Student_DocumentId": 971202,
+        "Student_StudentUniqueId": "604822",
+        "EntryGradeLevelDescriptor_DescriptorId": 971303,
+        "EntryDate": "2025-08-19",
+        "PrimarySchool": false
+      }
+    },
+    {
+      "schema": "edfi",
+      "table": "School",
+      "documentId": 971201,
+      "values": {
+        "SchoolId": 255902,
+        "NameOfInstitution": "Extension Target School"
+      }
+    },
+    {
+      "schema": "edfi",
+      "table": "Student",
+      "documentId": 971202,
+      "values": {
+        "StudentUniqueId": "604822",
+        "FirstName": "Jordan",
+        "LastSurname": "Rivera"
+      }
+    }
+  ],
+  "childRows": [
+    {
+      "schema": "edfi",
+      "table": "StudentSchoolAssociationEducationPlan",
+      "documentId": 971101,
+      "values": {
+        "CollectionItemId": 971401,
+        "Ordinal": 0,
+        "StudentSchoolAssociation_DocumentId": 971101,
+        "EducationPlanDescriptor_DescriptorId": 971302
+      }
+    }
+  ],
+  "extensionRows": [
+    {
+      "schema": "sample",
+      "table": "StudentSchoolAssociationExtension",
+      "documentId": 971101,
+      "values": {
+        "MembershipTypeDescriptor_DescriptorId": 971301
+      }
+    }
+  ],
+  "referenceRows": [
+    {
+      "schema": "edfi",
+      "table": "StudentSchoolAssociation",
+      "referenceName": "SchoolReference",
+      "documentId": 971101,
+      "referencedDocumentId": 971201,
+      "values": {
+        "schoolId": 255902,
+        "linkRel": "School",
+        "linkHref": "/ed-fi/schools/aaaaaaaa-bbbb-cccc-dddd-000000001201"
+      }
+    },
+    {
+      "schema": "edfi",
+      "table": "StudentSchoolAssociation",
+      "referenceName": "StudentReference",
+      "documentId": 971101,
+      "referencedDocumentId": 971202,
+      "values": {
+        "studentUniqueId": "604822",
+        "linkRel": "Student",
+        "linkHref": "/ed-fi/students/aaaaaaaa-bbbb-cccc-dddd-000000001202"
+      }
+    }
+  ],
+  "referentialIdentityRows": [
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000011101",
+      "documentId": 971101,
+      "resourceKeyId": 310,
+      "values": {
+        "entryDate": "2025-08-19",
+        "schoolId": 255902,
+        "studentUniqueId": "604822"
+      }
+    },
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000011201",
+      "documentId": 971201,
+      "resourceKeyId": 244,
+      "values": {
+        "schoolId": 255902
+      }
+    },
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000011202",
+      "documentId": 971202,
+      "resourceKeyId": 282,
+      "values": {
+        "studentUniqueId": "604822"
+      }
+    },
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000011301",
+      "documentId": 971301,
+      "resourceKeyId": 356,
+      "values": {
+        "uri": "uri://sample.ed-fi.org/MembershipTypeDescriptor#Member"
+      }
+    },
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000011302",
+      "documentId": 971302,
+      "resourceKeyId": 103,
+      "values": {
+        "uri": "uri://ed-fi.org/EducationPlanDescriptor#IEP"
+      }
+    },
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000011303",
+      "documentId": 971303,
+      "resourceKeyId": 123,
+      "values": {
+        "uri": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+      }
+    }
+  ]
+}

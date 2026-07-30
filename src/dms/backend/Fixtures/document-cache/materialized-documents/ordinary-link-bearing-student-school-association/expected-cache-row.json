@@ -1,0 +1,21 @@
+{
+  "documentId": 970101,
+  "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000000101",
+  "projectName": "Ed-Fi",
+  "resourceName": "StudentSchoolAssociation",
+  "resourceVersion": "1.0",
+  "contentVersion": 222,
+  "lastModifiedAt": "2026-07-30T14:15:16.1234567Z",
+  "streamEtag": "222-01234567.j._.l.i",
+  "documentJson": {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-000000000101",
+    "_lastModifiedDate": "2026-07-30T14:15:16Z",
+    "schoolReference": {
+      "schoolId": 255901,
+      "link": {
+        "rel": "School",
+        "href": "/ed-fi/schools/aaaaaaaa-bbbb-cccc-dddd-000000000201"
+      }
+    }
+  }
+}

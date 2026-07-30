@@ -69,16 +69,20 @@ public static class MaterializedDocumentFixtureCatalog
             manifest.SourceSetupPath,
             nameof(MaterializedDocumentFixtureManifest.SourceSetupPath)
         );
-        var expectedCacheRowPath = ResolveFixtureJsonPath(
-            resolvedCaseDirectory,
-            manifest.ExpectedCacheRowPath,
-            nameof(MaterializedDocumentFixtureManifest.ExpectedCacheRowPath)
-        );
-        var expectedStreamEtagPath = ResolveFixtureJsonPath(
-            resolvedCaseDirectory,
-            manifest.ExpectedStreamEtagPath,
-            nameof(MaterializedDocumentFixtureManifest.ExpectedStreamEtagPath)
-        );
+        var expectedCacheRowPath = manifest.ExpectedCacheRowPath is null
+            ? null
+            : ResolveFixtureJsonPath(
+                resolvedCaseDirectory,
+                manifest.ExpectedCacheRowPath,
+                nameof(MaterializedDocumentFixtureManifest.ExpectedCacheRowPath)
+            );
+        var expectedStreamEtagPath = manifest.ExpectedStreamEtagPath is null
+            ? null
+            : ResolveFixtureJsonPath(
+                resolvedCaseDirectory,
+                manifest.ExpectedStreamEtagPath,
+                nameof(MaterializedDocumentFixtureManifest.ExpectedStreamEtagPath)
+            );
         var expectedPublicCdcDocumentPath = manifest.ExpectedPublicCdcDocumentPath is null
             ? null
             : ResolveFixtureJsonPath(
@@ -86,34 +90,55 @@ public static class MaterializedDocumentFixtureCatalog
                 manifest.ExpectedPublicCdcDocumentPath,
                 nameof(MaterializedDocumentFixtureManifest.ExpectedPublicCdcDocumentPath)
             );
+        var expectedProjectionFailurePath = manifest.ExpectedProjectionFailurePath is null
+            ? null
+            : ResolveFixtureJsonPath(
+                resolvedCaseDirectory,
+                manifest.ExpectedProjectionFailurePath,
+                nameof(MaterializedDocumentFixtureManifest.ExpectedProjectionFailurePath)
+            );
 
         var sourceSetup = ReadJsonFile<MaterializedDocumentSourceSetup>(sourceSetupPath);
-        var expectedCacheRow = ReadJsonFile<MaterializedDocumentCacheRow>(expectedCacheRowPath);
-        var streamEtagExpectation = ReadJsonFile<MaterializedDocumentStreamEtagExpectation>(
-            expectedStreamEtagPath
-        );
+        var expectedCacheRow = expectedCacheRowPath is null
+            ? null
+            : ReadJsonFile<MaterializedDocumentCacheRow>(expectedCacheRowPath);
+        var streamEtagExpectation = expectedStreamEtagPath is null
+            ? null
+            : ReadJsonFile<MaterializedDocumentStreamEtagExpectation>(expectedStreamEtagPath);
         var expectedPublicCdcDocument = expectedPublicCdcDocumentPath is null
             ? null
             : ReadJsonFile<MaterializedDocumentPublicCdcDocument>(expectedPublicCdcDocumentPath);
+        var expectedProjectionFailure = expectedProjectionFailurePath is null
+            ? null
+            : ReadJsonFile<MaterializedDocumentProjectionFailureExpectation>(expectedProjectionFailurePath);
 
         ValidateSourceSetup(sourceSetup, sourceSetupPath);
-        ValidateExpectedCacheRow(expectedCacheRow, expectedCacheRowPath);
-        ValidateStreamEtagExpectation(streamEtagExpectation);
-        ValidateStreamEtagConsistency(expectedCacheRow, streamEtagExpectation, expectedStreamEtagPath);
-        ValidatePublicCdcDocument(
-            expectedCacheRow,
-            streamEtagExpectation.StreamEtag,
-            expectedPublicCdcDocument,
-            expectedPublicCdcDocumentPath
-        );
+        if (expectedCacheRow is not null && streamEtagExpectation is not null)
+        {
+            ValidateExpectedCacheRow(expectedCacheRow, expectedCacheRowPath!);
+            ValidateStreamEtagExpectation(streamEtagExpectation);
+            ValidateStreamEtagConsistency(expectedCacheRow, streamEtagExpectation, expectedStreamEtagPath!);
+            ValidatePublicCdcDocument(
+                expectedCacheRow,
+                streamEtagExpectation.StreamEtag,
+                expectedPublicCdcDocument,
+                expectedPublicCdcDocumentPath
+            );
+        }
+
+        if (expectedProjectionFailure is not null)
+        {
+            ValidateProjectionFailureExpectation(expectedProjectionFailure, expectedProjectionFailurePath!);
+        }
 
         return new(
             resolvedCaseDirectory,
             manifest,
             sourceSetup,
             expectedCacheRow,
-            streamEtagExpectation.StreamEtag,
-            expectedPublicCdcDocument
+            streamEtagExpectation?.StreamEtag,
+            expectedPublicCdcDocument,
+            expectedProjectionFailure
         );
     }
 
@@ -132,8 +157,48 @@ public static class MaterializedDocumentFixtureCatalog
 
         ArgumentException.ThrowIfNullOrWhiteSpace(manifest.CaseName);
         ArgumentException.ThrowIfNullOrWhiteSpace(manifest.SourceSetupPath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(manifest.ExpectedCacheRowPath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(manifest.ExpectedStreamEtagPath);
+
+        var hasSuccessExpectation =
+            !string.IsNullOrWhiteSpace(manifest.ExpectedCacheRowPath)
+            || !string.IsNullOrWhiteSpace(manifest.ExpectedStreamEtagPath);
+        var hasCompleteSuccessExpectation =
+            !string.IsNullOrWhiteSpace(manifest.ExpectedCacheRowPath)
+            && !string.IsNullOrWhiteSpace(manifest.ExpectedStreamEtagPath);
+        var hasProjectionFailureExpectation = !string.IsNullOrWhiteSpace(
+            manifest.ExpectedProjectionFailurePath
+        );
+
+        if (hasSuccessExpectation && !hasCompleteSuccessExpectation)
+        {
+            throw new InvalidOperationException(
+                $"Fixture manifest '{manifestPath}' must pair expectedCacheRowPath with expectedStreamEtagPath."
+            );
+        }
+
+        if (hasCompleteSuccessExpectation == hasProjectionFailureExpectation)
+        {
+            throw new InvalidOperationException(
+                $"Fixture manifest '{manifestPath}' must declare exactly one success or projection-failure expectation."
+            );
+        }
+
+        if (
+            !hasCompleteSuccessExpectation
+            && !string.IsNullOrWhiteSpace(manifest.ExpectedPublicCdcDocumentPath)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Fixture manifest '{manifestPath}' cannot declare expectedPublicCdcDocumentPath without a cache-row expectation."
+            );
+        }
+
+        if (manifest.CoverageTags is not null)
+        {
+            foreach (var coverageTag in manifest.CoverageTags)
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(coverageTag);
+            }
+        }
 
         if (Path.GetFileName(caseDirectory) != manifest.CaseName)
         {
@@ -288,6 +353,42 @@ public static class MaterializedDocumentFixtureCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(expectation.StreamEtag);
     }
 
+    private static void ValidateProjectionFailureExpectation(
+        MaterializedDocumentProjectionFailureExpectation expectation,
+        string path
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectation.Reason);
+
+        if (expectation.DocumentId <= 0 || expectation.ResourceKeyId <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Expected projection failure '{path}' has invalid document or resource-key metadata."
+            );
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectation.ProjectName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectation.ResourceName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectation.ResourceVersion);
+
+        if (expectation.DiagnosticMetadata is null)
+        {
+            throw new InvalidOperationException(
+                $"Expected projection failure '{path}' must include diagnosticMetadata."
+            );
+        }
+
+        if (
+            expectation.DiagnosticMetadata.ContainsKey("documentJson")
+            || expectation.DiagnosticMetadata.ContainsKey("authorization")
+        )
+        {
+            throw new InvalidOperationException(
+                $"Expected projection failure '{path}' diagnosticMetadata must stay bounded and sanitized."
+            );
+        }
+    }
+
     private static void ValidateStreamEtagConsistency(
         MaterializedDocumentCacheRow expectedCacheRow,
         MaterializedDocumentStreamEtagExpectation expectation,
@@ -423,21 +524,28 @@ public sealed record MaterializedDocumentFixture(
     string CaseDirectory,
     MaterializedDocumentFixtureManifest Manifest,
     MaterializedDocumentSourceSetup SourceSetup,
-    MaterializedDocumentCacheRow ExpectedCacheRow,
-    string ExpectedStreamEtag,
-    MaterializedDocumentPublicCdcDocument? ExpectedPublicCdcDocument
+    MaterializedDocumentCacheRow? ExpectedCacheRow,
+    string? ExpectedStreamEtag,
+    MaterializedDocumentPublicCdcDocument? ExpectedPublicCdcDocument,
+    MaterializedDocumentProjectionFailureExpectation? ExpectedProjectionFailure
 )
 {
     public string CaseName => Manifest.CaseName;
+
+    public bool HasSuccessExpectation => ExpectedCacheRow is not null;
+
+    public bool HasProjectionFailureExpectation => ExpectedProjectionFailure is not null;
 }
 
 public sealed record MaterializedDocumentFixtureManifest(
     string FixtureVersion,
     string CaseName,
+    IReadOnlyList<string>? CoverageTags,
     string SourceSetupPath,
-    string ExpectedCacheRowPath,
-    string ExpectedStreamEtagPath,
-    string? ExpectedPublicCdcDocumentPath
+    string? ExpectedCacheRowPath,
+    string? ExpectedStreamEtagPath,
+    string? ExpectedPublicCdcDocumentPath,
+    string? ExpectedProjectionFailurePath
 );
 
 public sealed record MaterializedDocumentSourceSetup(
@@ -503,5 +611,15 @@ public sealed record MaterializedDocumentCacheRow(
 );
 
 public sealed record MaterializedDocumentPublicCdcDocument(JsonObject Document);
+
+public sealed record MaterializedDocumentProjectionFailureExpectation(
+    string Reason,
+    long DocumentId,
+    short ResourceKeyId,
+    string ProjectName,
+    string ResourceName,
+    string ResourceVersion,
+    JsonObject DiagnosticMetadata
+);
 
 internal sealed record MaterializedDocumentStreamEtagExpectation(string StreamEtag);

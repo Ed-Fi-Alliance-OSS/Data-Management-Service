@@ -1,0 +1,13 @@
+{
+  "reason": "StableSourceBodyMissing",
+  "documentId": 972101,
+  "resourceKeyId": 244,
+  "projectName": "Ed-Fi",
+  "resourceName": "School",
+  "resourceVersion": "5.2.0",
+  "diagnosticMetadata": {
+    "failureBoundary": "materializer",
+    "sourceObservation": "stable-dms-document-without-root-row",
+    "table": "edfi.School"
+  }
+}

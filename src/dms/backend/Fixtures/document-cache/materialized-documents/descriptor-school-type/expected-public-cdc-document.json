@@ -1,0 +1,13 @@
+{
+  "document": {
+    "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+    "codeValue": "Alternative",
+    "shortDescription": "Alternative",
+    "description": "Alternative school type",
+    "effectiveBeginDate": "2025-01-15",
+    "effectiveEndDate": "2025-12-31",
+    "id": "aaaaaaaa-bbbb-cccc-dddd-000000000301",
+    "_lastModifiedDate": "2026-07-30T14:15:16Z",
+    "_etag": "222-01234567.j._.n.i"
+  }
+}
