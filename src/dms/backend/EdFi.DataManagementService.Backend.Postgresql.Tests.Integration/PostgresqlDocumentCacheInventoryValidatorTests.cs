@@ -129,6 +129,128 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_rejects_a_uuid_validation_trigger_bound_to_a_wrong_schema_function()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE SCHEMA "dms_alt";
+
+            CREATE OR REPLACE FUNCTION "dms_alt"."TF_DocumentCache_ValidateDocumentUuid"()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $func$
+            BEGIN
+                RETURN NEW;
+            END;
+            $func$;
+
+            DROP TRIGGER "TR_DocumentCache_ValidateDocumentUuid" ON "dms"."DocumentCache";
+
+            CREATE TRIGGER "TR_DocumentCache_ValidateDocumentUuid"
+            BEFORE INSERT OR UPDATE ON "dms"."DocumentCache"
+            FOR EACH ROW
+            EXECUTE FUNCTION "dms_alt"."TF_DocumentCache_ValidateDocumentUuid"();
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+    }
+
+    [Test]
+    public async Task It_rejects_a_uuid_validation_function_with_the_expected_name_but_wrong_body()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE OR REPLACE FUNCTION "dms"."TF_DocumentCache_ValidateDocumentUuid"()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $func$
+            BEGIN
+                RETURN NEW;
+            END;
+            $func$;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+    }
+
+    [Test]
+    public async Task It_rejects_an_enqueue_trigger_bound_to_a_wrong_schema_function()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE SCHEMA "dms_alt";
+
+            CREATE OR REPLACE FUNCTION "dms_alt"."TF_Document_EnqueueProjectionInsert"()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $func$
+            BEGIN
+                RETURN NULL;
+            END;
+            $func$;
+
+            DROP TRIGGER "TR_Document_EnqueueProjectionInsert" ON "dms"."Document";
+
+            CREATE TRIGGER "TR_Document_EnqueueProjectionInsert"
+            AFTER INSERT ON "dms"."Document"
+            REFERENCING NEW TABLE AS new_rows
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "dms_alt"."TF_Document_EnqueueProjectionInsert"();
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+    }
+
+    [Test]
+    public async Task It_rejects_an_enqueue_function_with_the_expected_name_but_wrong_body()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE OR REPLACE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            AS $func$
+            BEGIN
+                RETURN NULL;
+            END;
+            $func$;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+    }
+
+    [Test]
     public async Task It_classifies_missing_singleton_rows_as_missing_inventory()
     {
         await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();

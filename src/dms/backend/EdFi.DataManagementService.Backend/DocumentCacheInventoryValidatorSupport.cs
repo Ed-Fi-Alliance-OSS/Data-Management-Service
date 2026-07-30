@@ -535,14 +535,45 @@ internal static class DocumentCacheInventoryValidatorSupport
 
         if (
             dialect == SqlDialect.Pgsql
-            && trigger.FunctionName
-                != DocumentCacheInventoryDefinition.DocumentCacheTriggers.PgsqlValidateDocumentUuidFunction
+            && (
+                trigger.FunctionSchema != DmsSchema
+                || trigger.FunctionName
+                    != DocumentCacheInventoryDefinition
+                        .DocumentCacheTriggers
+                        .PgsqlValidateDocumentUuidFunction
+            )
         )
         {
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
                     $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger uses an unexpected function."
+                )
+            );
+        }
+
+        if (
+            dialect == SqlDialect.Pgsql
+            && !HasExpectedPgsqlDocumentCacheUuidValidationFunctionDefinition(trigger.Definition)
+        )
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger function has unexpected semantics."
+                )
+            );
+        }
+
+        if (
+            dialect == SqlDialect.Mssql
+            && !HasExpectedMssqlDocumentCacheUuidValidationTriggerDefinition(trigger.Definition)
+        )
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger has unexpected semantics."
                 )
             );
         }
@@ -652,12 +683,26 @@ internal static class DocumentCacheInventoryValidatorSupport
             return;
         }
 
-        if (!await FunctionExistsAsync(connection, functionName, cancellationToken).ConfigureAwait(false))
+        FunctionSnapshot? function = await ReadPgsqlFunctionAsync(connection, functionName, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (function is null)
         {
             enqueueIssues.Add(
                 new EnqueueIssue(
                     DocumentCacheEnqueueTriggerStatus.Missing,
                     $"{functionName} function is missing."
+                )
+            );
+            return;
+        }
+
+        if (!HasExpectedPgsqlDocumentEnqueueFunctionDefinition(functionName, function.Definition))
+        {
+            enqueueIssues.Add(
+                new EnqueueIssue(
+                    DocumentCacheEnqueueTriggerStatus.Invalid,
+                    $"{functionName} function has unexpected semantics."
                 )
             );
         }
@@ -702,12 +747,29 @@ internal static class DocumentCacheInventoryValidatorSupport
             );
         }
 
-        if (expectedFunctionName is not null && trigger.FunctionName != expectedFunctionName)
+        if (
+            dialect == SqlDialect.Pgsql
+            && expectedFunctionName is not null
+            && (trigger.FunctionSchema != DmsSchema || trigger.FunctionName != expectedFunctionName)
+        )
         {
             enqueueIssues.Add(
                 new EnqueueIssue(
                     DocumentCacheEnqueueTriggerStatus.Invalid,
                     $"{triggerName} trigger uses an unexpected function."
+                )
+            );
+        }
+
+        if (
+            dialect == SqlDialect.Mssql
+            && !HasExpectedMssqlDocumentEnqueueTriggerDefinition(trigger.Definition)
+        )
+        {
+            enqueueIssues.Add(
+                new EnqueueIssue(
+                    DocumentCacheEnqueueTriggerStatus.Invalid,
+                    $"{triggerName} trigger has unexpected semantics."
                 )
             );
         }
@@ -1405,7 +1467,9 @@ internal static class DocumentCacheInventoryValidatorSupport
             SqlDialect.Pgsql => """
                 SELECT
                     trigger_info.tgenabled <> 'D' AS IsEnabled,
-                    proc.proname AS FunctionName
+                    proc_namespace.nspname AS FunctionSchema,
+                    proc.proname AS FunctionName,
+                    pg_catalog.pg_get_functiondef(proc.oid) AS Definition
                 FROM pg_catalog.pg_trigger trigger_info
                 INNER JOIN pg_catalog.pg_class rel
                     ON rel.oid = trigger_info.tgrelid
@@ -1413,6 +1477,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                     ON n.oid = rel.relnamespace
                 INNER JOIN pg_catalog.pg_proc proc
                     ON proc.oid = trigger_info.tgfoid
+                INNER JOIN pg_catalog.pg_namespace proc_namespace
+                    ON proc_namespace.oid = proc.pronamespace
                 WHERE NOT trigger_info.tgisinternal
                   AND trigger_info.tgname = @triggerName
                   AND n.nspname = @schema
@@ -1421,7 +1487,9 @@ internal static class DocumentCacheInventoryValidatorSupport
             SqlDialect.Mssql => """
                 SELECT
                     CASE WHEN triggers.is_disabled = 0 THEN 1 ELSE 0 END AS IsEnabled,
-                    CAST(NULL AS nvarchar(128)) AS FunctionName
+                    CAST(NULL AS nvarchar(128)) AS FunctionSchema,
+                    CAST(NULL AS nvarchar(128)) AS FunctionName,
+                    OBJECT_DEFINITION(triggers.object_id) AS Definition
                 FROM sys.triggers triggers
                 INNER JOIN sys.tables tables
                     ON tables.object_id = triggers.parent_id
@@ -1444,21 +1512,26 @@ internal static class DocumentCacheInventoryValidatorSupport
                 ],
                 reader => new TriggerSnapshot(
                     ReadBooleanLike(reader, "IsEnabled"),
-                    ReadNullableString(reader, "FunctionName")
+                    ReadNullableString(reader, "FunctionSchema"),
+                    ReadNullableString(reader, "FunctionName"),
+                    ReadNullableString(reader, "Definition")
                 ),
                 cancellationToken
             )
             .ConfigureAwait(false);
     }
 
-    private static async Task<bool> FunctionExistsAsync(
+    private static async Task<FunctionSnapshot?> ReadPgsqlFunctionAsync(
         DbConnection connection,
         string functionName,
         CancellationToken cancellationToken
     )
     {
         const string sql = """
-            SELECT 1
+            SELECT
+                n.nspname AS FunctionSchema,
+                proc.proname AS FunctionName,
+                pg_catalog.pg_get_functiondef(proc.oid) AS Definition
             FROM pg_catalog.pg_proc proc
             INNER JOIN pg_catalog.pg_namespace n
                 ON n.oid = proc.pronamespace
@@ -1467,14 +1540,18 @@ internal static class DocumentCacheInventoryValidatorSupport
               AND pg_catalog.pg_get_function_identity_arguments(proc.oid) = ''
             """;
 
-        return await ExecuteScalarAsync<int?>(
+        return await ExecuteSingleOrDefaultAsync(
                 connection,
                 sql,
                 [Parameter("schema", DmsSchema), Parameter("functionName", functionName)],
+                reader => new FunctionSnapshot(
+                    reader.GetString(reader.GetOrdinal("FunctionSchema")),
+                    reader.GetString(reader.GetOrdinal("FunctionName")),
+                    reader.GetString(reader.GetOrdinal("Definition"))
+                ),
                 cancellationToken
             )
-            .ConfigureAwait(false)
-            is not null;
+            .ConfigureAwait(false);
     }
 
     private static async Task RequireSingletonRowAsync(
@@ -1588,6 +1665,99 @@ internal static class DocumentCacheInventoryValidatorSupport
     private static string BuildIssueMessage<TIssue>(IReadOnlyList<TIssue> issues)
         where TIssue : IValidationIssue => string.Join(" ", issues.Take(6).Select(issue => issue.Message));
 
+    private static bool HasExpectedPgsqlDocumentCacheUuidValidationFunctionDefinition(string? definition) =>
+        HasNormalizedTokens(
+            definition,
+            "_CANONICAL_DOCUMENT_UUID",
+            "DMSDOCUMENT",
+            "DOCUMENTUUID",
+            "NEWDOCUMENTID",
+            "NEWDOCUMENTUUID",
+            "<>",
+            "RAISEEXCEPTION",
+            "RETURNNEW"
+        );
+
+    private static bool HasExpectedMssqlDocumentCacheUuidValidationTriggerDefinition(string? definition) =>
+        HasNormalizedTokens(
+            definition,
+            "INSERTED",
+            "DMSDOCUMENT",
+            "DOCUMENTID",
+            "DOCUMENTUUID",
+            "<>",
+            "THROW"
+        );
+
+    private static bool HasExpectedPgsqlDocumentEnqueueFunctionDefinition(
+        string functionName,
+        string? definition
+    )
+    {
+        if (
+            !HasNormalizedTokens(
+                definition,
+                "SECURITYDEFINER",
+                "DOCUMENTCACHESTATE",
+                "PROJECTIONLIFECYCLESTATE",
+                "STATEID=1",
+                "'DISABLED'",
+                "'RESETTING'",
+                "'REBUILDING'",
+                "'TRACKING'",
+                "STATEMENT_TIMESTAMP",
+                "DOCUMENTPROJECTIONWORK",
+                "REQUIREDCONTENTVERSION",
+                "FIRSTENQUEUEDAT",
+                "LASTENQUEUEDAT",
+                "ONCONFLICT",
+                "DOUPDATE",
+                "WORKREQUIREDCONTENTVERSION<EXCLUDEDREQUIREDCONTENTVERSION",
+                "RETURNNULL"
+            )
+        )
+        {
+            return false;
+        }
+
+        if (functionName == DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlInsertFunction)
+        {
+            return HasNormalizedTokens(definition, "FROMNEW_ROWS");
+        }
+
+        if (functionName == DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlUpdateFunction)
+        {
+            return HasNormalizedTokens(definition, "NEW_ROWS", "OLD_ROWS", "<>");
+        }
+
+        return false;
+    }
+
+    private static bool HasExpectedMssqlDocumentEnqueueTriggerDefinition(string? definition) =>
+        HasNormalizedTokens(
+            definition,
+            "DOCUMENTCACHESTATE",
+            "PROJECTIONLIFECYCLESTATE",
+            "STATEID=1",
+            "'DISABLED'",
+            "'RESETTING'",
+            "'REBUILDING'",
+            "'TRACKING'",
+            "INSERTED",
+            "DELETED",
+            "MAX",
+            "GROUPBYIDOCUMENTID",
+            "DMSDOCUMENTPROJECTIONWORK",
+            "UPDATEWORK",
+            "SETWORKREQUIREDCONTENTVERSION=REQREQUIREDCONTENTVERSION",
+            "WORKREQUIREDCONTENTVERSION<REQREQUIREDCONTENTVERSION",
+            "INSERTINTODMSDOCUMENTPROJECTIONWORK",
+            "LEFTJOINDMSDOCUMENTPROJECTIONWORK"
+        );
+
+    private static bool HasNormalizedTokens(string? definition, params string[] tokens) =>
+        !string.IsNullOrWhiteSpace(definition) && ContainsAll(NormalizeDefinition(definition), tokens);
+
     private static bool ContainsAll(string value, params string[] tokens) =>
         Array.TrueForAll(tokens, token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
 
@@ -1597,6 +1767,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 .Where(character =>
                     char.IsLetterOrDigit(character)
                     || character == '='
+                    || character == '<'
+                    || character == '>'
                     || character == '_'
                     || character == '\''
                 )
@@ -1760,7 +1932,14 @@ internal static class DocumentCacheInventoryValidatorSupport
 
     private sealed record IndexSnapshot(IReadOnlyList<string> Columns, bool IsUsable);
 
-    private sealed record TriggerSnapshot(bool IsEnabled, string? FunctionName);
+    private sealed record TriggerSnapshot(
+        bool IsEnabled,
+        string? FunctionSchema,
+        string? FunctionName,
+        string? Definition
+    );
+
+    private sealed record FunctionSnapshot(string FunctionSchema, string FunctionName, string Definition);
 
     private sealed record QueryParameter(string Name, object Value);
 

@@ -137,6 +137,57 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_rejects_a_uuid_validation_trigger_with_the_expected_name_but_wrong_body()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]
+            ON [dms].[DocumentCache]
+            AFTER INSERT, UPDATE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                RETURN;
+            END;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+    }
+
+    [Test]
+    public async Task It_rejects_an_enqueue_trigger_with_the_expected_name_but_wrong_body()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]
+            ON [dms].[Document]
+            AFTER INSERT, UPDATE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                RETURN;
+            END;
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
+        result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Invalid);
+    }
+
+    [Test]
     public async Task It_classifies_missing_singleton_rows_as_missing_inventory()
     {
         await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
