@@ -308,7 +308,6 @@ public enum DocumentCacheTargetMappingFailureReason
 {
     ResourceKeyMissingFromMappingSet = 1,
     ReadPlanMissing = 2,
-    DescriptorMaterializationPathMissing = 3,
     UnsupportedResourceStorageKind = 4,
     ConcreteResourceModelMissing = 5,
     ConcreteResourceModelMismatch = 6,

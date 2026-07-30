@@ -182,7 +182,6 @@ public class Given_DocumentCacheMaterializerContract
             .BeEquivalentTo(
                 "ResourceKeyMissingFromMappingSet",
                 "ReadPlanMissing",
-                "DescriptorMaterializationPathMissing",
                 "UnsupportedResourceStorageKind",
                 "ConcreteResourceModelMissing",
                 "ConcreteResourceModelMismatch"
