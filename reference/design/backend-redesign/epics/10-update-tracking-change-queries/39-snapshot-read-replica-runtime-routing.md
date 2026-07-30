@@ -60,14 +60,18 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 - Read-write and replica-`NotApplicable` pipelines select the primary.
 - A configured but failing derivative never falls back to another target.
 - Target selection runs once per request before fingerprint validation, and fingerprint validation, resource-key validation, authorization SQL, repository queries, and document hydration all use that selected target.
-- The E18 `DocumentCache` read path obeys the same request-scoped selection. Cache lookup,
-  lifecycle checks, canonical `ContentVersion` comparison, and relational fallback use the
-  selected physical database. A derivative request never reads cache state through the
-  parent primary connection; if the cache adapter cannot bind every one of those reads to
-  the selected target, cache acceleration is bypassed for that request. Optional direct
-  fill is also bypassed for `Snapshot` and `ReadReplica` targets because it writes
-  `dms.DocumentCache`; a derivative-eligible GET remains read-only. The E18 configuration
-  gate enables a use path and never overrides the target already selected by this story.
+- When the E18 `DocumentCache` read path is present in the target release, it obeys the same
+  request-scoped selection. Cache lookup, lifecycle checks, canonical `ContentVersion`
+  comparison, and relational fallback use the selected physical database. A derivative
+  request never reads cache state through the parent primary connection; if the cache
+  adapter cannot bind every one of those reads to the selected target, cache acceleration
+  is bypassed for that request. Expected connection-establishment failure during cache
+  acquisition is treated as an unavailable cache read and falls through to relational
+  acquisition on the same selected target; caller cancellation and unexpected or
+  programming exceptions propagate unchanged. Optional direct fill is also bypassed for
+  `Snapshot` and `ReadReplica` targets because it writes `dms.DocumentCache`; a
+  derivative-eligible GET remains read-only. The E18 configuration gate enables a use path
+  and never overrides the target already selected by this story.
 
 ### Endpoint coverage
 
@@ -96,8 +100,17 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 - Recreating a snapshot at the same connection string recovers after the derivative validation TTL without restarting DMS, including when data-store cache refresh is disabled.
 - Replaced or removed derivatives evict and dispose obsolete pooled data sources without interrupting in-flight requests, once the data-store configuration cache has refreshed to reflect the change. Obsolescence is evaluated across every effective target that can share a pooled object. If a primary, another derivative, or a target under another data store still owns the same connection-string-keyed pool, removing or replacing one derivative does not evict or dispose it. Effective-target ownership, reference or lease tracking, independently owned target pools, or an equivalent mechanism ensures disposal occurs only after the last configured owner is gone and in-flight users have completed. The validation TTL does not supply configuration visibility: it bounds reuse of a verdict about an already-visible connection string, while a corrected, re-pointed, or removed CMS row is observed only when the configuration cache reloads. `ConfigurationServiceDataStoreProvider.RefreshInstancesIfExpiredAsync` performs no periodic refresh when `DataStoreCacheRefreshEnabled` is `false` or `DataStoreCacheExpirationSeconds` is non-positive, and no operator-facing data-store reload endpoint exists, so under those settings a CMS derivative edit is not guaranteed to be observed and restart is the deterministic operator action. Other existing `LoadDataStores` triggers can reload the tenant cache incidentally and expose a changed derivative without a restart; as `29-snapshot-support.md` § Derivative validation TTL records, that is not the supported observation boundary and is not a recovery workflow. This story adds neither a reload endpoint nor a new trigger.
 - PostgreSQL satisfies that lifecycle through its owned `NpgsqlDataSource` objects. SQL
-  Server does not introduce an application-owned data-source cache: after the final
-  configured owner and in-flight lease for a retired connection string are gone, it calls
+  Server does not introduce an application-owned data-source cache. DMS constructs each
+  derivative effective connection string through `SqlConnectionStringBuilder` inside the
+  connection-acquisition boundary and sets its `PoolBlockingPeriod` to
+  `PoolBlockingPeriod.NeverBlock`, overriding
+  any operator-supplied derivative value while passing primary connection strings through
+  unchanged. This prevents SqlClient's login/timeout blocking period from replaying a
+  failed open on the immediately following derivative request. The effective provider
+  string, including the forced derivative setting, is the SQL Server pool and ownership
+  identity: a primary and derivative with otherwise identical stored text use distinct
+  pools, while derivatives with the same effective string may share one. After the final
+  configured owner and in-flight lease for a retired effective string are gone, DMS calls
   `SqlConnection.ClearPool` for that exact SqlClient pool. It never uses
   `SqlConnection.ClearAllPools`, because clearing unrelated primary or derivative pools
   would violate the ownership and uninterrupted-request rules above. Leaving a retired
@@ -128,19 +141,33 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 - Tests cover derivative replacement and removal, obsolete pool disposal, and uninterrupted in-flight requests, arranging a data-store configuration refresh so the changed rows are observable. A test that expects replacement to take effect without that refresh is asserting behavior this design does not provide.
 - Tests prove the derivative validation TTL stays bounded with `DataStoreCacheRefreshEnabled` set to `false` and with a zero or negative `DataStoreCacheExpirationSeconds`, and that a shorter data-store cache interval shortens the effective TTL.
 - Settings-resolution tests cover `DerivativeValidationCacheExpirationSeconds` at zero, negative, absent, `1`, `3600`, and above `3600`, asserting the resolved effective value and the startup warning for each out-of-range case.
-- Tests prove failed, missing, and malformed derivative validations are not cached, so the immediately following request revalidates rather than reusing the failure.
+- Tests prove failed, missing, and malformed derivative validations are not cached, so the immediately following request revalidates rather than reusing the failure. SQL Server coverage makes a derivative open fail with a login or timeout error and restores availability at the same effective connection string before that next request, proving the second request reaches the server rather than receiving a SqlClient pool-blocking replay.
 - Tests use a Primary and a derivative with identical connection-string text and populate their fingerprint and resource-key validation verdicts in both orders, proving each target retains its own cache policy: the Primary verdict remains permanent, while the derivative success remains bounded and its failed, missing, or malformed verdict is evicted immediately.
 - A startup/readiness regression test attaches offline or provider-invalid snapshot and read-replica derivatives to a valid primary and proves startup instance validation and health/readiness connection selection use only the primary, create no derivative validation-cache or pooled-data-source entry, and leave each derivative to be validated on the first request that selects it.
-- Pool-lifecycle tests cover a primary and derivative sharing one connection-string-keyed pool and derivatives under different parent data stores sharing one pool. Removing or replacing one owner after configuration refresh leaves the pool available to every remaining configured owner and in-flight request, and disposal occurs only after the final owner is gone and its in-flight users complete.
+- Pool-lifecycle tests cover targets that share one effective connection-string-keyed pool, including derivatives under different parent data stores. Removing or replacing one owner after configuration refresh leaves the pool available to every remaining configured owner and in-flight request, and disposal occurs only after the final owner is gone and its in-flight users complete. SQL Server separately proves that a primary and derivative with otherwise identical stored text use distinct effective pools because only the derivative forces `PoolBlockingPeriod.NeverBlock`.
 - Provider-specific pool-lifecycle coverage proves PostgreSQL disposes only the retired
-  `NpgsqlDataSource` and SQL Server calls `SqlConnection.ClearPool` only for the retired
-  connection string after its final owner and in-flight lease are gone; an unrelated
-  SqlClient pool remains usable.
+  `NpgsqlDataSource`; SQL Server forces `PoolBlockingPeriod.NeverBlock` only for derivative
+  effective strings, leaves primary strings unchanged, and calls `SqlConnection.ClearPool`
+  only for the exact retired effective string after its final owner and in-flight lease are
+  gone. An unrelated SqlClient pool remains usable.
+- When E18 cache-backed reads are already present, integration tests use distinguishable
+  primary, snapshot, and read-replica databases and prove cache hits and relational
+  fallback stay on the selected target, primary cache JSON is never returned for a
+  derivative request, and derivative requests perform no direct fill write. With cache
+  reads enabled, an expected cache-adapter acquisition failure falls through to relational
+  acquisition on the same selected snapshot without attempting the primary; a supplied
+  cancellation from cache acquisition is not swallowed as a cache miss. Story 40 owns the
+  exact HTTP failure response when relational acquisition also fails.
 - The integration-test data-store provider double and configuration-provider unit tests are updated for the derivative-aware model.
 
 ## Dependencies
 
 - `38-cms-data-store-derivative-invariants.md` establishes the database invariants that make derivative selection unambiguous.
+- E18 `05-cache-backed-read-path.md` is not a prerequisite for this story to close. If E18
+  cache-backed reads are already present when this story lands, this story owns their
+  selected-target integration and the conditional tests above. If this story lands first,
+  E18 Story 05 owns that work when it adds cache-backed reads. The two features cannot ship
+  together until the integration is complete.
 
 ## Out of Scope
 
