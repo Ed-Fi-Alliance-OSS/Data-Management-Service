@@ -24,13 +24,19 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// <param name="HydrationBatchCount">
 /// Current-state hydration batches. Also previously invisible to the session recorder.
 /// </param>
+/// <param name="DocumentUuidLookupCount">
+/// Commands that resolve a document by its external <c>DocumentUuid</c>: the in-session PUT target
+/// lookup. Counted separately from <paramref name="ReferentialIdentityLookupCount"/> because the two
+/// verbs resolve their target through different keys.
+/// </param>
 public sealed record WriteSessionCommandStreamSummary(
     int TotalCommandCount,
     int BeginCount,
     int CommitCount,
     int RollbackCount,
     int ReferentialIdentityLookupCount,
-    int HydrationBatchCount
+    int HydrationBatchCount,
+    int DocumentUuidLookupCount
 );
 
 /// <summary>
@@ -44,9 +50,9 @@ public sealed record WriteSessionCommandStreamSummary(
 public static class WriteSessionCommandStreamScenarios
 {
     /// <summary>
-    /// A POST create must show the in-session target lookup, which reads
-    /// <c>dms.ReferentialIdentity</c> and was invisible to the session recorder before it was routed
-    /// through the session's command-creation seam. A create hydrates no current state.
+    /// A POST create shows exactly one in-session <c>dms.ReferentialIdentity</c> target lookup: the
+    /// initial observation the executor makes inside its own transaction. Nothing observes the target
+    /// again on the normal path, and a create hydrates no current state.
     /// </summary>
     public static void AssertCreateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -56,15 +62,16 @@ public static class WriteSessionCommandStreamScenarios
         ArgumentNullException.ThrowIfNull(summary);
 
         summary.ReferentialIdentityLookupCount.Should().Be(1);
+        summary.DocumentUuidLookupCount.Should().Be(0);
         summary.HydrationBatchCount.Should().Be(0);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
         AssertCommittedTransactionBoundary(summary);
     }
 
     /// <summary>
-    /// A PUT against an existing target must show the hydration batch, which the session recorder
-    /// could not see before hydration was routed through the session. PUT resolves its target before
-    /// the session opens, so no in-session <c>dms.ReferentialIdentity</c> read appears here yet.
+    /// A PUT against an existing target shows its hydration batch plus exactly one in-session
+    /// <c>DocumentUuid</c> target lookup: PUT resolves its target by external id inside the write
+    /// transaction, so no <c>dms.ReferentialIdentity</c> read appears on this path.
     /// </summary>
     public static void AssertUpdateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -74,24 +81,19 @@ public static class WriteSessionCommandStreamScenarios
         ArgumentNullException.ThrowIfNull(summary);
 
         summary.HydrationBatchCount.Should().Be(1);
+        summary.DocumentUuidLookupCount.Should().Be(1);
         summary.ReferentialIdentityLookupCount.Should().Be(0);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
         AssertCommittedTransactionBoundary(summary);
     }
 
     /// <summary>
-    /// A POST that resolves to an existing document hydrates current state but issues no in-session
-    /// target lookup.
+    /// A POST that resolves to an existing document hydrates current state and shows exactly one
+    /// in-session <c>dms.ReferentialIdentity</c> lookup — the same initial observation a POST create
+    /// makes. Every target resolution for this request now happens inside the write transaction the
+    /// recorder can see, and one lookup is the whole of it: the observation decides create-vs-update
+    /// for the attempt and is never repeated on the normal path.
     /// </summary>
-    /// <remarks>
-    /// The executor only re-resolves a POST target in-session when the incoming target context is
-    /// <c>CreateNew</c> or the request carries an etag precondition. Here the pre-session lookup
-    /// already resolved an existing document, so the in-session re-lookup is skipped and the only
-    /// target resolution for this request happened outside the write transaction — on a separate
-    /// connection the session recorder cannot see. That is the duplicate-and-outside-the-transaction
-    /// resolution DMS-1332 later moves into the session; pinning it at zero here makes that move a
-    /// visible diff.
-    /// </remarks>
     public static void AssertPostAsUpdateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
         int expectedTotalCommandCount
@@ -99,10 +101,29 @@ public static class WriteSessionCommandStreamScenarios
     {
         ArgumentNullException.ThrowIfNull(summary);
 
-        summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.ReferentialIdentityLookupCount.Should().Be(1);
+        summary.DocumentUuidLookupCount.Should().Be(0);
         summary.HydrationBatchCount.Should().Be(1);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
         AssertCommittedTransactionBoundary(summary);
+    }
+
+    /// <summary>
+    /// A PUT whose target does not exist observes that inside the write transaction and rolls back.
+    /// The single in-session <c>DocumentUuid</c> lookup is the whole command stream: no hydration,
+    /// reference resolution, or persistence runs after a missing target, and nothing commits.
+    /// </summary>
+    public static void AssertMissingPutTargetStreamIsFullyObserved(WriteSessionCommandStreamSummary summary)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+
+        summary.DocumentUuidLookupCount.Should().Be(1);
+        summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.HydrationBatchCount.Should().Be(0);
+        summary.TotalCommandCount.Should().Be(1);
+        summary.BeginCount.Should().Be(1);
+        summary.CommitCount.Should().Be(0);
+        summary.RollbackCount.Should().Be(1);
     }
 
     /// <summary>

@@ -58,10 +58,14 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
 
         if (!storedRelationshipRequiresAuthorization && request.StoredNamespaceAuthorization is null)
         {
+            // No stored authorization runs, so this boundary observes nothing of its own. The target
+            // context it forwards is the executor's initial in-transaction observation, which now
+            // supplies what the later in-session reevaluation used to: reevaluating would replace a
+            // decision already made inside this transaction with a second, newer one.
             return new StoredRelationshipAuthorizationBoundary(
                 request,
                 null,
-                PostTargetReevaluation: PostTargetReevaluationMode.Allowed,
+                PostTargetReevaluation: PostTargetReevaluationMode.Suppressed,
                 ExistingTargetLocked: false
             );
         }
@@ -328,6 +332,12 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
             );
     }
 
+    /// <summary>
+    /// Selects the stored-authorization target for a POST. The first attempt consumes the executor's
+    /// initial in-transaction observation rather than repeating the lookup, so create-vs-update is
+    /// decided once per attempt. Only a target that vanishes between that observation and the lock
+    /// re-resolves, which keeps the pre-existing bounded race handling and its terminal write-conflict.
+    /// </summary>
     private async Task<StoredRelationshipAuthorizationTargetResolution> ResolvePostTargetAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetRequest.Post postTargetRequest,
@@ -335,20 +345,29 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         CancellationToken cancellationToken
     )
     {
+        var targetContext = request.TargetContext;
+
         for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
         {
-            var targetLookupResult = await _targetLookupResolver
-                .ResolveForPostAsync(
-                    request.MappingSet,
-                    request.WritePlan.Model.Resource,
-                    postTargetRequest.ReferentialId,
-                    postTargetRequest.CandidateDocumentUuid,
-                    writeSession.CreateCommandExecutor(),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            if (attemptIndex > 0)
+            {
+                var targetLookupResult = await _targetLookupResolver
+                    .ResolveForPostAsync(
+                        request.MappingSet,
+                        request.WritePlan.Model.Resource,
+                        postTargetRequest.ReferentialId,
+                        postTargetRequest.CandidateDocumentUuid,
+                        writeSession.CreateCommandExecutor(),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
 
-            var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
+                targetContext =
+                    RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
+                    ?? throw new InvalidOperationException(
+                        $"Relational POST stored relationship authorization target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+                    );
+            }
 
             switch (targetContext)
             {
@@ -391,7 +410,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
 
                 default:
                     throw new InvalidOperationException(
-                        $"Relational POST stored relationship authorization target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+                        $"Relational POST stored relationship authorization does not support target context '{targetContext.GetType().Name}'."
                     );
             }
         }

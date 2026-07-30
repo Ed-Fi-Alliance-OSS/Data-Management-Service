@@ -140,6 +140,14 @@ file static class WriteSessionCommandStreamTestSupport
             HydrationBatchCount: recorder.Commands.Count(command =>
                 command.CommandText.Contains("\"edfi\".\"School\"", StringComparison.Ordinal)
                 && command.CommandText.Contains("\"edfi\".\"SchoolAddress\"", StringComparison.Ordinal)
+            ),
+            // The PUT target lookup is the only command that filters dms."Document" on the external
+            // DocumentUuid; the POST lookup reaches the same table through "ReferentialIdentity".
+            DocumentUuidLookupCount: recorder.Commands.Count(command =>
+                command.CommandText.Contains(
+                    "document.\"DocumentUuid\" = @documentUuid",
+                    StringComparison.Ordinal
+                )
             )
         );
 }
@@ -299,10 +307,10 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Put_Update
     public void It_updates_the_document() => _result.Should().BeOfType<UpdateResult.UpdateSuccess>();
 
     [Test]
-    public void It_observes_the_hydration_batch_that_the_recorder_previously_could_not_see() =>
+    public void It_observes_the_hydration_batch_and_the_in_session_put_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 4
+            expectedTotalCommandCount: 5
         );
 }
 
@@ -354,9 +362,47 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_As_Updat
     public void It_updates_the_existing_document() => _result.Should().BeOfType<UpsertResult.UpdateSuccess>();
 
     [Test]
-    public void It_observes_the_hydration_batch_and_pins_the_absent_in_session_target_lookup() =>
+    public void It_observes_the_hydration_batch_and_the_single_in_session_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertPostAsUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 4
+            expectedTotalCommandCount: 5
+        );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Missing_Put_Target
+    : PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _missingDocumentUuid = new(
+        Guid.Parse("2b2b2b2b-0000-0000-0000-000000000004")
+    );
+
+    private UpdateResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpdateDocumentById(
+            WriteSessionCommandStreamTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                WriteSessionCommandStreamTestSupport.CreateRequestBody(3),
+                _missingDocumentUuid,
+                "postgresql-write-session-stream-missing-put"
+            )
+        );
+    }
+
+    [Test]
+    public void It_reports_the_document_as_not_existing() =>
+        _result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
+
+    [Test]
+    public void It_observes_the_missing_target_inside_the_transaction_and_rolls_back() =>
+        WriteSessionCommandStreamScenarios.AssertMissingPutTargetStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder)
         );
 }

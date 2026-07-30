@@ -65,6 +65,9 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWritePersister _persister =
         persister ?? throw new ArgumentNullException(nameof(persister));
 
+    private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
+        targetLookupResolver ?? throw new ArgumentNullException(nameof(targetLookupResolver));
+
     private readonly RelationalWriteExecutionStateResolver _executionStateResolver = new(
         targetLookupResolver,
         currentStateLoader,
@@ -103,19 +106,19 @@ internal sealed class DefaultRelationalWriteExecutor(
     );
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
-        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorInput input,
         CancellationToken cancellationToken = default
-    ) => ExecuteAsyncInternal(request, cancellationToken);
+    ) => ExecuteAsyncInternal(input, cancellationToken);
 
     private async Task<RelationalWriteExecutorResult> ExecuteAsyncInternal(
-        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorInput input,
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(input);
         cancellationToken.ThrowIfCancellationRequested();
         RelationalWriteExecutorResult? writeFailureResult = null;
-        var executionRequest = request;
+        RelationalWriteExecutorRequest? executionRequest = null;
         RelationalWriteCurrentState? currentState = null;
 
         await using var writeSession = await _writeSessionFactory
@@ -124,6 +127,22 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         try
         {
+            // The target document is observed inside this session's transaction before any
+            // authorization, precondition, reference resolution, hydration, or DML runs. That first
+            // observation is the decision for the attempt: no normal path re-observes it, so a create
+            // that lands afterwards can no longer turn this write into an update.
+            var initialTarget = await ResolveInitialTargetAsync(input, writeSession, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (initialTarget.ImmediateResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return initialTarget.ImmediateResult;
+            }
+
+            var request = input.Resolve(initialTarget.TargetContext!);
+            executionRequest = request;
+
             var storedAuthorizationBoundary = await _storedRelationshipAuthorizationOrchestrator
                 .ResolveAsync(executionRequest, writeSession, cancellationToken)
                 .ConfigureAwait(false);
@@ -402,7 +421,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildValidationFailureResult(
-                request.OperationKind,
+                input.OperationKind,
                 ex.ValidationFailures
             );
         }
@@ -414,16 +433,13 @@ internal sealed class DefaultRelationalWriteExecutor(
             // failure path. We do NOT broaden this catch to InvalidOperationException — generic
             // invariant violations remain fail-fast for true backend bugs.
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return RelationalWriteExecutorResults.BuildPlannerContractMismatchResult(
-                request.OperationKind,
-                ex
-            );
+            return RelationalWriteExecutorResults.BuildPlannerContractMismatchResult(input.OperationKind, ex);
         }
         catch (RelationalWriteRelationshipAuthorizationNotAuthorizedException ex)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildRelationshipAuthorizationFailureResult(
-                request.OperationKind,
+                input.OperationKind,
                 ex.RelationshipFailure
             );
         }
@@ -431,13 +447,22 @@ internal sealed class DefaultRelationalWriteExecutor(
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
-                request.OperationKind,
+                input.OperationKind,
                 [ex.FailureMessage],
                 ex.Diagnostics
             );
         }
         catch (DbException ex)
         {
+            // A failure during the initial target observation has no resolved request to attribute a
+            // write failure to, and the observation itself cannot violate a write constraint, so it
+            // stays an unmapped fault exactly as the pre-session lookup was.
+            if (executionRequest is null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+
             bool isMappedWriteFailure;
 
             try
@@ -469,6 +494,93 @@ internal sealed class DefaultRelationalWriteExecutor(
             throw;
         }
     }
+
+    /// <summary>
+    /// Resolves the write's target document on the write session's command seam. POST resolves by
+    /// referential id and always yields a target context; PUT resolves by document uuid and shapes a
+    /// missing target into the caller-visible not-exists or precondition-failed result, which the
+    /// caller returns after rolling the session back.
+    /// </summary>
+    private async Task<InitialTargetResolution> ResolveInitialTargetAsync(
+        RelationalWriteExecutorInput input,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var commandExecutor = writeSession.CreateCommandExecutor();
+
+        if (
+            input.TargetRequest is RelationalWriteTargetRequest.Post(
+                var referentialId,
+                var candidateDocumentUuid
+            )
+        )
+        {
+            var postLookupResult = await _targetLookupResolver
+                .ResolveForPostAsync(
+                    input.MappingSet,
+                    input.WritePlan.Model.Resource,
+                    referentialId,
+                    candidateDocumentUuid,
+                    commandExecutor,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return new InitialTargetResolution(
+                RelationalWriteSupport.TryTranslateTargetContext(postLookupResult)
+                    ?? throw BuildUnsupportedLookupResultException(input, postLookupResult),
+                null
+            );
+        }
+
+        if (input.TargetRequest is RelationalWriteTargetRequest.Put(var documentUuid))
+        {
+            var putLookupResult = await _targetLookupResolver
+                .ResolveForPutAsync(
+                    input.MappingSet,
+                    input.WritePlan.Model.Resource,
+                    documentUuid,
+                    commandExecutor,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (RelationalWriteSupport.TryTranslateTargetContext(putLookupResult) is { } targetContext)
+            {
+                return new InitialTargetResolution(targetContext, null);
+            }
+
+            if (putLookupResult is not RelationalWriteTargetLookupResult.NotFound)
+            {
+                throw BuildUnsupportedLookupResultException(input, putLookupResult);
+            }
+
+            // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing
+            // PUT target yields the precondition-failed (412) result rather than not-exists (404).
+            return new InitialTargetResolution(
+                null,
+                input.WritePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        input.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+            );
+        }
+
+        throw new InvalidOperationException(
+            $"Relational write target resolution does not support target request type '{input.TargetRequest.GetType().Name}'."
+        );
+    }
+
+    private static InvalidOperationException BuildUnsupportedLookupResultException(
+        RelationalWriteExecutorInput input,
+        RelationalWriteTargetLookupResult lookupResult
+    ) =>
+        new(
+            $"Relational {input.OperationKind} target lookup returned unsupported result type '{lookupResult.GetType().Name}'."
+        );
 
     private static bool HasDescriptorReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
         resolvedReferences.InvalidDescriptorReferences.Count > 0;
@@ -519,4 +631,9 @@ internal sealed class DefaultRelationalWriteExecutor(
             DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
         );
     }
+
+    private sealed record InitialTargetResolution(
+        RelationalWriteTargetContext? TargetContext,
+        RelationalWriteExecutorResult? ImmediateResult
+    );
 }

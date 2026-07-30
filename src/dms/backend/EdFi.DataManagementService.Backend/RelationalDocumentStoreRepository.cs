@@ -21,7 +21,6 @@ namespace EdFi.DataManagementService.Backend;
 public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
     IRelationalWriteExecutor writeExecutor,
-    IRelationalWriteTargetLookupService targetLookupService,
     IRelationalDeleteEtagPreconditionChecker deleteEtagPreconditionChecker,
     IDescriptorWriteHandler descriptorWriteHandler,
     IDescriptorReadHandler descriptorReadHandler,
@@ -51,8 +50,6 @@ public sealed class RelationalDocumentStoreRepository(
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteExecutor _writeExecutor =
         writeExecutor ?? throw new ArgumentNullException(nameof(writeExecutor));
-    private readonly IRelationalWriteTargetLookupService _targetLookupService =
-        targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IRelationalDeleteEtagPreconditionChecker _deleteEtagPreconditionChecker =
         deleteEtagPreconditionChecker
         ?? throw new ArgumentNullException(nameof(deleteEtagPreconditionChecker));
@@ -2137,21 +2134,6 @@ public sealed class RelationalDocumentStoreRepository(
 
         for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
         {
-            var targetResolution = await ResolveTargetContextAsync(
-                    mappingSet,
-                    resource,
-                    operationKind,
-                    targetRequest,
-                    writePrecondition
-                )
-                .ConfigureAwait(false);
-
-            if (targetResolution.ImmediateResult is not null)
-            {
-                return executorResultProjector(targetResolution.ImmediateResult);
-            }
-
-            var targetContext = targetResolution.TargetContext!;
             if (readPlanPreparation.ReadPlan is null)
             {
                 return failureFactory(
@@ -2160,9 +2142,11 @@ public sealed class RelationalDocumentStoreRepository(
                 );
             }
 
+            // Each attempt hands the executor a fresh input, so every retry resolves its target inside
+            // its own write session instead of reusing an observation from the previous attempt.
             var executorResult = await _writeExecutor
                 .ExecuteAsync(
-                    new RelationalWriteExecutorRequest(
+                    new RelationalWriteExecutorInput(
                         mappingSet,
                         operationKind,
                         targetRequest,
@@ -2177,7 +2161,6 @@ public sealed class RelationalDocumentStoreRepository(
                             DocumentReferences: documentReferences,
                             DescriptorReferences: descriptorReferences
                         ),
-                        targetContext: targetContext,
                         profileWriteContext: profileWriteContext,
                         writePrecondition: writePrecondition,
                         storedRelationshipAuthorization: storedRelationshipAuthorization,
@@ -2211,58 +2194,6 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
-    private async Task<TargetContextResolution> ResolveTargetContextAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        RelationalWriteOperationKind operationKind,
-        RelationalWriteTargetRequest targetRequest,
-        WritePrecondition writePrecondition
-    )
-    {
-        var targetLookupResult = targetRequest switch
-        {
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
-                await _targetLookupService
-                    .ResolveForPostAsync(mappingSet, resource, referentialId, candidateDocumentUuid)
-                    .ConfigureAwait(false),
-            RelationalWriteTargetRequest.Put(var documentUuid) => await _targetLookupService
-                .ResolveForPutAsync(mappingSet, resource, documentUuid)
-                .ConfigureAwait(false),
-            _ => throw new InvalidOperationException(
-                $"Relational repository target lookup does not support target request type '{targetRequest.GetType().Name}'."
-            ),
-        };
-
-        var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
-
-        if (targetContext is not null)
-        {
-            return new TargetContextResolution(targetContext, null);
-        }
-
-        if (
-            operationKind == RelationalWriteOperationKind.Put
-            && targetLookupResult is RelationalWriteTargetLookupResult.NotFound
-        )
-        {
-            // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing PUT
-            // target yields the precondition-failed (412) result rather than not-exists (404).
-            return new TargetContextResolution(
-                null,
-                writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
-                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                        operationKind,
-                        ETagPreconditionFailureReason.TargetDoesNotExist
-                    )
-                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
-            );
-        }
-
-        throw new InvalidOperationException(
-            $"Relational {operationKind} repository target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
-        );
-    }
-
     private static ExistingDocumentReadPlanPreparation PrepareExistingDocumentReadPlan(
         MappingSet mappingSet,
         QualifiedResourceName resource
@@ -2287,11 +2218,6 @@ public sealed class RelationalDocumentStoreRepository(
     private sealed record ExistingDocumentReadPlanPreparation(
         ResourceReadPlan? ReadPlan,
         string? FailureMessage
-    );
-
-    private sealed record TargetContextResolution(
-        RelationalWriteTargetContext? TargetContext,
-        RelationalWriteExecutorResult? ImmediateResult
     );
 
     private abstract record WriteGuardRailPreflightResult<TResult>

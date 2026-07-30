@@ -86,6 +86,22 @@ internal sealed class BlockingPostTargetLookupResolver(ConcurrentPostCreateRaceC
             cancellationToken
         );
     }
+
+    // Ungated on purpose: this fixture coordinates a POST create race and never issues a PUT.
+    public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    ) =>
+        _innerResolver.ResolveForPutAsync(
+            mappingSet,
+            resource,
+            documentUuid,
+            commandExecutor,
+            cancellationToken
+        );
 }
 
 file static class PostAsUpdateIntegrationTestSupport

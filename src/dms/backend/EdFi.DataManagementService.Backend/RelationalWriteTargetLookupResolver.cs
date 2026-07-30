@@ -41,6 +41,18 @@ public interface IRelationalWriteTargetLookupResolver
         IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Resolves the PUT target inside an open write session, on the same session command-creation
+    /// seam as <see cref="ResolveForPostAsync"/>.
+    /// </summary>
+    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecutor commandExecutor)
@@ -103,6 +115,25 @@ internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTarg
             resource,
             referentialId,
             candidateDocumentUuid,
+            cancellationToken
+        );
+    }
+
+    public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+
+        return RelationalWriteTargetLookupSupport.ResolveForPutAsync(
+            commandExecutor,
+            mappingSet,
+            resource,
+            documentUuid,
             cancellationToken
         );
     }

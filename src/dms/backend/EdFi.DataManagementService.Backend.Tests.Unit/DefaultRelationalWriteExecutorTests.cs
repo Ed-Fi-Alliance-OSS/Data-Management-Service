@@ -44,7 +44,16 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
     private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
     private RecordingRelationalReadMaterializer _readMaterializer = null!;
+    private RelationalWriteTargetContext _arrangedTargetContext = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
+
+    private static readonly DocumentUuid CreateDocumentUuid = new(
+        Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+    );
+
+    private static readonly DocumentUuid UpdateDocumentUuid = new(
+        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
+    );
 
     [SetUp]
     public void Setup()
@@ -209,7 +218,9 @@ public class Given_Default_Relational_Write_Executor
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
+        // The initial observation precedes reference resolution, so it happens even when the
+        // attempt short-circuits on a reference failure; nothing re-observes afterwards.
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -411,7 +422,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -624,7 +635,7 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         // Stored authorization plus reference resolution, both now on the session's executor.
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(2);
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -876,7 +887,7 @@ public class Given_Default_Relational_Write_Executor
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -910,7 +921,8 @@ public class Given_Default_Relational_Write_Executor
             );
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
+        // The initial PUT observation is the one session command this attempt reaches.
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -1012,11 +1024,9 @@ public class Given_Default_Relational_Write_Executor
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
-        // POST resolves its target inside the stored-authorization boundary and that lookup now runs
-        // on the session's command executor; PUT takes no in-session lookup on this path.
-        _writeSessionFactory
-            .Session.CreateCommandExecutorCallCount.Should()
-            .Be(operationKind is RelationalWriteOperationKind.Post ? 1 : 0);
+        // Both verbs observe their target once at the start of the session, on the session's
+        // command executor, before any authorization work.
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -1131,7 +1141,12 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer
             .CapturedRequest!.CurrentState.Should()
             .BeSameAs(_currentStateLoader.ResultToReturn);
-        _targetLookupResolver.CapturedCommandExecutor.Should().BeNull();
+        // PUT resolves its target once, at the start of the session, on the session's executor.
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupResolver
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -1145,11 +1160,7 @@ public class Given_Default_Relational_Write_Executor
             RelationalWriteOperationKind.Post,
             selectedBody: JsonNode.Parse("""{"name":"Lincoln High"}""")!
         );
-        var persistedTarget = new RelationalWritePersistResult(
-            910L,
-            ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
-            77L
-        );
+        var persistedTarget = new RelationalWritePersistResult(910L, CreateDocumentUuid, 77L);
         _noProfilePersister.ResultToReturn = persistedTarget;
 
         var result = await _sut.ExecuteAsync(request);
@@ -1185,11 +1196,9 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
         );
         _currentStateLoader.ResultToReturn = CreateCurrentState(
-            request with
-            {
-                TargetContext = existingTargetContext,
-            },
-            45L
+            request,
+            45L,
+            existingTarget: existingTargetContext
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -1304,7 +1313,7 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -1774,7 +1783,218 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_re_evaluates_post_as_update_as_create_when_the_existing_target_disappears_before_current_state_load()
+    public async Task It_observes_the_post_create_target_once_on_the_session_before_any_other_work()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(0);
+        _targetLookupResolver
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_observes_the_post_existing_target_once_on_the_session()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(request, 44L);
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_observes_the_put_target_once_on_the_session()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _currentStateLoader.ResultToReturn = CreateCurrentState(request, 44L);
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupResolver
+            .CapturedCommandExecutor.Should()
+            .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_and_rolls_back_when_the_session_finds_no_put_target()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _targetLookupResolver.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+            );
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
+        // Nothing downstream of the observation runs for a target that does not exist.
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_and_rolls_back_when_a_wildcard_if_match_put_target_is_missing()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfMatch("*", IsWildcard: true)
+        );
+        _targetLookupResolver.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
+
+        var result = await _sut.ExecuteAsync(request);
+
+        // RFC 9110 13.1.1: a wildcard If-Match against a missing target is a precondition failure,
+        // not a not-exists result.
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_does_not_observe_the_post_target_again_when_an_etag_precondition_is_present()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(request, true, 44L);
+        request = request with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(
+                ComposedCurrentEtag(request, 44L),
+                IsWildcard: false
+            ),
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
+        // The precondition path used to trigger its own POST lookup; the initial observation now
+        // serves it, so the attempt still observes the target exactly once.
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_locks_the_observed_post_target_for_stored_authorization_without_a_second_observation()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdNoClaimsAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>();
+        // One observation, then the lock over the DocumentId it resolved, then the denial.
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _writeSessionFactory.Session.Commands.Should().ContainSingle();
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_retries_the_post_observation_once_when_the_observed_target_vanishes_before_the_lock()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        // A null lock read is the row vanishing between the observation and the lock.
+        _writeSessionFactory.Session.ScalarResultToReturn = null;
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
+            );
+        // The race path is the only one allowed to observe again, and it stays bounded at one retry.
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(2);
+        _writeSessionFactory.Session.Commands.Should().HaveCount(2);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_write_conflict_when_the_observed_post_target_disappears_before_current_state_load()
     {
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
@@ -1784,45 +2004,35 @@ public class Given_Default_Relational_Write_Executor
                 44L
             )
         );
-        var candidateDocumentUuid = (
-            (RelationalWriteTargetRequest.Post)request.TargetRequest
-        ).CandidateDocumentUuid;
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
-        );
         _currentStateLoader.ReturnMissingTarget = true;
+
         var result = await _sut.ExecuteAsync(request);
 
+        // The initial in-transaction observation decided this attempt is an update. A row that
+        // disappears afterwards cannot re-decide it as a create, so the attempt takes the
+        // write-conflict result and mutates nothing.
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(candidateDocumentUuid, ComposedWriteResultEtag(77L)),
-                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
-                )
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
             );
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
-        _writeFlattener
-            .CapturedInput!.TargetContext.Should()
-            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(candidateDocumentUuid));
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     [Test]
-    public async Task It_reuses_the_same_write_session_when_post_target_re_evaluation_loads_current_state_again()
+    public async Task It_reuses_the_same_write_session_for_the_post_target_observation_and_current_state_load()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
-            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 45L)
         );
 
-        _currentStateLoader.QueuedResults.Enqueue(null);
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
-        );
         _currentStateLoader.QueuedResults.Enqueue(
             new RelationalWriteCurrentState(
                 new DocumentMetadataRow(
@@ -1862,17 +2072,17 @@ public class Given_Default_Relational_Write_Executor
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
-        _currentStateLoader.LoadCallCount.Should().Be(2);
-        _currentStateLoader.CapturedRequests.Should().HaveCount(2);
-        _currentStateLoader.CapturedRequests[0].TargetContext.ObservedContentVersion.Should().Be(44L);
-        _currentStateLoader.CapturedRequests[1].TargetContext.ObservedContentVersion.Should().Be(45L);
-        _currentStateLoader.CapturedWriteSessions.Should().HaveCount(2);
+        // One observation, one current-state load, both on the session the executor opened.
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _currentStateLoader.CapturedRequests.Should().ContainSingle();
+        _currentStateLoader.CapturedRequests[0].TargetContext.ObservedContentVersion.Should().Be(45L);
+        _currentStateLoader.CapturedWriteSessions.Should().ContainSingle();
         _currentStateLoader
             .CapturedWriteSessions.Should()
             .OnlyContain(writeSession => ReferenceEquals(writeSession, _writeSessionFactory.Session));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentStateLoader
-            .CapturedRequests[1]
+            .CapturedRequests[0]
             .TargetContext.Should()
             .BeEquivalentTo(
                 new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 45L)
@@ -1890,32 +2100,50 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_returns_write_conflict_when_post_target_still_cannot_load_after_re_evaluation()
+    public async Task It_maps_a_create_landing_after_the_post_observation_to_write_conflict_without_updating()
     {
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
-            targetContext: new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                44L
-            )
+            selectedBody: JsonNode.Parse(
+                """
+                {"schoolId":255901,"name":"Lincoln High"}
+                """
+            )!
         );
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
+        var candidateDocumentUuid = (
+            (RelationalWriteTargetRequest.Post)request.TargetRequest
+        ).CandidateDocumentUuid;
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
         );
-        _currentStateLoader.ReturnMissingTarget = true;
+        _noProfilePersister.ExceptionToThrow = new StubDbException("concurrent duplicate key");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
 
         var result = await _sut.ExecuteAsync(request);
 
+        // The initial observation saw no row, so this attempt stays an insert. A create that commits
+        // afterwards is not re-observed into an update; it surfaces as the natural-key conflict the
+        // insert hits, mapped to the existing write-conflict result.
         result
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
             );
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _currentStateLoader.LoadCallCount.Should().Be(2);
-        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _writeFlattener
+            .CapturedInput!.TargetContext.Should()
+            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(candidateDocumentUuid));
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister
+            .CapturedRequest!.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -3203,11 +3431,9 @@ public class Given_Default_Relational_Write_Executor
                 throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
         }
 
-        // Stored authorization and reference resolution for both verbs, plus the in-session POST
-        // target lookup for POST — all now on the session's executor.
-        _writeSessionFactory
-            .Session.CreateCommandExecutorCallCount.Should()
-            .Be(operationKind is RelationalWriteOperationKind.Post ? 3 : 2);
+        // Stored authorization and reference resolution for both verbs, plus the initial in-session
+        // target observation, which both verbs now take on the session's executor.
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
@@ -3301,7 +3527,7 @@ public class Given_Default_Relational_Write_Executor
 
         // No authorization executor is created on this path; the one call is reference resolution,
         // which now runs on the session's executor.
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(2);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().BeEmpty();
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
@@ -4671,11 +4897,7 @@ public class Given_Default_Relational_Write_Executor
         {
             ProfileWriteContext = profileContext,
         };
-        var persistedTarget = new RelationalWritePersistResult(
-            910L,
-            ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
-            77L
-        );
+        var persistedTarget = new RelationalWritePersistResult(910L, CreateDocumentUuid, 77L);
 
         _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
             [
@@ -6150,7 +6372,7 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
-    private RelationalWriteExecutorRequest CreateNamespacePostCreateRequest(
+    private RelationalWriteExecutorInput CreateNamespacePostCreateRequest(
         string? mergedNamespace,
         JsonNode? selectedBody = null,
         WritePrecondition? writePrecondition = null
@@ -6234,7 +6456,7 @@ public class Given_Default_Relational_Write_Executor
             .Be(new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")));
         updateSuccess.ETag.Should().Be(ComposedWriteResultEtag(77L));
         // Stored authorization plus reference resolution, both now on the session's executor.
-        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(2);
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         GetSubjectRuntimeValue(
@@ -7043,7 +7265,7 @@ public class Given_Default_Relational_Write_Executor
         };
 
     private static RelationshipAuthorizationResult.Authorized CreateProposedSchoolIdRelationshipAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -7099,7 +7321,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateTransitivePeopleProposedRelationshipAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -7179,7 +7401,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateSelfPeopleExistingTargetRelationshipAuthorization(
-        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorInput request,
         SecurableElementKind securableElementKind
     )
     {
@@ -7310,7 +7532,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateStoredSchoolIdRelationshipAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -7347,7 +7569,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.NoClaims CreateStoredSchoolIdNoClaimsAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var authorized = CreateStoredSchoolIdRelationshipAuthorization(request);
@@ -7377,7 +7599,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.NoClaims CreateNamespaceRootNoClaimsAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -7427,7 +7649,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationFailure CreateProposedSchoolIdRelationshipFailure(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     ) =>
         CreateProposedRelationshipFailure(
             CreateProposedSchoolIdRelationshipAuthorization(request),
@@ -7462,7 +7684,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateSingleStrategyTwoSubjectRelationshipAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -7495,7 +7717,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateTwoStrategyTwoSubjectRelationshipAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -7536,7 +7758,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static RelationshipAuthorizationResult.Authorized CreateTwoSingleSubjectStrategyRelationshipAuthorization(
-        RelationalWriteExecutorRequest request
+        RelationalWriteExecutorInput request
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -7606,7 +7828,7 @@ public class Given_Default_Relational_Write_Executor
         );
 
     private static RelationshipAuthorizationSubject CreateRelationshipAuthorizationSubject(
-        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorInput request,
         TableWritePlan rootPlan,
         string columnName,
         string jsonPath,
@@ -7706,7 +7928,12 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static RelationalWriteExecutorRequest CreateRequest(
+    /// <summary>
+    /// Builds the executor input for an attempt and arranges the target the executor's own in-session
+    /// lookup observes for it. <paramref name="targetContext"/> is therefore an arrangement of what the
+    /// session resolver reports, not a value carried into the executor.
+    /// </summary>
+    private RelationalWriteExecutorInput CreateRequest(
         RelationalWriteOperationKind operationKind,
         bool allowIdentityUpdates = false,
         IReadOnlyList<DocumentReference>? documentReferences = null,
@@ -7722,8 +7949,8 @@ public class Given_Default_Relational_Write_Executor
         var resourceModel = CreateRelationalResourceModel(resolvedRootWritePlan.TableModel);
         var resourceWritePlan = new ResourceWritePlan(resourceModel, [resolvedRootWritePlan]);
         var mappingSet = CreateMappingSet(resourceModel, [resolvedRootWritePlan], dialect);
-        var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
-        var updateDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var createDocumentUuid = CreateDocumentUuid;
+        var updateDocumentUuid = UpdateDocumentUuid;
         var resolvedTargetContext =
             targetContext
             ?? (
@@ -7732,7 +7959,10 @@ public class Given_Default_Relational_Write_Executor
                     : new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
             );
 
-        return new RelationalWriteExecutorRequest(
+        _targetLookupResolver.ArrangeInitialTarget(operationKind, resolvedTargetContext);
+        _arrangedTargetContext = resolvedTargetContext;
+
+        return new RelationalWriteExecutorInput(
             mappingSet,
             operationKind,
             operationKind == RelationalWriteOperationKind.Put
@@ -7752,10 +7982,18 @@ public class Given_Default_Relational_Write_Executor
                 documentReferences ?? [],
                 descriptorReferences ?? []
             ),
-            targetContext: resolvedTargetContext,
             writePrecondition: writePrecondition
         );
     }
+
+    /// <summary>
+    /// The target context the current attempt's arrangement told the session resolver to report. Test
+    /// helpers that need the existing target's identity read it here, because the executor input no
+    /// longer carries a target.
+    /// </summary>
+    private RelationalWriteTargetContext.ExistingDocument ArrangedExistingTarget =>
+        _arrangedTargetContext as RelationalWriteTargetContext.ExistingDocument
+        ?? throw new InvalidOperationException("Expected an existing-document target context.");
 
     // The composed write-result etag the executor produces for a committed write at a given
     // ContentVersion: schema epoch from the standard test mapping set ("schema-hash"), JSON format,
@@ -7774,7 +8012,7 @@ public class Given_Default_Relational_Write_Executor
     // The composed current etag the write If-Match path produces for a request at a given
     // ContentVersion: schema epoch from the mapping set, JSON format, the write profile (or none),
     // and links-on. format/linkFlag are projected out of the If-Match comparison.
-    private static string ComposedCurrentEtag(RelationalWriteExecutorRequest request, long contentVersion) =>
+    private static string ComposedCurrentEtag(RelationalWriteExecutorInput request, long contentVersion) =>
         EtagComposer.Compose(
             contentVersion,
             VariantKeyFactory.Create(
@@ -8349,9 +8587,49 @@ public class Given_Default_Relational_Write_Executor
     {
         public int ResolveForPostCallCount { get; private set; }
 
+        public int ResolveForPutCallCount { get; private set; }
+
         public IRelationalCommandExecutor? CapturedCommandExecutor { get; private set; }
 
         public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
+
+        public Queue<RelationalWriteTargetLookupResult> PutResults { get; } = [];
+
+        private RelationalWriteTargetLookupResult? _defaultPostResult;
+
+        private RelationalWriteTargetLookupResult? _defaultPutResult;
+
+        /// <summary>
+        /// Arranges the target this resolver reports when a test queues nothing of its own. A queued
+        /// result always wins, so a test that queues one is arranging what the attempt's single
+        /// in-session lookup observes.
+        /// </summary>
+        public void ArrangeInitialTarget(
+            RelationalWriteOperationKind operationKind,
+            RelationalWriteTargetContext targetContext
+        )
+        {
+            RelationalWriteTargetLookupResult lookupResult = targetContext switch
+            {
+                RelationalWriteTargetContext.CreateNew createNew =>
+                    new RelationalWriteTargetLookupResult.CreateNew(createNew.DocumentUuid),
+                RelationalWriteTargetContext.ExistingDocument existingDocument =>
+                    new RelationalWriteTargetLookupResult.ExistingDocument(
+                        existingDocument.DocumentId,
+                        existingDocument.DocumentUuid,
+                        existingDocument.ObservedContentVersion
+                    ),
+                _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
+            };
+
+            if (operationKind is RelationalWriteOperationKind.Put)
+            {
+                _defaultPutResult = lookupResult;
+                return;
+            }
+
+            _defaultPostResult = lookupResult;
+        }
 
         public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
             MappingSet mappingSet,
@@ -8369,7 +8647,27 @@ public class Given_Default_Relational_Write_Executor
             return Task.FromResult(
                 PostResults.Count > 0
                     ? PostResults.Dequeue()
-                    : new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+                    : _defaultPostResult
+                        ?? new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            );
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            IRelationalCommandExecutor commandExecutor,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResolveForPutCallCount++;
+            CapturedCommandExecutor = commandExecutor;
+
+            return Task.FromResult(
+                PutResults.Count > 0
+                    ? PutResults.Dequeue()
+                    : _defaultPutResult ?? new RelationalWriteTargetLookupResult.NotFound()
             );
         }
     }
@@ -8620,15 +8918,14 @@ public class Given_Default_Relational_Write_Executor
             supportsGuardedNoOp: true
         );
 
-    private static RelationalWriteCurrentState CreateCurrentState(
-        RelationalWriteExecutorRequest request,
+    private RelationalWriteCurrentState CreateCurrentState(
+        RelationalWriteExecutorInput request,
         long contentVersion,
-        string schoolName = "Lincoln High"
+        string schoolName = "Lincoln High",
+        RelationalWriteTargetContext.ExistingDocument? existingTarget = null
     )
     {
-        var targetContext =
-            request.TargetContext as RelationalWriteTargetContext.ExistingDocument
-            ?? throw new InvalidOperationException("Expected an existing-document target context.");
+        var targetContext = existingTarget ?? ArrangedExistingTarget;
 
         return new RelationalWriteCurrentState(
             new DocumentMetadataRow(
@@ -8651,17 +8948,16 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static RelationalCurrentEtagPreconditionCheckResult CreatePreconditionCheckResult(
-        RelationalWriteExecutorRequest request,
+    private RelationalCurrentEtagPreconditionCheckResult CreatePreconditionCheckResult(
+        RelationalWriteExecutorInput request,
         bool isSatisfied,
         long contentVersion,
-        string schoolName = "Lincoln High"
+        string schoolName = "Lincoln High",
+        RelationalWriteTargetContext.ExistingDocument? existingTarget = null
     )
     {
-        var currentState = CreateCurrentState(request, contentVersion, schoolName);
-        var targetContext =
-            request.TargetContext as RelationalWriteTargetContext.ExistingDocument
-            ?? throw new InvalidOperationException("Expected an existing-document target context.");
+        var currentState = CreateCurrentState(request, contentVersion, schoolName, existingTarget);
+        var targetContext = existingTarget ?? ArrangedExistingTarget;
 
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
