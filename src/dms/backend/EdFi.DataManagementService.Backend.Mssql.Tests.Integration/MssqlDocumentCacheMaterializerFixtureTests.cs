@@ -296,7 +296,8 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             documentId,
             selectedRequiredContentVersion: 456,

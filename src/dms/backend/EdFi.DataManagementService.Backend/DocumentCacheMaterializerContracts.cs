@@ -18,7 +18,14 @@ public sealed record DocumentCacheProjectionTargetKey
     public DocumentCacheProjectionTargetKey(string tenantKey, DataStoreId dataStoreId)
     {
         TenantKey = tenantKey ?? throw new ArgumentNullException(nameof(tenantKey));
-        DataStoreId = dataStoreId;
+        DataStoreId =
+            dataStoreId.Value > 0
+                ? dataStoreId
+                : throw new ArgumentOutOfRangeException(
+                    nameof(dataStoreId),
+                    dataStoreId,
+                    "DocumentCache projection target DataStoreId must be positive."
+                );
     }
 
     /// <summary>
@@ -36,20 +43,33 @@ public sealed record DocumentCacheProjectionTargetKey
 }
 
 /// <summary>
+/// Documents the target-resolution precondition for materialization. A resolved target context may
+/// be created only after the target database's <c>dms.EffectiveSchema</c> fingerprint and
+/// <c>dms.ResourceKey</c> seed have been validated against the selected mapping set.
+/// </summary>
+public enum DocumentCacheMaterializationTargetValidation
+{
+    EffectiveSchemaAndResourceKeySeedValidated = 1,
+}
+
+/// <summary>
 /// Resolved target inputs consumed by one materialization call. The materializer uses the supplied
-/// mapping set but does not resolve, validate, or refresh <c>DocumentCache:Targets</c>. Provider
-/// adapters bind database access to <see cref="TargetKey" /> for background projector and direct-fill
-/// contexts that do not have ambient HTTP request data-store selection.
+/// mapping set but does not resolve, validate, or refresh <c>DocumentCache:Targets</c>, re-read
+/// <c>dms.EffectiveSchema</c>, or revalidate <c>dms.ResourceKey</c> seed compatibility per document.
+/// Provider adapters bind database access to <see cref="TargetKey" /> for background projector and
+/// direct-fill contexts that do not have ambient HTTP request data-store selection.
 /// </summary>
 public sealed record DocumentCacheMaterializationTargetContext
 {
     public DocumentCacheMaterializationTargetContext(
         DocumentCacheProjectionTargetKey targetKey,
-        MappingSet mappingSet
+        MappingSet mappingSet,
+        DocumentCacheMaterializationTargetValidation targetValidation
     )
     {
         TargetKey = targetKey ?? throw new ArgumentNullException(nameof(targetKey));
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        TargetValidation = RequireValidated(targetValidation, nameof(targetValidation));
     }
 
     /// <summary>
@@ -61,6 +81,29 @@ public sealed record DocumentCacheMaterializationTargetContext
     /// The already-selected mapping set for this target database.
     /// </summary>
     public MappingSet MappingSet { get; }
+
+    /// <summary>
+    /// Marker that the target resolver selected <see cref="MappingSet" /> for
+    /// <see cref="TargetKey" /> after database fingerprint and resource-key seed validation.
+    /// </summary>
+    public DocumentCacheMaterializationTargetValidation TargetValidation { get; }
+
+    private static DocumentCacheMaterializationTargetValidation RequireValidated(
+        DocumentCacheMaterializationTargetValidation value,
+        string parameterName
+    )
+    {
+        if (value != DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                value,
+                "DocumentCache materialization requires a target context validated by EffectiveSchema and ResourceKey seed checks."
+            );
+        }
+
+        return value;
+    }
 }
 
 /// <summary>

@@ -123,7 +123,8 @@ public class Given_Postgresql_DocumentCacheMaterializer_LinkBearingResource
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             StudentSchoolAssociationDocumentId,
             selectedRequiredContentVersion: 456,

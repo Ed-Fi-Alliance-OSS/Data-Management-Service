@@ -231,6 +231,7 @@ internal sealed class InMemoryDocumentCacheMaterializationDataStore : IDocumentC
         CancellationToken cancellationToken = default
     )
     {
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
         CommandRequests.Add(request);
         return _commandExecutor.ExecuteReaderAsync(command, readAsync, cancellationToken);
     }
@@ -243,6 +244,7 @@ internal sealed class InMemoryDocumentCacheMaterializationDataStore : IDocumentC
         CancellationToken cancellationToken = default
     )
     {
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
         HydrationRequests.Add(request);
         HydrationPlans.Add(plan);
         HydrationKeysets.Add(keyset);

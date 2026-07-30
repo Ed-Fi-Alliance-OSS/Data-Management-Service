@@ -38,7 +38,7 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(readAsync);
-        DocumentCacheMaterializationDataStoreGuards.RequireDialect(request, Dialect);
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
 
         _logger.LogDebug(
             "Executing PostgreSQL DocumentCache materialization command for target {TargetKey} with {ParameterCount} parameters",
@@ -68,7 +68,7 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
         CancellationToken cancellationToken = default
     )
     {
-        DocumentCacheMaterializationDataStoreGuards.RequireDialect(request, Dialect);
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
 
         await using var connection = await OpenConnectionAsync(request, cancellationToken)
             .ConfigureAwait(false);

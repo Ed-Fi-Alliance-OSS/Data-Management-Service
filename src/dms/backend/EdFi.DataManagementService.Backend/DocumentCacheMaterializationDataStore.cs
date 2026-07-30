@@ -51,7 +51,7 @@ internal sealed class AmbientDocumentCacheMaterializationDataStore(
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        DocumentCacheMaterializationDataStoreGuards.RequireDialect(request, Dialect);
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
 
         return _commandExecutor.ExecuteReaderAsync(command, readAsync, cancellationToken);
     }
@@ -65,7 +65,7 @@ internal sealed class AmbientDocumentCacheMaterializationDataStore(
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        DocumentCacheMaterializationDataStoreGuards.RequireDialect(request, Dialect);
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
 
         return _documentHydrator.HydrateAsync(plan, keyset, executionOptions, cancellationToken);
     }
@@ -86,15 +86,31 @@ internal sealed class AmbientDocumentCacheMaterializationDataStore(
 
 internal static class DocumentCacheMaterializationDataStoreGuards
 {
-    public static void RequireDialect(DocumentCacheMaterializationRequest request, SqlDialect dialect)
+    public static void RequireValidatedTargetContext(
+        DocumentCacheMaterializationRequest request,
+        SqlDialect dialect
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        if (
+            request.TargetContext.TargetValidation
+            != DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
+        )
+        {
+            throw new InvalidOperationException(
+                "DocumentCache materialization requires a target context whose MappingSet was selected "
+                    + "for TargetKey.DataStoreId after EffectiveSchema and ResourceKey seed validation."
+            );
+        }
 
         if (request.TargetContext.MappingSet.Key.Dialect != dialect)
         {
             throw new InvalidOperationException(
-                "DocumentCache materialization target dialect "
-                    + $"'{request.TargetContext.MappingSet.Key.Dialect}' does not match the materialization data store dialect '{dialect}'."
+                "DocumentCache materialization target context dialect "
+                    + $"'{request.TargetContext.MappingSet.Key.Dialect}' does not match the materialization data store dialect '{dialect}'. "
+                    + "Provider adapters require a target context whose MappingSet was selected for TargetKey.DataStoreId "
+                    + "after EffectiveSchema and ResourceKey seed validation."
             );
         }
     }

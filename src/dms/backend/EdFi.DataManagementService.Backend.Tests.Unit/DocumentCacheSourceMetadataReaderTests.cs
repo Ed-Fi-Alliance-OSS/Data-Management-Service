@@ -35,6 +35,7 @@ public class Given_DocumentCacheSourceMetadataReader
         dataStore.Commands.Should().ContainSingle();
         dataStore.Commands[0].CommandText.Should().Contain("""FROM dms."Document" document""");
         dataStore.Commands[0].CommandText.Should().Contain("""WHERE document."DocumentId" = @documentId""");
+        dataStore.Commands[0].CommandText.Should().NotContain("dms.\"ResourceKey\"");
         dataStore.Commands[0].CommandText.Should().NotContain("DocumentProjectionWork");
         dataStore.Commands[0].CommandText.Should().NotContain("DocumentCache");
         dataStore
@@ -135,6 +136,7 @@ public class Given_DocumentCacheSourceMetadataReader
         dataStore.Commands.Should().ContainSingle();
         dataStore.Commands[0].CommandText.Should().Contain("FROM [dms].[Document] document");
         dataStore.Commands[0].CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
+        dataStore.Commands[0].CommandText.Should().NotContain("[dms].[ResourceKey]");
     }
 
     [Test]
@@ -295,7 +297,8 @@ public class Given_DocumentCacheSourceMetadataReader
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             documentId: 123,
             selectedRequiredContentVersion: 456,

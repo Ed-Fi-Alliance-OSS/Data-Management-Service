@@ -200,7 +200,8 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             DocumentId,
             selectedRequiredContentVersion,

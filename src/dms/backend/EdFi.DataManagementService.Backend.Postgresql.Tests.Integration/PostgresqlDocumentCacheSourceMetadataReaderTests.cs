@@ -137,7 +137,8 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                CreateMappingSet()
+                CreateMappingSet(),
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             documentId,
             selectedRequiredContentVersion: 456,

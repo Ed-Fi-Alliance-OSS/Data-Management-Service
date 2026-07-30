@@ -352,7 +352,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             DocumentId,
             selectedRequiredContentVersion,

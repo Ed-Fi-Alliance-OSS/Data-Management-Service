@@ -41,6 +41,43 @@ public class Given_DocumentCacheMaterializerContract
     }
 
     [Test]
+    public void It_requires_TargetContext_to_mark_effective_schema_and_resource_key_seed_validation()
+    {
+        var targetKey = new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7));
+        var mappingSet = CreateMappingSet();
+
+        var targetContext = new DocumentCacheMaterializationTargetContext(
+            targetKey,
+            mappingSet,
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
+        );
+
+        targetContext.TargetKey.Should().Be(targetKey);
+        targetContext.MappingSet.Should().BeSameAs(mappingSet);
+        targetContext
+            .TargetValidation.Should()
+            .Be(DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated);
+
+        Action invalidValidation = () =>
+            _ = new DocumentCacheMaterializationTargetContext(
+                targetKey,
+                mappingSet,
+                (DocumentCacheMaterializationTargetValidation)0
+            );
+        invalidValidation
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*EffectiveSchema*ResourceKey seed*");
+
+        Action invalidDataStoreId = () =>
+            _ = new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(0));
+        invalidDataStoreId
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*DataStoreId*positive*");
+    }
+
+    [Test]
     public void It_keeps_selected_required_content_version_as_request_local_diagnostics_only()
     {
         var candidate = CreateCandidate();
@@ -291,7 +328,11 @@ public class Given_DocumentCacheMaterializerContract
         };
 
     private static DocumentCacheMaterializationTargetContext CreateTargetContext() =>
-        new(new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)), CreateMappingSet());
+        new(
+            new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
+            CreateMappingSet(),
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
+        );
 
     private static MappingSet CreateMappingSet() =>
         new(

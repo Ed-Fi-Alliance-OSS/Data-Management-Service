@@ -66,19 +66,42 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
         A.CallTo(() => dataStoreProvider.GetById(8, A<string?>._)).MustNotHaveHappened();
     }
 
-    private static DocumentCacheMaterializationRequest CreateRequest()
+    [Test]
+    public async Task It_rejects_mapping_sets_not_selected_for_the_mssql_target_before_resolving_the_data_store()
+    {
+        var dataStoreProvider = A.Fake<IDataStoreProvider>();
+        var sut = new MssqlDocumentCacheMaterializationDataStore(
+            dataStoreProvider,
+            _ => throw new AssertionException("Connection factory should not be called."),
+            NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
+        );
+
+        Func<Task> act = () =>
+            sut.ExecuteReaderAsync(
+                CreateRequest(SqlDialect.Pgsql),
+                new RelationalCommand("select [Value] from [dms].[TargetProbe]"),
+                (_, _) => Task.FromResult(42)
+            );
+
+        var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Subject.Single();
+        exception.Message.Should().Contain("target context dialect").And.Contain("ResourceKey seed");
+        A.CallTo(() => dataStoreProvider.GetById(A<long>._, A<string?>._)).MustNotHaveHappened();
+    }
+
+    private static DocumentCacheMaterializationRequest CreateRequest(SqlDialect dialect = SqlDialect.Mssql)
     {
         var mappingSet = RelationalAccessTestData.CreateMappingSet(
             new QualifiedResourceName("Ed-Fi", "TargetProbe")
         ) with
         {
-            Key = new MappingSetKey("test-hash", SqlDialect.Mssql, "v1"),
+            Key = new MappingSetKey("test-hash", dialect, "v1"),
         };
 
         return new DocumentCacheMaterializationRequest(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             documentId: 123L,
             selectedRequiredContentVersion: null,

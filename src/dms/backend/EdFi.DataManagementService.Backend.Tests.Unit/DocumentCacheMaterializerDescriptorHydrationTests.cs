@@ -215,7 +215,8 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             DocumentId,
             selectedRequiredContentVersion,
@@ -578,7 +579,8 @@ public class Given_DocumentCacheDescriptorHydrator
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                CreateMappingSet(dialect)
+                CreateMappingSet(dialect),
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             DocumentId,
             selectedRequiredContentVersion: null,

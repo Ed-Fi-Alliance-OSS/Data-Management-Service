@@ -130,7 +130,8 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
         new(
             new DocumentCacheMaterializationTargetContext(
                 new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
-                mappingSet
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
             ),
             StudentSchoolAssociationDocumentId,
             selectedRequiredContentVersion: 456,
