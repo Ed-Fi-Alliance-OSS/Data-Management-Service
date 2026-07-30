@@ -27,7 +27,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
         [TestFixture]
         public class InsertTests : VendorTests
         {
-            private long _id;
+            private int _id;
 
             [SetUp]
             public async Task Setup()
@@ -138,8 +138,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
         [TestFixture]
         public class DeleteTests : VendorTests
         {
-            private long _vendor1Id;
-            private long _vendor2Id;
+            private int _vendor1Id;
+            private int _vendor2Id;
 
             [SetUp]
             public async Task Setup()
@@ -211,9 +211,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
         [TestFixture]
         public class GetApplicationsByVendorId : VendorTests
         {
-            private long _vendorId1;
-            private long _vendorId2;
-            private readonly long _vendorIdNotExist = 9999;
+            private int _vendorId1;
+            private int _vendorId2;
+            private readonly int _vendorIdNotExist = 9999;
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,
@@ -422,8 +422,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
         [TestFixture]
         public class Given_VendorApplicationWithDisabledApiClient : VendorTests
         {
-            private long _vendorId;
-            private long _applicationId;
+            private int _vendorId;
+            private int _applicationId;
 
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions,

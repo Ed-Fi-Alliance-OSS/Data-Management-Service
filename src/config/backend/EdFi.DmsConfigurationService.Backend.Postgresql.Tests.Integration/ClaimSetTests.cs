@@ -94,7 +94,7 @@ public class ClaimSetTests : DatabaseTest
     [TestFixture]
     public class InsertTest : ClaimSetTests
     {
-        private long _id;
+        private int _id;
 
         [SetUp]
         public async Task Setup()
@@ -175,7 +175,7 @@ public class ClaimSetTests : DatabaseTest
     {
         private ClaimSetInsertCommand _insertClaimSet = null!;
         private ClaimSetUpdateCommand _updateClaimSet = null!;
-        private long _applicationId;
+        private int _applicationId;
         private IApplicationRepository _applicationRepository;
         private IClaimsHierarchyRepository _claimsHierarchyRepository;
         private ClaimSetInsertResult _insertSystemReservedResult;
@@ -572,8 +572,8 @@ public class ClaimSetTests : DatabaseTest
     [TestFixture]
     public class DeleteTests : ClaimSetTests
     {
-        private long _id1;
-        private long _id2;
+        private int _id1;
+        private int _id2;
 
         [SetUp]
         public async Task Setup()
@@ -684,7 +684,7 @@ public class ClaimSetTests : DatabaseTest
     [TestFixture]
     public class ExportTest : ClaimSetTests
     {
-        private long _id;
+        private int _id;
 
         [SetUp]
         public async Task Setup()
@@ -906,7 +906,7 @@ public class ClaimSetTests : DatabaseTest
     [TestFixture]
     public class ImportTest : ClaimSetTests
     {
-        private long _id;
+        private int _id;
 
         [SetUp]
         public async Task Setup()
@@ -1133,8 +1133,8 @@ public class ClaimSetTests : DatabaseTest
     [TestFixture]
     public class CopyTest : ClaimSetTests
     {
-        private long _id;
-        private long _idCopy;
+        private int _id;
+        private int _idCopy;
 
         [SetUp]
         public async Task Setup()
