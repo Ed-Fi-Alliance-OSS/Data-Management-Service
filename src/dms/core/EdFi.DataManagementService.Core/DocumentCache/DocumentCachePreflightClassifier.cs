@@ -133,17 +133,6 @@ public static class DocumentCachePreflightClassifier
             return commonRejection;
         }
 
-        DocumentCacheAdministrativeCommandResult? prerequisiteRejection = ClassifyActivationPrerequisites(
-            DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
-            request.TargetKey,
-            targetObservation!,
-            facts.ActivationProviderPrerequisites
-        );
-        if (prerequisiteRejection is not null)
-        {
-            return prerequisiteRejection;
-        }
-
         DocumentCacheAdministrativeCommandResult? lifecycleRejection = ClassifyRequiredLifecycle(
             DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
             request.TargetKey,
@@ -165,6 +154,17 @@ public static class DocumentCachePreflightClassifier
         if (expectedSourceRejection is not null)
         {
             return expectedSourceRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? prerequisiteRejection = ClassifyActivationPrerequisites(
+            DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+            request.TargetKey,
+            targetObservation!,
+            facts.ActivationProviderPrerequisites
+        );
+        if (prerequisiteRejection is not null)
+        {
+            return prerequisiteRejection;
         }
 
         if (facts.GuardedNewEmptyState is null)
@@ -219,17 +219,6 @@ public static class DocumentCachePreflightClassifier
             return commonRejection;
         }
 
-        DocumentCacheAdministrativeCommandResult? prerequisiteRejection = ClassifyActivationPrerequisites(
-            DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
-            request.TargetKey,
-            targetObservation!,
-            facts.ActivationProviderPrerequisites
-        );
-        if (prerequisiteRejection is not null)
-        {
-            return prerequisiteRejection;
-        }
-
         DocumentCacheAdministrativeCommandResult? lifecycleRejection = ClassifyRequiredLifecycle(
             DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
             request.TargetKey,
@@ -251,6 +240,17 @@ public static class DocumentCachePreflightClassifier
         if (expectedSourceRejection is not null)
         {
             return expectedSourceRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? prerequisiteRejection = ClassifyActivationPrerequisites(
+            DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+            request.TargetKey,
+            targetObservation!,
+            facts.ActivationProviderPrerequisites
+        );
+        if (prerequisiteRejection is not null)
+        {
+            return prerequisiteRejection;
         }
 
         DocumentCacheDownstreamPublicationHistoryProofResult? downstreamProof =
