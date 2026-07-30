@@ -260,6 +260,49 @@ public class ConfigurationServiceDataStoreProviderTests
                     ProviderToken = "   ",
                     DataStoreContexts = Array.Empty<object>(),
                 },
+                new
+                {
+                    Id = 8L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Blank Provider Token With Relational Provider Fallback Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi8;", TestEncryptionKey),
+                    ProviderToken = "   ",
+                    RelationalProviderToken = "sqlserver",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 9L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Blank Provider Tokens With Provider Fallback Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi9;", TestEncryptionKey),
+                    ProviderToken = "   ",
+                    RelationalProviderToken = "",
+                    Provider = "postgresql",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 10L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "All Blank Provider Metadata Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi10;", TestEncryptionKey),
+                    ProviderToken = "   ",
+                    RelationalProviderToken = "",
+                    Provider = " \t ",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
+                new
+                {
+                    Id = 11L,
+                    DataStoreType = "OperatorCategory",
+                    Name = "Unsupported First Nonblank Provider Metadata Instance",
+                    ConnectionString = EncryptToBase64("host=localhost;database=edfi11;", TestEncryptionKey),
+                    ProviderToken = "mysql",
+                    RelationalProviderToken = "postgresql",
+                    Provider = "sqlserver",
+                    DataStoreContexts = Array.Empty<object>(),
+                },
             };
 
             handler.SetResponse("v3/dataStores/", dataStoresResponse);
@@ -354,6 +397,50 @@ public class ConfigurationServiceDataStoreProviderTests
 
             instance.Should().NotBeNull();
             instance!.RelationalProviderMetadataStatus.Should().Be(RelationalProviderMetadataStatus.Missing);
+            instance.RelationalProviderToken.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_use_relational_provider_token_when_provider_token_is_blank()
+        {
+            var instance = _provider!.GetById(8);
+
+            instance.Should().NotBeNull();
+            instance!
+                .RelationalProviderMetadataStatus.Should()
+                .Be(RelationalProviderMetadataStatus.Supported);
+            instance.RelationalProviderToken.Should().Be(RelationalProviderToken.SqlServer);
+        }
+
+        [Test]
+        public void It_should_use_provider_metadata_when_earlier_provider_fields_are_blank()
+        {
+            var instance = _provider!.GetById(9);
+
+            instance.Should().NotBeNull();
+            instance!
+                .RelationalProviderMetadataStatus.Should()
+                .Be(RelationalProviderMetadataStatus.Supported);
+            instance.RelationalProviderToken.Should().Be(RelationalProviderToken.Postgresql);
+        }
+
+        [Test]
+        public void It_should_treat_all_blank_provider_metadata_fields_as_missing()
+        {
+            var instance = _provider!.GetById(10);
+
+            instance.Should().NotBeNull();
+            instance!.RelationalProviderMetadataStatus.Should().Be(RelationalProviderMetadataStatus.Missing);
+            instance.RelationalProviderToken.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_not_use_later_provider_metadata_when_first_nonblank_value_is_unknown()
+        {
+            var instance = _provider!.GetById(11);
+
+            instance.Should().NotBeNull();
+            instance!.RelationalProviderMetadataStatus.Should().Be(RelationalProviderMetadataStatus.Unknown);
             instance.RelationalProviderToken.Should().BeNull();
         }
     }

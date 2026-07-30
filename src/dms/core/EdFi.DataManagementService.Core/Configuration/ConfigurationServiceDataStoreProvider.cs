@@ -369,8 +369,15 @@ public class ConfigurationServiceDataStoreProvider(
         RelationalProviderMetadataStatus Status
     ) NormalizeRelationalProviderMetadata(DataStoreResponse response)
     {
-        string? providerMetadata =
-            response.ProviderToken ?? response.RelationalProviderToken ?? response.Provider;
+        string? providerMetadata = response.ProviderToken;
+        if (string.IsNullOrWhiteSpace(providerMetadata))
+        {
+            providerMetadata = response.RelationalProviderToken;
+        }
+        if (string.IsNullOrWhiteSpace(providerMetadata))
+        {
+            providerMetadata = response.Provider;
+        }
 
         if (string.IsNullOrWhiteSpace(providerMetadata))
         {
