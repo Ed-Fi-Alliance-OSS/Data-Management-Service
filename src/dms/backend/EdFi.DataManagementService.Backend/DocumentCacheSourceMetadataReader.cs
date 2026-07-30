@@ -389,10 +389,7 @@ internal sealed class DocumentCacheSourceMetadataReader(
             );
         }
 
-        if (
-            readPlan.Model.Resource != resourceKey.Resource
-            || readPlan.Model.StorageKind != ResourceStorageKind.RelationalTables
-        )
+        if (!ReadPlanMatchesConcreteResourceModel(readPlan, concreteResourceModel))
         {
             throw BuildTargetMappingException(
                 request,
@@ -413,6 +410,108 @@ internal sealed class DocumentCacheSourceMetadataReader(
             readPlan
         );
     }
+
+    private static bool ReadPlanMatchesConcreteResourceModel(
+        ResourceReadPlan readPlan,
+        ConcreteResourceModel concreteResourceModel
+    )
+    {
+        var readPlanModel = readPlan.Model;
+        var concreteRelationalModel = concreteResourceModel.RelationalModel;
+
+        return readPlanModel.Resource == concreteRelationalModel.Resource
+            && readPlanModel.PhysicalSchema == concreteRelationalModel.PhysicalSchema
+            && readPlanModel.StorageKind == ResourceStorageKind.RelationalTables
+            && readPlanModel.StorageKind == concreteResourceModel.StorageKind
+            && TableShapeMatches(readPlanModel.Root, concreteRelationalModel.Root)
+            && TableInventoryMatches(
+                readPlanModel.TablesInDependencyOrder,
+                concreteRelationalModel.TablesInDependencyOrder
+            )
+            && ReadPlanTableInventoryMatches(
+                readPlan.TablePlansInDependencyOrder,
+                concreteRelationalModel.TablesInDependencyOrder
+            );
+    }
+
+    private static bool TableInventoryMatches(
+        IReadOnlyList<DbTableModel> readPlanTables,
+        IReadOnlyList<DbTableModel> concreteModelTables
+    )
+    {
+        if (readPlanTables.Count != concreteModelTables.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < readPlanTables.Count; index++)
+        {
+            if (!TableShapeMatches(readPlanTables[index], concreteModelTables[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ReadPlanTableInventoryMatches(
+        IReadOnlyList<TableReadPlan> tableReadPlans,
+        IReadOnlyList<DbTableModel> concreteModelTables
+    )
+    {
+        if (tableReadPlans.Count != concreteModelTables.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < tableReadPlans.Count; index++)
+        {
+            if (!TableShapeMatches(tableReadPlans[index].TableModel, concreteModelTables[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TableShapeMatches(DbTableModel readPlanTable, DbTableModel concreteModelTable) =>
+        readPlanTable.Table == concreteModelTable.Table
+        && readPlanTable.JsonScope.Canonical == concreteModelTable.JsonScope.Canonical
+        && readPlanTable.IdentityMetadata.TableKind == concreteModelTable.IdentityMetadata.TableKind
+        && ColumnInventoryMatches(readPlanTable.Columns, concreteModelTable.Columns);
+
+    private static bool ColumnInventoryMatches(
+        IReadOnlyList<DbColumnModel> readPlanColumns,
+        IReadOnlyList<DbColumnModel> concreteModelColumns
+    )
+    {
+        if (readPlanColumns.Count != concreteModelColumns.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < readPlanColumns.Count; index++)
+        {
+            if (!ColumnShapeMatches(readPlanColumns[index], concreteModelColumns[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ColumnShapeMatches(DbColumnModel readPlanColumn, DbColumnModel concreteModelColumn) =>
+        readPlanColumn.ColumnName == concreteModelColumn.ColumnName
+        && readPlanColumn.Kind == concreteModelColumn.Kind
+        && readPlanColumn.ScalarType == concreteModelColumn.ScalarType
+        && readPlanColumn.IsNullable == concreteModelColumn.IsNullable
+        && readPlanColumn.SourceJsonPath?.Canonical == concreteModelColumn.SourceJsonPath?.Canonical
+        && readPlanColumn.TargetResource == concreteModelColumn.TargetResource
+        && readPlanColumn.Storage == concreteModelColumn.Storage
+        && readPlanColumn.IsWritable == concreteModelColumn.IsWritable;
 
     private static DocumentCacheTargetMappingException BuildTargetMappingException(
         DocumentCacheMaterializationRequest request,

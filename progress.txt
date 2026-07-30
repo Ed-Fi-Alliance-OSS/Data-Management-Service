@@ -153,3 +153,9 @@
 - Key decisions: connection string stays internal on target context; materializer binds once and passes bound request through source metadata, ordinary hydration, descriptor hydration, and final coherence; no target discovery/lifecycle/cache/Kafka behavior added.
 - Files changed: DocumentCacheMaterializerContracts.cs; DocumentCacheMaterializationDataStore.cs; DocumentCacheMaterializer.cs; provider materialization data stores; target-context/provider unit tests; tasks.json; progress.txt.
 - Verified focused target-context/data-store tests, broader DocumentCacheMaterializer unit filter, provider GetById code scan, and CSharpier. Next: target-mapping read-plan/concrete-model guardrail remains.
+
+2026-07-30 - Completed target-mapping guardrail task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added local read-plan/concrete-model structural consistency check before ordinary-resource hydration.
+- Key decisions: compare selected resource, physical schema, storage kind, root table, ordered table inventory, and column shape; keep failure as ReadPlanMetadataMismatch and avoid startup/all-resource validation.
+- Files changed: DocumentCacheSourceMetadataReader.cs; DocumentCacheSourceMetadataReaderTests.cs; tasks.json; progress.txt.
+- Verified focused DocumentCacheSourceMetadata unit filter and CSharpier. Next: all tasks complete.

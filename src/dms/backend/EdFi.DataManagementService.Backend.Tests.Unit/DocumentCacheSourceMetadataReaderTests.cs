@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -47,14 +48,8 @@ public class Given_DocumentCacheSourceMetadataReader
     [Test]
     public async Task It_resolves_ordinary_resource_metadata_with_the_selected_read_plan()
     {
-        var readPlan = CreateReadPlan(SchoolResource, SqlDialect.Pgsql);
-        var mappingSet = CreateMappingSet() with
-        {
-            ReadPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>
-            {
-                [SchoolResource] = readPlan,
-            },
-        };
+        var mappingSet = CreateMappingSetWithReadPlan();
+        var readPlan = mappingSet.ReadPlansByResource[SchoolResource];
         var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
         ]);
@@ -293,6 +288,47 @@ public class Given_DocumentCacheSourceMetadataReader
         exception.FailureMetadata.ResourceVersion.Should().Be("1.0");
     }
 
+    [Test]
+    public async Task It_throws_target_mapping_failure_when_the_selected_read_plan_model_diverges_from_the_concrete_model()
+    {
+        var mappingSet = CreateMappingSet();
+        var concreteModel = mappingSet.GetConcreteResourceModelOrThrow(SchoolResource).RelationalModel;
+        var mismatchedRootTable = concreteModel.Root with
+        {
+            Table = new DbTableName(concreteModel.Root.Table.Schema, "SchoolFromDifferentModel"),
+        };
+        var mismatchedReadPlan = CreateReadPlan(
+            concreteModel with
+            {
+                Root = mismatchedRootTable,
+                TablesInDependencyOrder = [mismatchedRootTable],
+            },
+            SqlDialect.Pgsql
+        );
+        mappingSet = mappingSet with
+        {
+            ReadPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [SchoolResource] = mismatchedReadPlan,
+            },
+        };
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
+        ]);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
+
+        Func<Task> act = () => sut.ReadAsync(CreateRequest(mappingSet));
+
+        var exception = (
+            await act.Should().ThrowAsync<DocumentCacheTargetMappingException>()
+        ).Subject.Single();
+        exception.Reason.Should().Be(DocumentCacheTargetMappingFailureReason.ReadPlanMetadataMismatch);
+        exception.FailureMetadata.ResourceKeyId.Should().Be(11);
+        exception.FailureMetadata.ProjectName.Should().Be("Ed-Fi");
+        exception.FailureMetadata.ResourceName.Should().Be("School");
+        exception.FailureMetadata.ResourceVersion.Should().Be("1.0");
+    }
+
     private static DocumentCacheMaterializationRequest CreateRequest(MappingSet mappingSet) =>
         new(
             new DocumentCacheMaterializationTargetContext(
@@ -308,9 +344,13 @@ public class Given_DocumentCacheSourceMetadataReader
 
     private static MappingSet CreateMappingSetWithReadPlan()
     {
-        var readPlan = CreateReadPlan(SchoolResource, SqlDialect.Pgsql);
+        var mappingSet = CreateMappingSet();
+        var readPlan = CreateReadPlan(
+            mappingSet.GetConcreteResourceModelOrThrow(SchoolResource).RelationalModel,
+            SqlDialect.Pgsql
+        );
 
-        return CreateMappingSet() with
+        return mappingSet with
         {
             ReadPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>
             {
@@ -362,7 +402,7 @@ public class Given_DocumentCacheSourceMetadataReader
             ),
         };
 
-        return new ResourceReadPlan(
+        return CreateReadPlan(
             new RelationalResourceModel(
                 resource,
                 new DbSchemaName("edfi"),
@@ -372,8 +412,16 @@ public class Given_DocumentCacheSourceMetadataReader
                 [],
                 []
             ),
+            dialect
+        );
+    }
+
+    private static ResourceReadPlan CreateReadPlan(RelationalResourceModel model, SqlDialect dialect)
+    {
+        return new ResourceReadPlan(
+            model,
             KeysetTableConventions.GetKeysetTableContract(dialect),
-            [new TableReadPlan(rootTable, "select DocumentId")],
+            [.. model.TablesInDependencyOrder.Select(table => new TableReadPlan(table, "select DocumentId"))],
             [],
             []
         );
