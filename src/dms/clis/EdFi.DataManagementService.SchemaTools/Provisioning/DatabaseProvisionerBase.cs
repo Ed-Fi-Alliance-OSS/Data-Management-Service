@@ -16,14 +16,29 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// <param name="EffectiveSchemaTableExistsSql">
 /// Query that returns a non-null scalar if the dms.EffectiveSchema table exists.
 /// </param>
-/// <param name="EffectiveSchemaHashSql">
-/// Query that selects EffectiveSchemaHash from the singleton row.
-/// </param>
 /// <param name="SeedTableCheckSql">
 /// Query that returns table_name rows for ResourceKey and SchemaComponent in the dms schema.
 /// </param>
 /// <param name="EffectiveSchemaFingerprintSql">
 /// Query that selects the runtime fingerprint projection from the singleton row.
+/// </param>
+/// <param name="DataStoreIdentityTableExistsSql">
+/// Query that returns a non-null scalar if the dms.DataStoreIdentity table exists.
+/// </param>
+/// <param name="DataStoreIdentitySourceIdentitySql">
+/// Query that selects SourceIdentity from the DataStoreIdentity singleton row.
+/// </param>
+/// <param name="DocumentCacheStateTableExistsSql">
+/// Query that returns a non-null scalar if the dms.DocumentCacheState table exists.
+/// </param>
+/// <param name="DocumentCacheStateSingletonSql">
+/// Query that selects the lifecycle state and recovery latch from the DocumentCacheState singleton row.
+/// </param>
+/// <param name="KnownLegacyDocumentCacheArtifactSql">
+/// Query that returns one row per known legacy DocumentCache artifact that must block provisioning.
+/// </param>
+/// <param name="ProviderPrerequisiteSql">
+/// Optional provider-specific preflight query that returns one row per failed prerequisite.
 /// </param>
 /// <param name="ResourceKeySelectSql">
 /// Query that selects all ResourceKey rows ordered by ResourceKeyId.
@@ -31,6 +46,12 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// <param name="SchemaComponentSelectSql">
 /// Parameterized query that selects SchemaComponent rows filtered by EffectiveSchemaHash (@hash),
 /// ordered by ProjectEndpointName.
+/// </param>
+/// <param name="MissingTableDataStoreIdentity">
+/// Dialect-specific formatted table name for DataStoreIdentity in error messages.
+/// </param>
+/// <param name="MissingTableDocumentCacheState">
+/// Dialect-specific formatted table name for DocumentCacheState in error messages.
 /// </param>
 /// <param name="MissingTableResourceKey">
 /// Dialect-specific formatted table name for ResourceKey in error messages.
@@ -40,11 +61,18 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// </param>
 public sealed record DialectSql(
     string EffectiveSchemaTableExistsSql,
-    string EffectiveSchemaHashSql,
     string SeedTableCheckSql,
     string EffectiveSchemaFingerprintSql,
+    string DataStoreIdentityTableExistsSql,
+    string DataStoreIdentitySourceIdentitySql,
+    string DocumentCacheStateTableExistsSql,
+    string DocumentCacheStateSingletonSql,
+    string KnownLegacyDocumentCacheArtifactSql,
+    string ProviderPrerequisiteSql,
     string ResourceKeySelectSql,
     string SchemaComponentSelectSql,
+    string MissingTableDataStoreIdentity,
+    string MissingTableDocumentCacheState,
     string MissingTableResourceKey,
     string MissingTableSchemaComponent
 );
@@ -53,8 +81,8 @@ public sealed record DialectSql(
 /// Abstract base class for database provisioners that extracts shared preflight logic
 /// using ADO.NET's <see cref="DbConnection"/>/<see cref="DbCommand"/> abstractions.
 /// Concrete classes provide dialect-specific SQL strings and connection creation;
-/// the base class handles the common algorithm for <see cref="IDatabaseProvisioner.PreflightSchemaHashCheck"/>
-/// and <see cref="IDatabaseProvisioner.PreflightSeedValidation"/>.
+/// the base class handles the bounded create-only provisioning guard algorithm for
+/// <see cref="IDatabaseProvisioner.PreflightSeedValidation"/>.
 /// </summary>
 public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisioner
 {
@@ -83,37 +111,6 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
 
     public abstract void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
 
-    public void PreflightSchemaHashCheck(string connectionString, string expectedHash)
-    {
-        using var connection = CreateConnection(connectionString);
-        connection.Open();
-
-        // Check if the dms.EffectiveSchema table exists
-        using var existsCommand = connection.CreateCommand();
-        existsCommand.CommandText = Dialect.EffectiveSchemaTableExistsSql;
-        if (existsCommand.ExecuteScalar() is null)
-        {
-            return; // New database — no table yet, proceed with provisioning
-        }
-
-        // Table exists — check the stored hash
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText = Dialect.EffectiveSchemaHashSql;
-        var storedHash = hashCommand.ExecuteScalar() as string;
-
-        // Table exists but singleton row is missing — partial/corrupt state
-        if (storedHash is null)
-        {
-            throw new InvalidOperationException(
-                "The dms.EffectiveSchema table exists but contains no singleton row. "
-                    + "This indicates a partial or corrupt provisioning state. "
-                    + "Drop and recreate the database before re-provisioning."
-            );
-        }
-
-        SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
-    }
-
     public void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema)
     {
         using var connection = CreateConnection(connectionString);
@@ -124,6 +121,8 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
         existsCommand.CommandText = Dialect.EffectiveSchemaTableExistsSql;
         if (existsCommand.ExecuteScalar() is null)
         {
+            RejectKnownLegacyDocumentCacheArtifacts(connection);
+            ValidateProviderPrerequisites(connection);
             return;
         }
 
@@ -200,6 +199,10 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             }
         }
 
+        RejectKnownLegacyDocumentCacheArtifacts(connection);
+        ValidateProviderPrerequisites(connection);
+        ValidateCompletedSchemaSingletons(connection);
+
         // --- Validate ResourceKey rows ---
         var actualResourceKeys = new List<ResourceKeyRow>();
         using (var rkCommand = connection.CreateCommand())
@@ -255,6 +258,128 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
         );
     }
 
+    private void RejectKnownLegacyDocumentCacheArtifacts(DbConnection connection)
+    {
+        using var legacyCommand = connection.CreateCommand();
+        legacyCommand.CommandText = Dialect.KnownLegacyDocumentCacheArtifactSql;
+
+        var artifacts = new List<string>();
+        using var reader = legacyCommand.ExecuteReader();
+        while (reader.Read())
+        {
+            artifacts.Add(ReadStringOrEmpty(reader, 0));
+        }
+
+        if (artifacts.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Known legacy DocumentCache artifact(s) were found before provisioning: "
+                    + $"{string.Join(", ", artifacts)}. "
+                    + "Drop and recreate the database before provisioning the E18 DocumentCache schema."
+            );
+        }
+    }
+
+    private void ValidateProviderPrerequisites(DbConnection connection)
+    {
+        if (string.IsNullOrWhiteSpace(Dialect.ProviderPrerequisiteSql))
+        {
+            return;
+        }
+
+        using var prerequisiteCommand = connection.CreateCommand();
+        prerequisiteCommand.CommandText = Dialect.ProviderPrerequisiteSql;
+
+        var diagnostics = new List<string>();
+        using var reader = prerequisiteCommand.ExecuteReader();
+        while (reader.Read())
+        {
+            diagnostics.Add(ReadStringOrEmpty(reader, 0));
+        }
+
+        if (diagnostics.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Provider provisioning prerequisite check failed: " + string.Join(" ", diagnostics)
+            );
+        }
+    }
+
+    private void ValidateCompletedSchemaSingletons(DbConnection connection)
+    {
+        if (!TableExists(connection, Dialect.DataStoreIdentityTableExistsSql))
+        {
+            throw new InvalidOperationException(
+                $"The dms.EffectiveSchema hash matches the current schema, but {Dialect.MissingTableDataStoreIdentity} is missing. "
+                    + "This indicates a partial or legacy provisioning state. "
+                    + "Drop and recreate the database before re-provisioning."
+            );
+        }
+
+        using (var sourceCommand = connection.CreateCommand())
+        {
+            sourceCommand.CommandText = Dialect.DataStoreIdentitySourceIdentitySql;
+            var sourceIdentity = sourceCommand.ExecuteScalar();
+
+            if (sourceIdentity is null || sourceIdentity is DBNull)
+            {
+                throw new InvalidOperationException(
+                    "The dms.EffectiveSchema hash matches the current schema, but the dms.DataStoreIdentity singleton row is missing. "
+                        + "Drop and recreate the database before re-provisioning."
+                );
+            }
+
+            if (ReadUuidOrThrow(sourceIdentity) == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    "dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. "
+                        + "Drop and recreate the database before re-provisioning."
+                );
+            }
+        }
+
+        if (!TableExists(connection, Dialect.DocumentCacheStateTableExistsSql))
+        {
+            throw new InvalidOperationException(
+                $"The dms.EffectiveSchema hash matches the current schema, but {Dialect.MissingTableDocumentCacheState} is missing. "
+                    + "This indicates a partial or legacy provisioning state. "
+                    + "Drop and recreate the database before re-provisioning."
+            );
+        }
+
+        using (var stateCommand = connection.CreateCommand())
+        {
+            stateCommand.CommandText = Dialect.DocumentCacheStateSingletonSql;
+            using var reader = stateCommand.ExecuteReader();
+
+            if (!reader.Read())
+            {
+                throw new InvalidOperationException(
+                    "The dms.EffectiveSchema hash matches the current schema, but the dms.DocumentCacheState singleton row is missing. "
+                        + "Drop and recreate the database before re-provisioning."
+                );
+            }
+
+            var lifecycleState = ReadStringOrEmpty(reader, 0);
+
+            if (!IsValidLifecycleState(lifecycleState))
+            {
+                throw new InvalidOperationException(
+                    $"dms.DocumentCacheState.ProjectionLifecycleState has unsupported value '{lifecycleState}' during provisioning preflight."
+                );
+            }
+
+            _ = ReadRequiredBool(reader, 1, "dms.DocumentCacheState.CacheAheadRecoveryRequired");
+        }
+    }
+
+    private static bool TableExists(DbConnection connection, string tableExistsSql)
+    {
+        using var tableCommand = connection.CreateCommand();
+        tableCommand.CommandText = tableExistsSql;
+        return tableCommand.ExecuteScalar() is not null;
+    }
+
     private static short ReadInt16OrDefault(DbDataReader reader, int ordinal, short defaultValue)
     {
         if (reader.IsDBNull(ordinal))
@@ -300,5 +425,50 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             ReadOnlyMemory<byte> value => value.ToArray(),
             _ => [],
         };
+    }
+
+    private static bool ReadRequiredBool(DbDataReader reader, int ordinal, string columnName)
+    {
+        object value = reader.GetValue(ordinal);
+        if (value is null || value is DBNull)
+        {
+            throw new InvalidOperationException(
+                $"{columnName} must not be null during provisioning preflight."
+            );
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            byte byteValue => byteValue != 0,
+            short shortValue => shortValue != 0,
+            int intValue => intValue != 0,
+            long longValue => longValue != 0,
+            _ => throw new InvalidOperationException(
+                $"{columnName} must be a boolean-compatible database value during provisioning preflight, "
+                    + $"but found {value.GetType().FullName}."
+            ),
+        };
+    }
+
+    private static Guid ReadUuidOrThrow(object sourceIdentity)
+    {
+        return sourceIdentity switch
+        {
+            Guid value => value,
+            string value when Guid.TryParse(value, out var parsed) => parsed,
+            string => throw new InvalidOperationException(
+                "dms.DataStoreIdentity.SourceIdentity must be a valid UUID during provisioning preflight."
+            ),
+            _ => throw new InvalidOperationException(
+                "dms.DataStoreIdentity.SourceIdentity must be a UUID-compatible database value during provisioning preflight, "
+                    + $"but found {sourceIdentity.GetType().FullName}."
+            ),
+        };
+    }
+
+    private static bool IsValidLifecycleState(string lifecycleState)
+    {
+        return lifecycleState is "Disabled" or "Resetting" or "Rebuilding" or "Tracking";
     }
 }

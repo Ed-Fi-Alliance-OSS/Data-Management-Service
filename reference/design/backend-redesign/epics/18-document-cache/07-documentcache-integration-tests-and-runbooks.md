@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- **Configuration, integration, readiness, and operations**: reference/design/cdc-streaming.md
+- **Configuration, integration, readiness, and operations**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md
 - **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
 The referenced design documents define behavior and operator constraints. This story adds
@@ -29,10 +29,10 @@ guidance.
 
 - Add cross-story PostgreSQL and SQL Server fixtures for the completed projection feature.
 - Cover transactional set-based enqueue, forced enqueue failure with complete canonical
-  rollback, complete-transaction deadlock retry, least-privilege trigger execution,
-  direct-work-DML denial, disabled writes, projector-stopped writes, cascades, descriptors,
-  restamp, SQL Server prerequisite validation, and guarded new-empty activation including
-  prerequisite failure and racing inserts.
+  rollback, complete-transaction deadlock retry, test-only restricted canonical-writer
+  trigger execution and direct-work-DML denial, disabled writes, projector-stopped writes,
+  cascades, descriptors, restamp, SQL Server prerequisite validation, and guarded
+  new-empty activation including prerequisite failure and racing inserts.
 - Cover current source/cache/work classification, stale-candidate suppression,
   candidate-independent `S = C = W` acknowledgement, cache-ahead-only latching, blocked
   work mismatches, conditional scrub/rebuild-page repair, enqueue/ack races, delete,

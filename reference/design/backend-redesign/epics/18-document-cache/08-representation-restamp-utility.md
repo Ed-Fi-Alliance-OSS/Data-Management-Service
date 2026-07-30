@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- **Offline byte-changing representation correction**: reference/design/cdc-streaming.md#offline-byte-changing-representation-correction
+- **Offline byte-changing representation correction**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction
 - **ETag strong-validator decision**: reference/adr-etag-from-content-version.md#etag-format-and-http-validator-semantics-rfc-9110
 - **Topic and message compatibility**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes
 - **Change Query stamping and mirrors**: reference/design/backend-redesign/design-docs/change-queries.md#concrete-resource-contentversion--contentlastmodifiedat-mirror

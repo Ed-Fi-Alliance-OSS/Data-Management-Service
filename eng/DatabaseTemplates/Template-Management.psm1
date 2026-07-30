@@ -241,8 +241,8 @@ function Invoke-BulkLoad {
         "-b", $BaseUrl,
         "-d", $SampleDataDirectory,
         "-w", $BulkLoadClientPaths.WorkingDirectory,
-        "-k", $Key,
-        "-s", $Secret,
+        "--key=$Key",
+        "--secret=$Secret",
         "-c", $MaxConcurrentConnections.ToString(),
         "-r", $RetryCount.ToString(),
         "-l", $MaxSimultaneousRequests.ToString(),
@@ -260,7 +260,19 @@ function Invoke-BulkLoad {
 
     $previousColor = $host.UI.RawUI.ForegroundColor
     $host.UI.RawUI.ForegroundColor = "Cyan"
-    Write-Output "Executing: dotnet $($BulkLoadClientPaths.bulkLoadClientExe) $($options -join ' ')"
+    $displayOptions = foreach ($option in $options) {
+        if ($option -like "--key=*") {
+            "--key=<redacted>"
+        }
+        elseif ($option -like "--secret=*") {
+            "--secret=<redacted>"
+        }
+        else {
+            $option
+        }
+    }
+
+    Write-Output "Executing: dotnet $($BulkLoadClientPaths.bulkLoadClientExe) $($displayOptions -join ' ')"
     $host.UI.RawUI.ForegroundColor = $previousColor
 
     # Tee the loader output to a log so a non-zero exit can be classified by failure type.
@@ -553,6 +565,98 @@ function New-DatabaseTemplateCsproj {
 
     Write-Host "Project Created: " -ForegroundColor Green -NoNewline
     Write-Host (Get-ChildItem $csprojPath).FullName
+}
+
+function Initialize-PostgresqlTemplateRestoreGlobalRole {
+    param (
+        [string]$ContainerName
+    )
+
+    $enqueueOwnerRoleSql = @'
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+BEGIN
+    IF _owner_role IS NULL THEN
+        CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_roles roles
+        WHERE roles.oid = _owner_role
+          AND (roles.rolcanlogin OR roles.rolinherit OR roles.rolsuper OR roles.rolcreatedb OR roles.rolcreaterole OR roles.rolreplication OR roles.rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before restoring template packages.';
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members memberships
+        WHERE memberships.member = _owner_role
+          AND (memberships.admin_option OR memberships.inherit_option OR memberships.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before restoring template packages.';
+    END IF;
+END
+$$;
+'@
+
+    & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c $enqueueOwnerRoleSql | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to ensure PostgreSQL role 'edfi_dms_enqueue_owner' exists in container '$ContainerName'."
+    }
+}
+
+function Invoke-RestoredDataStoreIdentitySourceIdentityReseed {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param (
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [string]$ContainerName,
+
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        $reseedSql = @'
+SET NOCOUNT ON;
+UPDATE [dms].[DataStoreIdentity]
+SET [SourceIdentity] = NEWID()
+WHERE [DataStoreIdentitySingletonId] = 1;
+IF @@ROWCOUNT <> 1
+    THROW 50000, N'Restored database is missing the dms.DataStoreIdentity singleton row.', 1;
+'@
+
+        & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -Q $reseedSql | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to reseed dms.DataStoreIdentity.SourceIdentity in restored database '$DatabaseName'."
+        }
+
+        return
+    }
+
+    $reseedSql = @'
+DO $$
+DECLARE
+    _updated_count integer;
+BEGIN
+    UPDATE "dms"."DataStoreIdentity"
+    SET "SourceIdentity" = gen_random_uuid()
+    WHERE "DataStoreIdentitySingletonId" = 1;
+
+    GET DIAGNOSTICS _updated_count = ROW_COUNT;
+    IF _updated_count <> 1 THEN
+        RAISE EXCEPTION 'Restored database is missing the dms.DataStoreIdentity singleton row.';
+    END IF;
+END
+$$;
+'@
+
+    & docker exec $ContainerName psql -U postgres -d $DatabaseName -v ON_ERROR_STOP=1 -c $reseedSql | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to reseed dms.DataStoreIdentity.SourceIdentity in restored database '$DatabaseName'."
+    }
 }
 
 <#
@@ -902,6 +1006,8 @@ function Restore-TemplatePackage {
             & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -Q $restoreSql | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Restore of '$($bakFile.Name)' into '$DatabaseName' failed." }
 
+            Invoke-RestoredDataStoreIdentitySourceIdentityReseed -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $DatabaseName -MssqlPassword $MssqlPassword
+
             return $package.Name
         }
 
@@ -910,6 +1016,8 @@ function Restore-TemplatePackage {
         if ($null -eq $sqlFile) {
             throw "No .sql dump found inside package '$($package.Name)'."
         }
+
+        Initialize-PostgresqlTemplateRestoreGlobalRole -ContainerName $ContainerName
 
         # A connected session blocks DROP DATABASE; terminate any lingering ones as defense in
         # depth (restores target freshly created verification databases, so nothing should be
@@ -928,6 +1036,8 @@ function Restore-TemplatePackage {
 
         & docker exec $ContainerName psql -U postgres -d $DatabaseName -v ON_ERROR_STOP=1 -f /tmp/template-restore.sql | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Restore of '$($sqlFile.Name)' into '$DatabaseName' failed." }
+
+        Invoke-RestoredDataStoreIdentitySourceIdentityReseed -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $DatabaseName -MssqlPassword $MssqlPassword
 
         return $package.Name
     }

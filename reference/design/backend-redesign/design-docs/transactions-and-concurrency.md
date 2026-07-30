@@ -438,7 +438,7 @@ source/cache comparison and the durable cache-ahead latch; it does not make RCSI
 requirement for unlisted relational-only data stores. Runtime DMS validates the option and
 fails only projection/cache use for the affected target rather than executing
 `ALTER DATABASE`. The authoritative details are in
-[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
+[`cdc-streaming.md`](cdc/cdc-streaming.md#configuration-and-projection-target-selection).
 The target additionally requires server-level `nested triggers` with
 `sys.configurations.value_in_use = 1`; otherwise indirect `*_Stamp` updates do not invoke
 the `dms.Document` enqueue trigger. DMS validates but never changes either prerequisite

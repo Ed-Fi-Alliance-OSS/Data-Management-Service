@@ -1575,6 +1575,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
+    public void It_should_not_read_Mssql_Enqueue_story_server_config_or_use_execute_as_in_stamp_triggers()
+    {
+        _ddl.Should().NotContain("sys.configurations");
+        _ddl.Should().NotContain("EXECUTE AS");
+    }
+
+    [Test]
     public void It_should_filter_no_op_updates_by_comparing_stored_row_values()
     {
         _ddl.Should()

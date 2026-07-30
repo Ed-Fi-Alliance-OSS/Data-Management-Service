@@ -112,7 +112,7 @@ tombstone rather than the legacy `deleted=true` document body.
 
 ## References
 
-- [Relational CDC and Document Projection](../../cdc-streaming.md)
+- [Relational CDC and Document Projection](cdc/cdc-streaming.md)
 - [Kafka topic and message contract](cdc/0002-kafka-topic-and-message-contract.md)
 - [RedHatInsights/expandjsonsmt](https://github.com/RedHatInsights/expandjsonsmt)
 - [RedHatInsights/expandjsonsmt issue #19](https://github.com/RedHatInsights/expandjsonsmt/issues/19)

@@ -539,4 +539,4 @@ design.
 DMS startup never enables tracking. Mutable lifecycle, queue, CDC binding, and readiness
 state is deployment-owned and remains outside the bootstrap manifest. The current contract
 is owned by
-[Relational CDC and Document Projection](../../../cdc-streaming.md#enablement-and-initial-readiness-sequence).
+[Relational CDC and Document Projection](../cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).

@@ -11,7 +11,8 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// Emits deterministic seed DML for the core <c>dms.*</c> tables.
 /// <para>
 /// This includes insert-if-missing statements and inline validation for
-/// <c>dms.ResourceKey</c>, <c>dms.EffectiveSchema</c>, and <c>dms.SchemaComponent</c>.
+/// <c>dms.DataStoreIdentity</c>, <c>dms.DocumentCacheState</c>, <c>dms.ResourceKey</c>,
+/// <c>dms.EffectiveSchema</c>, and <c>dms.SchemaComponent</c>.
 /// </para>
 /// </summary>
 /// <remarks>
@@ -35,12 +36,18 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
+    private const string SeedDataHeader = "Seed Data (insert-if-missing + validation)";
+
+    private const string ZeroUuid = "00000000-0000-0000-0000-000000000000";
+
     /// <summary>
     /// SQL Server limits VALUES table constructors to 1000 rows.
     /// Chunks are capped at 999 to stay safely under the limit.
     /// </summary>
     private const int MaxValuesRows = 999;
 
+    private static readonly DbTableName _dataStoreIdentityTable = DmsTableNames.DataStoreIdentity;
+    private static readonly DbTableName _documentCacheStateTable = DmsTableNames.DocumentCacheState;
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _effectiveSchemaTable = EffectiveSchemaTableDefinition.Table;
     private static readonly DbColumnName _effectiveSchemaSingletonIdColumn =
@@ -56,8 +63,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     /// <summary>
-    /// Emits only the preflight hash-check SQL (Phase 0), without the Phase 7 seed DML.
-    /// Used by <see cref="FullDdlEmitter"/> to place the preflight before core DDL.
+    /// Emits only the bounded create-only provisioning guard SQL, without
+    /// seed DML. Used by <see cref="FullDdlEmitter"/> to place preflight
+    /// validation before core DDL.
     /// </summary>
     public string EmitPreflightOnly(string effectiveSchemaHash)
     {
@@ -65,11 +73,14 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         var writer = new SqlWriter(_dialect);
         EmitEffectiveSchemaHashPreflight(writer, effectiveSchemaHash);
+        EmitCompletedSchemaSingletonPreflight(writer, effectiveSchemaHash);
+        EmitKnownLegacyDocumentCacheArtifactPreflight(writer);
+        EmitPgsqlEnqueueOwnerPrerequisitePreflight(writer);
         return writer.ToString();
     }
 
     /// <summary>
-    /// Generates the seed DML script (Phase 7) for the configured dialect.
+    /// Generates the standalone seed DML script for the configured dialect.
     /// </summary>
     /// <param name="effectiveSchema">
     /// The effective schema info providing resource keys, schema components,
@@ -80,6 +91,19 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     /// (insert-if-missing + validation).
     /// </returns>
     public string Emit(EffectiveSchemaInfo effectiveSchema)
+    {
+        return Emit(effectiveSchema, fullDdlPhaseNumber: null);
+    }
+
+    /// <summary>
+    /// Generates the seed DML script with a combined full-DDL phase label.
+    /// </summary>
+    internal string EmitForFullDdl(EffectiveSchemaInfo effectiveSchema)
+    {
+        return Emit(effectiveSchema, fullDdlPhaseNumber: 10);
+    }
+
+    private string Emit(EffectiveSchemaInfo effectiveSchema, int? fullDdlPhaseNumber)
     {
         ArgumentNullException.ThrowIfNull(effectiveSchema);
 
@@ -97,8 +121,17 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         var writer = new SqlWriter(_dialect);
 
-        writer.WritePhaseHeader(7, "Seed Data (insert-if-missing + validation)");
+        if (fullDdlPhaseNumber is int phaseNumber)
+        {
+            writer.WritePhaseHeader(phaseNumber, SeedDataHeader);
+        }
+        else
+        {
+            writer.WriteSectionHeader(SeedDataHeader);
+        }
 
+        EmitDataStoreIdentityInsert(writer);
+        EmitDocumentCacheStateInsert(writer);
         EmitResourceKeySeeds(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitResourceKeyValidation(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitEffectiveSchemaInsert(writer, effectiveSchema);
@@ -118,7 +151,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits a preflight check that fails fast when the database is provisioned for a different effective schema hash.
+    /// Emits the EffectiveSchema hash compatibility portion of the bounded preflight.
     /// </summary>
     private void EmitEffectiveSchemaHashPreflight(SqlWriter writer, string effectiveSchemaHash)
     {
@@ -126,7 +159,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
         var tableObjectIdLiteral = RenderTableObjectIdLiteral(_effectiveSchemaTable);
 
-        writer.AppendLine("-- Preflight: fail fast if database is provisioned for a different schema hash");
+        writer.AppendLine("-- Preflight: validate EffectiveSchema hash compatibility");
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -188,6 +221,463 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine("END");
             }
             writer.AppendLine("END");
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits bounded protection for same-hash databases whose mutable E18 singleton state
+    /// must be preserved rather than recreated or reset.
+    /// </summary>
+    private void EmitCompletedSchemaSingletonPreflight(SqlWriter writer, string effectiveSchemaHash)
+    {
+        var effectiveSchemaTable = _dialect.QualifyTable(_effectiveSchemaTable);
+        var dataStoreIdentityTable = _dialect.QualifyTable(_dataStoreIdentityTable);
+        var documentCacheStateTable = _dialect.QualifyTable(_documentCacheStateTable);
+        var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
+        var effectiveSchemaRegclassLiteral = effectiveSchemaTable.Replace("'", "''");
+        var dataStoreIdentityRegclassLiteral = dataStoreIdentityTable.Replace("'", "''");
+        var documentCacheStateRegclassLiteral = documentCacheStateTable.Replace("'", "''");
+        var effectiveSchemaObjectIdLiteral = RenderTableObjectIdLiteral(_effectiveSchemaTable);
+        var dataStoreIdentityObjectIdLiteral = RenderTableObjectIdLiteral(_dataStoreIdentityTable);
+        var documentCacheStateObjectIdLiteral = RenderTableObjectIdLiteral(_documentCacheStateTable);
+
+        writer.AppendLine(
+            "-- Preflight: protect completed DocumentCache mutable singleton state before mutation"
+        );
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine("DO $$");
+            writer.AppendLine("DECLARE");
+            using (writer.Indent())
+            {
+                writer.AppendLine("_stored_hash text;");
+                writer.AppendLine("_source_identity uuid;");
+                writer.AppendLine("_lifecycle_state text;");
+                writer.AppendLine("_cache_ahead_recovery_required boolean;");
+            }
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"IF to_regclass('{effectiveSchemaRegclassLiteral}') IS NOT NULL THEN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        $"SELECT {Quote(_effectiveSchemaHashColumn)} INTO _stored_hash FROM {effectiveSchemaTable}"
+                    );
+                    writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
+                    writer.AppendLine($"IF _stored_hash = {hashLiteral} THEN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            $"IF to_regclass('{dataStoreIdentityRegclassLiteral}') IS NULL THEN"
+                        );
+                        using (writer.Indent())
+                        {
+                            writer.AppendLine(
+                                "RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, "
+                                    + "but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.';"
+                            );
+                        }
+                        writer.AppendLine("END IF;");
+                        writer.AppendLine();
+                        writer.AppendLine(
+                            $"SELECT {Quote("SourceIdentity")} INTO _source_identity FROM {dataStoreIdentityTable}"
+                        );
+                        writer.AppendLine($"WHERE {Quote("DataStoreIdentitySingletonId")} = 1;");
+                        writer.AppendLine("IF _source_identity IS NULL THEN");
+                        using (writer.Indent())
+                        {
+                            writer.AppendLine(
+                                "RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, "
+                                    + "but dms.DataStoreIdentity singleton row is missing. Drop and recreate the database before re-provisioning.';"
+                            );
+                        }
+                        writer.AppendLine("END IF;");
+                        writer.AppendLine($"IF _source_identity = '{ZeroUuid}'::uuid THEN");
+                        using (writer.Indent())
+                        {
+                            writer.AppendLine(
+                                "RAISE EXCEPTION 'dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. "
+                                    + "Drop and recreate the database before re-provisioning.';"
+                            );
+                        }
+                        writer.AppendLine("END IF;");
+                        writer.AppendLine();
+                        writer.AppendLine(
+                            $"IF to_regclass('{documentCacheStateRegclassLiteral}') IS NULL THEN"
+                        );
+                        using (writer.Indent())
+                        {
+                            writer.AppendLine(
+                                "RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, "
+                                    + "but dms.DocumentCacheState is missing. Drop and recreate the database before re-provisioning.';"
+                            );
+                        }
+                        writer.AppendLine("END IF;");
+                        writer.AppendLine();
+                        writer.AppendLine(
+                            $"SELECT {Quote("ProjectionLifecycleState")}, {Quote("CacheAheadRecoveryRequired")} INTO _lifecycle_state, _cache_ahead_recovery_required"
+                        );
+                        writer.AppendLine($"FROM {documentCacheStateTable}");
+                        writer.AppendLine($"WHERE {Quote("StateId")} = 1;");
+                        writer.AppendLine("IF _lifecycle_state IS NULL THEN");
+                        using (writer.Indent())
+                        {
+                            writer.AppendLine(
+                                "RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, "
+                                    + "but dms.DocumentCacheState singleton row is missing. Drop and recreate the database before re-provisioning.';"
+                            );
+                        }
+                        writer.AppendLine("END IF;");
+                        writer.AppendLine(
+                            "IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN"
+                        );
+                        using (writer.Indent())
+                        {
+                            writer.AppendLine(
+                                "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % during provisioning preflight.', _lifecycle_state;"
+                            );
+                        }
+                        writer.AppendLine("END IF;");
+                        writer.AppendLine("IF _cache_ahead_recovery_required IS NULL THEN");
+                        using (writer.Indent())
+                        {
+                            writer.AppendLine(
+                                "RAISE EXCEPTION 'dms.DocumentCacheState.CacheAheadRecoveryRequired must not be null during provisioning preflight.';"
+                            );
+                        }
+                        writer.AppendLine("END IF;");
+                    }
+                    writer.AppendLine("END IF;");
+                }
+                writer.AppendLine("END IF;");
+            }
+            writer.AppendLine("END $$;");
+        }
+        else
+        {
+            writer.AppendLine("DECLARE @preflight_completed_hash nvarchar(200);");
+            writer.AppendLine();
+            writer.AppendLine($"IF OBJECT_ID(N'{effectiveSchemaObjectIdLiteral}', N'U') IS NOT NULL");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    $"SELECT @preflight_completed_hash = {Quote(_effectiveSchemaHashColumn)} FROM {effectiveSchemaTable}"
+                );
+                writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
+                writer.AppendLine($"IF @preflight_completed_hash = {hashLiteral}");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"IF OBJECT_ID(N'{dataStoreIdentityObjectIdLiteral}', N'U') IS NULL");
+                    writer.AppendLine("BEGIN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.', 1;"
+                        );
+                    }
+                    writer.AppendLine("END");
+                    writer.AppendLine();
+                    writer.AppendLine("DECLARE @preflight_source_identity uniqueidentifier;");
+                    writer.AppendLine("EXEC sys.sp_executesql");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "N'SELECT @source_identity = [SourceIdentity] FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1;',"
+                        );
+                        writer.AppendLine("N'@source_identity uniqueidentifier OUTPUT',");
+                        writer.AppendLine("@source_identity = @preflight_source_identity OUTPUT;");
+                    }
+                    writer.AppendLine("IF @preflight_source_identity IS NULL");
+                    writer.AppendLine("BEGIN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity singleton row is missing. Drop and recreate the database before re-provisioning.', 1;"
+                        );
+                    }
+                    writer.AppendLine("END");
+                    writer.AppendLine(
+                        $"IF @preflight_source_identity = CAST('{ZeroUuid}' AS uniqueidentifier)"
+                    );
+                    writer.AppendLine("BEGIN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "THROW 50000, N'dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. Drop and recreate the database before re-provisioning.', 1;"
+                        );
+                    }
+                    writer.AppendLine("END");
+                    writer.AppendLine();
+                    writer.AppendLine($"IF OBJECT_ID(N'{documentCacheStateObjectIdLiteral}', N'U') IS NULL");
+                    writer.AppendLine("BEGIN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState is missing. Drop and recreate the database before re-provisioning.', 1;"
+                        );
+                    }
+                    writer.AppendLine("END");
+                    writer.AppendLine();
+                    writer.AppendLine("DECLARE @preflight_lifecycle_state varchar(16);");
+                    writer.AppendLine("DECLARE @preflight_cache_ahead_recovery_required bit;");
+                    writer.AppendLine("EXEC sys.sp_executesql");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "N'SELECT @lifecycle_state = [ProjectionLifecycleState], @cache_ahead_recovery_required = [CacheAheadRecoveryRequired] FROM [dms].[DocumentCacheState] WHERE [StateId] = 1;',"
+                        );
+                        writer.AppendLine(
+                            "N'@lifecycle_state varchar(16) OUTPUT, @cache_ahead_recovery_required bit OUTPUT',"
+                        );
+                        writer.AppendLine("@lifecycle_state = @preflight_lifecycle_state OUTPUT,");
+                        writer.AppendLine(
+                            "@cache_ahead_recovery_required = @preflight_cache_ahead_recovery_required OUTPUT;"
+                        );
+                    }
+                    writer.AppendLine("IF @preflight_lifecycle_state IS NULL");
+                    writer.AppendLine("BEGIN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState singleton row is missing. Drop and recreate the database before re-provisioning.', 1;"
+                        );
+                    }
+                    writer.AppendLine("END");
+                    writer.AppendLine("IF NOT (");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "(@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)"
+                        );
+                        writer.AppendLine(
+                            "OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)"
+                        );
+                        writer.AppendLine(
+                            "OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)"
+                        );
+                        writer.AppendLine(
+                            "OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)"
+                        );
+                    }
+                    writer.AppendLine(")");
+                    writer.AppendLine("BEGIN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value during provisioning preflight.', 1;"
+                        );
+                    }
+                    writer.AppendLine("END");
+                    writer.AppendLine("IF @preflight_cache_ahead_recovery_required IS NULL");
+                    writer.AppendLine("BEGIN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "THROW 50000, N'dms.DocumentCacheState.CacheAheadRecoveryRequired must not be null during provisioning preflight.', 1;"
+                        );
+                    }
+                    writer.AppendLine("END");
+                }
+                writer.AppendLine("END");
+            }
+            writer.AppendLine("END");
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits bounded detection for named legacy cache artifacts that require drop-and-recreate.
+    /// </summary>
+    private void EmitKnownLegacyDocumentCacheArtifactPreflight(SqlWriter writer)
+    {
+        var documentCacheObjectIdLiteral = RenderTableObjectIdLiteral(DmsTableNames.DocumentCache);
+        var documentCacheRegclassLiteral = _dialect
+            .QualifyTable(DmsTableNames.DocumentCache)
+            .Replace("'", "''");
+
+        writer.AppendLine("-- Preflight: reject known legacy DocumentCache artifacts before mutation");
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine("DO $$");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("IF EXISTS (");
+                using (writer.Indent())
+                {
+                    writer.AppendLine("SELECT 1");
+                    writer.AppendLine("FROM information_schema.columns");
+                    writer.AppendLine("WHERE table_schema = 'dms'");
+                    writer.AppendLine("AND table_name = 'DocumentCache'");
+                    writer.AppendLine("AND column_name = 'Etag'");
+                }
+                writer.AppendLine(") THEN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        "RAISE EXCEPTION 'Known legacy artifact dms.DocumentCache.Etag was found. Drop and recreate the database before provisioning E18 DocumentCache schema.';"
+                    );
+                }
+                writer.AppendLine("END IF;");
+                writer.AppendLine();
+                writer.AppendLine("IF EXISTS (");
+                using (writer.Indent())
+                {
+                    writer.AppendLine("SELECT 1");
+                    writer.AppendLine("FROM pg_catalog.pg_constraint constraint_info");
+                    writer.AppendLine("WHERE constraint_info.conname = 'UX_DocumentCache_DocumentUuid'");
+                    writer.AppendLine(
+                        $"AND constraint_info.conrelid = to_regclass('{documentCacheRegclassLiteral}')"
+                    );
+                }
+                writer.AppendLine(
+                    ") OR to_regclass('\"dms\".\"UX_DocumentCache_DocumentUuid\"') IS NOT NULL THEN"
+                );
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        "RAISE EXCEPTION 'Known legacy artifact UX_DocumentCache_DocumentUuid was found. Drop and recreate the database before provisioning E18 DocumentCache schema.';"
+                    );
+                }
+                writer.AppendLine("END IF;");
+                writer.AppendLine();
+                writer.AppendLine(
+                    "IF to_regclass('\"dms\".\"IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt\"') IS NOT NULL THEN"
+                );
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        "RAISE EXCEPTION 'Known legacy artifact IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt was found. Drop and recreate the database before provisioning E18 DocumentCache schema.';"
+                    );
+                }
+                writer.AppendLine("END IF;");
+            }
+            writer.AppendLine("END $$;");
+        }
+        else
+        {
+            writer.AppendLine(
+                $"IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'{documentCacheObjectIdLiteral}', N'U') AND name = N'Etag')"
+            );
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "THROW 50000, N'Known legacy artifact dms.DocumentCache.Etag was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;"
+                );
+            }
+            writer.AppendLine("END");
+            writer.AppendLine();
+            writer.AppendLine(
+                $"IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID(N'{documentCacheObjectIdLiteral}', N'U') AND name = N'UX_DocumentCache_DocumentUuid')"
+            );
+            writer.AppendLine(
+                $"OR EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'{documentCacheObjectIdLiteral}', N'U') AND name = N'UX_DocumentCache_DocumentUuid')"
+            );
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "THROW 50000, N'Known legacy artifact UX_DocumentCache_DocumentUuid was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;"
+                );
+            }
+            writer.AppendLine("END");
+            writer.AppendLine();
+            writer.AppendLine(
+                $"IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'{documentCacheObjectIdLiteral}', N'U') AND name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt')"
+            );
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    "THROW 50000, N'Known legacy artifact IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;"
+                );
+            }
+            writer.AppendLine("END");
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits PostgreSQL-only preflight checks for safely creating or reusing the enqueue owner role.
+    /// </summary>
+    private void EmitPgsqlEnqueueOwnerPrerequisitePreflight(SqlWriter writer)
+    {
+        if (_dialect.Rules.Dialect != SqlDialect.Pgsql)
+        {
+            return;
+        }
+
+        PgsqlEnqueueOwnerPrerequisiteSql.EmitStandalonePreflightDoBlock(writer);
+    }
+
+    /// <summary>
+    /// Emits insert-if-missing initialization for the stable <c>dms.DataStoreIdentity</c> singleton.
+    /// </summary>
+    private void EmitDataStoreIdentityInsert(SqlWriter writer)
+    {
+        var table = _dialect.QualifyTable(_dataStoreIdentityTable);
+        var singletonColumn = Quote("DataStoreIdentitySingletonId");
+        var sourceIdentityColumn = Quote("SourceIdentity");
+
+        writer.AppendLine("-- DataStoreIdentity singleton insert-if-missing");
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"INSERT INTO {table} ({singletonColumn}, {sourceIdentityColumn})");
+            writer.AppendLine("VALUES (1, gen_random_uuid())");
+            writer.AppendLine($"ON CONFLICT ({singletonColumn}) DO NOTHING;");
+        }
+        else
+        {
+            writer.AppendLine($"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {singletonColumn} = 1)");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INSERT INTO {table} ({singletonColumn}, {sourceIdentityColumn})");
+                writer.AppendLine("VALUES (1, NEWID());");
+            }
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits insert-if-missing initialization for the <c>dms.DocumentCacheState</c> singleton.
+    /// </summary>
+    private void EmitDocumentCacheStateInsert(SqlWriter writer)
+    {
+        var table = _dialect.QualifyTable(_documentCacheStateTable);
+        var stateIdColumn = Quote("StateId");
+        var lifecycleColumn = Quote("ProjectionLifecycleState");
+        var recoveryRequiredColumn = Quote("CacheAheadRecoveryRequired");
+        var disabledLiteral = _dialect.RenderStringLiteral("Disabled");
+        var clearLatchLiteral = _dialect.RenderBooleanLiteral(false);
+
+        writer.AppendLine("-- DocumentCacheState singleton insert-if-missing");
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine(
+                $"INSERT INTO {table} ({stateIdColumn}, {lifecycleColumn}, {recoveryRequiredColumn})"
+            );
+            writer.AppendLine($"VALUES (1, {disabledLiteral}, {clearLatchLiteral})");
+            writer.AppendLine($"ON CONFLICT ({stateIdColumn}) DO NOTHING;");
+        }
+        else
+        {
+            writer.AppendLine($"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {stateIdColumn} = 1)");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    $"INSERT INTO {table} ({stateIdColumn}, {lifecycleColumn}, {recoveryRequiredColumn})"
+                );
+                writer.AppendLine($"VALUES (1, {disabledLiteral}, {clearLatchLiteral});");
+            }
         }
         writer.AppendLine();
     }

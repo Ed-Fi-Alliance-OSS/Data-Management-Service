@@ -1,8 +1,8 @@
 -- ==========================================================
--- Phase 0: Preflight (fail fast on schema hash mismatch)
+-- Phase 0: Bounded Provisioning Guards
 -- ==========================================================
 
--- Preflight: fail fast if database is provisioned for a different schema hash
+-- Preflight: validate EffectiveSchema hash compatibility
 DECLARE @preflight_stored_hash nvarchar(200);
 
 IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
@@ -14,6 +14,83 @@ BEGIN
         DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61', N'''');
         THROW 50000, @preflight_msg, 1;
     END
+END
+
+-- Preflight: protect completed DocumentCache mutable singleton state before mutation
+DECLARE @preflight_completed_hash nvarchar(200);
+
+IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
+BEGIN
+    SELECT @preflight_completed_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
+    WHERE [EffectiveSchemaSingletonId] = 1;
+    IF @preflight_completed_hash = N'6e60cfa6542d6b591e4cb527850c1431eb114de346d9aa3d0ab466fa615bda61'
+    BEGIN
+        IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        DECLARE @preflight_source_identity uniqueidentifier;
+        EXEC sys.sp_executesql
+            N'SELECT @source_identity = [SourceIdentity] FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1;',
+            N'@source_identity uniqueidentifier OUTPUT',
+            @source_identity = @preflight_source_identity OUTPUT;
+        IF @preflight_source_identity IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity singleton row is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+        IF @preflight_source_identity = CAST('00000000-0000-0000-0000-000000000000' AS uniqueidentifier)
+        BEGIN
+            THROW 50000, N'dms.DataStoreIdentity.SourceIdentity must not be the zero UUID. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        IF OBJECT_ID(N'dms.DocumentCacheState', N'U') IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+
+        DECLARE @preflight_lifecycle_state varchar(16);
+        DECLARE @preflight_cache_ahead_recovery_required bit;
+        EXEC sys.sp_executesql
+            N'SELECT @lifecycle_state = [ProjectionLifecycleState], @cache_ahead_recovery_required = [CacheAheadRecoveryRequired] FROM [dms].[DocumentCacheState] WHERE [StateId] = 1;',
+            N'@lifecycle_state varchar(16) OUTPUT, @cache_ahead_recovery_required bit OUTPUT',
+            @lifecycle_state = @preflight_lifecycle_state OUTPUT,
+            @cache_ahead_recovery_required = @preflight_cache_ahead_recovery_required OUTPUT;
+        IF @preflight_lifecycle_state IS NULL
+        BEGIN
+            THROW 50000, N'Completed dms.EffectiveSchema hash matches this DDL, but dms.DocumentCacheState singleton row is missing. Drop and recreate the database before re-provisioning.', 1;
+        END
+        IF NOT (
+            (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@preflight_lifecycle_state) = 9)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@preflight_lifecycle_state) = 10)
+            OR (@preflight_lifecycle_state COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@preflight_lifecycle_state) = 8)
+        )
+        BEGIN
+            THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value during provisioning preflight.', 1;
+        END
+        IF @preflight_cache_ahead_recovery_required IS NULL
+        BEGIN
+            THROW 50000, N'dms.DocumentCacheState.CacheAheadRecoveryRequired must not be null during provisioning preflight.', 1;
+        END
+    END
+END
+
+-- Preflight: reject known legacy DocumentCache artifacts before mutation
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'Etag')
+BEGIN
+    THROW 50000, N'Known legacy artifact dms.DocumentCache.Etag was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
+END
+
+IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'UX_DocumentCache_DocumentUuid')
+OR EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'UX_DocumentCache_DocumentUuid')
+BEGIN
+    THROW 50000, N'Known legacy artifact UX_DocumentCache_DocumentUuid was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
+END
+
+IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt')
+BEGIN
+    THROW 50000, N'Known legacy artifact IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt was found. Drop and recreate the database before provisioning E18 DocumentCache schema.', 1;
 END
 
 -- ==========================================================
@@ -130,6 +207,21 @@ CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
 -- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)
 -- ==========================================================
 
+IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
+CREATE TABLE [dms].[DataStoreIdentity]
+(
+    [DataStoreIdentitySingletonId] smallint NOT NULL,
+    [SourceIdentity] uniqueidentifier NOT NULL,
+    CONSTRAINT [PK_DataStoreIdentity] PRIMARY KEY CLUSTERED ([DataStoreIdentitySingletonId])
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DataStoreIdentity_Singleton' AND parent_object_id = OBJECT_ID(N'dms.DataStoreIdentity')
+)
+ALTER TABLE [dms].[DataStoreIdentity]
+ADD CONSTRAINT [CK_DataStoreIdentity_Singleton] CHECK ([DataStoreIdentitySingletonId] = 1);
+
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
@@ -185,8 +277,8 @@ CREATE TABLE [dms].[DocumentCache]
     [ProjectName] nvarchar(256) NOT NULL,
     [ResourceName] nvarchar(256) NOT NULL,
     [ResourceVersion] nvarchar(32) NOT NULL,
-    [Etag] nvarchar(64) NOT NULL,
     [ContentVersion] bigint NOT NULL,
+    [StreamEtag] varchar(64) NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
@@ -194,18 +286,44 @@ CREATE TABLE [dms].[DocumentCache]
 );
 
 IF NOT EXISTS (
-    SELECT 1 FROM sys.key_constraints
-    WHERE name = N'UX_DocumentCache_DocumentUuid' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.DocumentCache')
-)
-ALTER TABLE [dms].[DocumentCache]
-ADD CONSTRAINT [UX_DocumentCache_DocumentUuid] UNIQUE ([DocumentUuid]);
-
-IF NOT EXISTS (
     SELECT 1 FROM sys.check_constraints
     WHERE name = N'CK_DocumentCache_IsJsonObject' AND parent_object_id = OBJECT_ID(N'dms.DocumentCache')
 )
 ALTER TABLE [dms].[DocumentCache]
 ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson]) = 1 AND LEFT(LTRIM([DocumentJson]), 1) = '{');
+
+IF OBJECT_ID(N'dms.DocumentCacheState', N'U') IS NULL
+CREATE TABLE [dms].[DocumentCacheState]
+(
+    [StateId] smallint NOT NULL,
+    [ProjectionLifecycleState] varchar(16) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    [CacheAheadRecoveryRequired] bit NOT NULL,
+    CONSTRAINT [PK_DocumentCacheState] PRIMARY KEY CLUSTERED ([StateId])
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DocumentCacheState_Singleton' AND parent_object_id = OBJECT_ID(N'dms.DocumentCacheState')
+)
+ALTER TABLE [dms].[DocumentCacheState]
+ADD CONSTRAINT [CK_DocumentCacheState_Singleton] CHECK ([StateId] = 1);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_DocumentCacheState_Lifecycle' AND parent_object_id = OBJECT_ID(N'dms.DocumentCacheState')
+)
+ALTER TABLE [dms].[DocumentCacheState]
+ADD CONSTRAINT [CK_DocumentCacheState_Lifecycle] CHECK (([ProjectionLifecycleState] = 'Disabled' AND DATALENGTH([ProjectionLifecycleState]) = 8) OR ([ProjectionLifecycleState] = 'Resetting' AND DATALENGTH([ProjectionLifecycleState]) = 9) OR ([ProjectionLifecycleState] = 'Rebuilding' AND DATALENGTH([ProjectionLifecycleState]) = 10) OR ([ProjectionLifecycleState] = 'Tracking' AND DATALENGTH([ProjectionLifecycleState]) = 8));
+
+IF OBJECT_ID(N'dms.DocumentProjectionWork', N'U') IS NULL
+CREATE TABLE [dms].[DocumentProjectionWork]
+(
+    [DocumentId] bigint NOT NULL,
+    [RequiredContentVersion] bigint NOT NULL,
+    [FirstEnqueuedAt] datetime2(7) NOT NULL,
+    [LastEnqueuedAt] datetime2(7) NOT NULL,
+    CONSTRAINT [PK_DocumentProjectionWork] PRIMARY KEY CLUSTERED ([DocumentId])
+);
 
 IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NULL
 CREATE TABLE [dms].[EffectiveSchema]
@@ -328,6 +446,17 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_DocumentProjectionWork_Document' AND parent_object_id = OBJECT_ID(N'dms.DocumentProjectionWork')
+)
+ALTER TABLE [dms].[DocumentProjectionWork]
+ADD CONSTRAINT [FK_DocumentProjectionWork_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ReferentialIdentity_Document' AND parent_object_id = OBJECT_ID(N'dms.ReferentialIdentity')
 )
 ALTER TABLE [dms].[ReferentialIdentity]
@@ -383,9 +512,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'DocumentCache' AND i.name = N'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt'
+    WHERE s.name = N'dms' AND t.name = N'DocumentProjectionWork' AND i.name = N'IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId'
 )
-CREATE INDEX [IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt] ON [dms].[DocumentCache] ([ProjectName], [ResourceName], [LastModifiedAt], [DocumentId]);
+CREATE INDEX [IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId] ON [dms].[DocumentProjectionWork] ([FirstEnqueuedAt], [DocumentId]);
 
 -- ==========================================================
 -- Phase 8: Triggers
@@ -459,6 +588,86 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+END;
+GO
+
+GO
+CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]
+ON [dms].[Document]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @lifecycleState varchar(16);
+    SELECT @lifecycleState = [ProjectionLifecycleState]
+    FROM [dms].[DocumentCacheState]
+    WHERE [StateId] = 1;
+
+    IF @lifecycleState IS NULL
+    BEGIN
+        THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;
+    END
+
+    IF NOT (
+        (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@lifecycleState) = 9)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@lifecycleState) = 10)
+        OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@lifecycleState) = 8)
+    )
+    BEGIN
+        THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;
+    END
+
+    IF @lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8
+    BEGIN
+        RETURN;
+    END
+
+    DECLARE @required TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [RequiredContentVersion] bigint NOT NULL
+    );
+
+    INSERT INTO @required ([DocumentId], [RequiredContentVersion])
+    SELECT i.[DocumentId], MAX(i.[ContentVersion])
+    FROM inserted i
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL OR i.[ContentVersion] <> del.[ContentVersion]
+    GROUP BY i.[DocumentId];
+
+    DECLARE @enqueuedAt datetime2(7) = SYSUTCDATETIME();
+
+    UPDATE work
+    SET work.[RequiredContentVersion] = req.[RequiredContentVersion],
+        work.[LastEnqueuedAt] = @enqueuedAt
+    FROM [dms].[DocumentProjectionWork] work
+    INNER JOIN @required req ON req.[DocumentId] = work.[DocumentId]
+    WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion];
+
+    INSERT INTO [dms].[DocumentProjectionWork] ([DocumentId], [RequiredContentVersion], [FirstEnqueuedAt], [LastEnqueuedAt])
+    SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt
+    FROM @required req
+    LEFT JOIN [dms].[DocumentProjectionWork] work ON work.[DocumentId] = req.[DocumentId]
+    WHERE work.[DocumentId] IS NULL;
+END;
+GO
+
+GO
+CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]
+ON [dms].[DocumentCache]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
+        WHERE i.[DocumentUuid] <> d.[DocumentUuid]
+    )
+    BEGIN
+        THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;
     END
 END;
 GO
@@ -69244,8 +69453,18 @@ END;
 GO
 
 -- ==========================================================
--- Phase 7: Seed Data (insert-if-missing + validation)
+-- Phase 10: Seed Data (insert-if-missing + validation)
 -- ==========================================================
+
+-- DataStoreIdentity singleton insert-if-missing
+IF NOT EXISTS (SELECT 1 FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1)
+    INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])
+    VALUES (1, NEWID());
+
+-- DocumentCacheState singleton insert-if-missing
+IF NOT EXISTS (SELECT 1 FROM [dms].[DocumentCacheState] WHERE [StateId] = 1)
+    INSERT INTO [dms].[DocumentCacheState] ([StateId], [ProjectionLifecycleState], [CacheAheadRecoveryRequired])
+    VALUES (1, N'Disabled', 0);
 
 -- ResourceKey seed inserts (insert-if-missing)
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 1)

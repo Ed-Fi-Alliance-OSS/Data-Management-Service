@@ -12,7 +12,7 @@ related:
 
 - **Cache-backed reads and domain lifecycle**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle
 - **Freshness and reconciliation**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation
-- **Configuration and projection target selection**: reference/design/cdc-streaming.md#configuration-and-projection-target-selection
+- **Configuration and projection target selection**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection
 
 The referenced design sections define cache usability, fallback, response shaping, and direct
 fill. This story is only the work package for implementing them.

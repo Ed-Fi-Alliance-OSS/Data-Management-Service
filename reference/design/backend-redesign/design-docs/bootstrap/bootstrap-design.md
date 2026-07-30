@@ -531,7 +531,7 @@ prepare-dms-schema.ps1
 > `.bootstrap/ApiSchema` into the DMS container; staged claims are activated per manifest `claims.mode`.
 > In bootstrap mode, Debezium connector registration is skipped unless a future explicit CDC opt-in (for example
 > `-EnableKafkaCdc`) is supplied. The relational connector follows
-> [Relational CDC and Document Projection](../../../cdc-streaming.md); it must not reuse the legacy connector that targeted `dms.document`,
+> [Relational CDC and Document Projection](../cdc/cdc-streaming.md); it must not reuse the legacy connector that targeted `dms.document`,
 > `dms.educationorganizationhierarchytermslookup`, or the `to_debezium` publication. The future opt-in uses
 > deployment-owned binding state under a separate `.cdc-state` root (or an explicit persistent override), never
 > the root bootstrap manifest; DMS consumes only its explicit `DocumentCache:Targets` configuration and exposes

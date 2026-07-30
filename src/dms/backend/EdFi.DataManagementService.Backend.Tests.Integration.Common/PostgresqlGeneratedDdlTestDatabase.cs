@@ -23,6 +23,8 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
     private const int DefaultCommandTimeoutSeconds = 300;
     private static readonly string[] _generatedDdlBaselineTables =
     [
+        "DataStoreIdentity",
+        "DocumentCacheState",
         "EffectiveSchema",
         "ResourceKey",
         "SchemaComponent",

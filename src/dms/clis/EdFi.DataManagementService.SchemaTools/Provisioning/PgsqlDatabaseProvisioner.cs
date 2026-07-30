@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -19,13 +20,41 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
 {
     private static readonly DialectSql _dialect = new(
         EffectiveSchemaTableExistsSql: "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'EffectiveSchema'",
-        EffectiveSchemaHashSql: """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1""",
         SeedTableCheckSql: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'dms' AND table_name IN ('ResourceKey', 'SchemaComponent')",
         EffectiveSchemaFingerprintSql: EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(
             SqlDialect.Pgsql
         ),
+        DataStoreIdentityTableExistsSql: "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'DataStoreIdentity'",
+        DataStoreIdentitySourceIdentitySql: """SELECT "SourceIdentity" FROM dms."DataStoreIdentity" WHERE "DataStoreIdentitySingletonId" = 1""",
+        DocumentCacheStateTableExistsSql: "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'DocumentCacheState'",
+        DocumentCacheStateSingletonSql: """SELECT "ProjectionLifecycleState", "CacheAheadRecoveryRequired" FROM dms."DocumentCacheState" WHERE "StateId" = 1""",
+        KnownLegacyDocumentCacheArtifactSql: """
+        SELECT 'dms."DocumentCache"."Etag"'
+        WHERE EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'dms'
+            AND table_name = 'DocumentCache'
+            AND column_name = 'Etag'
+        )
+        UNION ALL
+        SELECT 'UX_DocumentCache_DocumentUuid'
+        WHERE EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_constraint constraint_info
+            WHERE constraint_info.conname = 'UX_DocumentCache_DocumentUuid'
+            AND constraint_info.conrelid = to_regclass('"dms"."DocumentCache"')
+        )
+        OR to_regclass('"dms"."UX_DocumentCache_DocumentUuid"') IS NOT NULL
+        UNION ALL
+        SELECT 'IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt'
+        WHERE to_regclass('"dms"."IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt"') IS NOT NULL
+        """,
+        ProviderPrerequisiteSql: PgsqlEnqueueOwnerPrerequisiteSql.ProviderPrerequisiteSql,
         ResourceKeySelectSql: @"SELECT ""ResourceKeyId"", ""ProjectName"", ""ResourceName"", ""ResourceVersion"" FROM dms.""ResourceKey"" ORDER BY ""ResourceKeyId""",
         SchemaComponentSelectSql: @"SELECT ""ProjectEndpointName"", ""ProjectName"", ""ProjectVersion"", ""IsExtensionProject"" FROM dms.""SchemaComponent"" WHERE ""EffectiveSchemaHash"" = @hash ORDER BY ""ProjectEndpointName""",
+        MissingTableDataStoreIdentity: "dms.\"DataStoreIdentity\"",
+        MissingTableDocumentCacheState: "dms.\"DocumentCacheState\"",
         MissingTableResourceKey: "dms.\"ResourceKey\"",
         MissingTableSchemaComponent: "dms.\"SchemaComponent\""
     );

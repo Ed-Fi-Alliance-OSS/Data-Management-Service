@@ -96,6 +96,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         var phase6 = _ddl.IndexOf("Phase 6: Foreign Keys", StringComparison.Ordinal);
         var phase7 = _ddl.IndexOf("Phase 7: Indexes", StringComparison.Ordinal);
         var phase8 = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
+        var phase9 = _ddl.IndexOf("Phase 9: Security and Grants", StringComparison.Ordinal);
 
         phase1.Should().BeGreaterOrEqualTo(0);
         phase2.Should().BeGreaterThan(phase1);
@@ -105,6 +106,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         phase6.Should().BeGreaterThan(phase5);
         phase7.Should().BeGreaterThan(phase6);
         phase8.Should().BeGreaterThan(phase7);
+        phase9.Should().BeGreaterThan(phase8);
     }
 
     // ── Schema and sequence ─────────────────────────────────────────
@@ -141,7 +143,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
             StringComparison.Ordinal
         );
         var firstTable = _ddl.IndexOf(
-            "CREATE TABLE IF NOT EXISTS \"dms\".\"Descriptor\"",
+            "CREATE TABLE IF NOT EXISTS \"dms\".\"DataStoreIdentity\"",
             StringComparison.Ordinal
         );
 
@@ -232,6 +234,14 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── Tables ──────────────────────────────────────────────────────
 
     [Test]
+    public void It_should_create_data_store_identity_table()
+    {
+        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DataStoreIdentity\"");
+        _ddl.Should().Contain("\"DataStoreIdentitySingletonId\" smallint NOT NULL");
+        _ddl.Should().Contain("\"SourceIdentity\" uuid NOT NULL");
+    }
+
+    [Test]
     public void It_should_create_descriptor_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"Descriptor\"");
@@ -265,11 +275,36 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     [Test]
     public void It_should_emit_content_version_column_on_document_cache_table()
     {
-        // Schema-only column added for the cached-vs-canonical freshness check
-        // (cached.ContentVersion == dms.Document.ContentVersion AND
-        //  cached.LastModifiedAt == dms.Document.ContentLastModifiedAt).
+        // Schema-only column for row-level cache freshness. A row in this table
+        // is fresh when its ContentVersion matches dms.Document.ContentVersion.
+        // LastModifiedAt remains projected payload metadata.
         // Runtime cache reader/writer lands in a follow-on ticket.
         _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL");
+    }
+
+    [Test]
+    public void It_should_emit_stream_etag_column_on_document_cache_table()
+    {
+        _ddl.Should().Contain("\"StreamEtag\" varchar(64) NOT NULL");
+        _ddl.Should().NotContain("\"Etag\" varchar(64) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_document_cache_state_table()
+    {
+        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentCacheState\"");
+        _ddl.Should().Contain("\"StateId\" smallint NOT NULL");
+        _ddl.Should().Contain("\"ProjectionLifecycleState\" varchar(16) NOT NULL");
+        _ddl.Should().Contain("\"CacheAheadRecoveryRequired\" boolean NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_document_projection_work_table()
+    {
+        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentProjectionWork\"");
+        _ddl.Should().Contain("\"RequiredContentVersion\" bigint NOT NULL");
+        _ddl.Should().Contain("\"FirstEnqueuedAt\" timestamp with time zone NOT NULL");
+        _ddl.Should().Contain("\"LastEnqueuedAt\" timestamp with time zone NOT NULL");
     }
 
     [Test]
@@ -302,16 +337,25 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_emit_tables_in_alphabetical_order()
     {
         var descriptor = _ddl.IndexOf("\"dms\".\"Descriptor\"", StringComparison.Ordinal);
+        var dataStoreIdentity = _ddl.IndexOf("\"dms\".\"DataStoreIdentity\"", StringComparison.Ordinal);
         var document = _ddl.IndexOf("\"dms\".\"Document\"", StringComparison.Ordinal);
         var documentCache = _ddl.IndexOf("\"dms\".\"DocumentCache\"", StringComparison.Ordinal);
+        var documentCacheState = _ddl.IndexOf("\"dms\".\"DocumentCacheState\"", StringComparison.Ordinal);
+        var documentProjectionWork = _ddl.IndexOf(
+            "\"dms\".\"DocumentProjectionWork\"",
+            StringComparison.Ordinal
+        );
         var effectiveSchema = _ddl.IndexOf("\"dms\".\"EffectiveSchema\"", StringComparison.Ordinal);
         var referentialIdentity = _ddl.IndexOf("\"dms\".\"ReferentialIdentity\"", StringComparison.Ordinal);
         var resourceKey = _ddl.IndexOf("\"dms\".\"ResourceKey\"", StringComparison.Ordinal);
         var schemaComponent = _ddl.IndexOf("\"dms\".\"SchemaComponent\"", StringComparison.Ordinal);
 
+        dataStoreIdentity.Should().BeLessThan(descriptor);
         descriptor.Should().BeLessThan(document);
         document.Should().BeLessThan(documentCache);
-        documentCache.Should().BeLessThan(effectiveSchema);
+        documentCache.Should().BeLessThan(documentCacheState);
+        documentCacheState.Should().BeLessThan(documentProjectionWork);
+        documentProjectionWork.Should().BeLessThan(effectiveSchema);
         effectiveSchema.Should().BeLessThan(referentialIdentity);
         referentialIdentity.Should().BeLessThan(resourceKey);
         resourceKey.Should().BeLessThan(schemaComponent);
@@ -378,6 +422,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── Primary keys ────────────────────────────────────────────────
 
     [Test]
+    public void It_should_have_named_pk_for_data_store_identity()
+    {
+        _ddl.Should()
+            .Contain("CONSTRAINT \"PK_DataStoreIdentity\" PRIMARY KEY (\"DataStoreIdentitySingletonId\")");
+    }
+
+    [Test]
     public void It_should_have_named_pk_for_descriptor()
     {
         _ddl.Should().Contain("CONSTRAINT \"PK_Descriptor\" PRIMARY KEY (\"DocumentId\")");
@@ -387,6 +438,24 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_have_named_pk_for_document()
     {
         _ddl.Should().Contain("CONSTRAINT \"PK_Document\" PRIMARY KEY (\"DocumentId\")");
+    }
+
+    [Test]
+    public void It_should_have_named_pk_for_document_cache()
+    {
+        _ddl.Should().Contain("CONSTRAINT \"PK_DocumentCache\" PRIMARY KEY (\"DocumentId\")");
+    }
+
+    [Test]
+    public void It_should_have_named_pk_for_document_cache_state()
+    {
+        _ddl.Should().Contain("CONSTRAINT \"PK_DocumentCacheState\" PRIMARY KEY (\"StateId\")");
+    }
+
+    [Test]
+    public void It_should_have_named_pk_for_document_projection_work()
+    {
+        _ddl.Should().Contain("CONSTRAINT \"PK_DocumentProjectionWork\" PRIMARY KEY (\"DocumentId\")");
     }
 
     [Test]
@@ -425,9 +494,9 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_unique_on_document_cache_uuid()
+    public void It_should_not_have_unique_on_document_cache_uuid()
     {
-        _ddl.Should().Contain("\"UX_DocumentCache_DocumentUuid\" UNIQUE");
+        _ddl.Should().NotContain("\"UX_DocumentCache_DocumentUuid\"");
     }
 
     [Test]
@@ -443,6 +512,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     // ── CHECK constraints ───────────────────────────────────────────
+
+    [Test]
+    public void It_should_have_singleton_check_on_data_store_identity()
+    {
+        _ddl.Should().Contain("\"CK_DataStoreIdentity_Singleton\"");
+        _ddl.Should().Contain("\"DataStoreIdentitySingletonId\" = 1");
+    }
 
     [Test]
     public void It_should_have_singleton_check_on_effective_schema()
@@ -470,6 +546,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     {
         _ddl.Should().Contain("\"CK_DocumentCache_JsonObject\"");
         _ddl.Should().Contain("jsonb_typeof(\"DocumentJson\") = 'object'");
+    }
+
+    [Test]
+    public void It_should_have_document_cache_state_singleton_and_lifecycle_checks()
+    {
+        _ddl.Should().Contain("\"CK_DocumentCacheState_Singleton\"");
+        _ddl.Should().Contain("\"StateId\" = 1");
+        _ddl.Should().Contain("\"CK_DocumentCacheState_Lifecycle\"");
+        _ddl.Should()
+            .Contain("\"ProjectionLifecycleState\" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')");
     }
 
     [Test]
@@ -533,6 +619,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_have_fk_document_projection_work_document()
+    {
+        _ddl.Should().Contain("\"FK_DocumentProjectionWork_Document\"");
+    }
+
+    [Test]
     public void It_should_have_fk_referential_identity_document()
     {
         _ddl.Should().Contain("\"FK_ReferentialIdentity_Document\"");
@@ -586,9 +678,24 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_index_document_cache_composite()
+    public void It_should_not_have_legacy_document_cache_composite_index()
     {
-        _ddl.Should().Contain("\"IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt\"");
+        _ddl.Should().NotContain("\"IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt\"");
+    }
+
+    [Test]
+    public void It_should_have_index_document_projection_work_first_enqueued()
+    {
+        _ddl.Should()
+            .Contain(
+                "CREATE INDEX IF NOT EXISTS \"IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId\" ON \"dms\".\"DocumentProjectionWork\" (\"FirstEnqueuedAt\", \"DocumentId\");"
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_a_document_cache_uuid_index()
+    {
+        _ddl.Should().NotContain("\"IX_DocumentCache_DocumentUuid\"");
     }
 
     [Test]
@@ -597,6 +704,57 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // DocumentId-keyed access is served by the leading column of
         // UX_ReferentialIdentity_DocumentId_ResourceKeyId.
         _ddl.Should().NotContain("\"IX_ReferentialIdentity_DocumentId\"");
+    }
+
+    // ── PG DocumentCache UUID validation trigger ────────────────────
+
+    [Test]
+    public void It_should_create_document_cache_uuid_validation_function()
+    {
+        _ddl.Should()
+            .Contain("CREATE OR REPLACE FUNCTION \"dms\".\"TF_DocumentCache_ValidateDocumentUuid\"()");
+        _ddl.Should().Contain("$func$ LANGUAGE plpgsql SECURITY INVOKER;");
+    }
+
+    [Test]
+    public void It_should_create_document_cache_uuid_validation_trigger()
+    {
+        _ddl.Should()
+            .Contain(
+                "DROP TRIGGER IF EXISTS \"TR_DocumentCache_ValidateDocumentUuid\" ON \"dms\".\"DocumentCache\""
+            );
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_DocumentCache_ValidateDocumentUuid\"");
+        _ddl.Should().Contain("BEFORE INSERT OR UPDATE ON \"dms\".\"DocumentCache\"");
+        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_DocumentCache_ValidateDocumentUuid\"()");
+    }
+
+    [Test]
+    public void It_should_validate_document_cache_uuid_from_document_id_without_json_parsing()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"dms\".\"TF_DocumentCache_ValidateDocumentUuid\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+        var functionEnd = _ddl.IndexOf(
+            "DROP TRIGGER IF EXISTS \"TR_DocumentCache_ValidateDocumentUuid\"",
+            functionStart,
+            StringComparison.Ordinal
+        );
+        functionEnd.Should().BeGreaterThan(functionStart);
+        var functionBody = _ddl[functionStart..functionEnd];
+
+        functionBody.Should().Contain("SELECT \"DocumentUuid\" INTO _canonical_document_uuid");
+        functionBody.Should().Contain("FROM \"dms\".\"Document\"");
+        functionBody.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\";");
+        functionBody.Should().Contain("NEW.\"DocumentUuid\" <> _canonical_document_uuid");
+        functionBody
+            .Should()
+            .Contain(
+                "RAISE EXCEPTION 'dms.DocumentCache.DocumentUuid diverges from the owning "
+                    + "dms.Document row for DocumentId %', NEW.\"DocumentId\";"
+            );
+        functionBody.Should().NotContain("DocumentJson");
     }
 
     // ── PG descriptor stamping trigger ──────────────────────────────
@@ -799,6 +957,287 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PostgreSQL transactional enqueue
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new CoreDdlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+        _ddl = emitter.Emit();
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_functions_as_security_definer_with_pg_catalog_search_path()
+    {
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionBody = ExtractFunction(_ddl, functionName);
+
+            functionBody
+                .Should()
+                .Contain(
+                    "RETURNS TRIGGER\n"
+                        + "LANGUAGE plpgsql\n"
+                        + "SECURITY DEFINER\n"
+                        + "SET search_path = pg_catalog\n"
+                        + "AS $func$"
+                );
+            functionBody.Should().Contain("FROM \"dms\".\"DocumentCacheState\"");
+            functionBody.Should().Contain("INSERT INTO \"dms\".\"DocumentProjectionWork\" AS work");
+            functionBody.Should().NotContain("FROM DocumentCacheState");
+            functionBody.Should().NotContain("INSERT INTO DocumentProjectionWork");
+        }
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_insert_and_update_statement_triggers_with_transition_relations()
+    {
+        _ddl.Should()
+            .Contain(
+                "DROP TRIGGER IF EXISTS \"TR_Document_EnqueueProjectionInsert\" ON \"dms\".\"Document\""
+            );
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_Document_EnqueueProjectionInsert\"");
+        _ddl.Should().Contain("AFTER INSERT ON \"dms\".\"Document\"");
+        _ddl.Should().Contain("REFERENCING NEW TABLE AS new_rows");
+        _ddl.Should().Contain("FOR EACH STATEMENT");
+        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"();");
+
+        _ddl.Should()
+            .Contain(
+                "DROP TRIGGER IF EXISTS \"TR_Document_EnqueueProjectionUpdate\" ON \"dms\".\"Document\""
+            );
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_Document_EnqueueProjectionUpdate\"");
+        _ddl.Should().Contain("AFTER UPDATE ON \"dms\".\"Document\"");
+        _ddl.Should().Contain("REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows");
+        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"();");
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_lifecycle_gate_and_missing_state_failure()
+    {
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionBody = ExtractFunction(_ddl, functionName);
+
+            CountOccurrences(functionBody, "WHERE \"StateId\" = 1;").Should().Be(1);
+            functionBody.Should().Contain("IF NOT FOUND THEN");
+            functionBody
+                .Should()
+                .Contain(
+                    "RAISE EXCEPTION 'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.';"
+                );
+            functionBody
+                .Should()
+                .Contain(
+                    "IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN"
+                );
+            functionBody
+                .Should()
+                .Contain(
+                    "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;"
+                );
+            functionBody.Should().Contain("IF _lifecycle_state = 'Disabled' THEN");
+            functionBody.Should().Contain("RETURN NULL;");
+        }
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_update_filter_for_changed_content_versions()
+    {
+        var updateFunction = ExtractFunction(_ddl, "TF_Document_EnqueueProjectionUpdate");
+
+        updateFunction.Should().Contain("FROM new_rows n");
+        updateFunction.Should().Contain("INNER JOIN old_rows o ON o.\"DocumentId\" = n.\"DocumentId\"");
+        updateFunction.Should().Contain("WHERE n.\"ContentVersion\" <> o.\"ContentVersion\"");
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_monotonic_upsert_with_one_statement_timestamp()
+    {
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionBody = ExtractFunction(_ddl, functionName);
+            CountOccurrences(functionBody, "statement_timestamp()").Should().Be(1);
+
+            var upsertStart = functionBody.IndexOf(
+                "ON CONFLICT (\"DocumentId\") DO UPDATE",
+                StringComparison.Ordinal
+            );
+            upsertStart.Should().BeGreaterOrEqualTo(0);
+            var upsertBody = functionBody[upsertStart..];
+
+            upsertBody
+                .Should()
+                .Contain("SET \"RequiredContentVersion\" = EXCLUDED.\"RequiredContentVersion\",");
+            upsertBody.Should().Contain("\"LastEnqueuedAt\" = EXCLUDED.\"LastEnqueuedAt\"");
+            upsertBody
+                .Should()
+                .Contain("WHERE work.\"RequiredContentVersion\" < EXCLUDED.\"RequiredContentVersion\";");
+            upsertBody.Should().NotContain("\"FirstEnqueuedAt\" =");
+        }
+    }
+
+    [Test]
+    public void It_should_emit_Postgresql_Enqueue_owner_role_membership_ownership_and_grants()
+    {
+        _ddl.Should()
+            .Contain(
+                "CREATE ROLE \"edfi_dms_enqueue_owner\" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
+            );
+        _ddl.Should().Contain("WHEN duplicate_object OR unique_violation THEN");
+        _ddl.Should().Contain("WHERE membership.member = _owner_role");
+        _ddl.Should()
+            .Contain("AND (membership.admin_option OR membership.inherit_option OR membership.set_option)");
+        _ddl.Should().Contain("AND NOT membership.admin_option");
+        _ddl.Should().Contain("AND NOT membership.inherit_option");
+        _ddl.Should().Contain("AND membership.set_option");
+        _ddl.Should().Contain("IF NOT EXISTS (");
+        _ddl.Should()
+            .Contain(
+                "GRANT \"edfi_dms_enqueue_owner\" TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;"
+            );
+        _ddl.Should().Contain("GRANT CREATE ON SCHEMA \"dms\" TO \"edfi_dms_enqueue_owner\"");
+        _ddl.Should().Contain("REVOKE CREATE ON SCHEMA \"dms\" FROM \"edfi_dms_enqueue_owner\"");
+        _ddl.Should().Contain("SET ROLE \"edfi_dms_enqueue_owner\"");
+        _ddl.Should()
+            .Contain(
+                "GRANT EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() TO SESSION_USER;"
+            );
+        _ddl.Should()
+            .Contain(
+                "GRANT EXECUTE ON FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() TO SESSION_USER;"
+            );
+        _ddl.Should().Contain("RESET ROLE;");
+        _ddl.Should().NotContain("ALTER ROLE \"edfi_dms_enqueue_owner\"");
+        _ddl.Should().NotContain("WITH ADMIN OPTION");
+        _ddl.Should().NotContain("pg_catalog.pg_has_role");
+
+        foreach (
+            string functionName in new[]
+            {
+                "TF_Document_EnqueueProjectionInsert",
+                "TF_Document_EnqueueProjectionUpdate",
+            }
+        )
+        {
+            var functionCreateIndex = _ddl.IndexOf(
+                $"CREATE OR REPLACE FUNCTION \"dms\".\"{functionName}\"()",
+                StringComparison.Ordinal
+            );
+            functionCreateIndex.Should().BeGreaterOrEqualTo(0);
+
+            var immediatePublicRevokeIndex = _ddl.IndexOf(
+                $"REVOKE EXECUTE ON FUNCTION \"dms\".\"{functionName}\"() FROM PUBLIC;",
+                functionCreateIndex,
+                StringComparison.Ordinal
+            );
+            var temporarySessionGrantIndex = _ddl.IndexOf(
+                $"GRANT EXECUTE ON FUNCTION \"dms\".\"{functionName}\"() TO SESSION_USER;",
+                StringComparison.Ordinal
+            );
+
+            temporarySessionGrantIndex.Should().BeGreaterOrEqualTo(0);
+            immediatePublicRevokeIndex.Should().BeGreaterThan(functionCreateIndex);
+            immediatePublicRevokeIndex.Should().BeLessThan(temporarySessionGrantIndex);
+        }
+
+        _ddl.Should()
+            .Contain(
+                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionInsert\"() OWNER TO \"edfi_dms_enqueue_owner\""
+            );
+        _ddl.Should()
+            .Contain(
+                "ALTER FUNCTION \"dms\".\"TF_Document_EnqueueProjectionUpdate\"() OWNER TO \"edfi_dms_enqueue_owner\""
+            );
+        _ddl[_ddl.IndexOf("-- Phase 9: Security and Grants", StringComparison.Ordinal)..]
+            .Should()
+            .Contain(
+                """
+                GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
+                SET ROLE "edfi_dms_enqueue_owner";
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM SESSION_USER;
+                REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM SESSION_USER;
+                RESET ROLE;
+                REVOKE INSERT, UPDATE, DELETE ON TABLE "dms"."DocumentProjectionWork" FROM PUBLIC;
+                """
+            );
+        _ddl.Should()
+            .Contain(
+                "REVOKE INSERT, UPDATE, DELETE ON TABLE \"dms\".\"DocumentProjectionWork\" FROM PUBLIC;"
+            );
+        _ddl.Should().Contain("GRANT USAGE ON SCHEMA \"dms\" TO \"edfi_dms_enqueue_owner\";");
+        _ddl.Should()
+            .Contain("GRANT SELECT ON TABLE \"dms\".\"DocumentCacheState\" TO \"edfi_dms_enqueue_owner\";");
+        _ddl.Should()
+            .Contain(
+                "GRANT SELECT, INSERT, UPDATE ON TABLE \"dms\".\"DocumentProjectionWork\" TO \"edfi_dms_enqueue_owner\";"
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_Postgresql_Enqueue_runtime_cdc_or_delete_grants()
+    {
+        _ddl.Should().NotContain("GRANT DELETE ON TABLE \"dms\".\"DocumentProjectionWork\"");
+        _ddl.Should().NotContain("cdc");
+        _ddl.Should().NotContain("CREATE PUBLICATION");
+        _ddl.Should().NotContain("CREATE SUBSCRIPTION");
+    }
+
+    private static string ExtractFunction(string ddl, string functionName)
+    {
+        var start = ddl.IndexOf(
+            $"CREATE OR REPLACE FUNCTION \"dms\".\"{functionName}\"()",
+            StringComparison.Ordinal
+        );
+        start.Should().BeGreaterOrEqualTo(0);
+
+        var end = ddl.IndexOf("$func$;", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start);
+
+        return ddl[start..(end + "$func$;".Length)];
+    }
+
+    private static int CountOccurrences(string value, string pattern)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(pattern, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += pattern.Length;
+        }
+
+        return count;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Phase 4: Snapshot tests – SQL Server dialect
 // ═══════════════════════════════════════════════════════════════════
 
@@ -872,7 +1311,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             "CREATE SEQUENCE [dms].[CollectionItemIdSequence]",
             StringComparison.Ordinal
         );
-        var firstTable = _ddl.IndexOf("CREATE TABLE [dms].[Descriptor]", StringComparison.Ordinal);
+        var firstTable = _ddl.IndexOf("CREATE TABLE [dms].[DataStoreIdentity]", StringComparison.Ordinal);
 
         sequence.Should().BeGreaterThan(0);
         sequence.Should().BeLessThan(firstTable);
@@ -929,19 +1368,66 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Tables ──────────────────────────────────────────────────────
 
     [Test]
+    public void It_should_create_data_store_identity_table()
+    {
+        _ddl.Should().Contain("[dms].[DataStoreIdentity]");
+        _ddl.Should().Contain("[DataStoreIdentitySingletonId] smallint NOT NULL");
+        _ddl.Should().Contain("[SourceIdentity] uniqueidentifier NOT NULL");
+    }
+
+    [Test]
     public void It_should_emit_content_version_column_on_document_cache_table()
     {
-        // Schema-only column added for the cached-vs-canonical freshness check.
+        // Schema-only column for row-level cache freshness. A row in this table
+        // is fresh when its ContentVersion matches dms.Document.ContentVersion.
+        // LastModifiedAt remains projected payload metadata.
         // Runtime cache reader/writer lands in a follow-on ticket.
         _ddl.Should().Contain("[ContentVersion] bigint NOT NULL");
     }
 
     [Test]
-    public void It_should_create_all_seven_tables()
+    public void It_should_emit_stream_etag_column_on_document_cache_table()
     {
+        _ddl.Should().Contain("[StreamEtag] varchar(64) NOT NULL");
+        _ddl.Should().NotContain("[Etag] nvarchar(64) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_keep_other_document_cache_string_columns_unicode()
+    {
+        _ddl.Should().Contain("[ProjectName] nvarchar(256) NOT NULL");
+        _ddl.Should().Contain("[ResourceName] nvarchar(256) NOT NULL");
+        _ddl.Should().Contain("[ResourceVersion] nvarchar(32) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_document_cache_state_table()
+    {
+        _ddl.Should().Contain("[dms].[DocumentCacheState]");
+        _ddl.Should().Contain("[StateId] smallint NOT NULL");
+        _ddl.Should()
+            .Contain("[ProjectionLifecycleState] varchar(16) COLLATE Latin1_General_100_BIN2 NOT NULL");
+        _ddl.Should().Contain("[CacheAheadRecoveryRequired] bit NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_document_projection_work_table()
+    {
+        _ddl.Should().Contain("[dms].[DocumentProjectionWork]");
+        _ddl.Should().Contain("[RequiredContentVersion] bigint NOT NULL");
+        _ddl.Should().Contain("[FirstEnqueuedAt] datetime2(7) NOT NULL");
+        _ddl.Should().Contain("[LastEnqueuedAt] datetime2(7) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_all_ten_tables()
+    {
+        _ddl.Should().Contain("[dms].[DataStoreIdentity]");
         _ddl.Should().Contain("[dms].[Descriptor]");
         _ddl.Should().Contain("[dms].[Document]");
         _ddl.Should().Contain("[dms].[DocumentCache]");
+        _ddl.Should().Contain("[dms].[DocumentCacheState]");
+        _ddl.Should().Contain("[dms].[DocumentProjectionWork]");
         _ddl.Should().Contain("[dms].[EffectiveSchema]");
         _ddl.Should().Contain("[dms].[ReferentialIdentity]");
         _ddl.Should().Contain("[dms].[ResourceKey]");
@@ -951,6 +1437,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_use_object_id_check_for_tables()
     {
+        _ddl.Should().Contain("IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL");
         _ddl.Should().Contain("IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL");
         _ddl.Should().Contain("IF OBJECT_ID(N'dms.Document', N'U') IS NULL");
     }
@@ -1081,6 +1568,15 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── MSSQL CLUSTERED primary keys ────────────────────────────────
 
     [Test]
+    public void It_should_have_clustered_pk_for_data_store_identity()
+    {
+        _ddl.Should()
+            .Contain(
+                "CONSTRAINT [PK_DataStoreIdentity] PRIMARY KEY CLUSTERED ([DataStoreIdentitySingletonId])"
+            );
+    }
+
+    [Test]
     public void It_should_have_clustered_pk_for_descriptor()
     {
         _ddl.Should().Contain("CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])");
@@ -1090,6 +1586,24 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_clustered_pk_for_document()
     {
         _ddl.Should().Contain("CONSTRAINT [PK_Document] PRIMARY KEY CLUSTERED ([DocumentId])");
+    }
+
+    [Test]
+    public void It_should_have_clustered_pk_for_document_cache()
+    {
+        _ddl.Should().Contain("CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId])");
+    }
+
+    [Test]
+    public void It_should_have_clustered_pk_for_document_cache_state()
+    {
+        _ddl.Should().Contain("CONSTRAINT [PK_DocumentCacheState] PRIMARY KEY CLUSTERED ([StateId])");
+    }
+
+    [Test]
+    public void It_should_have_clustered_pk_for_document_projection_work()
+    {
+        _ddl.Should().Contain("CONSTRAINT [PK_DocumentProjectionWork] PRIMARY KEY CLUSTERED ([DocumentId])");
     }
 
     [Test]
@@ -1116,7 +1630,20 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             );
     }
 
+    [Test]
+    public void It_should_not_have_unique_on_document_cache_uuid()
+    {
+        _ddl.Should().NotContain("[UX_DocumentCache_DocumentUuid]");
+    }
+
     // ── CHECK constraints ───────────────────────────────────────────
+
+    [Test]
+    public void It_should_have_singleton_check_on_data_store_identity()
+    {
+        _ddl.Should().Contain("[CK_DataStoreIdentity_Singleton]");
+        _ddl.Should().Contain("[DataStoreIdentitySingletonId] = 1");
+    }
 
     [Test]
     public void It_should_have_singleton_check_on_effective_schema()
@@ -1144,6 +1671,30 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("[CK_DocumentCache_IsJsonObject]");
         _ddl.Should().Contain("ISJSON([DocumentJson]) = 1");
+    }
+
+    [Test]
+    public void It_should_have_document_cache_state_singleton_and_exact_lifecycle_checks()
+    {
+        _ddl.Should().Contain("[CK_DocumentCacheState_Singleton]");
+        _ddl.Should().Contain("[StateId] = 1");
+        _ddl.Should().Contain("[CK_DocumentCacheState_Lifecycle]");
+        _ddl.Should()
+            .Contain(
+                "([ProjectionLifecycleState] = 'Disabled' AND DATALENGTH([ProjectionLifecycleState]) = 8)"
+            );
+        _ddl.Should()
+            .Contain(
+                "([ProjectionLifecycleState] = 'Resetting' AND DATALENGTH([ProjectionLifecycleState]) = 9)"
+            );
+        _ddl.Should()
+            .Contain(
+                "([ProjectionLifecycleState] = 'Rebuilding' AND DATALENGTH([ProjectionLifecycleState]) = 10)"
+            );
+        _ddl.Should()
+            .Contain(
+                "([ProjectionLifecycleState] = 'Tracking' AND DATALENGTH([ProjectionLifecycleState]) = 8)"
+            );
     }
 
     [Test]
@@ -1193,12 +1744,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_seven_foreign_keys()
+    public void It_should_have_all_eight_foreign_keys()
     {
         _ddl.Should().Contain("[FK_Descriptor_Document]");
         _ddl.Should().Contain("[FK_Descriptor_ResourceKey]");
         _ddl.Should().Contain("[FK_Document_ResourceKey]");
         _ddl.Should().Contain("[FK_DocumentCache_Document]");
+        _ddl.Should().Contain("[FK_DocumentProjectionWork_Document]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_Document]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_ResourceKey]");
         _ddl.Should().Contain("[FK_SchemaComponent_EffectiveSchemaHash]");
@@ -1232,14 +1784,75 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
-        _ddl.Should().Contain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
+        _ddl.Should().Contain("[IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId]");
         // (Uri, Discriminator) is covered by UX_Descriptor_Uri_Discriminator, and
         // ReferentialIdentity DocumentId access by the leading column of
         // UX_ReferentialIdentity_DocumentId_ResourceKeyId. Descriptor paging roots
         // on dms.Descriptor, so dms.Document carries no ResourceKeyId index.
+        // DocumentCache.DocumentUuid is deliberately non-indexed, and the old
+        // ProjectName/ResourceName/LastModifiedAt scan index is no longer emitted.
         _ddl.Should().NotContain("[IX_Descriptor_Uri_Discriminator]");
+        _ddl.Should().NotContain("[IX_DocumentCache_DocumentUuid]");
+        _ddl.Should().NotContain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
         _ddl.Should().NotContain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().NotContain("[IX_ReferentialIdentity_DocumentId]");
+    }
+
+    // ── MSSQL DocumentCache UUID validation trigger ─────────────────
+
+    [Test]
+    public void It_should_create_or_alter_document_cache_uuid_validation_trigger()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]");
+        _ddl.Should().Contain("ON [dms].[DocumentCache]");
+        _ddl.Should().Contain("AFTER INSERT, UPDATE");
+    }
+
+    [Test]
+    public void It_should_emit_go_batch_separator_around_document_cache_uuid_validation_trigger()
+    {
+        var triggerIndex = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]",
+            StringComparison.Ordinal
+        );
+        triggerIndex.Should().BeGreaterThan(0);
+
+        var precedingGo = _ddl.LastIndexOf("GO\n", triggerIndex, StringComparison.Ordinal);
+        precedingGo
+            .Should()
+            .BeGreaterOrEqualTo(
+                0,
+                "expected GO batch separator before DocumentCache UUID validation trigger"
+            );
+
+        var trailingGo = _ddl.IndexOf("GO\n", triggerIndex, StringComparison.Ordinal);
+        trailingGo
+            .Should()
+            .BeGreaterThan(triggerIndex, "expected GO batch separator after validation trigger");
+    }
+
+    [Test]
+    public void It_should_validate_document_cache_uuid_from_document_id_without_json_parsing_or_execute_as()
+    {
+        var triggerStart = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_DocumentCache_ValidateDocumentUuid]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+        var triggerEnd = _ddl.IndexOf("GO\n", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+        var triggerBody = _ddl[triggerStart..triggerEnd];
+
+        triggerBody.Should().Contain("FROM inserted i");
+        triggerBody.Should().Contain("INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]");
+        triggerBody.Should().Contain("WHERE i.[DocumentUuid] <> d.[DocumentUuid]");
+        triggerBody
+            .Should()
+            .Contain(
+                "THROW 50000, N'dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row.', 1;"
+            );
+        triggerBody.Should().NotContain("DocumentJson");
+        triggerBody.Should().NotContain("EXECUTE AS");
     }
 
     // ── MSSQL descriptor stamping trigger ───────────────────────────
@@ -1403,6 +2016,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // separate equality guard still rejects values that diverge from dms.Document.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         string[] immutableColumns = ["ResourceKeyId"];
+        var descriptorTriggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns
@@ -1420,7 +2034,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             var expected = isStringType
                 ? $"CAST(i.[{name}] AS varbinary(max)) <> CAST(del.[{name}] AS varbinary(max))"
                 : $"i.[{name}] <> del.[{name}]";
-            _ddl.Should()
+            descriptorTriggerBody
+                .Should()
                 .Contain(
                     expected,
                     $"descriptor stamping trigger must compare {name} ({type}); "
@@ -1430,7 +2045,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         foreach (var excludedColumn in stampColumns.Concat(immutableColumns))
         {
-            _ddl.Should()
+            descriptorTriggerBody
+                .Should()
                 .NotContain(
                     $"i.[{excludedColumn}] <> del.[{excludedColumn}]",
                     "stamp targets and immutable columns must not appear in the no-op diff"
@@ -1539,6 +2155,186 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
             );
         _ddl.Should().Contain("seq.name = 'ChangeVersionSequence' AND sch.name = 'dms'");
+    }
+
+    private static string ExtractMssqlTriggerBody(string ddl, string triggerName)
+    {
+        var triggerStart = ddl.IndexOf(
+            $"CREATE OR ALTER TRIGGER [dms].[{triggerName}]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerEnd = ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+
+        return ddl[triggerStart..triggerEnd];
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SQL Server transactional enqueue
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_CoreDdlEmitter_With_MssqlDialect_Enqueue
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new CoreDdlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit();
+    }
+
+    [Test]
+    public void It_should_emit_one_Mssql_Enqueue_trigger_without_execute_as()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        CountOccurrences(_ddl, "CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]")
+            .Should()
+            .Be(1);
+        triggerBody.Should().Contain("ON [dms].[Document]");
+        triggerBody.Should().Contain("AFTER INSERT, UPDATE");
+        triggerBody.Should().Contain("FROM inserted i");
+        triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        triggerBody.Should().NotContain("EXECUTE AS");
+    }
+
+    [Test]
+    public void It_should_emit_Mssql_Enqueue_lifecycle_gate_and_missing_state_failure()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        CountOccurrences(triggerBody, "WHERE [StateId] = 1;").Should().Be(1);
+        triggerBody.Should().Contain("DECLARE @lifecycleState varchar(16);");
+        triggerBody.Should().Contain("SELECT @lifecycleState = [ProjectionLifecycleState]");
+        triggerBody.Should().Contain("FROM [dms].[DocumentCacheState]");
+        triggerBody.Should().Contain("IF @lifecycleState IS NULL");
+        triggerBody
+            .Should()
+            .Contain(
+                "THROW 50000, N'dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.', 1;"
+            );
+        triggerBody.Should().Contain("IF NOT (");
+        triggerBody
+            .Should()
+            .Contain(
+                "(@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8)"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Resetting' AND DATALENGTH(@lifecycleState) = 9)"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Rebuilding' AND DATALENGTH(@lifecycleState) = 10)"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "OR (@lifecycleState COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH(@lifecycleState) = 8)"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "IF @lifecycleState COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH(@lifecycleState) = 8"
+            );
+        triggerBody.Should().Contain("RETURN;");
+    }
+
+    [Test]
+    public void It_should_emit_Mssql_Enqueue_filter_for_inserts_and_changed_content_versions()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        triggerBody.Should().Contain("INSERT INTO @required ([DocumentId], [RequiredContentVersion])");
+        triggerBody.Should().Contain("SELECT i.[DocumentId], MAX(i.[ContentVersion])");
+        triggerBody.Should().Contain("FROM inserted i");
+        triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        triggerBody
+            .Should()
+            .Contain("WHERE del.[DocumentId] IS NULL OR i.[ContentVersion] <> del.[ContentVersion]");
+        triggerBody.Should().Contain("GROUP BY i.[DocumentId];");
+    }
+
+    [Test]
+    public void It_should_emit_Mssql_Enqueue_monotonic_upsert_with_one_statement_timestamp()
+    {
+        var triggerBody = ExtractEnqueueTrigger(_ddl);
+
+        CountOccurrences(triggerBody, "SYSUTCDATETIME()").Should().Be(1);
+        triggerBody.Should().Contain("DECLARE @enqueuedAt datetime2(7) = SYSUTCDATETIME();");
+        triggerBody.Should().Contain("SET work.[RequiredContentVersion] = req.[RequiredContentVersion],");
+        triggerBody.Should().Contain("work.[LastEnqueuedAt] = @enqueuedAt");
+        triggerBody.Should().Contain("WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion];");
+        triggerBody
+            .Should()
+            .Contain(
+                "INSERT INTO [dms].[DocumentProjectionWork] ([DocumentId], [RequiredContentVersion], [FirstEnqueuedAt], [LastEnqueuedAt])"
+            );
+        triggerBody
+            .Should()
+            .Contain("SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt");
+        triggerBody.Should().Contain("WHERE work.[DocumentId] IS NULL;");
+
+        var updateStart = triggerBody.IndexOf("UPDATE work", StringComparison.Ordinal);
+        var insertStart = triggerBody.IndexOf(
+            "INSERT INTO [dms].[DocumentProjectionWork]",
+            StringComparison.Ordinal
+        );
+        updateStart.Should().BeGreaterOrEqualTo(0);
+        insertStart.Should().BeGreaterThan(updateStart);
+        var updateBody = triggerBody[updateStart..insertStart];
+        updateBody.Should().NotContain("[FirstEnqueuedAt]");
+    }
+
+    [Test]
+    public void It_should_not_emit_Mssql_Enqueue_runtime_identity_grants_cdc_or_server_config_reads()
+    {
+        _ddl.Should().NotContain("edfi_dms_enqueue_owner");
+        _ddl.Should().NotContain("CREATE USER");
+        _ddl.Should().NotContain("CREATE ROLE");
+        _ddl.Should().NotContain("GRANT");
+        _ddl.Should().NotContain("cdc");
+        _ddl.Should().NotContain("sys.configurations");
+        _ddl.Should().NotContain("EXECUTE AS");
+    }
+
+    private static string ExtractEnqueueTrigger(string ddl)
+    {
+        var triggerStart = ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_Document_EnqueueProjectionWork]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerEnd = ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+
+        return ddl[triggerStart..triggerEnd];
+    }
+
+    private static int CountOccurrences(string value, string pattern)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(pattern, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += pattern.Length;
+        }
+
+        return count;
     }
 }
 

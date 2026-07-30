@@ -9,7 +9,7 @@ related:
 
 ## Design References
 
-- [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
+- [Configuration, integration, readiness, and operations](../../design-docs/cdc/cdc-streaming.md)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 - [Relational data model](../../design-docs/data-model.md)

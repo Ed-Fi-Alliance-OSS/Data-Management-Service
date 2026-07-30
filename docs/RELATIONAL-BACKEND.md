@@ -32,6 +32,8 @@ For the design rationale, start with these:
 
 - [`overview.md`](../reference/design/backend-redesign/design-docs/overview.md) — the redesign at a glance
 - [`data-model.md`](../reference/design/backend-redesign/design-docs/data-model.md) — the relational schema (`dms.*` core tables, per-resource tables, descriptor projections)
+- [`ddl-generation.md`](../reference/design/backend-redesign/design-docs/ddl-generation.md) — deterministic DDL and create-only provisioning semantics
+- [`cdc-streaming.md`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md) — DocumentCache configuration, projection, readiness, CDC admission, and operations
 - [`new-startup-flow.md`](../reference/design/backend-redesign/design-docs/new-startup-flow.md) — how the service starts up against a provisioned database
 
 ## 2. Provisioning a database for an effective schema
@@ -64,13 +66,15 @@ api-schema-tools ddl emit --schema core/ApiSchema.json --output ./ddl-output --d
 
 | Output file | When | Contents |
 |---|---|---|
-| `pgsql.sql` / `mssql.sql` | per selected dialect | the full DDL script for that engine |
+| `pgsql.sql` / `mssql.sql` | per selected dialect | the full DDL script for that engine, without a built-in transaction wrapper |
 | `effective-schema.manifest.json` | always | the schema fingerprint, components, and resource-key seed summary |
-| `relational-model.{dialect}.manifest.json` | per selected dialect | the derived relational model inventory (tables, columns, constraints, indexes, views, triggers) |
+| `relational-model.{dialect}.manifest.json` | per selected dialect | the effective-schema-derived relational model inventory; fixed `dms` inventory is emitted in SQL and affects the optional DDL manifest hashes/counts instead |
 | `ddl.manifest.json` | only with `--ddl-manifest` | dialect-independent summary (normalized-SQL hash + statement count per dialect) for diagnostics |
 
 `--dialect` accepts `pgsql`, `mssql`, or `both` (default `both`). All output uses Unix
-line endings so the same inputs produce byte-for-byte identical files.
+line endings so the same inputs produce byte-for-byte identical files. Scripts produced
+by `ddl emit` are intentionally standalone DDL, not `BEGIN`/`COMMIT` wrapped artifacts;
+the caller owns any all-or-nothing wrapper when applying emitted SQL manually.
 
 ### Apply the DDL to a database (`ddl provision`)
 
@@ -95,6 +99,66 @@ api-schema-tools ddl provision \
 `--create-database` creates the target if missing; `--timeout` (default `300` seconds)
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
+
+### Always-provisioned DocumentCache inventory
+
+Full relational provisioning always creates the fixed `dms` inventory needed by the
+DocumentCache and CDC design:
+
+- [`dms.DataStoreIdentity`](../reference/design/backend-redesign/design-docs/data-model.md#4-dmsdatastoreidentity)
+- [`dms.DocumentCache`](../reference/design/backend-redesign/design-docs/data-model.md#6-dmsdocumentcache-always-provisioned-optional-projection)
+- [`dms.DocumentProjectionWork`](../reference/design/backend-redesign/design-docs/data-model.md#6a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
+- [`dms.DocumentCacheState`](../reference/design/backend-redesign/design-docs/data-model.md#7-dmsdocumentcachestate-singleton-projection-state)
+
+These objects are physical schema and durable state. Runtime projection, projection
+administration, projection health/readiness, cache-backed reads, and complete target
+eligibility validation are owned by later DocumentCache/CDC work. This guide links to the
+design owners instead of restating their contracts: the
+[`data-model.md`](../reference/design/backend-redesign/design-docs/data-model.md) table
+sections define the physical shape; the
+[`Cached Document Contract`](../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
+and
+[`Transactional Enqueue`](../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue)
+sections define cache and work semantics; DDL behavior is in
+[`ddl-generation.md`](../reference/design/backend-redesign/design-docs/ddl-generation.md#provision-semantics-create-only-no-migrations);
+schema/query integration is in
+[`cdc-streaming.md`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration);
+and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
+[`Contract-to-Evidence Traceability`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
+
+### Create-only guardrails and reruns
+
+Provisioning is still create-only: it does not migrate an older DocumentCache shape,
+reconcile arbitrary drift, or classify every partial database state. Phase-zero checks are
+bounded to the effective-schema hash, required singleton safety for
+`dms.DataStoreIdentity` and `dms.DocumentCacheState`, known legacy DocumentCache artifacts
+(`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, and
+`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), and PostgreSQL enqueue-owner
+prerequisites. Other incompatible objects are allowed to fail through ordinary provider
+DDL execution.
+
+On a completed same-hash database, provisioning preserves `SourceIdentity`, projection
+lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending work, and existing enqueue
+timestamps. Compatible reruns use the normal existence-check and replaceable
+function/trigger patterns to finish or refresh generated definitions. If a known legacy
+cache artifact is present, drop and recreate the database rather than expecting in-place
+repair.
+
+`ddl provision` executes generated statements in one transaction after any optional
+database-creation pre-step; a failure rolls that transaction back. `ddl emit` writes
+transaction-free SQL for review/manual use.
+
+### Provider trigger security
+
+PostgreSQL provisioning creates or safely reuses a locked-down `NOLOGIN`
+`edfi_dms_enqueue_owner` role and gives the authenticated provisioning principal only the
+direct membership needed to own and refresh the enqueue functions. That owner is not a
+runtime DMS credential; production still uses the deployment-supplied data-store
+credential, while later CDC work owns separate CDC principals and grants.
+
+SQL Server uses the existing same-owner ownership chain for the enqueue trigger and
+referenced `dms` tables. The generated trigger has no `EXECUTE AS`, enqueue user, or
+enqueue role.
 
 ### Scripted local provisioning
 
@@ -137,12 +201,13 @@ The generated DDL ([`SeedDmlEmitter.cs`](../src/dms/backend/EdFi.DataManagementS
 assembled by [`FullDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/FullDdlEmitter.cs))
 protects the database in two places:
 
-- **Preflight** (search the script for the full `-- Phase 0: Preflight (fail fast on schema hash mismatch)` header). Before any DDL runs,
+- **Preflight** (search the script for the full `-- Phase 0: Bounded Provisioning Guards` header). Before any DDL runs,
   if `dms.EffectiveSchema` already exists with a *different* hash, the script raises an error and
   aborts. You cannot accidentally re-provision an existing database for a different effective schema.
-- **Seed insert-if-missing + validate** (search for the full `-- Phase 7: Seed Data (insert-if-missing
-  + validation)` header — the bare "Phase 7" number is reused by other emitters for unrelated
-  sections, so match on the label text). The fingerprint row is inserted only if absent
+  The same phase performs only the bounded DocumentCache safety checks described above; it
+  is not a full schema-drift validator.
+- **Seed insert-if-missing + validate** (search for the full `-- Phase 10: Seed Data (insert-if-missing
+  + validation)` header). The fingerprint row is inserted only if absent
   (`ON CONFLICT DO NOTHING` / `IF NOT EXISTS`), then the stored `ApiSchemaFormatVersion`,
   `ResourceKeyCount`, and `ResourceKeySeedHash` are validated against the expected values and
   the script fails on any mismatch.

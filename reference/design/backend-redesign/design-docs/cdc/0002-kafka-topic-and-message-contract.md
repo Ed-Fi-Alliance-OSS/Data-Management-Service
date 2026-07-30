@@ -17,7 +17,7 @@ an upsert/delete state stream, not an immutable event log and not the Change Que
 The source decision is recorded in
 [0001-relational-cdc-projector-and-sources.md](0001-relational-cdc-projector-and-sources.md);
 deployment and integration details are in
-[Relational CDC and Document Projection](../../../cdc-streaming.md).
+[Relational CDC and Document Projection](cdc-streaming.md).
 The required connector transformation is part of this record's public contract and is
 specified below.
 
@@ -413,7 +413,7 @@ revoked, and the affected binding generation is destructively retired with recor
 or platform purge evidence. Compaction, tombstones, and corrective upserts are not purge
 evidence, and CDC remains unavailable until the deferred new-generation bootstrap is
 implemented. The full requirements are defined in
-[Relational CDC and Document Projection](../../../cdc-streaming.md#offline-byte-changing-representation-correction).
+[Relational CDC and Document Projection](cdc-streaming.md#offline-byte-changing-representation-correction).
 
 Changing the partition count or `partitionerAlgorithm` token is not necessarily a
 message-shape change, but it still creates a new binding generation, topic, and consumer

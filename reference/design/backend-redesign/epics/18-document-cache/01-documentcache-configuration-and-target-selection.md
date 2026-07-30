@@ -10,10 +10,10 @@ related:
 
 ## Design References
 
-- **Configuration and projection target selection**: reference/design/cdc-streaming.md#configuration-and-projection-target-selection
-- **Projection administration**: reference/design/cdc-streaming.md#projection-administration
+- **Configuration and projection target selection**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection
+- **Projection administration**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration
 - **Durable lifecycle**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle
-- **Projection health and deployment-owned CDC readiness**: reference/design/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
+- **Projection health and deployment-owned CDC readiness**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
 
 The referenced design sections define target selection, validation, and lifecycle behavior.
 This story is only the work package for implementing them.

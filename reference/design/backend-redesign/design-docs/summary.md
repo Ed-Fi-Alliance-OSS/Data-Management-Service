@@ -19,7 +19,7 @@ Source documents:
 - Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/design-docs/update-tracking.md`
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, ContentVersion mirror): `reference/design/backend-redesign/design-docs/change-queries.md`
 - Authoritative DocumentCache projection and relational CDC design:
-  `reference/design/cdc-streaming.md`
+  `reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md`
 - Focused projector/source and topic/message decisions:
   `reference/design/backend-redesign/design-docs/cdc/`
 - DDL generation: `reference/design/backend-redesign/design-docs/ddl-generation.md`
@@ -40,7 +40,7 @@ Source documents:
   enqueue-enabled lifecycle state; optional projection/read behavior and relational CDC
   follow the authoritative
   configuration, lifecycle, readiness, and deployment design in
-  [`cdc-streaming.md`](../../cdc-streaming.md).
+  [`cdc-streaming.md`](cdc/cdc-streaming.md).
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
   - token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens),
   - `auth.*` companion objects, and

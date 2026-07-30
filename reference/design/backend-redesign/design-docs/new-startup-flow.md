@@ -71,7 +71,7 @@ The new lifecycle splits startup into explicit phases:
      - validate `ResourceKeySeedHash/Count` (fast path),
      - fail fast on mismatch.
 5. **Initialize configured projection/CDC contexts** according to
-   [Relational CDC and Document Projection](../../cdc-streaming.md). Target keys can be
+   [Relational CDC and Document Projection](cdc/cdc-streaming.md). Target keys can be
    bound after instances load; physical-source, lifecycle, work-schema, enqueue-trigger,
    and provider-prerequisite checks wait for provisioned databases. Startup never changes
    `ProjectionLifecycleState`; a `Disabled` target remains projection-unavailable until an

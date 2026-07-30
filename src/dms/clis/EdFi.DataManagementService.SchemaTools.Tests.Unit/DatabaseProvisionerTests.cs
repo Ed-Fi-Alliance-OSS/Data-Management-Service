@@ -3,6 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
+using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
+using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FakeItEasy;
 using FluentAssertions;
@@ -287,6 +292,367 @@ public class DatabaseProvisionerTests
         public void It_filters_out_empty_batches()
         {
             _batches.Should().HaveCount(2);
+        }
+    }
+
+    private sealed class ExposedPgsqlDatabaseProvisioner : PgsqlDatabaseProvisioner
+    {
+        public ExposedPgsqlDatabaseProvisioner()
+            : base(A.Fake<ILogger>()) { }
+
+        public DialectSql ExposedDialect => Dialect;
+    }
+
+    private sealed class ExposedMssqlDatabaseProvisioner : MssqlDatabaseProvisioner
+    {
+        public ExposedMssqlDatabaseProvisioner()
+            : base(A.Fake<ILogger>()) { }
+
+        public DialectSql ExposedDialect => Dialect;
+    }
+
+    [TestFixture]
+    public class Given_PreflightSeedValidation_With_Unsupported_SourceIdentity_Type
+    {
+        private InvalidOperationException? _exception;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var expectedSchema = EffectiveSchemaValidationTestData.BuildExpectedSchema();
+            var dialect = CreateScriptedDialect();
+            var results = CreateCompletedSchemaResults(dialect, expectedSchema);
+            results[dialect.DataStoreIdentitySourceIdentitySql] = ScriptedCommandResult.Rows([43]);
+            var provisioner = new ScriptedDatabaseProvisioner(dialect, new ScriptedDbConnection(results));
+
+            _exception = Assert.Catch<InvalidOperationException>(() =>
+                provisioner.PreflightSeedValidation("scripted", expectedSchema)
+            );
+        }
+
+        [Test]
+        public void It_throws_InvalidOperationException()
+        {
+            _exception.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_reports_the_unsupported_SourceIdentity_type()
+        {
+            _exception!
+                .Message.Should()
+                .Contain("SourceIdentity")
+                .And.Contain("UUID-compatible")
+                .And.Contain("System.Int32");
+        }
+    }
+
+    [TestFixture]
+    public class Given_PreflightSeedValidation_With_Unsupported_CacheAheadRecoveryRequired_Type
+    {
+        private InvalidOperationException? _exception;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var expectedSchema = EffectiveSchemaValidationTestData.BuildExpectedSchema();
+            var dialect = CreateScriptedDialect();
+            var results = CreateCompletedSchemaResults(dialect, expectedSchema);
+            results[dialect.DocumentCacheStateSingletonSql] = ScriptedCommandResult.Rows([
+                "Tracking",
+                DateTime.UnixEpoch,
+            ]);
+            var provisioner = new ScriptedDatabaseProvisioner(dialect, new ScriptedDbConnection(results));
+
+            _exception = Assert.Catch<InvalidOperationException>(() =>
+                provisioner.PreflightSeedValidation("scripted", expectedSchema)
+            );
+        }
+
+        [Test]
+        public void It_throws_InvalidOperationException()
+        {
+            _exception.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_reports_the_unsupported_boolean_type()
+        {
+            _exception!
+                .Message.Should()
+                .Contain("CacheAheadRecoveryRequired")
+                .And.Contain("boolean-compatible")
+                .And.Contain("System.DateTime")
+                .And.NotContain("must not be null");
+        }
+    }
+
+    private static DialectSql CreateScriptedDialect() =>
+        new(
+            EffectiveSchemaTableExistsSql: "effective-schema-table-exists",
+            SeedTableCheckSql: "seed-table-check",
+            EffectiveSchemaFingerprintSql: "effective-schema-fingerprint",
+            DataStoreIdentityTableExistsSql: "data-store-identity-table-exists",
+            DataStoreIdentitySourceIdentitySql: "data-store-identity-source-identity",
+            DocumentCacheStateTableExistsSql: "document-cache-state-table-exists",
+            DocumentCacheStateSingletonSql: "document-cache-state-singleton",
+            KnownLegacyDocumentCacheArtifactSql: "known-legacy-document-cache-artifact",
+            ProviderPrerequisiteSql: "",
+            ResourceKeySelectSql: "resource-key-select",
+            SchemaComponentSelectSql: "schema-component-select",
+            MissingTableDataStoreIdentity: "dms.DataStoreIdentity",
+            MissingTableDocumentCacheState: "dms.DocumentCacheState",
+            MissingTableResourceKey: "dms.ResourceKey",
+            MissingTableSchemaComponent: "dms.SchemaComponent"
+        );
+
+    private static Dictionary<string, ScriptedCommandResult> CreateCompletedSchemaResults(
+        DialectSql dialect,
+        EffectiveSchemaInfo expectedSchema
+    ) =>
+        new()
+        {
+            [dialect.EffectiveSchemaTableExistsSql] = ScriptedCommandResult.Rows([1]),
+            [dialect.SeedTableCheckSql] = ScriptedCommandResult.Rows(["ResourceKey"], ["SchemaComponent"]),
+            [dialect.EffectiveSchemaFingerprintSql] = ScriptedCommandResult.Rows([
+                (short)1,
+                expectedSchema.ApiSchemaFormatVersion,
+                expectedSchema.EffectiveSchemaHash,
+                expectedSchema.ResourceKeyCount,
+                expectedSchema.ResourceKeySeedHash,
+            ]),
+            [dialect.KnownLegacyDocumentCacheArtifactSql] = ScriptedCommandResult.Empty,
+            [dialect.DataStoreIdentityTableExistsSql] = ScriptedCommandResult.Rows([1]),
+            [dialect.DataStoreIdentitySourceIdentitySql] = ScriptedCommandResult.Rows([Guid.NewGuid()]),
+            [dialect.DocumentCacheStateTableExistsSql] = ScriptedCommandResult.Rows([1]),
+            [dialect.DocumentCacheStateSingletonSql] = ScriptedCommandResult.Rows(["Tracking", false]),
+        };
+
+    private sealed class ScriptedDatabaseProvisioner(DialectSql dialect, DbConnection connection)
+        : DatabaseProvisionerBase(A.Fake<ILogger>())
+    {
+        protected override DialectSql Dialect => dialect;
+
+        protected override DbConnection CreateConnection(string connectionString) => connection;
+
+        public override string GetDatabaseName(string connectionString) => "scripted";
+
+        public override bool CreateDatabaseIfNotExists(string connectionString) => false;
+
+        public override void ExecuteInTransaction(
+            string connectionString,
+            string sql,
+            int commandTimeoutSeconds = 300
+        ) => throw new NotSupportedException();
+
+        public override void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed record ScriptedCommandResult(DataTable Table)
+    {
+        public static ScriptedCommandResult Empty { get; } = new(CreateTable([]));
+
+        public static ScriptedCommandResult Rows(params object?[][] rows) => new(CreateTable(rows));
+
+        private static DataTable CreateTable(IReadOnlyList<object?[]> rows)
+        {
+            var table = new DataTable();
+            var columnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Length);
+
+            for (var columnIndex = 0; columnIndex < columnCount; columnIndex++)
+            {
+                var sampleValue = rows.Select(row => columnIndex < row.Length ? row[columnIndex] : null)
+                    .FirstOrDefault(value => value is not null && value is not DBNull);
+
+                table.Columns.Add($"Column{columnIndex}", sampleValue?.GetType() ?? typeof(object));
+            }
+
+            foreach (var row in rows)
+            {
+                var values = new object[columnCount];
+                for (var columnIndex = 0; columnIndex < columnCount; columnIndex++)
+                {
+                    var value = columnIndex < row.Length ? row[columnIndex] : null;
+                    values[columnIndex] = value ?? DBNull.Value;
+                }
+
+                table.Rows.Add(values);
+            }
+
+            return table;
+        }
+    }
+
+    private sealed class ScriptedDbConnection(IReadOnlyDictionary<string, ScriptedCommandResult> results)
+        : DbConnection
+    {
+        private string _connectionString = string.Empty;
+        private ConnectionState _state = ConnectionState.Closed;
+
+        [AllowNull]
+        public override string ConnectionString
+        {
+            get => _connectionString;
+            set => _connectionString = value ?? string.Empty;
+        }
+
+        public override string Database => "scripted";
+
+        public override string DataSource => "scripted";
+
+        public override string ServerVersion => "1";
+
+        public override ConnectionState State => _state;
+
+        public override void ChangeDatabase(string databaseName) { }
+
+        public override void Close() => _state = ConnectionState.Closed;
+
+        public override void Open() => _state = ConnectionState.Open;
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            throw new NotSupportedException();
+
+        protected override DbCommand CreateDbCommand() =>
+            new ScriptedDbCommand(results) { Connection = this };
+    }
+
+    private sealed class ScriptedDbCommand(IReadOnlyDictionary<string, ScriptedCommandResult> results)
+        : DbCommand
+    {
+        private string _commandText = string.Empty;
+
+        [AllowNull]
+        public override string CommandText
+        {
+            get => _commandText;
+            set => _commandText = value ?? string.Empty;
+        }
+
+        public override int CommandTimeout { get; set; }
+
+        public override CommandType CommandType { get; set; }
+
+        public override bool DesignTimeVisible { get; set; }
+
+        public override UpdateRowSource UpdatedRowSource { get; set; }
+
+        protected override DbConnection? DbConnection { get; set; }
+
+        protected override DbParameterCollection DbParameterCollection => throw new NotSupportedException();
+
+        protected override DbTransaction? DbTransaction { get; set; }
+
+        public override void Cancel() { }
+
+        public override int ExecuteNonQuery() => throw new NotSupportedException();
+
+        public override object? ExecuteScalar()
+        {
+            var table = GetResult().Table;
+            return table.Rows.Count == 0 || table.Columns.Count == 0 ? null : table.Rows[0][0];
+        }
+
+        public override void Prepare() { }
+
+        protected override DbParameter CreateDbParameter() => throw new NotSupportedException();
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
+            GetResult().Table.CreateDataReader();
+
+        private ScriptedCommandResult GetResult() =>
+            results.TryGetValue(CommandText, out var result)
+                ? result
+                : throw new InvalidOperationException($"No scripted result for '{CommandText}'.");
+    }
+
+    [TestFixture]
+    public class Given_PgsqlDatabaseProvisioner_Bounded_Preflight_Sql
+    {
+        private DialectSql _dialect = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _dialect = new ExposedPgsqlDatabaseProvisioner().ExposedDialect;
+        }
+
+        [Test]
+        public void It_checks_completed_schema_singleton_tables_and_rows()
+        {
+            _dialect.DataStoreIdentityTableExistsSql.Should().Contain("DataStoreIdentity");
+            _dialect.DataStoreIdentitySourceIdentitySql.Should().Contain("\"SourceIdentity\"");
+            _dialect.DocumentCacheStateTableExistsSql.Should().Contain("DocumentCacheState");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("\"ProjectionLifecycleState\"");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("\"CacheAheadRecoveryRequired\"");
+        }
+
+        [Test]
+        public void It_checks_known_legacy_document_cache_artifacts()
+        {
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("column_name = 'Etag'");
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("UX_DocumentCache_DocumentUuid");
+            _dialect
+                .KnownLegacyDocumentCacheArtifactSql.Should()
+                .Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        }
+
+        [Test]
+        public void It_checks_enqueue_owner_prerequisites_without_dms_mutation()
+        {
+            _dialect
+                .ProviderPrerequisiteSql.Should()
+                .Be(PgsqlEnqueueOwnerPrerequisiteSql.ProviderPrerequisiteSql);
+            _dialect.ProviderPrerequisiteSql.Should().Contain("edfi_dms_enqueue_owner");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("pg_catalog.pg_auth_members");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("SET TRUE, INHERIT FALSE, ADMIN FALSE");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("AND NOT membership.admin_option");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("AND NOT membership.inherit_option");
+            _dialect.ProviderPrerequisiteSql.Should().Contain("AND membership.set_option");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("WITH ADMIN OPTION");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("pg_catalog.pg_has_role");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("CREATE ROLE");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("ALTER ROLE");
+            _dialect.ProviderPrerequisiteSql.Should().NotContain("GRANT");
+        }
+    }
+
+    [TestFixture]
+    public class Given_MssqlDatabaseProvisioner_Bounded_Preflight_Sql
+    {
+        private DialectSql _dialect = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _dialect = new ExposedMssqlDatabaseProvisioner().ExposedDialect;
+        }
+
+        [Test]
+        public void It_checks_completed_schema_singleton_tables_and_rows()
+        {
+            _dialect.DataStoreIdentityTableExistsSql.Should().Contain("DataStoreIdentity");
+            _dialect.DataStoreIdentitySourceIdentitySql.Should().Contain("[SourceIdentity]");
+            _dialect.DocumentCacheStateTableExistsSql.Should().Contain("DocumentCacheState");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("[ProjectionLifecycleState]");
+            _dialect.DocumentCacheStateSingletonSql.Should().Contain("[CacheAheadRecoveryRequired]");
+        }
+
+        [Test]
+        public void It_checks_known_legacy_document_cache_artifacts()
+        {
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("name = N'Etag'");
+            _dialect.KnownLegacyDocumentCacheArtifactSql.Should().Contain("UX_DocumentCache_DocumentUuid");
+            _dialect
+                .KnownLegacyDocumentCacheArtifactSql.Should()
+                .Contain("IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt");
+        }
+
+        [Test]
+        public void It_has_no_provider_specific_prerequisite_query()
+        {
+            _dialect.ProviderPrerequisiteSql.Should().BeEmpty();
         }
     }
 }
