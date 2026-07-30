@@ -199,20 +199,28 @@ internal sealed class InMemoryDocumentCacheMaterializationDataStore : IDocumentC
 {
     private readonly InMemoryRelationalCommandExecutor _commandExecutor;
     private readonly Queue<HydratedPage> _hydratedPages;
+    private readonly Func<
+        DocumentCacheMaterializationRequest,
+        DocumentCacheMaterializationRequest
+    >? _bindRequest;
 
     public InMemoryDocumentCacheMaterializationDataStore(
         IReadOnlyList<InMemoryRelationalCommandExecution> executions,
         SqlDialect dialect = SqlDialect.Pgsql,
-        IReadOnlyList<HydratedPage>? hydratedPages = null
+        IReadOnlyList<HydratedPage>? hydratedPages = null,
+        Func<DocumentCacheMaterializationRequest, DocumentCacheMaterializationRequest>? bindRequest = null
     )
     {
         _commandExecutor = new InMemoryRelationalCommandExecutor(executions, dialect);
         _hydratedPages = new Queue<HydratedPage>(hydratedPages ?? []);
+        _bindRequest = bindRequest;
     }
 
     public SqlDialect Dialect => _commandExecutor.Dialect;
 
     public List<RelationalCommand> Commands => _commandExecutor.Commands;
+
+    public List<DocumentCacheMaterializationRequest> BindRequests { get; } = [];
 
     public List<DocumentCacheMaterializationRequest> CommandRequests { get; } = [];
 
@@ -223,6 +231,15 @@ internal sealed class InMemoryDocumentCacheMaterializationDataStore : IDocumentC
     public List<PageKeysetSpec> HydrationKeysets { get; } = [];
 
     public List<HydrationExecutionOptions> HydrationExecutionOptions { get; } = [];
+
+    public DocumentCacheMaterializationRequest BindToTargetDataStore(
+        DocumentCacheMaterializationRequest request
+    )
+    {
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
+        BindRequests.Add(request);
+        return _bindRequest?.Invoke(request) ?? request;
+    }
 
     public Task<TResult> ExecuteReaderAsync<TResult>(
         DocumentCacheMaterializationRequest request,

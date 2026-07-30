@@ -41,8 +41,10 @@ internal sealed class DocumentCacheMaterializer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        var boundRequest = _materializationDataStore.BindToTargetDataStore(request);
+
         var sourceReadResult = await _sourceMetadataReader
-            .ReadAsync(request, request.CancellationToken)
+            .ReadAsync(boundRequest, boundRequest.CancellationToken)
             .ConfigureAwait(false);
 
         return sourceReadResult switch
@@ -53,11 +55,12 @@ internal sealed class DocumentCacheMaterializer(
             DocumentCacheSourceMetadataReadResult.Found
             {
                 Metadata: DocumentCacheResolvedSourceMetadata.OrdinaryResource ordinaryResource,
-            } => await MaterializeOrdinaryResourceAsync(request, ordinaryResource).ConfigureAwait(false),
+            } => await MaterializeOrdinaryResourceAsync(boundRequest, ordinaryResource).ConfigureAwait(false),
             DocumentCacheSourceMetadataReadResult.Found
             {
                 Metadata: DocumentCacheResolvedSourceMetadata.DescriptorResource descriptorResource,
-            } => await MaterializeDescriptorResourceAsync(request, descriptorResource).ConfigureAwait(false),
+            } => await MaterializeDescriptorResourceAsync(boundRequest, descriptorResource)
+                .ConfigureAwait(false),
             DocumentCacheSourceMetadataReadResult.Found found => throw new InvalidOperationException(
                 $"DocumentCache materializer received unsupported source metadata type '{found.Metadata.GetType().Name}'."
             ),

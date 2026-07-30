@@ -48,8 +48,10 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
                 )
             );
 
+        var request = sut.BindToTargetDataStore(CreateRequest());
+
         var result = await sut.ExecuteReaderAsync(
-            CreateRequest(),
+            request,
             new RelationalCommand("select [Value] from [dms].[TargetProbe]"),
             async (reader, cancellationToken) =>
             {
@@ -64,6 +66,74 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
         connection.Command.CommandText.Should().Be("select [Value] from [dms].[TargetProbe]");
         A.CallTo(() => dataStoreProvider.GetById(7, "tenant-a")).MustHaveHappenedOnceExactly();
         A.CallTo(() => dataStoreProvider.GetById(8, A<string?>._)).MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_binds_the_target_data_store_once_for_multiple_operations_in_one_attempt()
+    {
+        const string initialConnectionString = "Server=initial;Database=dms;TrustServerCertificate=true";
+        const string replacementConnectionString =
+            "Server=replacement;Database=dms;TrustServerCertificate=true";
+        var dataStoreProvider = A.Fake<IDataStoreProvider>();
+        var connections = new Queue<RecordingDbConnection>([
+            new RecordingDbConnection(new RecordingDbCommand(CreateReader())),
+            new RecordingDbConnection(new RecordingDbCommand(CreateReader())),
+        ]);
+        List<string> capturedConnectionStrings = [];
+        var providerCallCount = 0;
+        var sut = new MssqlDocumentCacheMaterializationDataStore(
+            dataStoreProvider,
+            connectionString =>
+            {
+                capturedConnectionStrings.Add(connectionString);
+                return connections.Dequeue();
+            },
+            NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
+        );
+
+        A.CallTo(() => dataStoreProvider.GetById(7, "tenant-a"))
+            .ReturnsLazily(() =>
+            {
+                var connectionString =
+                    providerCallCount++ == 0 ? initialConnectionString : replacementConnectionString;
+
+                return new DataStore(
+                    Id: 7,
+                    DataStoreType: "test",
+                    Name: "target",
+                    ConnectionString: connectionString,
+                    RouteContext: []
+                );
+            });
+
+        var request = sut.BindToTargetDataStore(CreateRequest());
+
+        await sut.ExecuteReaderAsync(
+            request,
+            new RelationalCommand("select [Value] from [dms].[TargetProbe]"),
+            async (reader, cancellationToken) =>
+            {
+                await reader.ReadAsync(cancellationToken);
+                return reader.GetRequiredFieldValue<int>("Value");
+            }
+        );
+        await sut.ExecuteReaderAsync(
+            request,
+            new RelationalCommand("select [Value] from [dms].[TargetProbe]"),
+            async (reader, cancellationToken) =>
+            {
+                await reader.ReadAsync(cancellationToken);
+                return reader.GetRequiredFieldValue<int>("Value");
+            }
+        );
+
+        request
+            .TargetContext.TargetDataStore.Should()
+            .Be(new DocumentCacheMaterializationTargetDataStore(initialConnectionString));
+        capturedConnectionStrings.Should().Equal(initialConnectionString, initialConnectionString);
+        connections.Should().BeEmpty();
+        providerCallCount.Should().Be(1);
+        A.CallTo(() => dataStoreProvider.GetById(7, "tenant-a")).MustHaveHappenedOnceExactly();
     }
 
     [Test]

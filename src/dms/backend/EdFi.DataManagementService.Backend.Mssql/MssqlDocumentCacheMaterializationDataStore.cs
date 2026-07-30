@@ -39,6 +39,21 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
 
     public SqlDialect Dialect => SqlDialect.Mssql;
 
+    public DocumentCacheMaterializationRequest BindToTargetDataStore(
+        DocumentCacheMaterializationRequest request
+    )
+    {
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
+
+        var dataStore = ResolveTargetDataStore(request);
+
+        return request.WithTargetContext(
+            request.TargetContext.WithTargetDataStore(
+                new DocumentCacheMaterializationTargetDataStore(dataStore.ConnectionString!)
+            )
+        );
+    }
+
     public async Task<TResult> ExecuteReaderAsync<TResult>(
         DocumentCacheMaterializationRequest request,
         RelationalCommand command,
@@ -101,8 +116,11 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
         CancellationToken cancellationToken
     )
     {
-        var dataStore = ResolveTargetDataStore(request);
-        var connection = _createConnection(dataStore.ConnectionString!);
+        var dataStore = DocumentCacheMaterializationDataStoreGuards.RequireBoundTargetDataStore(
+            request,
+            Dialect
+        );
+        var connection = _createConnection(dataStore.ConnectionString);
 
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 

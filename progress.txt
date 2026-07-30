@@ -1,0 +1,155 @@
+2026-07-30 - Completed contracts task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added caller-agnostic IDocumentCacheMaterializer contract, DocumentId-based request, resolved target context, success candidate, ordinary outcomes, and deterministic failure exceptions.
+- Key decisions: target context carries configured target key + MappingSet only; selected RequiredContentVersion stays request/diagnostic only; mapping defects throw target-fatal exception, not result outcome.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializerContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerContractTests.cs; tasks.json; progress.txt.
+- Verified focused contract tests and directory CSharpier format. Next: materialization mode can extend read materializer without changing this boundary.
+
+2026-07-30 - Completed materialization-mode task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added RelationalReadMaterializationMode with CacheProjection, leaving public GET read mode unchanged and mapping GET callers to materializer modes.
+- Key decisions: cache projection requires MappingSet, reuses link-bearing DocumentReconstituter path, injects id/_lastModifiedDate via JsonObject, removes _etag structurally, ignores EtagVariant/readable-profile inputs.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs; src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteMergeOrchestrator.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalReadMaterializerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs; tasks.json; progress.txt.
+- Verified CacheProjection focused tests, broader RelationalReadMaterializer/DocumentReconstituter/LinkInjection tests, and CSharpier. Next: descriptor cache projection can extend descriptor materialization path and StreamEtag still belongs to later task.
+
+2026-07-30 - Completed descriptor-materialization task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added DescriptorDocumentMaterializer support for RelationalReadMaterializationMode.CacheProjection with descriptor body fields, id, _lastModifiedDate, and no _etag.
+- Key decisions: kept public GET read mode unchanged; DescriptorReadHandler maps GET modes to internal materialization modes; cache projection ignores composed etag and skips readable-profile projection by mode.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorDocumentMaterializerTests.cs; tasks.json; progress.txt.
+- Verified descriptor CacheProjection tests, DescriptorReadHandler tests, and backend/unit CSharpier. Next: fixed StreamEtag composition remains separate stream-etag task.
+
+2026-07-30 - Completed stream-etag task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added DocumentCacheMaterializerStreamEtagComposer as local shared cache StreamEtag helper over IServedEtagComposer.
+- Key decisions: resource cache streams force profile null, JSON, identity coding, links true; descriptor cache streams force profile null, JSON, identity coding, links false; ResourceLinksOptions is not an input.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/Etag/DocumentCacheMaterializerStreamEtagComposer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Etag/DocumentCacheMaterializerStreamEtagComposerTests.cs; tasks.json; progress.txt.
+- Verified focused DocumentCacheMaterializer/Etag tests, broader Etag tests, ResourceLinksOptions review, and backend/unit CSharpier. Next: source metadata reader can use same mapping-set EffectiveSchemaHash and current ContentVersion inputs.
+
+2026-07-30 - Completed source-metadata task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added DocumentCacheSourceMetadataReader over canonical dms.Document by DocumentId, returning missing-source or target-resolved ordinary/descriptor metadata.
+- Key decisions: resolve ResourceKey metadata from selected MappingSet, not dms.ResourceKey SQL; ordinary resources require compiled read plan; descriptors classify by SharedDescriptorTable; no DocumentProjectionWork/DocumentCache/public UUID reads.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheSourceMetadataReader.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheSourceMetadataReaderTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheSourceMetadataReaderTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheSourceMetadataReaderTests.cs; tasks.json; progress.txt.
+- Verified DocumentCache unit tests, PostgreSQL source-metadata integration, SQL Server source-metadata integration with explicit localhost:14333 SQL Server 2025 container env, and CSharpier. Next: ordinary hydration can consume OrdinaryResource.ReadPlan and metadata directly.
+
+2026-07-30 - Completed resource-hydration task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added DocumentCacheMaterializer ordinary-resource orchestration: source metadata read, single DocumentId hydration, cache projection materialization, stream etag composition, and candidate creation.
+- Key decisions: default hydration options keep descriptor projection and document-reference lookup enabled; UseSingleDocumentFastPath true for PostgreSQL/ignored by SQL Server; selected RequiredContentVersion remains diagnostic only; descriptor branch left target-fatal for later descriptor-hydration task.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerResourceHydrationTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheMaterializerLinkBearingResourceTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheMaterializerLinkBearingResourceTests.cs; tasks.json; progress.txt.
+- Verified focused resource hydration unit tests, PostgreSQL link-bearing resource integration, SQL Server link-bearing resource integration with explicit localhost:14333 SQL Server 2025 env, no DocumentProjectionWork/work-row/source update locks, and CSharpier. Next: descriptor hydration can add the dms.Descriptor path.
+
+2026-07-30 - Completed descriptor-hydration task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added DocumentCacheDescriptorHydrator and descriptor branch in DocumentCacheMaterializer: canonical DocumentId metadata, dms.Descriptor body by expected ResourceKeyId, cache projection, no-link StreamEtag, success candidate.
+- Key decisions: descriptor hydrator checks current dms.Document metadata during hydration; missing/changed source returns ordinary outcomes; stable missing descriptor body maps to projection-processing failure; descriptor tests omit Uri column to pin no public URI source lookup.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheDescriptorHydrator.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerDescriptorHydrationTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerResourceHydrationTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheMaterializerDescriptorTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheMaterializerLinkBearingResourceTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheMaterializerDescriptorTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheMaterializerLinkBearingResourceTests.cs; tasks.json; progress.txt.
+- Verified DocumentCacheMaterializer unit tests, DocumentCacheDescriptorHydrator unit tests, PostgreSQL descriptor integration, SQL Server descriptor integration with explicit localhost:14333 SQL Server 2025 env, DescriptorReadHandler tests, no DescriptorReadHandler/namespace/readable-profile/Uri source dependency, and CSharpier. Next: coherence task can replace hydration-time metadata check with final metadata reread across both resource kinds.
+
+2026-07-30 - Completed coherence task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added final dms.Document metadata reread after ordinary/descriptor hydration, returning missing-source or source-changed when DocumentUuid, ResourceKeyId, ContentVersion, or ContentLastModifiedAt is not stable.
+- Key decisions: final reread uses raw current metadata without resolving changed ResourceKeyId through target mapping; descriptor hydrator now loads only dms.Descriptor body and leaves canonical metadata race classification to materializer boundary.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheSourceMetadataReader.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheDescriptorHydrator.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerCoherenceTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerResourceHydrationTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerDescriptorHydrationTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheSourceMetadataReaderTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheMaterializerCoherenceTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheMaterializerCoherenceTests.cs; tasks.json; progress.txt.
+- Verified coherence unit tests, PostgreSQL coherence integration, SQL Server coherence integration with explicit localhost:14333 SQL Server 2025 env, source/cache/work classification inspection, and CSharpier. Next: invariants task can validate candidate JSON/metadata/StreamEtag before success.
+
+2026-07-30 - Completed invariants task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added success-boundary invariant validation for JSON object shape, id, _lastModifiedDate, _etag exclusion, fixed StreamEtag recomposition, and selected resource/read-plan metadata.
+- Key decisions: invariant failures stay deterministic DocumentCacheProjectionProcessingException with existing bounded reason codes/metadata; StreamEtag validation recomposes through shared helper for the fixed resource/descriptor stream context.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerInvariantTests.cs; tasks.json; progress.txt.
+- Verified invariant/diagnostics/last-modified focused filters, broader DocumentCacheMaterializer unit filter, and backend/unit CSharpier. Next: dependency-injection task can wire the materializer services.
+
+2026-07-30 - Completed dependency-injection task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Registered IDocumentCacheMaterializer plus source metadata reader and descriptor hydrator in shared relational backend DI.
+- Key decisions: scoped lifetime matches connection-bound relational services; registration consumes existing command executor, hydrator, read materializer, and served-ETag composer; no target-selection, lifecycle, cache-writer, or Kafka services added.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolverServiceCollectionExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ReferenceResolverServiceCollectionExtensionsTests.cs; tasks.json; progress.txt.
+- Verified focused DocumentCacheMaterializer ServiceRegistration test, core Startup/DependencyInjection test filter, CSharpier, and registration inspection. Next: fixture-layout task can define shared JSON fixture contract.
+
+2026-07-30 - Completed fixture-layout task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added materialized-document fixture root, versioned fixture.json manifest contract, provider-neutral source setup shape, expected cache row, separate StreamEtag expectation, and optional public CDC handoff expectation.
+- Key decisions: loader lives in Backend.Tests.Common for unit/integration reuse; manifest paths are case-relative JSON only; loader enforces cache DocumentJson has no _etag and optional CDC document equals cache JSON plus StreamEtag as _etag.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/MaterializedDocumentFixtureCatalog.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/MaterializedDocumentFixtureTests.cs; src/dms/backend/Fixtures/document-cache/materialized-documents/layout-contract-school/*; tasks.json; progress.txt.
+- Verified materialized-document JSON jq parse, focused MaterializedDocumentFixture unit tests, relative JSON path/no SQL/raw-record inspection, and CSharpier. Next: fixture-cases can replace/add representative ordinary, descriptor, extension/nested, and invariant-failure cases.
+
+2026-07-30 - Completed fixture-cases task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added representative materialized-document cases for ordinary link-bearing resource, descriptor no-link stream, extension plus nested collection, and stable-source projection failure.
+- Key decisions: success fixtures use cache-row JSON plus separate StreamEtag and optional CDC document; failure fixture uses explicit expected projection-failure file and no cache candidate; tags distinguish layout/success/failure coverage for later seeder tests.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/MaterializedDocumentFixtureCatalog.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/MaterializedDocumentFixtureTests.cs; src/dms/backend/Fixtures/document-cache/materialized-documents/*; tasks.json; progress.txt.
+- Verified MaterializedDocumentFixture unit tests, all fixture JSON jq parse, manifest category summary, and CSharpier. Next: test-infrastructure can translate these source rows into provider-specific setup/assertions.
+
+2026-07-30 - Completed test-infrastructure task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added shared materialized-document fixture seeder and structural assertion helpers for provider-neutral fixture source rows.
+- Key decisions: seeder lives with the fixture catalog in Backend.Tests.Common; provider SQL is isolated behind PostgreSQL/SQL Server dialect helpers; minimal seeded document stamp columns preserve round-trip fixture timestamps for deterministic cache-row comparisons.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/MaterializedDocumentFixtureSeeder.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/MaterializedDocumentFixtureAssertions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/MaterializedDocumentFixtureSeederTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheMaterializerLinkBearingResourceTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheMaterializerLinkBearingResourceTests.cs; tasks.json; progress.txt.
+- Verified seeder unit tests, PostgreSQL FixtureSeeder integration, SQL Server FixtureSeeder integration with explicit localhost:14333 SQL Server 2025 env, and CSharpier. Next: unit-tests can fill remaining orchestration boundary coverage.
+
+2026-07-30 - Completed unit-tests task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added focused orchestration coverage for null/behind/equal/ahead RequiredContentVersion and materializer runtime boundary dependencies.
+- Key decisions: selected durable-work version stays diagnostic only and never gates hydration/candidate current source; constructor remains limited to metadata reader, descriptor hydrator, document hydrator, read materializer, and served-ETag composer.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerResourceHydrationTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerContractTests.cs; tasks.json; progress.txt.
+- Verified DocumentCacheMaterializer unit filter, RelationalReadMaterializer/Descriptor/Etag unit filter, and backend/unit CSharpier. Next: PostgreSQL integration tests can expand fixture-based materializer coverage.
+
+2026-07-30 - Completed postgresql-integration-tests task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added PostgreSQL fixture materializer coverage for descriptor, extension/nested collection, missing source, stable missing body projection failure, missing ResourceKeyId, and missing read-plan target mapping failure.
+- Key decisions: minimal read plans are compiled from fixture-shaped relational models; fixture tests record materializer metadata SQL and assert no DocumentCache/DocumentProjectionWork reads.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheMaterializerFixtureTests.cs; tasks.json; progress.txt.
+- Verified PostgreSQL DocumentCacheMaterializer integration filter and required CSharpier. Next: SQL Server integration parity task.
+
+2026-07-30 - Completed mssql-integration-tests task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added SQL Server fixture materializer parity coverage for descriptor, extension/nested collection, missing source, stable missing body projection failure, missing ResourceKeyId, missing read-plan mapping failure, and LastModifiedAt precision.
+- Key decisions: mirrored PostgreSQL fixture mapping/read-plan shape with SqlDialect.Mssql; tests use shared fixture seeder/assertions and recorded command texts to pin dms.Document-by-DocumentId reads/no DocumentCache or DocumentProjectionWork reads.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheMaterializerFixtureTests.cs; tasks.json; progress.txt.
+- Verified full SQL Server DocumentCacheMaterializer integration filter with ConnectionStrings__MssqlAdmin=localhost,14333 SQL Server 2025, required CSharpier, and source-metadata SQL review. Next: story-validation final pass.
+
+2026-07-30 - Completed story-validation task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Ran final format, fixture JSON parse, materializer unit tests, PostgreSQL integration tests, and SQL Server integration tests.
+- Key decisions: used running local SQL Server 2025 container on localhost:14333 despite absent exported ConnectionStrings__MssqlAdmin; reviewed DMS-1312 materializer slice from e29e74071..HEAD for story boundary.
+- Files changed: tasks.json; progress.txt.
+- Verified no cache persistence, durable-work acknowledgement, queue loop, lifecycle administration, cache-backed read routing, or Kafka envelope shaping in materializer production changes. No blockers.
+
+2026-07-30 - Completed source-metadata diagnostic task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added concrete-model target-mapping reasons for ResourceKeyId resolved but concrete model missing/mismatched.
+- Key decisions: ResourceKeyMissingFromMappingSet stays only for absent ResourceKeyById; read path defect remains ReadPlanMissing; no SQL path expansion beyond dms.Document by DocumentId.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheSourceMetadataReader.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializerContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheSourceMetadataReaderTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerContractTests.cs; tasks.json; progress.txt.
+- Verified DocumentCacheSourceMetadata and DocumentCacheMaterializerContract unit filters plus CSharpier. Next: dead-code or fixture-cleanup tasks remain.
+
+2026-07-30 - Completed dead-code task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Removed unused DescriptorMaterializationPathMissing target-mapping failure reason from the materializer contract and supported-reason contract test.
+- Key decisions: kept remaining enum numeric values stable; all remaining target-mapping reasons have production paths or focused tests.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializerContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheMaterializerContractTests.cs; tasks.json; progress.txt.
+- Verified no backend references, focused contract/source-metadata unit tests, and CSharpier. Next: fixture-cleanup remains.
+
+2026-07-30 - Completed fixture-cleanup task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Removed redundant materialized-document fixture referenceRows source category and dead catalog model/validation.
+- Key decisions: link behavior remains covered by executable source table rows, referential identity rows, and expected cache/public CDC JSON; no new validation machinery added.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/MaterializedDocumentFixtureCatalog.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/MaterializedDocumentFixtureTests.cs; src/dms/backend/Fixtures/document-cache/materialized-documents/*/source-setup.json; tasks.json; progress.txt.
+- Verified no referenceRows/ReferenceRows matches in fixture/common/unit paths, all materialized-document fixture JSON parses, focused MaterializedDocumentFixture unit tests, and CSharpier. Next: all tasks complete.
+
+2026-07-30 - Completed target-context task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added DocumentCache materialization data-store adapter and provider-specific PostgreSQL/SQL Server target-bound implementations.
+- Key decisions: materializer/source/descriptor paths take a materialization data-store; provider adapters resolve TargetKey.TenantKey + DataStoreId through IDataStoreProvider; existing HTTP ambient IDataStoreSelection remains only in request-scoped relational services.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializationDataStore.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheSourceMetadataReader.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheDescriptorHydrator.cs; src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDocumentCacheMaterializationDataStore.cs; src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlDocumentCacheMaterializationDataStore.cs; materializer/provider/unit/integration tests; tasks.json; progress.txt.
+- Verified focused TargetContext unit test, broader affected materializer/source/registration unit filter, provider target DataStoreId unit test, CSharpier, and no materializer cache/lifecycle/Kafka additions. Next: source-metadata validated-target precondition or target-mapping cleanup remain.
+
+2026-07-30 - Completed target-mapping task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Reclassified selected ResourceKey/read-plan metadata inconsistencies as target-fatal mapping failures, not projection-processing invariants.
+- Key decisions: source metadata resolution now validates selected ResourceKey entry id and ordinary read-plan resource/storage kind; removed ResourceMetadataMismatch projection reason and late ValidateResourceMetadata guard.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheSourceMetadataReader.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializerContracts.cs; source-metadata/materializer contract/invariant tests; tasks.json; progress.txt.
+- Verified focused DocumentCacheSourceMetadata/DocumentCacheMaterializer invariant unit filter and CSharpier. Next: source-metadata precondition, StreamEtag simplification, or fixture-drift cleanup remain.
+
+2026-07-30 - Completed source-metadata validated-target precondition task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Added explicit DocumentCache materialization target-validation marker and provider/data-store guard for validated target context plus dialect binding.
+- Key decisions: materializer still does not re-read EffectiveSchema or dms.ResourceKey per document; source metadata SQL remains canonical dms.Document only; target validation stays a caller/target-resolution precondition.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializerContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializationDataStore.cs; provider data-store guards; materializer/source/data-store unit tests; provider integration request factories; tasks.json; progress.txt.
+- Verified required DocumentCacheSourceMetadata/DocumentCacheMaterializer TargetContext unit filter, MssqlDocumentCacheMaterializationDataStore unit filter, provider integration project builds, CSharpier, and no dms.ResourceKey/DocumentCache/DocumentProjectionWork source metadata reads. Next: simplification or fixture-drift cleanup remain.
+
+2026-07-30 - Completed simplification task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Removed duplicate materializer StreamEtag recomposition from candidate invariant validation.
+- Key decisions: StreamEtagMismatch reason removed because there is no independent stream-etag source; success paths compose once through DocumentCacheMaterializerStreamEtagComposer; ordinary/descriptor tests now assert one composer call and fixed context.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializer.cs; src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheMaterializerContracts.cs; materializer contract/invariant/resource/descriptor unit tests; tasks.json; progress.txt.
+- Verified required Etag/Invariant focused unit filter, broader DocumentCacheMaterializer unit filter, stale-reference scan, and CSharpier. Next: fixture-drift remains.
+
+2026-07-30 - Completed fixture-drift task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Retagged layout-contract-school fixture as layout-only while keeping its synthetic StreamEtag for layout contract coverage.
+- Key decisions: executable success fixtures are identified by success tag, not by presence of layout cache-row JSON; no new fixture-generation infrastructure.
+- Files changed: src/dms/backend/Fixtures/document-cache/materialized-documents/layout-contract-school/fixture.json; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/MaterializedDocumentFixtureTests.cs; tasks.json; progress.txt.
+- Verified fixture JSON parse, focused MaterializedDocumentFixture unit tests, and CSharpier. Next: all tasks complete.
+
+2026-07-30 - Completed target-context guardrail task for reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md
+- Bound each DocumentCache materialization attempt to target data-store connection metadata before first metadata read; provider operations now require bound target data store instead of resolving IDataStoreProvider per operation.
+- Key decisions: connection string stays internal on target context; materializer binds once and passes bound request through source metadata, ordinary hydration, descriptor hydration, and final coherence; no target discovery/lifecycle/cache/Kafka behavior added.
+- Files changed: DocumentCacheMaterializerContracts.cs; DocumentCacheMaterializationDataStore.cs; DocumentCacheMaterializer.cs; provider materialization data stores; target-context/provider unit tests; tasks.json; progress.txt.
+- Verified focused target-context/data-store tests, broader DocumentCacheMaterializer unit filter, provider GetById code scan, and CSharpier. Next: target-mapping read-plan/concrete-model guardrail remains.

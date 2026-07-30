@@ -29,6 +29,21 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
 
     public SqlDialect Dialect => SqlDialect.Pgsql;
 
+    public DocumentCacheMaterializationRequest BindToTargetDataStore(
+        DocumentCacheMaterializationRequest request
+    )
+    {
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
+
+        var dataStore = ResolveTargetDataStore(request);
+
+        return request.WithTargetContext(
+            request.TargetContext.WithTargetDataStore(
+                new DocumentCacheMaterializationTargetDataStore(dataStore.ConnectionString!)
+            )
+        );
+    }
+
     public async Task<TResult> ExecuteReaderAsync<TResult>(
         DocumentCacheMaterializationRequest request,
         RelationalCommand command,
@@ -91,8 +106,11 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
         CancellationToken cancellationToken
     )
     {
-        var dataStore = ResolveTargetDataStore(request);
-        var dataSource = _dataSourceCache.GetOrCreate(dataStore.ConnectionString!);
+        var dataStore = DocumentCacheMaterializationDataStoreGuards.RequireBoundTargetDataStore(
+            request,
+            Dialect
+        );
+        var dataSource = _dataSourceCache.GetOrCreate(dataStore.ConnectionString);
 
         return await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
     }

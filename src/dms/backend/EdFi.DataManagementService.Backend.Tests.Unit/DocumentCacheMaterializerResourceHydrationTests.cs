@@ -131,12 +131,23 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                 """
             )!
             .AsObject();
+        var targetConnectionStrings = new Queue<string>(["Host=initial", "Host=replacement"]);
         var dataStore = new InMemoryDocumentCacheMaterializationDataStore(
             [
                 new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
                 new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
             ],
-            hydratedPages: [CreateHydratedPage(testContext.ReadPlan, source)]
+            hydratedPages: [CreateHydratedPage(testContext.ReadPlan, source)],
+            bindRequest: currentRequest =>
+            {
+                var connectionString = targetConnectionStrings.Dequeue();
+
+                return currentRequest.WithTargetContext(
+                    currentRequest.TargetContext.WithTargetDataStore(
+                        new DocumentCacheMaterializationTargetDataStore(connectionString)
+                    )
+                );
+            }
         );
         var readMaterializer = new RecordingReadMaterializer { Result = expectedDocumentJson };
         var sut = new DocumentCacheMaterializer(
@@ -150,14 +161,24 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         var result = await sut.MaterializeAsync(request);
 
         result.Should().BeOfType<DocumentCacheMaterializationResult.Success>();
+        dataStore.BindRequests.Should().ContainSingle().Which.Should().BeSameAs(request);
+        targetConnectionStrings.Should().ContainSingle().Which.Should().Be("Host=replacement");
         dataStore.CommandRequests.Should().HaveCount(2);
         dataStore
             .CommandRequests.Should()
-            .OnlyContain(capturedRequest =>
-                capturedRequest.TargetContext.TargetKey.DataStoreId == new DataStoreId(7)
-                && capturedRequest.TargetContext.TargetKey.TenantKey == "tenant-a"
-            );
-        dataStore.HydrationRequests.Should().ContainSingle().Which.Should().BeSameAs(request);
+            .AllSatisfy(capturedRequest =>
+            {
+                capturedRequest.TargetContext.TargetKey.DataStoreId.Should().Be(new DataStoreId(7));
+                capturedRequest.TargetContext.TargetKey.TenantKey.Should().Be("tenant-a");
+                capturedRequest
+                    .TargetContext.TargetDataStore.Should()
+                    .Be(new DocumentCacheMaterializationTargetDataStore("Host=initial"));
+            });
+        dataStore
+            .HydrationRequests.Should()
+            .ContainSingle()
+            .Which.TargetContext.TargetDataStore.Should()
+            .Be(new DocumentCacheMaterializationTargetDataStore("Host=initial"));
         dataStore.HydrationPlans.Should().ContainSingle().Which.Should().BeSameAs(testContext.ReadPlan);
         dataStore
             .HydrationKeysets.Should()

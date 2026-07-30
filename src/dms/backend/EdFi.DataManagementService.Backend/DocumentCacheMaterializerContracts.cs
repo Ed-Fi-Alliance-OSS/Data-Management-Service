@@ -52,6 +52,21 @@ public enum DocumentCacheMaterializationTargetValidation
     EffectiveSchemaAndResourceKeySeedValidated = 1,
 }
 
+internal sealed record DocumentCacheMaterializationTargetDataStore
+{
+    public DocumentCacheMaterializationTargetDataStore(string connectionString)
+    {
+        ConnectionString = string.IsNullOrWhiteSpace(connectionString)
+            ? throw new ArgumentException(
+                "DocumentCache materialization target data store connection string must not be blank.",
+                nameof(connectionString)
+            )
+            : connectionString;
+    }
+
+    public string ConnectionString { get; }
+}
+
 /// <summary>
 /// Resolved target inputs consumed by one materialization call. The materializer uses the supplied
 /// mapping set but does not resolve, validate, or refresh <c>DocumentCache:Targets</c>, re-read
@@ -66,10 +81,19 @@ public sealed record DocumentCacheMaterializationTargetContext
         MappingSet mappingSet,
         DocumentCacheMaterializationTargetValidation targetValidation
     )
+        : this(targetKey, mappingSet, targetValidation, targetDataStore: null) { }
+
+    private DocumentCacheMaterializationTargetContext(
+        DocumentCacheProjectionTargetKey targetKey,
+        MappingSet mappingSet,
+        DocumentCacheMaterializationTargetValidation targetValidation,
+        DocumentCacheMaterializationTargetDataStore? targetDataStore
+    )
     {
         TargetKey = targetKey ?? throw new ArgumentNullException(nameof(targetKey));
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         TargetValidation = RequireValidated(targetValidation, nameof(targetValidation));
+        TargetDataStore = targetDataStore;
     }
 
     /// <summary>
@@ -87,6 +111,18 @@ public sealed record DocumentCacheMaterializationTargetContext
     /// <see cref="TargetKey" /> after database fingerprint and resource-key seed validation.
     /// </summary>
     public DocumentCacheMaterializationTargetValidation TargetValidation { get; }
+
+    internal DocumentCacheMaterializationTargetDataStore? TargetDataStore { get; }
+
+    internal DocumentCacheMaterializationTargetContext WithTargetDataStore(
+        DocumentCacheMaterializationTargetDataStore targetDataStore
+    ) =>
+        new(
+            TargetKey,
+            MappingSet,
+            TargetValidation,
+            targetDataStore ?? throw new ArgumentNullException(nameof(targetDataStore))
+        );
 
     private static DocumentCacheMaterializationTargetValidation RequireValidated(
         DocumentCacheMaterializationTargetValidation value,
@@ -183,6 +219,17 @@ public sealed record DocumentCacheMaterializationRequest
     /// Cancellation for the materialization attempt. Cancellation uses the ordinary task exception flow.
     /// </summary>
     public CancellationToken CancellationToken { get; }
+
+    internal DocumentCacheMaterializationRequest WithTargetContext(
+        DocumentCacheMaterializationTargetContext targetContext
+    ) =>
+        new(
+            targetContext ?? throw new ArgumentNullException(nameof(targetContext)),
+            DocumentId,
+            SelectedRequiredContentVersion,
+            Purpose,
+            CancellationToken
+        );
 
     private static long RequirePositive(long value, string parameterName)
     {

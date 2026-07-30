@@ -12,6 +12,12 @@ internal interface IDocumentCacheMaterializationDataStore
 {
     SqlDialect Dialect { get; }
 
+    DocumentCacheMaterializationRequest BindToTargetDataStore(DocumentCacheMaterializationRequest request)
+    {
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
+        return request;
+    }
+
     Task<TResult> ExecuteReaderAsync<TResult>(
         DocumentCacheMaterializationRequest request,
         RelationalCommand command,
@@ -42,6 +48,14 @@ internal sealed class AmbientDocumentCacheMaterializationDataStore(
         : this(commandExecutor, new ThrowingDocumentHydrator()) { }
 
     public SqlDialect Dialect => _commandExecutor.Dialect;
+
+    public DocumentCacheMaterializationRequest BindToTargetDataStore(
+        DocumentCacheMaterializationRequest request
+    )
+    {
+        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
+        return request;
+    }
 
     public Task<TResult> ExecuteReaderAsync<TResult>(
         DocumentCacheMaterializationRequest request,
@@ -113,5 +127,23 @@ internal static class DocumentCacheMaterializationDataStoreGuards
                     + "after EffectiveSchema and ResourceKey seed validation."
             );
         }
+    }
+
+    public static DocumentCacheMaterializationTargetDataStore RequireBoundTargetDataStore(
+        DocumentCacheMaterializationRequest request,
+        SqlDialect dialect
+    )
+    {
+        RequireValidatedTargetContext(request, dialect);
+
+        if (request.TargetContext.TargetDataStore is null)
+        {
+            throw new InvalidOperationException(
+                "DocumentCache materialization provider adapters require the target data store "
+                    + "to be bound once before the materialization attempt begins."
+            );
+        }
+
+        return request.TargetContext.TargetDataStore;
     }
 }
