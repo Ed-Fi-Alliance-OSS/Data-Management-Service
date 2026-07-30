@@ -26,7 +26,7 @@ public class Given_DocumentCache_Target_Resolution_Composition
     );
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(
-        "sha256:0123456789abcdef"
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
 
     private static readonly DocumentCacheLifecycleObservation _disabledLifecycle = new(
