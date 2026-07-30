@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
@@ -213,6 +214,10 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.PostgresqlDatabaseFingerprintReader
             >();
             webAppBuilder.Services.AddSingleton<
+                IDocumentCachePhysicalSourceFingerprintReader,
+                Backend.Postgresql.PostgresqlDocumentCachePhysicalSourceFingerprintReader
+            >();
+            webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,
                 Backend.Postgresql.PostgresqlResourceKeyRowReader
             >();
@@ -227,6 +232,10 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,
                 Backend.Mssql.MssqlDatabaseFingerprintReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IDocumentCachePhysicalSourceFingerprintReader,
+                Backend.Mssql.MssqlDocumentCachePhysicalSourceFingerprintReader
             >();
             webAppBuilder.Services.AddSingleton<
                 IResourceKeyRowReader,

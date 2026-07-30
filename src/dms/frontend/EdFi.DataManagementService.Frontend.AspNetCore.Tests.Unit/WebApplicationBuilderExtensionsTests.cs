@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
@@ -203,6 +204,17 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        public void It_resolves_the_postgresql_document_cache_physical_source_fingerprint_reader()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            var fingerprintReader =
+                serviceProvider.GetRequiredService<IDocumentCachePhysicalSourceFingerprintReader>();
+
+            fingerprintReader.Should().BeOfType<PostgresqlDocumentCachePhysicalSourceFingerprintReader>();
+        }
+
+        [Test]
         public void It_uses_direct_typed_relational_repository_registrations()
         {
             var services = CreateServiceCollection("postgresql");
@@ -353,6 +365,17 @@ public class WebApplicationBuilderExtensionsTests
             var fingerprintReader = serviceProvider.GetRequiredService<IDatabaseFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<MssqlDatabaseFingerprintReader>();
+        }
+
+        [Test]
+        public void It_resolves_the_mssql_document_cache_physical_source_fingerprint_reader()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            var fingerprintReader =
+                serviceProvider.GetRequiredService<IDocumentCachePhysicalSourceFingerprintReader>();
+
+            fingerprintReader.Should().BeOfType<MssqlDocumentCachePhysicalSourceFingerprintReader>();
         }
 
         [Test]
