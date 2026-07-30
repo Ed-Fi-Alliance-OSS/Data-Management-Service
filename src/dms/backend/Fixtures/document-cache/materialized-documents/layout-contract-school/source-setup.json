@@ -1,0 +1,36 @@
+{
+  "documents": [
+    {
+      "documentId": 1001,
+      "documentUuid": "11111111-1111-1111-1111-111111111111",
+      "resourceKeyId": 1,
+      "contentVersion": 42,
+      "contentLastModifiedAt": "2026-01-15T17:18:19.1234567Z"
+    }
+  ],
+  "descriptors": [],
+  "concreteRootRows": [
+    {
+      "schema": "edfi",
+      "table": "School",
+      "documentId": 1001,
+      "values": {
+        "SchoolId": 255901001,
+        "NameOfInstitution": "Layout Contract School"
+      }
+    }
+  ],
+  "childRows": [],
+  "extensionRows": [],
+  "referenceRows": [],
+  "referentialIdentityRows": [
+    {
+      "referentialId": "22222222-2222-2222-2222-222222222222",
+      "documentId": 1001,
+      "resourceKeyId": 1,
+      "values": {
+        "identity": "schoolId=255901001"
+      }
+    }
+  ]
+}
