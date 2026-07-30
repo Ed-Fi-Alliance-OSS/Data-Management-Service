@@ -20,7 +20,9 @@ Deliverables include:
   `_lastModifiedDate` and per-item `ChangeVersion` from stored stamps,
 - ensuring successful no-op updates leave stored stamps and journal rows unchanged,
 - `If-Match` enforcement using stored representation stamps,
-- ChangeQueries feature does not introduce any breaking changes to its API interface
+- the DMS v1.0 ChangeQueries feature does not introduce any breaking changes to its API
+  interface; the deliberate post-v1.0 snapshot and read-replica behavior changes and their
+  release-note requirements are specified in `29-snapshot-support.md`
 - Ideally, being able to support the feature without requiring DB snapshots
 
 ## Stories
