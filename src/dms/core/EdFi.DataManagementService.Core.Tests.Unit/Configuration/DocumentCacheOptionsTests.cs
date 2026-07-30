@@ -137,6 +137,24 @@ public class DocumentCacheOptionsTests
             missingTenant.TenantKey.Should().BeEmpty();
             emptyTenant.TenantKey.Should().BeEmpty();
         }
+
+        [TestCase("Tenant\rA")]
+        [TestCase("Tenant\nA")]
+        [TestCase("Tenant\tA")]
+        [TestCase("Tenant\u0001A")]
+        public void It_should_reject_tenant_keys_that_cannot_be_sent_as_headers(string tenantKey)
+        {
+            bool created = DocumentCacheTargetKey.TryCreate(
+                tenantKey,
+                1,
+                out DocumentCacheTargetKey? targetKey,
+                out string? validationFailure
+            );
+
+            created.Should().BeFalse();
+            targetKey.Should().BeNull();
+            validationFailure.Should().Contain("Tenant HTTP header");
+        }
     }
 
     [TestFixture]
@@ -212,6 +230,42 @@ public class DocumentCacheOptionsTests
             );
 
             Validate(options).Failures.Should().Contain(failure => failure.Contains("TenantKey"));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Target_TenantKey_With_Header_Invalid_Characters : DocumentCacheOptionsTests
+    {
+        [TestCase("Tenant\rA")]
+        [TestCase("Tenant\nA")]
+        [TestCase("Tenant\tA")]
+        [TestCase("Tenant\u0001A")]
+        public void It_should_fail_validation(string tenantKey)
+        {
+            DocumentCacheOptions options = BindOptions(
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = tenantKey,
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "1",
+                }
+            );
+
+            Validate(options).Failures.Should().Contain(failure => failure.Contains("Tenant HTTP header"));
+        }
+
+        [Test]
+        public void It_should_allow_a_blank_tenant_key_for_the_default_tenant()
+        {
+            DocumentCacheOptions options = BindOptions(
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = "",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "1",
+                }
+            );
+
+            Validate(options).Succeeded.Should().BeTrue();
         }
     }
 

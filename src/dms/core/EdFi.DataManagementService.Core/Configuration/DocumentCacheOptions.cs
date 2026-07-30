@@ -54,6 +54,7 @@ public sealed class DocumentCacheProjectorOptions
 
 public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
 {
+    private const string TenantHeaderName = "Tenant";
     private static readonly StringComparer TenantKeyComparer = StringComparer.OrdinalIgnoreCase;
 
     private DocumentCacheTargetKey(string tenantKey, long dataStoreId)
@@ -106,6 +107,12 @@ public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
             return false;
         }
 
+        if (!CanBeSentAsTenantHeader(normalizedTenantKey))
+        {
+            validationFailure = "TenantKey must be safe to send as the Tenant HTTP header.";
+            return false;
+        }
+
         targetKey = new DocumentCacheTargetKey(normalizedTenantKey, dataStoreId);
         return true;
     }
@@ -129,6 +136,30 @@ public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
 
     private static bool HasLeadingOrTrailingWhitespace(string value) =>
         value.Length > 0 && (char.IsWhiteSpace(value[0]) || char.IsWhiteSpace(value[^1]));
+
+    private static bool CanBeSentAsTenantHeader(string value)
+    {
+        if (value.Length == 0)
+        {
+            return true;
+        }
+
+        if (value.Any(char.IsControl))
+        {
+            return false;
+        }
+
+        using HttpRequestMessage request = new(HttpMethod.Get, "http://localhost/");
+        try
+        {
+            request.Headers.Add(TenantHeaderName, value);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
 }
 
 public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCacheOptions>
