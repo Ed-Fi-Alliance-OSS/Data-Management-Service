@@ -287,6 +287,45 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         ) {
             Get-DotenvAssignment -Line $_ | Should -BeNullOrEmpty
         }
+
+        It "treats dotenv identifiers as case-sensitive, the way Compose does on Linux" {
+            # Captured in a Linux container (the CI and runtime path): with only UPPER_NAME declared,
+            # ${upper_name} renders UNSET, and with only lower_name declared, ${LOWER_NAME} renders
+            # UNSET. Windows Docker Desktop normalizes case and resolves both, so a Windows-only oracle
+            # cannot see this. Case-insensitive storage would let a lowercase typo satisfy an uppercase
+            # lookup in the preflight while Compose leaves the real reference unset.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'postgres_db_name=typo_value'
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}'
+            )
+
+            $evaluation.Effective.ContainsKey('postgres_db_name') | Should -BeTrue
+            $evaluation.Effective.ContainsKey('POSTGRES_DB_NAME') | Should -BeFalse -Because "the two spellings are distinct identifiers"
+            $evaluation.Effective['DMS_CONFIG_DATABASE_NAME'] | Should -BeExactly '' -Because "Compose leaves the uppercase reference unset"
+        }
+
+        It "keeps two case-variant declarations of the same-looking key separate" {
+            $evaluation = Resolve-DotenvFileSequentially -Line @('KEY=upper', 'key=lower')
+
+            $evaluation.Effective['KEY'] | Should -BeExactly 'upper'
+            $evaluation.Effective['key'] | Should -BeExactly 'lower'
+            $evaluation.DuplicateKeys.Count | Should -Be 0 -Because "different spellings are not duplicates of each other"
+        }
+
+        It "trims a whitespace-only unquoted value to empty but preserves quoted whitespace" {
+            # Captured on both platforms: WS_UNQUOTED=<spaces> renders as empty, while "<spaces>" and
+            # '<spaces>' keep their spaces. Returning the spaces verbatim let a value pass preflight
+            # that Compose renders differently.
+            $evaluation = Resolve-DotenvFileSequentially -Line @(
+                'WS_UNQUOTED=   '
+                'WS_DQUOTED="   "'
+                "WS_SQUOTED='   '"
+            )
+
+            $evaluation.Effective['WS_UNQUOTED'] | Should -BeExactly ''
+            $evaluation.Effective['WS_DQUOTED'] | Should -BeExactly '   '
+            $evaluation.Effective['WS_SQUOTED'] | Should -BeExactly '   '
+        }
     }
 
     Context "Resolution-time reference reporting (DMS-1270)" {

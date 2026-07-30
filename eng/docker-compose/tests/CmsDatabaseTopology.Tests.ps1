@@ -408,6 +408,196 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $profilePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work |
                 Should -Be $profilePath
         }
+
+        It "accepts the seam keys spelled with an export prefix, and still migrates the legacy token" {
+            # The raw connection string and marker are read through the shared assignment model, not the
+            # legacy parser. Sourced from ReadValuesFromEnvFile, an export-spelled connection string was
+            # stored under the key "export DMS_CONFIG_..." and was therefore invisible to separate
+            # mode's legacy-token migration - the run failed later instead of taking the repair path.
+            $basePath = Join-Path $script:work ".env.export-seam"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'export DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'export DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+
+            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
+        }
+
+        It "does not let a case-variant declaration satisfy the seam's uppercase reference" {
+            # Compose is case-sensitive on the Linux CI/runtime path, so a lowercase typo leaves
+            # POSTGRES_DB_NAME unset and the alias renders empty. The preflight must not accept it.
+            $basePath = Join-Path $script:work ".env.case-variant"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'postgres_db_name=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:seamConnectionString
+            ) -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*could not resolve a non-blank database name*"
+        }
+    }
+
+    # A value the shell supplies wins over every declaration of the same name, so the file's own
+    # declarations of it never contributed anything. Classification must not attribute file-authored
+    # problems to a value the file did not provide, and the repair postcondition must compare against
+    # what Compose will actually use.
+    Context "ambient overrides during classification and repair (DMS-1270)" {
+        BeforeAll {
+            $script:ambientSeamConnectionString = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+            $script:ambientDuplicateLines = @(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:ambientSeamConnectionString,
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
+                'POSTGRES_DB_NAME=some_other_db'
+            )
+        }
+
+        It "rejects the duplicated datastore name when no ambient override is present" {
+            $basePath = Join-Path $script:work ".env.dup-no-ambient"
+            Set-Content -LiteralPath $basePath -Value ($script:ambientDuplicateLines -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*declared more than once*"
+        }
+
+        It "treats the same duplicated datastore name as inert under an ambient override" {
+            $basePath = Join-Path $script:work ".env.dup-ambient"
+            Set-Content -LiteralPath $basePath -Value ($script:ambientDuplicateLines -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "ambient_db")
+            try {
+                { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                    Should -Not -Throw -Because "Compose uses the ambient value, so neither file declaration contributes"
+            }
+            finally { Remove-Item Env:\POSTGRES_DB_NAME -ErrorAction SilentlyContinue }
+        }
+
+        It "treats a duplicated password as inert under an ambient override, but rejects it without one" {
+            $lines = @(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=first-pw',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:ambientSeamConnectionString,
+                'POSTGRES_PASSWORD=second-pw'
+            )
+            $basePath = Join-Path $script:work ".env.pwdup"
+            Set-Content -LiteralPath $basePath -Value ($lines -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*declared more than once*"
+
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_PASSWORD", "ambient-pw")
+            try {
+                { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                    Should -Not -Throw
+            }
+            finally { Remove-Item Env:\POSTGRES_PASSWORD -ErrorAction SilentlyContinue }
+        }
+
+        It "does not report a transitive chain inside a key the ambient environment supplied" {
+            # The file declares POSTGRES_PASSWORD=${LATE_PW} with LATE_PW below it - a genuine chain on
+            # paper. But an ambient POSTGRES_PASSWORD means Compose never evaluated that declaration, so
+            # dependency traversal must stop at the ambient value instead of reporting a defect in a
+            # value the file did not supply.
+            $lines = @(
+                'POSTGRES_PASSWORD=${LATE_PW}',
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:ambientSeamConnectionString,
+                'LATE_PW=file-pw'
+            )
+            $basePath = Join-Path $script:work ".env.ambient-chain"
+            Set-Content -LiteralPath $basePath -Value ($lines -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*POSTGRES_PASSWORD -> LATE_PW*" -Because "without an ambient override this really is a chain"
+
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_PASSWORD", "ambient-pw")
+            try {
+                { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                    Should -Not -Throw -Because "traversal must stop where ambient supplied the value"
+            }
+            finally { Remove-Item Env:\POSTGRES_PASSWORD -ErrorAction SilentlyContinue }
+        }
+
+        It "does not pull keys reached only through an ambient-supplied value into the seam's dependencies" {
+            # POSTGRES_PASSWORD is ambient, so its file value - which references LATE_PW - is never
+            # evaluated. LATE_PW is duplicated, but nothing the run renders depends on it, so dependency
+            # traversal must stop at the ambient value rather than reaching LATE_PW and rejecting the
+            # file for a duplicate that cannot affect anything.
+            $lines = @(
+                'POSTGRES_PASSWORD=${LATE_PW}',
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:ambientSeamConnectionString,
+                'LATE_PW=first',
+                'LATE_PW=second'
+            )
+            $basePath = Join-Path $script:work ".env.ambient-closure"
+            Set-Content -LiteralPath $basePath -Value ($lines -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_PASSWORD", "ambient-pw")
+            try {
+                { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                    Should -Not -Throw -Because "LATE_PW is reachable only through a value ambient replaced"
+            }
+            finally { Remove-Item Env:\POSTGRES_PASSWORD -ErrorAction SilentlyContinue }
+        }
+
+        It "completes a required derived write while the connection string itself is ambient-overridden" {
+            # Separate mode forces a write. Compose hands the container the ambient connection string
+            # verbatim, so the postcondition target must be that value; comparing against the
+            # file-authored string instead reported a valid override as a repair failure.
+            $basePath = Join-Path $script:work ".env.ambient-conn"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:ambientSeamConnectionString,
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable(
+                "DMS_CONFIG_DATABASE_CONNECTION_STRING",
+                'host=dms-postgresql;port=5432;username=postgres;password=ambient-pw;database=edfi_configurationservice;')
+            try {
+                $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
+                $result | Should -Not -Be $basePath
+            }
+            finally { Remove-Item Env:\DMS_CONFIG_DATABASE_CONNECTION_STRING -ErrorAction SilentlyContinue }
+        }
+    }
+
+    Context "repair-failure diagnostics withhold credentials (DMS-1270)" {
+        It "names the differing connection-string segments without rendering any value" {
+            # A repair-failure message reaches terminals and CI logs, and both engines' connection
+            # strings carry a password. The diagnostic must be actionable without disclosing anything.
+            $report = Get-ConnectionStringSegmentDifference `
+                -Expected 'host=h;port=1;username=u;password=SUPERSECRET1;database=want_db;' `
+                -Actual 'host=h;port=1;username=u;password=;database=got_db;'
+
+            $report | Should -BeLike "*password*"
+            $report | Should -BeLike "*database*"
+            $report | Should -Not -BeLike "*SUPERSECRET1*"
+            $report | Should -Not -BeLike "*want_db*"
+            $report | Should -Not -BeLike "*got_db*"
+        }
+
+        It "reports no difference for equivalent connection strings" {
+            Get-ConnectionStringSegmentDifference `
+                -Expected 'host=h;database=d;password=p;' `
+                -Actual 'host=h;database=d;password=p;' |
+                Should -BeExactly '(none identified)'
+        }
     }
 
     Context "separate mode" {
