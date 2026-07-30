@@ -184,11 +184,11 @@ The following capabilities are not part of the proposed DMS-1058 solution:
 - expose ownership tokens through `/oauth/token_info`;
 - provide Admin App UI;
 - transfer ownership of existing DMS documents when API-client configuration changes; or
-- implement the operational enhancements evaluated by the potential follow-up spike described
-  below.
+- implement the operational enhancements evaluated by
+  [DMS-1374](../epics/14-authorization/25-ownership-token-operational-lifecycle-spike.md).
 
-These items have no existing ownership-specific Jira story. Approval means they are intentionally
-outside the implementation stories created by DMS-1058, not that another ticket already owns them.
+These items are intentionally outside the implementation stories created by DMS-1058. DMS-1374
+evaluates which operational enhancements justify additional implementation stories.
 
 ## Deliberate Constraints Requiring Approval
 
@@ -600,8 +600,7 @@ cap the setting, or remove caching; those are not part of the simplest first imp
 
 ## Impact on DMS-1060 and `auth.md`
 
-DMS-1060's CRUD and SQL semantics remain unchanged. Its description should be updated after this
-contract is approved to state:
+DMS-1060's CRUD and SQL semantics remain unchanged. Its description is updated to state:
 
 > `CreatorOwnershipTokenId` and `OwnershipTokenIds` come from the tenant-qualified CMS
 > `ApplicationContext`, not JWT claims. DMS resolves and caches this context through
@@ -613,26 +612,26 @@ ownership-token JWT statement with the direct CMS application-context contract.
 
 No ownership fields are added to `/oauth/token_info`.
 
-## Potential Follow-up Spike
+## Follow-up Spike
 
-No Jira ticket currently owns the operational enhancements excluded above. At DMS-1058 approval,
-reviewers should decide whether to create, defer, or reject the checked-in
-[operational-lifecycle spike draft](../epics/14-authorization/25-ownership-token-operational-lifecycle-spike.md).
-It covers revocation guarantees, administration, retirement, API-client hand-off, diagnostics,
-and identifier-capacity safeguards without expanding the initial implementation stories.
+[DMS-1374](../epics/14-authorization/25-ownership-token-operational-lifecycle-spike.md) owns the
+investigation of the operational enhancements excluded above. It covers revocation guarantees,
+administration, retirement, API-client hand-off, diagnostics, and identifier-capacity safeguards
+without expanding the initial implementation stories.
 
-This candidate does not defer DMS-1058's caching acceptance criterion. The current contract must
-still approve an initial cache lifetime and failure model. The follow-up should not block DMS-1060
-unless product or security rejects the bounded-staleness model for the initial release.
+DMS-1374 does not defer DMS-1058's caching acceptance criterion. This contract retains the initial
+cache lifetime and failure model. The follow-up does not block DMS-1060 unless product or security
+rejects the bounded-staleness model for the initial release.
 
-JWT delivery is not part of this candidate unless new requirements invalidate the direct CMS
+JWT delivery is not part of DMS-1374 unless new requirements invalidate the direct CMS
 application-context decision.
 
 ## Post-Approval Implementation Handoff
 
-Do not create these Jira stories until this contract is approved.
+The approved handoff created implementation stories DMS-1372 and DMS-1373 and operational
+follow-up spike DMS-1374.
 
-### Story 1: Store and maintain API-client ownership tokens in CMS
+### Story 1: DMS-1372 — Store and maintain API-client ownership tokens in CMS
 
 Scope:
 
@@ -647,7 +646,7 @@ Scope:
 
 This story blocks DMS-1060.
 
-### Story 2: Load and cache API-client ownership tokens from CMS in DMS
+### Story 2: DMS-1373 — Load and cache API-client ownership tokens from CMS in DMS
 
 Scope:
 
@@ -669,13 +668,13 @@ DMS-1060.
 
 ### DMS-1060 update
 
-After both stories are created:
+The approved handoff:
 
-1. add them as blockers of DMS-1060;
-2. add the CMS application-context paragraph above to DMS-1060;
-3. retain all existing ownership CRUD, ordering, ProblemDetails, batching, and database-provider
+1. links DMS-1372 and DMS-1373 as blockers of DMS-1060;
+2. adds the CMS application-context paragraph above to DMS-1060;
+3. retains all existing ownership CRUD, ordering, ProblemDetails, batching, and database-provider
    acceptance criteria; and
-4. retain the defensive SQL Server failure at 2,000 or more tokens.
+4. retains the defensive SQL Server failure at 2,000 or more tokens.
 
 ## Acceptance Criteria Traceability
 

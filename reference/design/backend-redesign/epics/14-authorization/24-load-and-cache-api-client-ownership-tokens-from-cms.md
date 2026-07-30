@@ -1,13 +1,9 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1373
+jira_url: https://edfi.atlassian.net/browse/DMS-1373
 ---
 
 # Story: Load and Cache API-client Ownership Tokens from CMS in DMS
-
-> **Draft:** No Jira story has been created. The
-> [DMS-1058 decision record](../../design-docs/ownership-token-maintenance.md) is normative for this
-> story and must be approved before implementation.
 
 ## Description
 
