@@ -1302,7 +1302,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
         var outputStart = triggerBody.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], "
+                + "inserted.[DocumentUuid], inserted.[IdentityVersion], inserted.[IdentityLastModifiedAt], "
+                + "inserted.[CreatedAt] INTO @stamped",
             StringComparison.Ordinal
         );
         var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", StringComparison.Ordinal);
@@ -1344,12 +1346,148 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 
         triggerBody
             .Should()
-            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
-        triggerBody.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+            .Contain(
+                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], "
+                    + "[DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt])"
+            );
+        triggerBody
+            .Should()
+            .Contain(
+                "SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], d.[DocumentUuid], "
+                    + "d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt]"
+            );
         triggerBody.Should().Contain("FROM [dms].[Document] d");
         triggerBody.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
         triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         triggerBody.Should().Contain("WHERE del.[DocumentId] IS NULL;");
+    }
+
+    [Test]
+    public void It_should_mirror_every_document_metadata_column_onto_the_root_row()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        triggerBody
+            .Should()
+            .Contain(
+                "DECLARE @stamped TABLE (\n"
+                    + "        [DocumentId] bigint NOT NULL PRIMARY KEY,\n"
+                    + "        [ContentVersion] bigint NOT NULL,\n"
+                    + "        [ContentLastModifiedAt] datetime2(7) NOT NULL,\n"
+                    + "        [DocumentUuid] uniqueidentifier NOT NULL,\n"
+                    + "        [IdentityVersion] bigint NOT NULL,\n"
+                    + "        [IdentityLastModifiedAt] datetime2(7) NOT NULL,\n"
+                    + "        [CreatedAt] datetime2(7) NOT NULL\n"
+                    + "    );",
+                "OUTPUT ... INTO @stamped binds positionally, so the capture table must declare the "
+                    + "mirrored columns in OUTPUT order"
+            );
+
+        ExtractMirrorUpdateStatement(triggerBody)
+            .Should()
+            .Contain("SET r.[ContentVersion] = s.[ContentVersion],")
+            .And.Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt],")
+            .And.Contain("r.[DocumentUuid] = s.[DocumentUuid],")
+            .And.Contain("r.[IdentityVersion] = s.[IdentityVersion],")
+            .And.Contain("r.[IdentityLastModifiedAt] = s.[IdentityLastModifiedAt],")
+            .And.Contain("r.[CreatedAt] = s.[CreatedAt]");
+    }
+
+    [Test]
+    public void It_should_keep_child_stamping_limited_to_the_content_stamp_pair()
+    {
+        // Child rows never change the identity or creation metadata of their root document, so the
+        // child capture table and mirror stay exactly as they were.
+        var childTriggerBody = GetStampTriggerBody("SchoolAddress");
+
+        childTriggerBody
+            .Should()
+            .Contain(
+                "DECLARE @stamped TABLE (\n"
+                    + "        [DocumentId] bigint NOT NULL PRIMARY KEY,\n"
+                    + "        [ContentVersion] bigint NOT NULL,\n"
+                    + "        [ContentLastModifiedAt] datetime2(7) NOT NULL\n"
+                    + "    );"
+            );
+        childTriggerBody.Should().NotContain("[DocumentUuid]").And.NotContain("[CreatedAt]");
+    }
+
+    [Test]
+    public void It_should_re_mirror_the_root_identity_stamp_after_the_identity_bump()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        // The content mirror ran before the identity bump and therefore carries the pre-bump identity
+        // values, so the bump needs its own mirror to leave the root row consistent with dms.Document.
+        var identityBumpStart = triggerBody.IndexOf(
+            "SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]",
+            StringComparison.Ordinal
+        );
+        identityBumpStart.Should().BeGreaterThanOrEqualTo(0);
+
+        var identityMirrorStart = triggerBody.IndexOf(
+            "UPDATE r\n"
+                + "        SET r.[IdentityVersion] = d.[IdentityVersion],\n"
+                + "            r.[IdentityLastModifiedAt] = d.[IdentityLastModifiedAt]\n"
+                + "        FROM [edfi].[School] r\n"
+                + "        INNER JOIN [dms].[Document] d ON d.[DocumentId] = r.[DocumentId]\n"
+                + "        INNER JOIN inserted i ON i.[DocumentId] = r.[DocumentId]\n"
+                + "        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]\n"
+                + "        WHERE (i.[SchoolId] <> del.[SchoolId]",
+            StringComparison.Ordinal
+        );
+        identityMirrorStart
+            .Should()
+            .BeGreaterThan(identityBumpStart, "the root identity mirror must follow the dms.Document bump");
+    }
+
+    [Test]
+    public void It_should_keep_mirrored_columns_out_of_the_no_op_change_detection()
+    {
+        // Both mirror UPDATEs re-fire this trigger on databases with RECURSIVE_TRIGGERS ON. The
+        // re-fired execution must find nothing to do, which holds only while the mirrored columns stay
+        // out of the affectedDocs value diff and out of the UPDATE(column) identity prefilter.
+        foreach (var tableName in new[] { "School", "SchoolAddress" })
+        {
+            var triggerBody = GetStampTriggerBody(tableName);
+            var worksetStart = triggerBody.IndexOf(";WITH affectedDocs AS (", StringComparison.Ordinal);
+            worksetStart.Should().BeGreaterThanOrEqualTo(0);
+
+            var worksetEnd = triggerBody.IndexOf("\n    )", worksetStart, StringComparison.Ordinal);
+            worksetEnd.Should().BeGreaterThan(worksetStart);
+
+            var workset = triggerBody[worksetStart..worksetEnd];
+            foreach (
+                var column in new[]
+                {
+                    "ContentVersion",
+                    "ContentLastModifiedAt",
+                    "DocumentUuid",
+                    "IdentityVersion",
+                    "IdentityLastModifiedAt",
+                    "CreatedAt",
+                }
+            )
+            {
+                workset
+                    .Should()
+                    .NotContain(
+                        $"[{column}]",
+                        "the {0} affectedDocs diff must ignore mirrored column {1} so the mirror "
+                            + "UPDATE cannot recurse",
+                        tableName,
+                        column
+                    );
+                triggerBody
+                    .Should()
+                    .NotContain(
+                        $"UPDATE([{column}])",
+                        "the {0} identity prefilter must ignore mirrored column {1}",
+                        tableName,
+                        column
+                    );
+            }
+        }
     }
 
     [Test]

@@ -31,6 +31,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName DescriptorUriColumn = new("Uri");
 
     /// <summary>
+    /// The <c>dms.Document</c> metadata columns the SQL Server root stamping trigger mirrors onto the
+    /// root row in addition to the content stamp pair, in <c>@stamped</c> declaration order. Declared
+    /// after the individual column-name fields above so the static initializers run in dependency order.
+    /// </summary>
+    private static readonly DbColumnName[] MssqlRootMirroredMetadataColumns =
+    [
+        DocumentUuidColumn,
+        IdentityVersionColumn,
+        IdentityLastModifiedAtColumn,
+        CreatedAtColumn,
+    ];
+
+    /// <summary>
     /// Builds a SQL script that creates all schemas, tables, indexes, views, and triggers in the model set.
     /// </summary>
     /// <param name="modelSet">The derived relational model set to emit.</param>
@@ -1544,21 +1557,42 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
             writer.AppendLine("[ContentVersion] bigint NOT NULL,");
-            writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
+            // Root triggers also carry the remaining dms.Document metadata mirrors, so the capture
+            // table keeps one column per mirrored value in OUTPUT order (OUTPUT ... INTO @stamped
+            // binds positionally). Child triggers only ever mirror the content stamp pair.
+            if (isRootDocumentStampingTrigger)
+            {
+                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL,");
+                writer.AppendLine("[DocumentUuid] uniqueidentifier NOT NULL,");
+                writer.AppendLine("[IdentityVersion] bigint NOT NULL,");
+                writer.AppendLine("[IdentityLastModifiedAt] datetime2(7) NOT NULL,");
+                writer.AppendLine("[CreatedAt] datetime2(7) NOT NULL");
+            }
+            else
+            {
+                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
+            }
         }
         writer.AppendLine(");");
 
         if (isRootDocumentStampingTrigger)
         {
-            writer.AppendLine(
-                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])"
-            );
+            writer.Append("INSERT INTO @stamped (");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(", ");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(", ");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            AppendMssqlRootMirroredMetadataColumns(writer, qualifier: null);
+            writer.AppendLine(")");
             writer.Append("SELECT d.");
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(", d.");
             writer.Append(Quote(ContentVersionColumn));
             writer.Append(", d.");
-            writer.AppendLine(Quote(ContentLastModifiedAtColumn));
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            AppendMssqlRootMirroredMetadataColumns(writer, "d");
+            writer.AppendLine();
             writer.Append("FROM ");
             writer.Append(documentTable);
             writer.AppendLine(" d");
@@ -1633,9 +1667,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(", d.");
         writer.Append(Quote(ContentLastModifiedAtColumn));
         writer.AppendLine(" = sysutcdatetime()");
-        writer.AppendLine(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+        writer.Append(
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt]"
         );
+        if (isRootDocumentStampingTrigger)
+        {
+            // The post-update dms.Document row image carries the remaining metadata mirrors, so the
+            // changed-UPDATE path re-asserts them on the root row alongside the content stamp.
+            AppendMssqlRootMirroredMetadataColumns(writer, "inserted");
+        }
+        writer.AppendLine(" INTO @stamped");
         writer.Append("FROM ");
         writer.Append(documentTable);
         writer.AppendLine(" d");
@@ -1676,6 +1717,23 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(ContentLastModifiedAtColumn));
             writer.Append(" = s.");
             writer.Append(Quote(ContentLastModifiedAtColumn));
+            if (isRootDocumentStampingTrigger)
+            {
+                // Root rows mirror the full dms.Document metadata set so they are self-sufficient.
+                // Re-asserting the immutable pair (DocumentUuid, CreatedAt) on every stamped UPDATE also
+                // overwrites a client attempt to change them, whenever that same statement touched a
+                // stored column and therefore reached this workset. None of these columns appear in the
+                // affectedDocs diff or in the UPDATE(column) identity prefilter, so the recursive firing
+                // this statement causes under RECURSIVE_TRIGGERS ON finds an empty workset and terminates.
+                foreach (var column in MssqlRootMirroredMetadataColumns)
+                {
+                    writer.AppendLine(",");
+                    writer.Append("    r.");
+                    writer.Append(Quote(column));
+                    writer.Append(" = s.");
+                    writer.Append(Quote(column));
+                }
+            }
             writer.AppendLine();
             writer.Append("FROM ");
             writer.Append(mirrorStampTarget);
@@ -1723,7 +1781,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     documentTable,
                     sequenceName,
                     keyColumn,
-                    trackedChangePlan
+                    trackedChangePlan,
+                    isRootDocumentStampingTrigger ? mirrorStampTarget : null
                 );
             }
             else
@@ -1748,6 +1807,22 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                         keyColumn,
                         captureIdentityChangedDocs: false
                     );
+
+                    if (isRootDocumentStampingTrigger)
+                    {
+                        // Re-mirror the bumped identity stamp onto the root row; the content mirror above
+                        // ran before this bump and therefore carries the pre-bump values. Recursion is
+                        // bounded by the enclosing UPDATE(<identity column>) prefilter: this statement
+                        // only sets mirror columns, so the re-fired trigger never re-enters this block.
+                        EmitMssqlRootIdentityMirrorUpdate(
+                            writer,
+                            trigger,
+                            tableModel,
+                            documentTable,
+                            keyColumn,
+                            mirrorStampTarget
+                        );
+                    }
                 }
 
                 writer.AppendLine("END");
@@ -1763,6 +1838,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// value diff — never by <c>UPDATE(column)</c>, which reports SET-clause membership rather than
     /// value change (DMS-1179 AC bans <c>UPDATE(column)</c> for key-change eligibility).
     /// </summary>
+    /// <param name="rootMirrorStampTarget">
+    /// The quoted root table that mirrors the <c>dms.Document</c> identity stamp, or <see langword="null"/>
+    /// when this trigger is not a root document-stamping trigger and therefore mirrors nothing.
+    /// </param>
     private void EmitMssqlIdentityStampWithKeyChange(
         SqlWriter writer,
         DbTriggerInfo trigger,
@@ -1770,7 +1849,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string documentTable,
         string sequenceName,
         DbColumnName keyColumn,
-        TrackedChangeInsertPlan trackedChangePlan
+        TrackedChangeInsertPlan trackedChangePlan,
+        string? rootMirrorStampTarget
     )
     {
         writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)");
@@ -1797,9 +1877,116 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 trackedChangePlan,
                 keyColumn
             );
+
+            if (rootMirrorStampTarget is not null)
+            {
+                // Re-mirror the bumped identity stamp onto the root row. Unlike the UPDATE(column)-gated
+                // path, this block re-enters on any UPDATE with both row sets present — including the
+                // mirror UPDATEs this trigger issues — so the mirror must be gated on a non-empty
+                // identity workset. Without the guard the zero-row mirror would keep re-firing the
+                // trigger up to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
+                writer.AppendLine("IF EXISTS (SELECT 1 FROM @identityChangedDocs)");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    EmitMssqlRootIdentityMirrorUpdate(
+                        writer,
+                        trigger,
+                        tableModel,
+                        documentTable,
+                        keyColumn,
+                        rootMirrorStampTarget
+                    );
+                }
+                writer.AppendLine("END");
+            }
         }
 
         writer.AppendLine("END");
+    }
+
+    /// <summary>
+    /// Emits the SQL Server root mirror for the <c>dms.Document</c> identity stamp:
+    /// <c>UPDATE r SET r.[IdentityVersion] = d.[IdentityVersion], r.[IdentityLastModifiedAt] =
+    /// d.[IdentityLastModifiedAt] FROM &lt;root&gt; r INNER JOIN dms.Document d ... WHERE
+    /// &lt;null-safe identity diff&gt;</c>. Runs after the identity bump so the root row reflects the
+    /// bumped values; the content mirror earlier in the trigger body captured the pre-bump image.
+    /// </summary>
+    private void EmitMssqlRootIdentityMirrorUpdate(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        string documentTable,
+        DbColumnName keyColumn,
+        string mirrorStampTarget
+    )
+    {
+        var quotedKeyColumn = Quote(keyColumn);
+
+        writer.AppendLine("UPDATE r");
+        writer.Append("SET r.");
+        writer.Append(Quote(IdentityVersionColumn));
+        writer.Append(" = d.");
+        writer.Append(Quote(IdentityVersionColumn));
+        writer.AppendLine(",");
+        writer.Append("    r.");
+        writer.Append(Quote(IdentityLastModifiedAtColumn));
+        writer.Append(" = d.");
+        writer.AppendLine(Quote(IdentityLastModifiedAtColumn));
+        writer.Append("FROM ");
+        writer.Append(mirrorStampTarget);
+        writer.AppendLine(" r");
+        writer.Append("INNER JOIN ");
+        writer.Append(documentTable);
+        writer.Append(" d ON d.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = r.");
+        writer.AppendLine(Quote(DocumentIdColumn));
+        writer.Append("INNER JOIN inserted i ON i.");
+        writer.Append(quotedKeyColumn);
+        writer.Append(" = r.");
+        writer.AppendLine(Quote(DocumentIdColumn));
+        writer.Append("INNER JOIN deleted del ON del.");
+        writer.Append(quotedKeyColumn);
+        writer.Append(" = i.");
+        writer.AppendLine(quotedKeyColumn);
+        writer.Append("WHERE ");
+        for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" OR ");
+            }
+            EmitMssqlColumnValueDiffPredicate(
+                writer,
+                tableModel,
+                "i",
+                "del",
+                trigger.IdentityProjectionColumns[i]
+            );
+        }
+        writer.AppendLine(";");
+    }
+
+    /// <summary>
+    /// Appends <c>, [DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt]</c> — each
+    /// optionally prefixed with <paramref name="qualifier"/> and a dot — for the metadata columns the
+    /// SQL Server root stamping trigger mirrors beyond the content stamp pair. Callers emit the leading
+    /// <c>[DocumentId], [ContentVersion], [ContentLastModifiedAt]</c> triple, so this always starts with
+    /// a separator and keeps every list in <c>@stamped</c> declaration order.
+    /// </summary>
+    private void AppendMssqlRootMirroredMetadataColumns(SqlWriter writer, string? qualifier)
+    {
+        foreach (var column in MssqlRootMirroredMetadataColumns)
+        {
+            writer.Append(", ");
+            if (qualifier is not null)
+            {
+                writer.Append(qualifier);
+                writer.Append(".");
+            }
+            writer.Append(Quote(column));
+        }
     }
 
     /// <summary>
