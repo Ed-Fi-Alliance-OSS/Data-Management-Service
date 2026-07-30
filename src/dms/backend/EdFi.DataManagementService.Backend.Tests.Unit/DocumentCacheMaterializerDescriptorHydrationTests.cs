@@ -93,16 +93,17 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
     }
 
     [Test]
-    public async Task It_returns_missing_source_when_descriptor_hydration_no_longer_finds_the_canonical_document()
+    public async Task It_returns_missing_source_when_final_coherence_no_longer_finds_the_canonical_document()
     {
         var testContext = CreateMaterializerTestContext();
         var source = CreateDescriptorSource(testContext);
         var sourceReader = new StubSourceMetadataReader(
-            new DocumentCacheSourceMetadataReadResult.Found(source)
+            new DocumentCacheSourceMetadataReadResult.Found(source),
+            DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance
         );
         var descriptorHydrator = new RecordingDescriptorHydrator
         {
-            Result = DocumentCacheDescriptorHydrationResult.MissingSource.Instance,
+            Result = new DocumentCacheDescriptorHydrationResult.Found(CreateDescriptorRow(source)),
         };
         var ordinaryHydrator = new RecordingDocumentHydrator();
         var readMaterializer = new RecordingReadMaterializer();
@@ -124,16 +125,25 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
     }
 
     [Test]
-    public async Task It_returns_source_changed_when_descriptor_hydration_observes_changed_source_metadata()
+    public async Task It_returns_source_changed_when_final_coherence_observes_changed_source_metadata()
     {
         var testContext = CreateMaterializerTestContext();
         var source = CreateDescriptorSource(testContext);
         var sourceReader = new StubSourceMetadataReader(
-            new DocumentCacheSourceMetadataReadResult.Found(source)
+            new DocumentCacheSourceMetadataReadResult.Found(source),
+            new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                new DocumentCacheCurrentSourceMetadata(
+                    source.DocumentId,
+                    source.DocumentUuid,
+                    source.ResourceKeyId,
+                    source.ContentVersion,
+                    source.ContentLastModifiedAt.AddSeconds(1)
+                )
+            )
         );
         var descriptorHydrator = new RecordingDescriptorHydrator
         {
-            Result = DocumentCacheDescriptorHydrationResult.SourceChanged.Instance,
+            Result = new DocumentCacheDescriptorHydrationResult.Found(CreateDescriptorRow(source)),
         };
         var ordinaryHydrator = new RecordingDocumentHydrator();
         var readMaterializer = new RecordingReadMaterializer();
@@ -334,8 +344,10 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
         ConcreteResourceModel ConcreteResourceModel
     );
 
-    private sealed class StubSourceMetadataReader(DocumentCacheSourceMetadataReadResult result)
-        : IDocumentCacheSourceMetadataReader
+    private sealed class StubSourceMetadataReader(
+        DocumentCacheSourceMetadataReadResult result,
+        DocumentCacheCurrentSourceMetadataReadResult? currentResult = null
+    ) : IDocumentCacheSourceMetadataReader
     {
         public DocumentCacheMaterializationRequest? CapturedRequest { get; private set; }
 
@@ -347,12 +359,43 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
             CapturedRequest = request;
             return Task.FromResult(result);
         }
+
+        public Task<DocumentCacheCurrentSourceMetadataReadResult> ReadCurrentAsync(
+            DocumentCacheMaterializationRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            CapturedRequest = request;
+            return Task.FromResult(currentResult ?? CreateCurrentResult(result));
+        }
+
+        private static DocumentCacheCurrentSourceMetadataReadResult CreateCurrentResult(
+            DocumentCacheSourceMetadataReadResult sourceResult
+        ) =>
+            sourceResult switch
+            {
+                DocumentCacheSourceMetadataReadResult.MissingSource =>
+                    DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance,
+                DocumentCacheSourceMetadataReadResult.Found found =>
+                    new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                        new DocumentCacheCurrentSourceMetadata(
+                            found.Metadata.DocumentId,
+                            found.Metadata.DocumentUuid,
+                            found.Metadata.ResourceKeyId,
+                            found.Metadata.ContentVersion,
+                            found.Metadata.ContentLastModifiedAt
+                        )
+                    ),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported source metadata test result '{sourceResult.GetType().Name}'."
+                ),
+            };
     }
 
     private sealed class RecordingDescriptorHydrator : IDocumentCacheDescriptorHydrator
     {
         public DocumentCacheDescriptorHydrationResult Result { get; init; } =
-            DocumentCacheDescriptorHydrationResult.MissingSource.Instance;
+            DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance;
 
         public DocumentCacheResolvedSourceMetadata.DescriptorResource? CapturedSource { get; private set; }
 
@@ -450,10 +493,11 @@ public class Given_DocumentCacheDescriptorHydrator
         found.DescriptorRow.ShortDescription.Should().Be("Alternative");
 
         executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain("""FROM dms."Document" document""");
-        executor.Commands[0].CommandText.Should().Contain("""LEFT JOIN dms."Descriptor" descriptor""");
-        executor.Commands[0].CommandText.Should().Contain("""document."DocumentId" = @documentId""");
+        executor.Commands[0].CommandText.Should().Contain("""FROM dms."Descriptor" descriptor""");
+        executor.Commands[0].CommandText.Should().Contain("""descriptor."DocumentId" = @documentId""");
         executor.Commands[0].CommandText.Should().Contain("""descriptor."ResourceKeyId" = @resourceKeyId""");
+        executor.Commands[0].CommandText.Should().NotContain("dms.\"Document\"");
+        executor.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
         executor.Commands[0].CommandText.Should().NotContain("@documentUuid");
         executor.Commands[0].CommandText.Should().NotContain("Uri");
         executor
@@ -466,7 +510,7 @@ public class Given_DocumentCacheDescriptorHydrator
     }
 
     [Test]
-    public async Task It_returns_missing_source_when_the_canonical_document_row_is_absent()
+    public async Task It_returns_stable_body_missing_when_the_descriptor_row_is_absent()
     {
         var executor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
@@ -475,37 +519,16 @@ public class Given_DocumentCacheDescriptorHydrator
 
         var result = await sut.HydrateAsync(CreateDescriptorSource(), SqlDialect.Pgsql);
 
-        result.Should().BeSameAs(DocumentCacheDescriptorHydrationResult.MissingSource.Instance);
+        result.Should().BeSameAs(DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance);
     }
 
     [Test]
-    public async Task It_returns_source_changed_when_the_current_document_metadata_differs()
-    {
-        var executor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                CreateDescriptorResultSet(CreateHydrationRow(("ContentVersion", ContentVersion + 1))),
-            ]),
-        ]);
-        var sut = new DocumentCacheDescriptorHydrator(executor);
-
-        var result = await sut.HydrateAsync(CreateDescriptorSource(), SqlDialect.Pgsql);
-
-        result.Should().BeSameAs(DocumentCacheDescriptorHydrationResult.SourceChanged.Instance);
-    }
-
-    [Test]
-    public async Task It_returns_stable_body_missing_when_the_document_metadata_is_stable_but_descriptor_row_is_absent()
+    public async Task It_returns_stable_body_missing_when_required_descriptor_fields_are_absent()
     {
         var executor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 CreateDescriptorResultSet(
-                    CreateHydrationRow(
-                        ("DescriptorDocumentId", null),
-                        ("DescriptorResourceKeyId", null),
-                        ("Namespace", null),
-                        ("CodeValue", null),
-                        ("ShortDescription", null)
-                    )
+                    CreateHydrationRow(("Namespace", null), ("CodeValue", null), ("ShortDescription", null))
                 ),
             ]),
         ]);
@@ -517,7 +540,7 @@ public class Given_DocumentCacheDescriptorHydrator
     }
 
     [Test]
-    public async Task It_uses_sql_server_document_and_descriptor_sql_for_sql_server_mapping_sets()
+    public async Task It_uses_sql_server_descriptor_body_sql_for_sql_server_mapping_sets()
     {
         var executor = new InMemoryRelationalCommandExecutor(
             [new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()])],
@@ -528,10 +551,11 @@ public class Given_DocumentCacheDescriptorHydrator
         await sut.HydrateAsync(CreateDescriptorSource(), SqlDialect.Mssql);
 
         executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain("FROM [dms].[Document] document");
-        executor.Commands[0].CommandText.Should().Contain("LEFT JOIN [dms].[Descriptor] descriptor");
-        executor.Commands[0].CommandText.Should().Contain("document.[DocumentId] = @documentId");
+        executor.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
+        executor.Commands[0].CommandText.Should().Contain("descriptor.[DocumentId] = @documentId");
         executor.Commands[0].CommandText.Should().Contain("descriptor.[ResourceKeyId] = @resourceKeyId");
+        executor.Commands[0].CommandText.Should().NotContain("[dms].[Document]");
+        executor.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
     }
 
     private static InMemoryRelationalResultSet CreateDescriptorResultSet(

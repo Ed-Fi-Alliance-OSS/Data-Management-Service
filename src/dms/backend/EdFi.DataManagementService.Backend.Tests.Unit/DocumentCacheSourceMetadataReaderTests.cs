@@ -81,6 +81,24 @@ public class Given_DocumentCacheSourceMetadataReader
     }
 
     [Test]
+    public async Task It_reads_current_source_metadata_without_resolving_the_resource_key_against_the_mapping_set()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 99)]),
+        ]);
+        var sut = new DocumentCacheSourceMetadataReader(executor);
+
+        var result = await sut.ReadCurrentAsync(CreateRequest(CreateMappingSet()));
+
+        var found = result.Should().BeOfType<DocumentCacheCurrentSourceMetadataReadResult.Found>().Subject;
+        found.Metadata.DocumentId.Should().Be(123);
+        found.Metadata.DocumentUuid.Should().Be(new DocumentUuid(DocumentGuid));
+        found.Metadata.ResourceKeyId.Should().Be(99);
+        found.Metadata.ContentVersion.Should().Be(987);
+        found.Metadata.ContentLastModifiedAt.Should().Be(LastModifiedAt);
+    }
+
+    [Test]
     public async Task It_resolves_descriptor_resource_metadata_without_requiring_an_ordinary_read_plan()
     {
         var executor = new InMemoryRelationalCommandExecutor([

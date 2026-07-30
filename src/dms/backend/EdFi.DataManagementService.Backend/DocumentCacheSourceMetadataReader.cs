@@ -17,6 +17,11 @@ internal interface IDocumentCacheSourceMetadataReader
         DocumentCacheMaterializationRequest request,
         CancellationToken cancellationToken = default
     );
+
+    Task<DocumentCacheCurrentSourceMetadataReadResult> ReadCurrentAsync(
+        DocumentCacheMaterializationRequest request,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal abstract record DocumentCacheSourceMetadataReadResult
@@ -35,6 +40,48 @@ internal abstract record DocumentCacheSourceMetadataReadResult
         private MissingSource() { }
 
         public static MissingSource Instance { get; } = new();
+    }
+}
+
+internal abstract record DocumentCacheCurrentSourceMetadataReadResult
+{
+    private DocumentCacheCurrentSourceMetadataReadResult() { }
+
+    public sealed record Found(DocumentCacheCurrentSourceMetadata Metadata)
+        : DocumentCacheCurrentSourceMetadataReadResult
+    {
+        public DocumentCacheCurrentSourceMetadata Metadata { get; } =
+            Metadata ?? throw new ArgumentNullException(nameof(Metadata));
+    }
+
+    public sealed record MissingSource : DocumentCacheCurrentSourceMetadataReadResult
+    {
+        private MissingSource() { }
+
+        public static MissingSource Instance { get; } = new();
+    }
+}
+
+internal sealed record DocumentCacheCurrentSourceMetadata(
+    long DocumentId,
+    DocumentUuid DocumentUuid,
+    short ResourceKeyId,
+    long ContentVersion,
+    DateTimeOffset ContentLastModifiedAt
+)
+{
+    public long DocumentId { get; } = RequirePositive(DocumentId, nameof(DocumentId));
+
+    public long ContentVersion { get; } = RequirePositive(ContentVersion, nameof(ContentVersion));
+
+    private static long RequirePositive(long value, string parameterName)
+    {
+        if (value <= 0)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} must be positive.");
+        }
+
+        return value;
     }
 }
 
@@ -82,6 +129,13 @@ internal abstract record DocumentCacheResolvedSourceMetadata
     public long ContentVersion { get; }
 
     public DateTimeOffset ContentLastModifiedAt { get; }
+
+    public bool HasSameCanonicalMetadata(DocumentCacheCurrentSourceMetadata current) =>
+        current.DocumentId == DocumentId
+        && current.DocumentUuid == DocumentUuid
+        && current.ResourceKeyId == ResourceKeyId
+        && current.ContentVersion == ContentVersion
+        && current.ContentLastModifiedAt == ContentLastModifiedAt;
 
     public sealed record OrdinaryResource : DocumentCacheResolvedSourceMetadata
     {
@@ -156,6 +210,27 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        var sourceReadResult = await ReadCurrentAsync(request, cancellationToken).ConfigureAwait(false);
+
+        return sourceReadResult switch
+        {
+            DocumentCacheCurrentSourceMetadataReadResult.MissingSource =>
+                DocumentCacheSourceMetadataReadResult.MissingSource.Instance,
+            DocumentCacheCurrentSourceMetadataReadResult.Found found =>
+                new DocumentCacheSourceMetadataReadResult.Found(ResolveMetadata(request, found.Metadata)),
+            _ => throw new InvalidOperationException(
+                $"DocumentCache current source metadata reader returned unsupported result type '{sourceReadResult.GetType().Name}'."
+            ),
+        };
+    }
+
+    public async Task<DocumentCacheCurrentSourceMetadataReadResult> ReadCurrentAsync(
+        DocumentCacheMaterializationRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
         var source = await _commandExecutor
             .ExecuteReaderAsync(
                 BuildReadCommand(request.TargetContext.MappingSet.Key.Dialect, request.DocumentId),
@@ -164,15 +239,12 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
             )
             .ConfigureAwait(false);
 
-        if (source is null)
-        {
-            return DocumentCacheSourceMetadataReadResult.MissingSource.Instance;
-        }
-
-        return new DocumentCacheSourceMetadataReadResult.Found(ResolveMetadata(request, source));
+        return source is null
+            ? DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance
+            : new DocumentCacheCurrentSourceMetadataReadResult.Found(source);
     }
 
-    private static async Task<DocumentCacheSourceMetadataRow?> ReadSingleOrDefaultAsync(
+    private static async Task<DocumentCacheCurrentSourceMetadata?> ReadSingleOrDefaultAsync(
         IRelationalCommandReader reader,
         CancellationToken cancellationToken
     )
@@ -182,7 +254,7 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
             return null;
         }
 
-        var row = new DocumentCacheSourceMetadataRow(
+        var row = new DocumentCacheCurrentSourceMetadata(
             reader.GetRequiredFieldValue<long>("DocumentId"),
             new DocumentUuid(reader.GetRequiredFieldValue<Guid>("DocumentUuid")),
             reader.GetRequiredFieldValue<short>("ResourceKeyId"),
@@ -220,7 +292,7 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
 
     private static DocumentCacheResolvedSourceMetadata ResolveMetadata(
         DocumentCacheMaterializationRequest request,
-        DocumentCacheSourceMetadataRow source
+        DocumentCacheCurrentSourceMetadata source
     )
     {
         var targetContext = request.TargetContext;
@@ -274,7 +346,7 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
 
     private static DocumentCacheResolvedSourceMetadata.OrdinaryResource ResolveOrdinaryResourceMetadata(
         DocumentCacheMaterializationRequest request,
-        DocumentCacheSourceMetadataRow source,
+        DocumentCacheCurrentSourceMetadata source,
         ResourceKeyEntry resourceKey,
         ConcreteResourceModel concreteResourceModel
     )
@@ -305,7 +377,7 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
 
     private static DocumentCacheTargetMappingException BuildTargetMappingException(
         DocumentCacheMaterializationRequest request,
-        DocumentCacheSourceMetadataRow source,
+        DocumentCacheCurrentSourceMetadata source,
         DocumentCacheTargetMappingFailureReason reason,
         ResourceKeyEntry? resourceKey = null
     )
@@ -360,12 +432,4 @@ internal sealed class DocumentCacheSourceMetadataReader(IRelationalCommandExecut
                 $"DocumentCache source metadata reader does not support SQL dialect '{dialect}'."
             ),
         };
-
-    private sealed record DocumentCacheSourceMetadataRow(
-        long DocumentId,
-        DocumentUuid DocumentUuid,
-        short ResourceKeyId,
-        long ContentVersion,
-        DateTimeOffset ContentLastModifiedAt
-    );
 }

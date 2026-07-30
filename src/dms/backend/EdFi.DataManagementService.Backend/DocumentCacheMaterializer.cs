@@ -76,7 +76,7 @@ internal sealed class DocumentCacheMaterializer(
             )
             .ConfigureAwait(false);
 
-        if (TryClassifyHydratedMetadata(source, hydratedPage) is { } nonSuccessResult)
+        if (await CheckSourceCoherenceAsync(request, source).ConfigureAwait(false) is { } nonSuccessResult)
         {
             return nonSuccessResult;
         }
@@ -145,35 +145,48 @@ internal sealed class DocumentCacheMaterializer(
 
         return hydrationResult switch
         {
-            DocumentCacheDescriptorHydrationResult.MissingSource => DocumentCacheMaterializationResult
-                .MissingSource
-                .Instance,
-            DocumentCacheDescriptorHydrationResult.SourceChanged => DocumentCacheMaterializationResult
-                .SourceChangedDuringHydration
-                .Instance,
             DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing =>
-                throw BuildProjectionProcessingException(
+                await ClassifyDescriptorBodyMissingAsync(request, source).ConfigureAwait(false),
+            DocumentCacheDescriptorHydrationResult.Found found => await MaterializeDescriptorCandidateAsync(
                     request,
                     source,
-                    DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing
-                ),
-            DocumentCacheDescriptorHydrationResult.Found found => MaterializeDescriptorCandidate(
-                request,
-                source,
-                found.DescriptorRow
-            ),
+                    found.DescriptorRow
+                )
+                .ConfigureAwait(false),
             _ => throw new InvalidOperationException(
                 $"DocumentCache descriptor hydrator returned unsupported result type '{hydrationResult.GetType().Name}'."
             ),
         };
     }
 
-    private DocumentCacheMaterializationResult MaterializeDescriptorCandidate(
+    private async Task<DocumentCacheMaterializationResult> ClassifyDescriptorBodyMissingAsync(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata.DescriptorResource source
+    )
+    {
+        if (await CheckSourceCoherenceAsync(request, source).ConfigureAwait(false) is { } nonSuccessResult)
+        {
+            return nonSuccessResult;
+        }
+
+        throw BuildProjectionProcessingException(
+            request,
+            source,
+            DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing
+        );
+    }
+
+    private async Task<DocumentCacheMaterializationResult> MaterializeDescriptorCandidateAsync(
         DocumentCacheMaterializationRequest request,
         DocumentCacheResolvedSourceMetadata.DescriptorResource source,
         DescriptorReadRow descriptorRow
     )
     {
+        if (await CheckSourceCoherenceAsync(request, source).ConfigureAwait(false) is { } nonSuccessResult)
+        {
+            return nonSuccessResult;
+        }
+
         var documentJson = DescriptorDocumentMaterializer.Materialize(
             descriptorRow,
             RelationalReadMaterializationMode.CacheProjection,
@@ -201,37 +214,29 @@ internal sealed class DocumentCacheMaterializer(
         );
     }
 
-    private static DocumentCacheMaterializationResult? TryClassifyHydratedMetadata(
-        DocumentCacheResolvedSourceMetadata source,
-        HydratedPage hydratedPage
+    private async Task<DocumentCacheMaterializationResult?> CheckSourceCoherenceAsync(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata source
     )
     {
-        if (hydratedPage.DocumentMetadata.Count == 0)
+        var finalReadResult = await _sourceMetadataReader
+            .ReadCurrentAsync(request, request.CancellationToken)
+            .ConfigureAwait(false);
+
+        return finalReadResult switch
         {
-            return DocumentCacheMaterializationResult.SourceChangedDuringHydration.Instance;
-        }
-
-        if (hydratedPage.DocumentMetadata.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"DocumentCache ordinary resource hydration for document id {source.DocumentId} returned "
-                    + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
-            );
-        }
-
-        var hydratedMetadata = hydratedPage.DocumentMetadata[0];
-
-        if (
-            hydratedMetadata.DocumentId != source.DocumentId
-            || hydratedMetadata.DocumentUuid != source.DocumentUuid.Value
-            || hydratedMetadata.ContentVersion != source.ContentVersion
-            || hydratedMetadata.ContentLastModifiedAt != source.ContentLastModifiedAt
-        )
-        {
-            return DocumentCacheMaterializationResult.SourceChangedDuringHydration.Instance;
-        }
-
-        return null;
+            DocumentCacheCurrentSourceMetadataReadResult.MissingSource => DocumentCacheMaterializationResult
+                .MissingSource
+                .Instance,
+            DocumentCacheCurrentSourceMetadataReadResult.Found found
+                when source.HasSameCanonicalMetadata(found.Metadata) => null,
+            DocumentCacheCurrentSourceMetadataReadResult.Found => DocumentCacheMaterializationResult
+                .SourceChangedDuringHydration
+                .Instance,
+            _ => throw new InvalidOperationException(
+                $"DocumentCache current source metadata reader returned unsupported result type '{finalReadResult.GetType().Name}'."
+            ),
+        };
     }
 
     private static bool HasRootBodyRow(ResourceReadPlan readPlan, HydratedPage hydratedPage, long documentId)

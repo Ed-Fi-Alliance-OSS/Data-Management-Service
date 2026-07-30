@@ -144,21 +144,25 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
     }
 
     [Test]
-    public async Task It_returns_source_changed_when_hydration_no_longer_observes_the_document_metadata()
+    public async Task It_returns_source_changed_when_final_metadata_differs_after_hydration()
     {
         var testContext = CreateMaterializerTestContext();
         var source = CreateOrdinarySource(testContext);
         var sourceReader = new StubSourceMetadataReader(
-            new DocumentCacheSourceMetadataReadResult.Found(source)
+            new DocumentCacheSourceMetadataReadResult.Found(source),
+            new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                new DocumentCacheCurrentSourceMetadata(
+                    source.DocumentId,
+                    source.DocumentUuid,
+                    source.ResourceKeyId,
+                    source.ContentVersion + 1,
+                    source.ContentLastModifiedAt
+                )
+            )
         );
         var hydrator = new RecordingDocumentHydrator
         {
-            Result = new HydratedPage(
-                TotalCount: null,
-                DocumentMetadata: [],
-                TableRowsInDependencyOrder: [new HydratedTableRows(testContext.ReadPlan.Model.Root, [])],
-                DescriptorRowsInPlanOrder: []
-            ),
+            Result = CreateHydratedPage(testContext.ReadPlan, source),
         };
         var readMaterializer = new RecordingReadMaterializer();
         var servedEtagComposer = new RecordingServedEtagComposer("stream-etag");
@@ -399,8 +403,10 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         ConcreteResourceModel ConcreteResourceModel
     );
 
-    private sealed class StubSourceMetadataReader(DocumentCacheSourceMetadataReadResult result)
-        : IDocumentCacheSourceMetadataReader
+    private sealed class StubSourceMetadataReader(
+        DocumentCacheSourceMetadataReadResult result,
+        DocumentCacheCurrentSourceMetadataReadResult? currentResult = null
+    ) : IDocumentCacheSourceMetadataReader
     {
         public DocumentCacheMaterializationRequest? CapturedRequest { get; private set; }
 
@@ -412,6 +418,37 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             CapturedRequest = request;
             return Task.FromResult(result);
         }
+
+        public Task<DocumentCacheCurrentSourceMetadataReadResult> ReadCurrentAsync(
+            DocumentCacheMaterializationRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            CapturedRequest = request;
+            return Task.FromResult(currentResult ?? CreateCurrentResult(result));
+        }
+
+        private static DocumentCacheCurrentSourceMetadataReadResult CreateCurrentResult(
+            DocumentCacheSourceMetadataReadResult sourceResult
+        ) =>
+            sourceResult switch
+            {
+                DocumentCacheSourceMetadataReadResult.MissingSource =>
+                    DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance,
+                DocumentCacheSourceMetadataReadResult.Found found =>
+                    new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                        new DocumentCacheCurrentSourceMetadata(
+                            found.Metadata.DocumentId,
+                            found.Metadata.DocumentUuid,
+                            found.Metadata.ResourceKeyId,
+                            found.Metadata.ContentVersion,
+                            found.Metadata.ContentLastModifiedAt
+                        )
+                    ),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported source metadata test result '{sourceResult.GetType().Name}'."
+                ),
+            };
     }
 
     private sealed class ThrowingDescriptorHydrator : IDocumentCacheDescriptorHydrator

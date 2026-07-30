@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend;
@@ -27,20 +26,6 @@ internal abstract record DocumentCacheDescriptorHydrationResult
             DescriptorRow ?? throw new ArgumentNullException(nameof(DescriptorRow));
     }
 
-    public sealed record MissingSource : DocumentCacheDescriptorHydrationResult
-    {
-        private MissingSource() { }
-
-        public static MissingSource Instance { get; } = new();
-    }
-
-    public sealed record SourceChanged : DocumentCacheDescriptorHydrationResult
-    {
-        private SourceChanged() { }
-
-        public static SourceChanged Instance { get; } = new();
-    }
-
     public sealed record StableDescriptorBodyMissing : DocumentCacheDescriptorHydrationResult
     {
         private StableDescriptorBodyMissing() { }
@@ -54,8 +39,6 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
 {
     private const string DocumentIdParameterName = "@documentId";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
-    private const string DescriptorDocumentIdColumnName = "DescriptorDocumentId";
-    private const string DescriptorResourceKeyIdColumnName = "DescriptorResourceKeyId";
 
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
@@ -83,7 +66,7 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
     {
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            return DocumentCacheDescriptorHydrationResult.MissingSource.Instance;
+            return DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance;
         }
 
         var result = ReadCurrentRow(reader, source);
@@ -101,40 +84,6 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
         DocumentCacheResolvedSourceMetadata.DescriptorResource source
     )
     {
-        var documentId = reader.GetRequiredFieldValue<long>("DocumentId");
-        var documentUuid = reader.GetRequiredFieldValue<Guid>("DocumentUuid");
-        var contentVersion = reader.GetRequiredFieldValue<long>("ContentVersion");
-        var contentLastModifiedAt = ReadRequiredDateTimeOffsetFieldValue(
-            reader,
-            "ContentLastModifiedAt",
-            documentId,
-            source.ResourceKeyId
-        );
-        var resourceKeyId = reader.GetRequiredFieldValue<short>("ResourceKeyId");
-
-        if (
-            documentId != source.DocumentId
-            || documentUuid != source.DocumentUuid.Value
-            || contentVersion != source.ContentVersion
-            || contentLastModifiedAt != source.ContentLastModifiedAt
-            || resourceKeyId != source.ResourceKeyId
-        )
-        {
-            return DocumentCacheDescriptorHydrationResult.SourceChanged.Instance;
-        }
-
-        if (reader.IsDBNull(reader.GetOrdinal(DescriptorDocumentIdColumnName)))
-        {
-            return DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance;
-        }
-
-        var descriptorDocumentId = reader.GetRequiredFieldValue<long>(DescriptorDocumentIdColumnName);
-        var descriptorResourceKeyId = reader.GetRequiredFieldValue<short>(DescriptorResourceKeyIdColumnName);
-        if (descriptorDocumentId != source.DocumentId || descriptorResourceKeyId != source.ResourceKeyId)
-        {
-            return DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing.Instance;
-        }
-
         var namespaceValue = ReadRequiredDescriptorStringField(reader, "Namespace");
         var codeValue = ReadRequiredDescriptorStringField(reader, "CodeValue");
         var shortDescription = ReadRequiredDescriptorStringField(reader, "ShortDescription");
@@ -146,11 +95,11 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
 
         return new DocumentCacheDescriptorHydrationResult.Found(
             new DescriptorReadRow(
-                documentId,
-                documentUuid,
-                contentVersion,
-                contentLastModifiedAt,
-                resourceKeyId,
+                source.DocumentId,
+                source.DocumentUuid.Value,
+                source.ContentVersion,
+                source.ContentLastModifiedAt,
+                source.ResourceKeyId,
                 namespaceValue,
                 codeValue,
                 shortDescription,
@@ -169,41 +118,6 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string>(ordinal);
-    }
-
-    private static DateTimeOffset ReadRequiredDateTimeOffsetFieldValue(
-        IRelationalCommandReader reader,
-        string columnName,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var ordinal = reader.GetOrdinal(columnName);
-
-        if (reader.IsDBNull(ordinal))
-        {
-            throw new DescriptorReadInvariantException(
-                $"Descriptor read corruption detected for DocumentId {documentId} (ResourceKeyId={resourceKeyId}): "
-                    + $"dms.Document.{columnName} must not be null."
-            );
-        }
-
-        var value = reader.GetFieldValue<object>(ordinal);
-
-        return value switch
-        {
-            DateTimeOffset dateTimeOffset => dateTimeOffset,
-            DateTime dateTime => new DateTimeOffset(
-                dateTime.Kind == DateTimeKind.Unspecified
-                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
-                    : dateTime
-            ),
-            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
-            _ => throw new InvalidOperationException(
-                $"Descriptor read expected a DateTimeOffset-compatible value for dms.Document.{columnName}, "
-                    + $"but received '{value.GetType().Name}'."
-            ),
-        };
     }
 
     private static string? ReadOptionalStringField(IRelationalCommandReader reader, string columnName)
@@ -239,13 +153,6 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
             SqlDialect.Pgsql => new RelationalCommand(
                 """
                 SELECT
-                    document."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
-                    descriptor."DocumentId" AS "DescriptorDocumentId",
-                    descriptor."ResourceKeyId" AS "DescriptorResourceKeyId",
                     descriptor."Namespace" AS "Namespace",
                     descriptor."CodeValue" AS "CodeValue",
                     descriptor."ShortDescription" AS "ShortDescription",
@@ -253,24 +160,15 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
                     descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
                     descriptor."EffectiveEndDate" AS "EffectiveEndDate",
                     descriptor."Discriminator" AS "Discriminator"
-                FROM dms."Document" document
-                LEFT JOIN dms."Descriptor" descriptor
-                    ON descriptor."DocumentId" = document."DocumentId"
-                    AND descriptor."ResourceKeyId" = @resourceKeyId
-                WHERE document."DocumentId" = @documentId;
+                FROM dms."Descriptor" descriptor
+                WHERE descriptor."DocumentId" = @documentId
+                    AND descriptor."ResourceKeyId" = @resourceKeyId;
                 """,
                 parameters
             ),
             SqlDialect.Mssql => new RelationalCommand(
                 """
                 SELECT
-                    document.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
-                    descriptor.[DocumentId] AS [DescriptorDocumentId],
-                    descriptor.[ResourceKeyId] AS [DescriptorResourceKeyId],
                     descriptor.[Namespace] AS [Namespace],
                     descriptor.[CodeValue] AS [CodeValue],
                     descriptor.[ShortDescription] AS [ShortDescription],
@@ -278,11 +176,9 @@ internal sealed class DocumentCacheDescriptorHydrator(IRelationalCommandExecutor
                     descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
                     descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
                     descriptor.[Discriminator] AS [Discriminator]
-                FROM [dms].[Document] document
-                LEFT JOIN [dms].[Descriptor] descriptor
-                    ON descriptor.[DocumentId] = document.[DocumentId]
-                    AND descriptor.[ResourceKeyId] = @resourceKeyId
-                WHERE document.[DocumentId] = @documentId;
+                FROM [dms].[Descriptor] descriptor
+                WHERE descriptor.[DocumentId] = @documentId
+                    AND descriptor.[ResourceKeyId] = @resourceKeyId;
                 """,
                 parameters
             ),
