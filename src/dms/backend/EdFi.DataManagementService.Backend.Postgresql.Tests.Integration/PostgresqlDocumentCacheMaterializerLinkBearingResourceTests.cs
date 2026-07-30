@@ -123,14 +123,14 @@ public class Given_Postgresql_DocumentCacheMaterializer_LinkBearingResource
             );
         }
 
+        var commandExecutor = new PostgresqlRelationalCommandExecutor(
+            async cancellationToken => (DbConnection)await _dataSource.OpenConnectionAsync(cancellationToken),
+            NullLogger<PostgresqlRelationalCommandExecutor>.Instance
+        );
+
         var sut = new DocumentCacheMaterializer(
-            new DocumentCacheSourceMetadataReader(
-                new PostgresqlRelationalCommandExecutor(
-                    async cancellationToken =>
-                        (DbConnection)await _dataSource.OpenConnectionAsync(cancellationToken),
-                    NullLogger<PostgresqlRelationalCommandExecutor>.Instance
-                )
-            ),
+            new DocumentCacheSourceMetadataReader(commandExecutor),
+            new DocumentCacheDescriptorHydrator(commandExecutor),
             new PostgresqlTestDocumentHydrator(_dataSource),
             new RelationalReadMaterializer(
                 new DeterministicLinkSlugResolver(),

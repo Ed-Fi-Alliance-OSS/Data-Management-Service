@@ -45,7 +45,13 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         };
         var readMaterializer = new RecordingReadMaterializer { Result = expectedDocumentJson };
         var servedEtagComposer = new RecordingServedEtagComposer("stream-etag");
-        var sut = new DocumentCacheMaterializer(sourceReader, hydrator, readMaterializer, servedEtagComposer);
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            new ThrowingDescriptorHydrator(),
+            hydrator,
+            readMaterializer,
+            servedEtagComposer
+        );
 
         var result = await sut.MaterializeAsync(
             CreateRequest(testContext.MappingSet, selectedRequiredContentVersion: 1)
@@ -121,7 +127,13 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         var hydrator = new RecordingDocumentHydrator();
         var readMaterializer = new RecordingReadMaterializer();
         var servedEtagComposer = new RecordingServedEtagComposer("stream-etag");
-        var sut = new DocumentCacheMaterializer(sourceReader, hydrator, readMaterializer, servedEtagComposer);
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            new ThrowingDescriptorHydrator(),
+            hydrator,
+            readMaterializer,
+            servedEtagComposer
+        );
 
         var result = await sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
 
@@ -150,7 +162,13 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         };
         var readMaterializer = new RecordingReadMaterializer();
         var servedEtagComposer = new RecordingServedEtagComposer("stream-etag");
-        var sut = new DocumentCacheMaterializer(sourceReader, hydrator, readMaterializer, servedEtagComposer);
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            new ThrowingDescriptorHydrator(),
+            hydrator,
+            readMaterializer,
+            servedEtagComposer
+        );
 
         var result = await sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
 
@@ -173,7 +191,13 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         };
         var readMaterializer = new RecordingReadMaterializer();
         var servedEtagComposer = new RecordingServedEtagComposer("stream-etag");
-        var sut = new DocumentCacheMaterializer(sourceReader, hydrator, readMaterializer, servedEtagComposer);
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            new ThrowingDescriptorHydrator(),
+            hydrator,
+            readMaterializer,
+            servedEtagComposer
+        );
 
         Func<Task> act = () =>
             sut.MaterializeAsync(CreateRequest(testContext.MappingSet, selectedRequiredContentVersion: 456));
@@ -388,6 +412,18 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             CapturedRequest = request;
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class ThrowingDescriptorHydrator : IDocumentCacheDescriptorHydrator
+    {
+        public Task<DocumentCacheDescriptorHydrationResult> HydrateAsync(
+            DocumentCacheResolvedSourceMetadata.DescriptorResource source,
+            SqlDialect dialect,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException(
+                "Ordinary resource hydration tests must not hydrate descriptors."
+            );
     }
 
     private sealed class RecordingDocumentHydrator : IDocumentHydrator

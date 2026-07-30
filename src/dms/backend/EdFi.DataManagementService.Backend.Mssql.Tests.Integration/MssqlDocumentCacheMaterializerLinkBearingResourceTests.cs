@@ -130,18 +130,19 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
             );
         }
 
+        var commandExecutor = new MssqlRelationalCommandExecutor(
+            async cancellationToken =>
+            {
+                var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync(cancellationToken);
+                return (DbConnection)connection;
+            },
+            NullLogger<MssqlRelationalCommandExecutor>.Instance
+        );
+
         var sut = new DocumentCacheMaterializer(
-            new DocumentCacheSourceMetadataReader(
-                new MssqlRelationalCommandExecutor(
-                    async cancellationToken =>
-                    {
-                        var connection = new SqlConnection(_connectionString);
-                        await connection.OpenAsync(cancellationToken);
-                        return (DbConnection)connection;
-                    },
-                    NullLogger<MssqlRelationalCommandExecutor>.Instance
-                )
-            ),
+            new DocumentCacheSourceMetadataReader(commandExecutor),
+            new DocumentCacheDescriptorHydrator(commandExecutor),
             new MssqlTestDocumentHydrator(_connectionString),
             new RelationalReadMaterializer(
                 new DeterministicLinkSlugResolver(),

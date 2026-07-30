@@ -13,6 +13,7 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class DocumentCacheMaterializer(
     IDocumentCacheSourceMetadataReader sourceMetadataReader,
+    IDocumentCacheDescriptorHydrator descriptorHydrator,
     IDocumentHydrator documentHydrator,
     IRelationalReadMaterializer readMaterializer,
     IServedEtagComposer servedEtagComposer
@@ -20,6 +21,8 @@ internal sealed class DocumentCacheMaterializer(
 {
     private readonly IDocumentCacheSourceMetadataReader _sourceMetadataReader =
         sourceMetadataReader ?? throw new ArgumentNullException(nameof(sourceMetadataReader));
+    private readonly IDocumentCacheDescriptorHydrator _descriptorHydrator =
+        descriptorHydrator ?? throw new ArgumentNullException(nameof(descriptorHydrator));
     private readonly IDocumentHydrator _documentHydrator =
         documentHydrator ?? throw new ArgumentNullException(nameof(documentHydrator));
     private readonly IRelationalReadMaterializer _readMaterializer =
@@ -49,11 +52,7 @@ internal sealed class DocumentCacheMaterializer(
             DocumentCacheSourceMetadataReadResult.Found
             {
                 Metadata: DocumentCacheResolvedSourceMetadata.DescriptorResource descriptorResource,
-            } => throw BuildTargetMappingException(
-                request,
-                descriptorResource,
-                DocumentCacheTargetMappingFailureReason.DescriptorMaterializationPathMissing
-            ),
+            } => await MaterializeDescriptorResourceAsync(request, descriptorResource).ConfigureAwait(false),
             DocumentCacheSourceMetadataReadResult.Found found => throw new InvalidOperationException(
                 $"DocumentCache materializer received unsupported source metadata type '{found.Metadata.GetType().Name}'."
             ),
@@ -115,6 +114,73 @@ internal sealed class DocumentCacheMaterializer(
         }
 
         var streamEtag = DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+            _servedEtagComposer,
+            request.TargetContext.MappingSet,
+            source.ContentVersion
+        );
+
+        return new DocumentCacheMaterializationResult.Success(
+            new DocumentCacheMaterializationCandidate(
+                source.DocumentId,
+                source.DocumentUuid,
+                source.ProjectName,
+                source.ResourceName,
+                source.ResourceVersion,
+                source.ContentVersion,
+                source.ContentLastModifiedAt,
+                streamEtag,
+                documentJson
+            )
+        );
+    }
+
+    private async Task<DocumentCacheMaterializationResult> MaterializeDescriptorResourceAsync(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata.DescriptorResource source
+    )
+    {
+        var hydrationResult = await _descriptorHydrator
+            .HydrateAsync(source, request.TargetContext.MappingSet.Key.Dialect, request.CancellationToken)
+            .ConfigureAwait(false);
+
+        return hydrationResult switch
+        {
+            DocumentCacheDescriptorHydrationResult.MissingSource => DocumentCacheMaterializationResult
+                .MissingSource
+                .Instance,
+            DocumentCacheDescriptorHydrationResult.SourceChanged => DocumentCacheMaterializationResult
+                .SourceChangedDuringHydration
+                .Instance,
+            DocumentCacheDescriptorHydrationResult.StableDescriptorBodyMissing =>
+                throw BuildProjectionProcessingException(
+                    request,
+                    source,
+                    DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing
+                ),
+            DocumentCacheDescriptorHydrationResult.Found found => MaterializeDescriptorCandidate(
+                request,
+                source,
+                found.DescriptorRow
+            ),
+            _ => throw new InvalidOperationException(
+                $"DocumentCache descriptor hydrator returned unsupported result type '{hydrationResult.GetType().Name}'."
+            ),
+        };
+    }
+
+    private DocumentCacheMaterializationResult MaterializeDescriptorCandidate(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheResolvedSourceMetadata.DescriptorResource source,
+        DescriptorReadRow descriptorRow
+    )
+    {
+        var documentJson = DescriptorDocumentMaterializer.Materialize(
+            descriptorRow,
+            RelationalReadMaterializationMode.CacheProjection,
+            composedEtag: null
+        );
+
+        var streamEtag = DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
             _servedEtagComposer,
             request.TargetContext.MappingSet,
             source.ContentVersion
@@ -286,15 +352,6 @@ internal sealed class DocumentCacheMaterializer(
     )
     {
         return new DocumentCacheProjectionProcessingException(reason, BuildFailureMetadata(request, source));
-    }
-
-    private static DocumentCacheTargetMappingException BuildTargetMappingException(
-        DocumentCacheMaterializationRequest request,
-        DocumentCacheResolvedSourceMetadata source,
-        DocumentCacheTargetMappingFailureReason reason
-    )
-    {
-        return new DocumentCacheTargetMappingException(reason, BuildFailureMetadata(request, source));
     }
 
     private static DocumentCacheMaterializerFailureMetadata BuildFailureMetadata(
