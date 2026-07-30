@@ -80,8 +80,8 @@ The `TBD` keys below are intentional and are not an incomplete edit. `29-snapsho
 - `TBD` — `38-cms-data-store-derivative-invariants.md` — Enforce CMS data-store derivative cardinality and type invariants
 - `TBD` — `39-snapshot-read-replica-runtime-routing.md` — Route eligible DMS reads to snapshots and read replicas
 - `TBD` — `40-snapshot-problem-details.md` — Implement snapshot ProblemDetails and connection-unavailable translation
-- `TBD` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents (DMS half; depends on the upstream MetaEd ticket below)
-- `TBD` — `42-api-publisher-snapshot-interoperability.md` — Validate API Publisher snapshot interoperability and document operator workflow
+- `TBD` — `41-snapshot-openapi-surface.md` — Add the snapshot contract to served OpenAPI documents (DMS half; depends on Story 40 and on the upstream MetaEd ticket below)
+- `TBD` — `42-api-publisher-snapshot-interoperability.md` — Validate API Publisher snapshot interoperability and document operator workflow (depends on Stories 38-40 only; deliberately not on Story 41, so the release notes are not blocked on an upstream package publication)
 
 One prerequisite is not a DMS ticket and has no story file in this epic:
 

@@ -11,7 +11,9 @@ Add an automated or repeatable interoperability environment proving that an Ed-F
 
 The validation must distinguish primary and snapshot data, exercise every Publisher source-read surface that participates in an extraction, and document the operator-owned snapshot and read-replica lifecycle and upgrade implications from DMS-1190.
 
-This is a release-validation, environment, and documentation ticket rather than DMS product code. It changes no DMS runtime behavior: the behavior it exercises is delivered by stories 38 through 41, and this story proves the composed result against an external Publisher build and writes the operator workflow and release notes. It is scheduled last for that reason, and it depends on an external tool it does not own — the Ed-Fi API Publisher is a separate product whose isolation behavior is an input to this validation, not something this story may change. If Publisher's behavior turns out to differ from what `29-snapshot-support.md` § Verified ODS and Publisher Behavior records, that is a finding to report against the design, not a defect to fix here.
+This is a release-validation, environment, and documentation ticket rather than DMS product code. It changes no DMS runtime behavior: the behavior it exercises is delivered by stories 38 through 40, and this story proves the composed result against an external Publisher build and writes the operator workflow and release notes. It depends on an external tool it does not own — the Ed-Fi API Publisher is a separate product whose isolation behavior is an input to this validation, not something this story may change. If Publisher's behavior turns out to differ from what `29-snapshot-support.md` § Verified ODS and Publisher Behavior records, that is a finding to report against the design, not a defect to fix here.
+
+This story deliberately does **not** depend on `41-snapshot-openapi-surface.md`. No acceptance criterion below concerns the served OpenAPI surface, and Publisher keys its isolation on the advertised API major version rather than on the served document, so the OpenAPI work is not an input to any of this validation. Taking that dependency would transitively block this story on an upstream MetaEd package publication — and because this story also owns the release notes, including the extraction-window stability warning, that block would allow the runtime behavior change from stories 39 and 40 to ship without the operator guidance that makes it safe. Story 41 is expected in the same release, and the validation should be re-confirmed once it lands, but it is not a prerequisite for scheduling or closing this story.
 
 ## Acceptance Criteria
 
@@ -39,8 +41,9 @@ This is a release-validation, environment, and documentation ticket rather than 
 - `38-cms-data-store-derivative-invariants.md`
 - `39-snapshot-read-replica-runtime-routing.md`
 - `40-snapshot-problem-details.md`
-- `41-snapshot-openapi-surface.md`, and transitively the upstream MetaEd/ApiSchema ticket and published packages that story depends on.
 - An external Ed-Fi API Publisher build, whose recorded version is part of the validation result.
+
+Not a dependency: `41-snapshot-openapi-surface.md`, and therefore not the upstream MetaEd/ApiSchema ticket and published packages that story depends on. See § Description for why.
 
 ## Out of Scope
 
