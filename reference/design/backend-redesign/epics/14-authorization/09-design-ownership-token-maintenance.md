@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1058
 
 CMS needs to be updated to store Ownership tokens of ApiClients in order to implement the Ownership-based authorization strategy in DMS.
 
-Refer to the authorization design for more information: `reference/design/backend-redesign/design-docs/auth.md`
+Refer to the [authorization design](../../design-docs/auth.md) for more information.
 
 ## Acceptance Criteria
 
@@ -19,3 +19,8 @@ Refer to the authorization design for more information: `reference/design/backen
 - Propose how DMS will read and cache the Ownership tokens from CMS.
 - Once the proposals above are reviewed and approved, create the tickets that implement the changes. These new tickets should block DMS-1060.
 - Update DMS-1060 description if necessary.
+
+## Proposed Contract
+
+The review-ready proposal is in
+[Decision Record: Ownership Token Maintenance and Delivery](../../design-docs/ownership-token-maintenance.md).
