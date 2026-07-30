@@ -499,6 +499,16 @@ internal static class DocumentCacheInventoryValidatorSupport
             );
         }
 
+        if (index.HasIncludedColumns)
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId} index has included columns."
+                )
+            );
+        }
+
         ValidateColumnOrder(
             index.Columns,
             [
@@ -1506,7 +1516,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 SELECT
                     columns.name AS ColumnName,
                     CASE WHEN indexes.is_disabled = 0 THEN 1 ELSE 0 END AS IsUsable,
-                    indexes.has_filter AS IsFilteredOrPartial
+                    indexes.has_filter AS IsFilteredOrPartial,
+                    index_columns.is_included_column AS IsIncludedColumn
                 FROM sys.indexes indexes
                 INNER JOIN sys.tables tables
                     ON tables.object_id = indexes.object_id
@@ -1521,8 +1532,9 @@ internal static class DocumentCacheInventoryValidatorSupport
                 WHERE schemas.name = @schema
                   AND tables.name = @table
                   AND indexes.name = @indexName
-                  AND index_columns.is_included_column = 0
-                ORDER BY index_columns.key_ordinal
+                ORDER BY
+                    CASE WHEN index_columns.is_included_column = 0 THEN index_columns.key_ordinal ELSE 2147483647 END,
+                    index_columns.index_column_id
                 """,
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };
@@ -1538,7 +1550,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 reader => new IndexRow(
                     reader.GetString(reader.GetOrdinal("ColumnName")),
                     ReadBooleanLike(reader, "IsUsable"),
-                    ReadBooleanLike(reader, "IsFilteredOrPartial")
+                    ReadBooleanLike(reader, "IsFilteredOrPartial"),
+                    dialect == SqlDialect.Mssql && ReadBooleanLike(reader, "IsIncludedColumn")
                 ),
                 cancellationToken
             )
@@ -1547,9 +1560,10 @@ internal static class DocumentCacheInventoryValidatorSupport
         return rows.Count == 0
             ? null
             : new IndexSnapshot(
-                rows.Select(row => row.Column).ToArray(),
+                rows.Where(row => !row.IsIncludedColumn).Select(row => row.Column).ToArray(),
                 rows.All(row => row.IsUsable),
-                rows.Any(row => row.IsFilteredOrPartial)
+                rows.Any(row => row.IsFilteredOrPartial),
+                rows.Any(row => row.IsIncludedColumn)
             );
     }
 
@@ -2380,12 +2394,18 @@ internal static class DocumentCacheInventoryValidatorSupport
         bool IsTrusted
     );
 
-    private sealed record IndexRow(string Column, bool IsUsable, bool IsFilteredOrPartial);
+    private sealed record IndexRow(
+        string Column,
+        bool IsUsable,
+        bool IsFilteredOrPartial,
+        bool IsIncludedColumn
+    );
 
     private sealed record IndexSnapshot(
         IReadOnlyList<string> Columns,
         bool IsUsable,
-        bool IsFilteredOrPartial
+        bool IsFilteredOrPartial,
+        bool HasIncludedColumns
     );
 
     private sealed record TriggerSnapshot(

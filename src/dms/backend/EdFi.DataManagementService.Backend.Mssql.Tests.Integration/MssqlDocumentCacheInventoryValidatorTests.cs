@@ -447,6 +447,30 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         result.IsSatisfied.Should().BeFalse();
     }
 
+    [Test]
+    public async Task It_rejects_a_work_paging_index_with_included_columns()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            DROP INDEX [IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId]
+            ON [dms].[DocumentProjectionWork];
+
+            CREATE INDEX [IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId]
+            ON [dms].[DocumentProjectionWork] ([FirstEnqueuedAt], [DocumentId])
+            INCLUDE ([RequiredContentVersion]);
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [TestCase("[dms].[DocumentCache]", "FK_DocumentCache_Document")]
     [TestCase("[dms].[DocumentProjectionWork]", "FK_DocumentProjectionWork_Document")]
     public async Task It_rejects_disabled_required_DocumentCache_foreign_keys(
