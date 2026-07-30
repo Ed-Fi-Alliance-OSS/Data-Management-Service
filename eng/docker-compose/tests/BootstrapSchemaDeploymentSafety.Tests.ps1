@@ -3538,6 +3538,39 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabas
             }
         }
 
+        It "configure-local-data-store.ps1 resolves an export-declared dependency of the connection string" {
+            # The names a connection string references are resolved through the sequential model of the
+            # composed environment. Resolving them through a ReadValuesFromEnvFile map instead mis-keyed
+            # `export CMS_DB=...`, so the database segment resolved empty and this phase rejected a
+            # dedicated target the start phase had accepted.
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @([pscustomobject]@{ id = 97; name = "Existing"; dataStoreContexts = @() })
+            }
+
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-export-dependency-$([Guid]::NewGuid().ToString('N')).env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore
+
+            $result.SelectedDataStoreIds | Should -Be @([long]97) -Because "the phase must run to completion, not merely avoid the specific rejection"
+        }
+
         It "configure-local-data-store.ps1 accepts an operator-shaped dedicated-database expression" {
             # The start phase accepted this shape and this phase then threw "unsupported environment
             # expression", because the two resolved the database segment with different grammars. The

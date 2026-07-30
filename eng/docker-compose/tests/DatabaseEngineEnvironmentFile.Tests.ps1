@@ -453,6 +453,107 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$($_.segment);User I
         else { $resolve | Should -Not -Throw }
     }
 
+    # The referenced names are resolved through the sequential model of the base file composed with the
+    # overlay, not a ReadValuesFromEnvFile map. That map mis-keys `export KEY=...` and collapses
+    # duplicates, which reintroduced the start/continuation split one level down: a dependency the start
+    # path resolves would resolve EMPTY here and a valid dedicated target would be rejected.
+    It "resolves a dependency of the connection string declared as '<_.declaration>'" -ForEach @(
+        @{ declaration = 'export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice'; shouldThrow = $false }
+        @{ declaration = 'CMS_DB_OVERRIDE_XYZ = edfi_configurationservice'; shouldThrow = $false }
+        @{ declaration = 'export CMS_DB_OVERRIDE_XYZ=legacy_config'; shouldThrow = $true }
+    ) {
+        $path = Join-Path $script:work ".env.dependency-$([Guid]::NewGuid().ToString('N'))"
+        Set-Content -LiteralPath $path -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+$($_.declaration)
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+        $resolve = {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $script:composeRoot
+        }
+
+        if ($_.shouldThrow) { $resolve | Should -Throw "*shared-database configuration mismatch*" }
+        else { $resolve | Should -Not -Throw }
+    }
+
+    # The MSSQL-shape check used to run on the RAW text, so a value that only looks MSSQL-shaped once
+    # resolved reached neither the reserved-name signal nor the shared invariant and was silently
+    # skipped. Resolution now happens first, so both judge the same resolved text.
+    It "judges a <_.label> connection string instead of skipping it" -ForEach @(
+        @{
+            label = 'outer-quoted'
+            lines = @('DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
+            shouldThrow = $true
+        }
+        @{
+            label = 'outer-quoted reserved-name'
+            lines = @('DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
+            shouldThrow = $false
+        }
+        @{
+            label = 'whole-string reference'
+            lines = @(
+                'WHOLE_CONN=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
+            )
+            shouldThrow = $true
+        }
+        @{
+            label = 'whole-string reference to the reserved name'
+            lines = @(
+                'WHOLE_CONN=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
+            )
+            shouldThrow = $false
+        }
+    ) {
+        $path = Join-Path $script:work ".env.shape-$([Guid]::NewGuid().ToString('N'))"
+        Set-Content -LiteralPath $path -Value ((@(
+            'DMS_DATASTORE=mssql'
+            'DMS_CONFIG_DATASTORE=mssql'
+            'MSSQL_SA_PASSWORD=abcdefgh1!'
+            'MSSQL_DB_NAME=edfi_datamanagementservice'
+        ) + $_.lines) -join "`n") -NoNewline
+
+        $resolve = {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $script:composeRoot
+        }
+
+        if ($_.shouldThrow) { $resolve | Should -Throw "*shared-database configuration mismatch*" }
+        else { $resolve | Should -Not -Throw }
+    }
+
+    It "still resolves a name supplied only by the overlay default" {
+        # Precedence is ambient, then the caller's base file, then the overlay - so a name the base file
+        # never declares must still resolve from the overlay rather than coming back empty. The base file
+        # here deliberately omits MSSQL_DB_NAME, which the overlay supplies, so both the connection
+        # string's reference and the invariant's expected name come from the overlay default.
+        $path = Join-Path $script:work ".env.overlay-default"
+        Set-Content -LiteralPath $path -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=abcdefgh1!
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Not -Throw
+    }
+
     It "sees an export-spelled CMS connection string instead of silently skipping the gate" {
         # The legacy parser stored `export KEY=...` under an `export `-prefixed name, so this gate saw
         # no connection string at all and neither signal nor invariant ran for a file that has one.
