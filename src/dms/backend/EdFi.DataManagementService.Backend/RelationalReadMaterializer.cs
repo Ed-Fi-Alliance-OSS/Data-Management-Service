@@ -13,12 +13,34 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
 
+/// <summary>
+/// Selects how hydrated relational rows should be materialized locally.
+/// </summary>
+public enum RelationalReadMaterializationMode
+{
+    /// <summary>
+    /// Materialize a public API response, including API metadata.
+    /// </summary>
+    ExternalResponse,
+
+    /// <summary>
+    /// Materialize the stored document shape for internal read-modify-write flows.
+    /// </summary>
+    StoredDocument,
+
+    /// <summary>
+    /// Materialize the caller-agnostic cache projection, including cache-owned metadata and no
+    /// served <c>_etag</c>.
+    /// </summary>
+    CacheProjection,
+}
+
 public sealed record RelationalReadMaterializationRequest(
     ResourceReadPlan ReadPlan,
     DocumentMetadataRow DocumentMetadata,
     IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder,
     IReadOnlyList<HydratedDescriptorRows> DescriptorRowsInPlanOrder,
-    RelationalGetRequestReadMode ReadMode
+    RelationalReadMaterializationMode ReadMode
 )
 {
     /// <summary>
@@ -41,7 +63,7 @@ public sealed record RelationalReadMaterializationRequest(
 
     /// <summary>
     /// Representation inputs for composing a ContentVersion-based <c>_etag</c>, required on every
-    /// <see cref="RelationalGetRequestReadMode.ExternalResponse"/> materialization (together with
+    /// <see cref="RelationalReadMaterializationMode.ExternalResponse"/> materialization (together with
     /// <see cref="MappingSet"/>); the served <c>_etag</c> is composed as
     /// <c>"{ContentVersion}-{variantKey}"</c>. <c>ComposeEtag</c> throws when this is
     /// <see langword="null"/> on an external response — absence indicates a wiring bug in the caller,
@@ -53,7 +75,7 @@ public sealed record RelationalReadMaterializationRequest(
 public sealed record RelationalReadPageMaterializationRequest(
     ResourceReadPlan ReadPlan,
     HydratedPage HydratedPage,
-    RelationalGetRequestReadMode ReadMode
+    RelationalReadMaterializationMode ReadMode
 )
 {
     /// <summary>
@@ -152,17 +174,27 @@ internal sealed class RelationalReadMaterializer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // The resolver-aware (link-bearing) overload runs only for ExternalResponse reads
-        // that have a MappingSet. StoredDocument-mode reads are internal read-modify-write
+        if (
+            request.ReadMode == RelationalReadMaterializationMode.CacheProjection
+            && request.MappingSet is null
+        )
+        {
+            throw new InvalidOperationException(
+                "Relational cache projection materialization requires MappingSet so document-reference "
+                    + "links are emitted with the fixed cache stream representation."
+            );
+        }
+
+        // The resolver-aware (link-bearing) overload runs for ExternalResponse and CacheProjection
+        // reads that have a MappingSet. StoredDocument-mode reads are internal read-modify-write
         // fetches per RelationalGetRequestContracts.cs and must not carry server-only `link`
         // decorations into stored-state profile projection. ExternalResponse materialization
-        // without a MappingSet also falls back to the no-link overload. The
-        // ResourceLinksOptions.Enabled flag is honored as the final response-shaping pass via
-        // StripReferenceLinks, invoked by the repository wrapper after readable-profile
-        // projection.
+        // without a MappingSet still falls back to the no-link overload, then fails in etag
+        // composition. The ResourceLinksOptions.Enabled flag is honored as the final public
+        // response-shaping pass via StripReferenceLinks, invoked by the repository wrapper after
+        // readable-profile projection. CacheProjection never runs that strip pass.
         var reconstitutedDocuments =
-            request.ReadMode == RelationalGetRequestReadMode.ExternalResponse
-            && request.MappingSet is { } mappingSet
+            IsLinkBearingMaterialization(request.ReadMode) && request.MappingSet is { } mappingSet
                 ? DocumentReconstituter.ReconstitutePage(
                     request.ReadPlan,
                     request.HydratedPage,
@@ -200,19 +232,23 @@ internal sealed class RelationalReadMaterializer(
     private JsonNode ApplyReadMode(
         JsonNode materializedDocument,
         DocumentMetadataRow documentMetadata,
-        RelationalGetRequestReadMode readMode,
+        RelationalReadMaterializationMode readMode,
         EtagVariantInputs? etagVariant,
         MappingSet? mappingSet
     )
     {
         return readMode switch
         {
-            RelationalGetRequestReadMode.StoredDocument => materializedDocument,
-            RelationalGetRequestReadMode.ExternalResponse => InjectApiMetadata(
+            RelationalReadMaterializationMode.StoredDocument => materializedDocument,
+            RelationalReadMaterializationMode.ExternalResponse => InjectApiMetadata(
                 materializedDocument,
                 documentMetadata,
                 etagVariant,
                 mappingSet
+            ),
+            RelationalReadMaterializationMode.CacheProjection => InjectCacheProjectionMetadata(
+                materializedDocument,
+                documentMetadata
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(readMode),
@@ -221,6 +257,11 @@ internal sealed class RelationalReadMaterializer(
             ),
         };
     }
+
+    private static bool IsLinkBearingMaterialization(RelationalReadMaterializationMode readMode) =>
+        readMode
+            is RelationalReadMaterializationMode.ExternalResponse
+                or RelationalReadMaterializationMode.CacheProjection;
 
     public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan)
     {
@@ -248,12 +289,36 @@ internal sealed class RelationalReadMaterializer(
 
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
         documentObject[EtagPropertyName] = ComposeEtag(documentMetadata, etagVariant, mappingSet);
-        documentObject[LastModifiedDatePropertyName] = documentMetadata
-            .ContentLastModifiedAt.ToUniversalTime()
-            .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
+        documentObject[LastModifiedDatePropertyName] = FormatLastModifiedDate(documentMetadata);
 
         return documentObject;
     }
+
+    private static JsonNode InjectCacheProjectionMetadata(
+        JsonNode materializedDocument,
+        DocumentMetadataRow documentMetadata
+    )
+    {
+        ArgumentNullException.ThrowIfNull(materializedDocument);
+
+        if (materializedDocument is not JsonObject documentObject)
+        {
+            throw new InvalidOperationException(
+                "Relational cache projection materialization requires a root JSON object."
+            );
+        }
+
+        documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
+        documentObject[LastModifiedDatePropertyName] = FormatLastModifiedDate(documentMetadata);
+        documentObject.Remove(EtagPropertyName);
+
+        return documentObject;
+    }
+
+    private static string FormatLastModifiedDate(DocumentMetadataRow documentMetadata) =>
+        documentMetadata
+            .ContentLastModifiedAt.ToUniversalTime()
+            .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
 
     // Every ExternalResponse read call site supplies representation inputs and a mapping set, so the
     // served _etag is always composed as "{ContentVersion}-{variantKey}" (no hashing). Absence of
