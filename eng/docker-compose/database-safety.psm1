@@ -28,8 +28,16 @@ function ConvertFrom-ComposeEnvironmentValue {
         [string]$Value
     )
 
-    if ([string]::IsNullOrWhiteSpace($Value)) {
+    if ($null -eq $Value) {
         return $Value
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        # An unquoted value is trimmed, so a whitespace-only value is empty. Verified live on both
+        # platforms: PASSWORD=<spaces> renders as empty, while "<spaces>" and '<spaces>' keep their
+        # spaces (a quoted value is not whitespace-only as raw text, so it never reaches here).
+        # Returning the spaces verbatim let a value pass preflight that Compose renders differently.
+        return ""
     }
 
     $trimmedValue = $Value.Trim()
@@ -476,9 +484,16 @@ function Resolve-DotenvFileSequentially {
 
     # Terminal values of the declarations seen so far. Never fed back through raw-value resolution:
     # see the NameLookup note on Resolve-ComposeEnvReference.
-    $accumulated = @{}
+    #
+    # ORDINAL dictionaries, not PowerShell hashtables. A hashtable compares keys case-insensitively,
+    # but a dotenv identifier is case-sensitive on the Linux CI and runtime path: verified live in a
+    # Linux container, ${upper_name} against an UPPER_NAME declaration renders UNSET, while Windows
+    # Docker Desktop normalizes case and resolves it. Case-insensitive storage would let a lowercase
+    # typo satisfy an uppercase lookup in the preflight while Compose leaves the real reference unset.
+    # Ambient lookups deliberately keep the platform's own semantics.
+    $accumulated = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
     $declarations = [System.Collections.Generic.List[object]]::new()
-    $declarationCounts = @{}
+    $declarationCounts = [System.Collections.Generic.Dictionary[string, int]]::new([System.StringComparer]::Ordinal)
 
     for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
         $text = [string]$lines[$lineIndex]
@@ -488,10 +503,17 @@ function Resolve-DotenvFileSequentially {
         if ($null -eq $assignment) { continue }
 
         $trace = [System.Collections.Generic.List[string]]::new()
+        # Provenance matters downstream: when ambient supplied a value, the file's own declarations of
+        # that name are inert, so dependency traversal must not descend into them and duplicate
+        # declarations of it cannot affect anything.
+        $ambientTrace = [System.Collections.Generic.List[string]]::new()
         $lookup = {
             param([string]$name)
             $ambientValue = [System.Environment]::GetEnvironmentVariable($name)
-            if ($null -ne $ambientValue) { return $ambientValue }
+            if ($null -ne $ambientValue) {
+                if (-not $ambientTrace.Contains($name)) { $ambientTrace.Add($name) }
+                return $ambientValue
+            }
             if ($accumulated.ContainsKey($name)) { return [string]$accumulated[$name] }
             return $null
         }.GetNewClosure()
@@ -506,20 +528,23 @@ function Resolve-DotenvFileSequentially {
             -ReferenceTrace $trace
 
         $accumulated[$assignment.Key] = $resolved
-        $declarationCounts[$assignment.Key] = 1 + [int]($declarationCounts[$assignment.Key] ?? 0)
+        $existingCount = 0
+        if ($declarationCounts.ContainsKey($assignment.Key)) { $existingCount = $declarationCounts[$assignment.Key] }
+        $declarationCounts[$assignment.Key] = $existingCount + 1
 
         $declarations.Add([pscustomobject]@{
-            Key           = $assignment.Key
-            RawValue      = $assignment.RawValue
-            LineIndex     = $lineIndex
-            ResolvedValue = $resolved
-            References    = @($trace)
+            Key               = $assignment.Key
+            RawValue          = $assignment.RawValue
+            LineIndex         = $lineIndex
+            ResolvedValue     = $resolved
+            References        = @($trace)
+            AmbientReferences = @($ambientTrace)
         })
     }
 
     # Ambient precedence applies to the final environment too, so a key set in the shell overrides
     # whatever the file last declared.
-    $effective = @{}
+    $effective = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
     foreach ($key in $accumulated.Keys) { $effective[$key] = $accumulated[$key] }
     foreach ($key in @($effective.Keys)) {
         $ambientValue = [System.Environment]::GetEnvironmentVariable($key)

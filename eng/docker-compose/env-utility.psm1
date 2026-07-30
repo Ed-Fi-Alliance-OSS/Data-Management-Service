@@ -1399,6 +1399,54 @@ function Move-EnvFileKeyBeforeAnotherKey {
     [System.IO.File]::WriteAllText($Path, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
+function Get-ConnectionStringSegmentDifference {
+    <#
+    .SYNOPSIS
+        Names the connection-string segment keys whose values differ between two connection strings,
+        WITHOUT revealing either value.
+
+    .DESCRIPTION
+        A connection string carries a database password, so a diagnostic that renders one leaks a
+        credential into terminals and CI logs. Comparing segment keys keeps the message actionable -
+        "password" or "database" is what a reader needs - while disclosing nothing. Segment values are
+        compared only to decide equality; they are never returned. Keys are reported sorted so the
+        message is stable. Both engines' segment syntaxes parse through DbConnectionStringBuilder, and
+        an unparseable string degrades to a generic answer rather than falling back to raw text.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$Expected,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$Actual
+    )
+
+    $parse = {
+        param([string]$value)
+        $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        try { $builder.set_ConnectionString($value) } catch { return $null }
+        $map = @{}
+        foreach ($key in $builder.get_Keys()) { $map[[string]$key] = [string]$builder.get_Item($key) }
+        return $map
+    }
+
+    $expectedSegments = & $parse $Expected
+    $actualSegments = & $parse $Actual
+    if ($null -eq $expectedSegments -or $null -eq $actualSegments) {
+        return "(the rendered value could not be parsed as a connection string)"
+    }
+
+    $differing = [System.Collections.Generic.List[string]]::new()
+    foreach ($key in @($expectedSegments.Keys) + @($actualSegments.Keys)) {
+        if ($differing.Contains($key)) { continue }
+        $expectedValue = if ($expectedSegments.ContainsKey($key)) { $expectedSegments[$key] } else { $null }
+        $actualValue = if ($actualSegments.ContainsKey($key)) { $actualSegments[$key] } else { $null }
+        if (-not [string]::Equals($expectedValue, $actualValue, [System.StringComparison]::Ordinal)) {
+            $differing.Add($key)
+        }
+    }
+
+    if ($differing.Count -eq 0) { return "(none identified)" }
+    return (($differing | Sort-Object) -join ', ')
+}
+
 function Get-DotenvLastDeclaration {
     <#
     .SYNOPSIS
@@ -1410,7 +1458,9 @@ function Get-DotenvLastDeclaration {
         [Parameter(Mandatory)] [string]$Name
     )
 
-    $declarationsForKey = @($Evaluation.Declarations | Where-Object { $_.Key -eq $Name })
+    # Ordinal: a dotenv identifier is case-sensitive on the Linux CI and runtime path, and PowerShell's
+    # own -eq is case-insensitive.
+    $declarationsForKey = @($Evaluation.Declarations | Where-Object { [string]::Equals($_.Key, $Name, [System.StringComparison]::Ordinal) })
     if ($declarationsForKey.Count -eq 0) { return $null }
     return $declarationsForKey[-1]
 }
@@ -1462,7 +1512,10 @@ function Test-DotenvReferenceResolvable {
 
     if ($null -ne [System.Environment]::GetEnvironmentVariable($Name)) { return $true }
     foreach ($declaration in $Evaluation.Declarations) {
-        if ($declaration.Key -eq $Name -and $declaration.LineIndex -lt $BeforeLineIndex) { return $true }
+        if ([string]::Equals($declaration.Key, $Name, [System.StringComparison]::Ordinal) -and
+            $declaration.LineIndex -lt $BeforeLineIndex) {
+            return $true
+        }
     }
     return $false
 }
@@ -1502,7 +1555,8 @@ function Get-DotenvSequentialLookup {
             $frozen = $null
             $found = $false
             foreach ($declaration in $declarations) {
-                if ($declaration.Key -eq $name -and $declaration.LineIndex -lt $limit) {
+                if ([string]::Equals($declaration.Key, $name, [System.StringComparison]::Ordinal) -and
+                    $declaration.LineIndex -lt $limit) {
                     $frozen = $declaration.ResolvedValue
                     $found = $true
                 }
@@ -1526,6 +1580,11 @@ function Get-DotenvDependencyClosure {
         at resolution time, an escaped '$$' literal and an operator word that did not fire contribute
         nothing - so the closure is the set of keys that genuinely affect the roots' values in this
         environment.
+
+        Traversal STOPS at any name the ambient environment supplied. Compose used the ambient value,
+        so that name's file declarations never contributed and neither do the names they reference;
+        descending into them would attribute file-authored problems to a value the file did not
+        provide.
     #>
     param(
         [Parameter(Mandatory)] $Evaluation,
@@ -1538,8 +1597,11 @@ function Get-DotenvDependencyClosure {
 
     while ($pending.Count -gt 0) {
         $key = $pending.Dequeue()
+        # List<string>.Contains is ordinal, matching the case sensitivity of a dotenv identifier.
         if ($closure.Contains($key)) { continue }
         $closure.Add($key)
+
+        if ($null -ne [System.Environment]::GetEnvironmentVariable($key)) { continue }
 
         $declaration = Get-DotenvLastDeclaration -Evaluation $Evaluation -Name $key
         if ($null -eq $declaration) { continue }
@@ -1651,9 +1713,11 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         $DockerComposeRoot = $PSScriptRoot
     }
 
-    $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
     # Sequential evaluation is the authority for every value decision below: it is what Docker Compose
     # actually does with an --env-file, honoring declaration order, duplicates, and ambient precedence.
+    # This function deliberately no longer reads through ReadValuesFromEnvFile at all - that parser
+    # collapses duplicates to the last value and stores an `export `-prefixed key under the wrong name,
+    # so a value it reported could differ from the one Compose renders.
     $sequential = Resolve-DotenvFileSequentially -Path $BaseEnvironmentFile
     $datastoreNameKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
     $legacyToken = '${' + $datastoreNameKey + '}'
@@ -1675,7 +1739,14 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         throw "Resolve-CmsDatabaseTopologyEnvironmentFile: could not resolve a non-blank database name for '$datastoreNameKey'."
     }
 
-    $currentConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+    # The RAW connection string comes from the shared assignment model, not the legacy parser, so a
+    # supported spelling the evaluator understands is also visible to the legacy-token migration below.
+    # Sourcing it from ReadValuesFromEnvFile made `export DMS_CONFIG_DATABASE_CONNECTION_STRING=...`
+    # invisible here (its key was stored as "export DMS_CONFIG_..."), so separate mode skipped the
+    # migration and failed later instead of taking the supported repair path. RawValue is the verbatim
+    # text after '=', preserving the authored quoting and any trailing comment span.
+    $currentConnectionStringDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+    $currentConnectionString = if ($null -eq $currentConnectionStringDeclaration) { "" } else { [string]$currentConnectionStringDeclaration.RawValue }
     $intendedConnectionString = $currentConnectionString
     if ($SeparateConfigDatabase) {
         # Get-EnvValue returns the raw dotenv value verbatim, including any outer dotenv-level quote
@@ -1707,7 +1778,15 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         }
     }
 
-    $currentMarker = Get-EnvValue -EnvValues $baseValues -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE" -DefaultValue "false"
+    # Marker read through the shared assignment model too, for the same reason as the connection
+    # string. Read raw from the file's own declaration (never ambient) - the marker is this design's
+    # internal topology record, and an unrelated shell variable of the same name must not change which
+    # mode a run believes it is in.
+    $currentMarkerDeclaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+    $currentMarker =
+        if ($null -eq $currentMarkerDeclaration) { "false" }
+        else { [string](ConvertFrom-ComposeEnvironmentValue -Value $currentMarkerDeclaration.RawValue) }
+    if ([string]::IsNullOrEmpty($currentMarker)) { $currentMarker = "false" }
 
     # The current DMS_CONFIG_DATABASE_NAME comes from the SEQUENTIAL evaluation, not a hashtable
     # lookup, so an already-correct alias-shaped file is recognized as needing no update while an
@@ -1736,9 +1815,16 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     $closure = Get-DotenvDependencyClosure -Evaluation $sequential -RootKey $seamKeys
 
     foreach ($closureKey in $closure) {
-        if ($sequential.DuplicateKeys -contains $closureKey) {
+        # An ambient value wins over every declaration of the same name, so file duplicates of an
+        # ambient-overridden key are inert and must not fail the run.
+        if ($null -ne [System.Environment]::GetEnvironmentVariable($closureKey)) { continue }
+
+        # Ordinal membership: PowerShell's -contains is case-insensitive, which would conflate two
+        # genuinely distinct dotenv identifiers.
+        $isDuplicate = @($sequential.DuplicateKeys | Where-Object { [string]::Equals($_, $closureKey, [System.StringComparison]::Ordinal) }).Count -gt 0
+        if ($isDuplicate) {
             $lineNumbers = @($sequential.Declarations |
-                Where-Object { $_.Key -eq $closureKey } |
+                Where-Object { [string]::Equals($_.Key, $closureKey, [System.StringComparison]::Ordinal) } |
                 ForEach-Object { $_.LineIndex + 1 })
             throw "CMS database topology: '$closureKey' is declared more than once in '$BaseEnvironmentFile' (lines $($lineNumbers -join ', ')), and the CMS database seam depends on it. Docker Compose resolves an --env-file sequentially, so lines between the declarations see the earlier value while the compose file itself sees the last one - the two can disagree. Remove the duplicate declaration and keep a single definition."
         }
@@ -1754,6 +1840,9 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     # transitive chain: the dependency froze to the wrong value before the seam line was even reached.
     foreach ($closureKey in $closure) {
         if ($seamRootLineIndexes.ContainsKey($closureKey)) { continue }
+        # Ambient supplied this value, so Compose never evaluated the file's declaration of it. A
+        # forward reference inside that unused declaration is not a defect in what the run will render.
+        if ($null -ne [System.Environment]::GetEnvironmentVariable($closureKey)) { continue }
         $declaration = Get-DotenvLastDeclaration -Evaluation $sequential -Name $closureKey
         if ($null -eq $declaration) { continue }
         foreach ($referencedName in $declaration.References) {
@@ -1829,18 +1918,26 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
     # intends Compose to render, with the topology-adjusted alias and ambient precedence applied. A
     # narrower check (host/database/port agreement) would pass a repaired file whose password segment
     # still renders empty, which is exactly the failure the silent no-op used to produce.
-    $intendedEffectiveConnectionString = $null
-    if (-not [string]::IsNullOrEmpty($intendedConnectionString)) {
-        $intendedEffectiveConnectionString = Resolve-ComposeEnvRawValue `
-            -EnvironmentValues @{} `
-            -RawValue $intendedConnectionString `
-            -NameLookup (Get-DotenvSequentialLookup `
-                -Evaluation $sequential `
-                -Override @{
-                    DMS_CONFIG_DATABASE_NAME              = $intendedDatabaseName
-                    DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $intendedMarker
-                })
-    }
+    # An ambient DMS_CONFIG_DATABASE_CONNECTION_STRING wins over the file entirely, and Compose hands
+    # it to the container verbatim. The target must therefore be that ambient value, or a valid ambient
+    # override would be reported as a repair failure against the file-authored string it replaced.
+    $ambientConnectionString = [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_CONNECTION_STRING")
+    $intendedEffectiveConnectionString =
+        if ($null -ne $ambientConnectionString) {
+            $ambientConnectionString
+        }
+        elseif (-not [string]::IsNullOrEmpty($intendedConnectionString)) {
+            Resolve-ComposeEnvRawValue `
+                -EnvironmentValues @{} `
+                -RawValue $intendedConnectionString `
+                -NameLookup (Get-DotenvSequentialLookup `
+                    -Evaluation $sequential `
+                    -Override @{
+                        DMS_CONFIG_DATABASE_NAME              = $intendedDatabaseName
+                        DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $intendedMarker
+                    })
+        }
+        else { $null }
 
     # If $BaseEnvironmentFile is already one of this function's own prior derived outputs (a caller
     # re-deriving from a previous call's result instead of the original base file), target that same
@@ -1889,7 +1986,13 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         $derivedEvaluation = Resolve-DotenvFileSequentially -Path $derivedPath
         $derivedEffectiveConnectionString = [string](Get-SequentialEffectiveValue -Evaluation $derivedEvaluation -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
         if (-not [string]::Equals($derivedEffectiveConnectionString, $intendedEffectiveConnectionString, [System.StringComparison]::Ordinal)) {
-            throw "CMS database topology: the derived environment file '$derivedPath' does not render the intended CMS connection string. Docker Compose would resolve it to '$derivedEffectiveConnectionString' instead of '$intendedEffectiveConnectionString'. This is a repair failure, not a configuration error - please report it with the source environment file."
+            # NEVER render either connection string: both carry a database password, and this message
+            # reaches terminals and CI logs. Name only the segments that disagree, which is what makes
+            # the failure actionable anyway.
+            $differingSegments = Get-ConnectionStringSegmentDifference `
+                -Expected $intendedEffectiveConnectionString `
+                -Actual $derivedEffectiveConnectionString
+            throw "CMS database topology: the derived environment file '$derivedPath' does not render the intended CMS connection string. Segment(s) that disagree: $differingSegments. Values are withheld because the connection string contains credentials. This is a repair failure, not a configuration error - please report it with the source environment file."
         }
     }
 
