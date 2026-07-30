@@ -117,6 +117,64 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             );
     }
 
+    [TestCaseSource(nameof(SelectedRequiredContentVersionCases))]
+    public async Task It_ignores_selected_required_content_version_when_materializing_current_source(
+        long? selectedRequiredContentVersion
+    )
+    {
+        var testContext = CreateMaterializerTestContext();
+        var source = CreateOrdinarySource(testContext);
+        var expectedDocumentJson = JsonNode
+            .Parse(
+                """
+                {"id":"11111111-2222-3333-4444-555555555555","_lastModifiedDate":"2026-07-30T14:15:16Z","nameOfInstitution":"Lincoln High"}
+                """
+            )!
+            .AsObject();
+        var sourceReader = new StubSourceMetadataReader(
+            new DocumentCacheSourceMetadataReadResult.Found(source)
+        );
+        var hydrator = new RecordingDocumentHydrator
+        {
+            Result = CreateHydratedPage(testContext.ReadPlan, source),
+        };
+        var readMaterializer = new RecordingReadMaterializer { Result = expectedDocumentJson };
+        var servedEtagComposer = new RecordingServedEtagComposer("stream-etag");
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            new ThrowingDescriptorHydrator(),
+            hydrator,
+            readMaterializer,
+            servedEtagComposer
+        );
+
+        var result = await sut.MaterializeAsync(
+            CreateRequest(testContext.MappingSet, selectedRequiredContentVersion)
+        );
+
+        var success = result.Should().BeOfType<DocumentCacheMaterializationResult.Success>().Subject;
+        success.Candidate.ContentVersion.Should().Be(ContentVersion);
+        success.Candidate.LastModifiedAt.Should().Be(LastModifiedAt);
+        success.Candidate.DocumentJson.Should().BeSameAs(expectedDocumentJson);
+        sourceReader
+            .CapturedRequest!.SelectedRequiredContentVersion.Should()
+            .Be(selectedRequiredContentVersion);
+        hydrator.CallCount.Should().Be(1);
+        readMaterializer.CallCount.Should().Be(1);
+        servedEtagComposer
+            .CapturedContext.Should()
+            .Be(
+                new ServedEtagContext(
+                    testContext.MappingSet.Key.EffectiveSchemaHash,
+                    ResponseFormat.Json,
+                    ProfileName: null,
+                    LinksEnabled: true,
+                    ContentVersion,
+                    ResponseContentCoding.Identity
+                )
+            );
+    }
+
     [Test]
     public async Task It_returns_missing_source_without_hydrating_when_the_metadata_reader_finds_no_source()
     {
@@ -218,6 +276,14 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         exception.FailureMetadata.ResourceVersion.Should().Be("5.2.0");
         readMaterializer.CallCount.Should().Be(0);
         servedEtagComposer.CapturedContext.Should().BeNull();
+    }
+
+    private static IEnumerable<long?> SelectedRequiredContentVersionCases()
+    {
+        yield return null;
+        yield return 1L;
+        yield return ContentVersion;
+        yield return ContentVersion + 1;
     }
 
     private static DocumentCacheMaterializationRequest CreateRequest(

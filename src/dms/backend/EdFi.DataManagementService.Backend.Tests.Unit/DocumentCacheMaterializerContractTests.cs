@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
@@ -183,6 +184,53 @@ public class Given_DocumentCacheMaterializerContract
                 "ReadPlanMissing",
                 "DescriptorMaterializationPathMissing",
                 "UnsupportedResourceStorageKind"
+            );
+    }
+
+    [Test]
+    public void It_keeps_cache_work_lifecycle_authorization_profile_and_kafka_services_out_of_the_runtime_boundary()
+    {
+        var constructor = typeof(DocumentCacheMaterializer)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Should()
+            .ContainSingle()
+            .Subject;
+        var parameterTypes = constructor
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        parameterTypes
+            .Should()
+            .Equal(
+                typeof(IDocumentCacheSourceMetadataReader),
+                typeof(IDocumentCacheDescriptorHydrator),
+                typeof(IDocumentHydrator),
+                typeof(IRelationalReadMaterializer),
+                typeof(IServedEtagComposer)
+            );
+
+        string[] forbiddenDependencyNameFragments =
+        [
+            "CacheWriter",
+            "DocumentCacheRepository",
+            "DocumentCacheState",
+            "DocumentProjectionWork",
+            "DurableWork",
+            "Lifecycle",
+            "Authorization",
+            "ReadableProfile",
+            "Kafka",
+            "Envelope",
+        ];
+
+        parameterTypes
+            .Select(type => type.Name)
+            .Should()
+            .NotContain(name =>
+                forbiddenDependencyNameFragments.Any(fragment =>
+                    name.Contains(fragment, StringComparison.OrdinalIgnoreCase)
+                )
             );
     }
 
