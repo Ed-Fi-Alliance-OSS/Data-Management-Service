@@ -537,13 +537,16 @@ Implementation coverage should include:
 This changes the post-v1.0 behavior of an existing header:
 
 - DMS v1.0 ignores `Use-Snapshot: true` and reads current data.
-- After this feature, the same request reads the configured snapshot or returns `404`.
+- After this feature, a snapshot-eligible read carrying the header reads the configured snapshot or returns `404`.
+- After this feature, a non-`GET` resource or descriptor request carrying the header returns the snapshot `405` with `Allow: GET`. This is the sharper of the two post-upgrade changes, because DMS v1.0 processes that request normally: a `POST`, `PUT`, or `DELETE` sent with `Use-Snapshot: true` succeeds today and is rejected afterward. API Publisher is unaffected, since it applies the header to its read-only source client only, but any client that sets the header once on a shared connection it also writes through breaks on upgrade. Release notes must state this alongside the read-path change rather than leaving it to be inferred from the ProblemDetails table.
 
 Release notes must call out that operators using API Publisher either configure a snapshot or continue to opt out explicitly with `--ignoreIsolation=true`.
 
 Release notes must also call out that a snapshot must not be replaced, re-pointed, removed, or recreated at the same connection string while an extraction is reading from it, because DMS selects the target per request. Re-pointing the derivative row or recreating the database at the unchanged connection string silently moves later pages to the replacement image; removal or unreachability instead interrupts the extraction with Snapshot Not Found `404`.
 
 Release notes must also call out that read-replica routing becomes active for any valid `ReadReplica` rows already stored in CMS, and that a read replica may be eventually consistent. Creating a derivative row is itself the configuration action that enables routing, matching ODS, so this is the activation of previously inert configuration rather than an implicit default. Operators should verify or remove stale derivative configuration before upgrading.
+
+The pipeline reordering that makes the precedence above possible changes client-visible responses **independently of `Use-Snapshot`**, so those changes reach deployments that configure no derivative at all and never send the header. Because endpoint validation — and, on the mutation pipelines, `ValidateRouteSemanticsMiddleware` — moves ahead of fingerprint validation, resource-key validation, and mapping-set resolution, a request that would previously have received the `503` from the first failing later stage now receives the hoisted verdict instead: the endpoint `404` for an unroutable request, the route-semantics `405` for an invalid mutation route shape, or the ApiSchema failure while `IApiSchemaProvider.IsSchemaValid` is false. Release notes must state that these responses change against an unprovisioned, unreachable, or fingerprint-incompatible database whether or not any snapshot or read replica is configured. § Selection sequence enumerates the full matrix.
 
 No database document or Change Query DDL changes are required in the DMS data store. Snapshot databases must already contain the same generated DDL as their primary because they are copies of a provisioned primary.
 
