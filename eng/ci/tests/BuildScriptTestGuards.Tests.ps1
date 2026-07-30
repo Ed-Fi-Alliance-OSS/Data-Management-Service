@@ -104,33 +104,102 @@ Describe "Build script zero-test guards (DMS-1301)" {
     }
 
     Context "Both build scripts route through the shared guard" {
+        # These assertions are anchored on the parsed syntax tree of each script's RunTests, not on
+        # raw file text. Text matching over the whole file is satisfied or broken by a comment that
+        # merely mentions a name, and it cannot tell which function a match came from.
         BeforeAll {
-            $script:buildScripts = @{
-                "build-dms.ps1"    = Get-Content -LiteralPath (Join-Path $script:repoRoot "build-dms.ps1") -Raw
-                "build-config.ps1" = Get-Content -LiteralPath (Join-Path $script:repoRoot "build-config.ps1") -Raw
+            function Get-ScriptFunctionAst {
+                param(
+                    [string] $ScriptPath,
+                    [string] $FunctionName
+                )
+
+                $parseErrors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                    $ScriptPath, [ref]$null, [ref]$parseErrors
+                )
+
+                # Report a parse failure as itself. Without this the FindAll below returns nothing and
+                # the script reads as missing RunTests, which points at the wrong cause.
+                if (@($parseErrors).Count -gt 0) {
+                    throw "Failed to parse '$ScriptPath': $(@($parseErrors)[0].Message)"
+                }
+
+                $functionAst = $ast.FindAll(
+                    { param($node)
+                        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -eq $FunctionName },
+                    $true
+                ) | Select-Object -First 1
+
+                if ($null -eq $functionAst) {
+                    throw "Function '$FunctionName' was not found in '$ScriptPath'."
+                }
+
+                return $functionAst
+            }
+
+            function Get-InvokedCommandName {
+                param(
+                    [System.Management.Automation.Language.Ast] $FunctionAst
+                )
+
+                return @(
+                    $FunctionAst.FindAll(
+                        { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
+                        $true
+                    ) |
+                        ForEach-Object { $_.GetCommandName() } |
+                        Where-Object { $_ }
+                )
+            }
+
+            function Get-RunTestsAst {
+                param(
+                    [string] $ScriptFile
+                )
+
+                return Get-ScriptFunctionAst `
+                    -ScriptPath (Join-Path $script:repoRoot $ScriptFile) `
+                    -FunctionName "RunTests"
             }
         }
 
-        It "<name> resolves its test assemblies through Get-RequiredTestAssembly" -ForEach @(
-            @{ Name = "build-dms.ps1" }
-            @{ Name = "build-config.ps1" }
+        It "<ScriptFile> resolves its test assemblies through Get-RequiredTestAssembly" -ForEach @(
+            @{ ScriptFile = "build-dms.ps1" }
+            @{ ScriptFile = "build-config.ps1" }
         ) {
-            $script:buildScripts[$name] | Should -BeLike "*Get-RequiredTestAssembly*"
+            Get-InvokedCommandName -FunctionAst (Get-RunTestsAst -ScriptFile $ScriptFile) |
+                Should -Contain "Get-RequiredTestAssembly"
         }
 
-        It "<name> keeps no private copy of the assembly glob" -ForEach @(
-            @{ Name = "build-dms.ps1" }
-            @{ Name = "build-config.ps1" }
+        It "<ScriptFile> keeps no private copy of the assembly discovery" -ForEach @(
+            @{ ScriptFile = "build-dms.ps1" }
+            @{ ScriptFile = "build-config.ps1" }
         ) {
-            # The glob and its guard belong to the helper. A reintroduced local copy would drift.
-            $script:buildScripts[$name] | Should -Not -BeLike "*Get-ChildItem -Path `$testAssemblyPath*"
+            # Assembly discovery belongs to the helper. A Get-ChildItem back inside RunTests means a
+            # local copy of the glob has returned, and with it the chance of a divergent guard.
+            Get-InvokedCommandName -FunctionAst (Get-RunTestsAst -ScriptFile $ScriptFile) |
+                Should -Not -Contain "Get-ChildItem"
         }
 
-        It "<name> no longer treats an empty assembly list as informational" -ForEach @(
-            @{ Name = "build-dms.ps1" }
-            @{ Name = "build-config.ps1" }
+        It "<ScriptFile> no longer reports an empty assembly list as informational" -ForEach @(
+            @{ ScriptFile = "build-dms.ps1" }
+            @{ ScriptFile = "build-config.ps1" }
         ) {
-            $script:buildScripts[$name] | Should -Not -BeLike "*Write-Output `"no test assemblies found*"
+            # Anchored on real Write-Output commands, so this catches the message in both literal and
+            # interpolated form while ignoring any comment that quotes it.
+            $writeOutputCalls = @(
+                (Get-RunTestsAst -ScriptFile $ScriptFile).FindAll(
+                    { param($node)
+                        $node -is [System.Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq "Write-Output" },
+                    $true
+                )
+            )
+
+            @($writeOutputCalls | Where-Object { $_.Extent.Text -like "*no test assemblies found*" }) |
+                Should -BeNullOrEmpty
         }
     }
 }
