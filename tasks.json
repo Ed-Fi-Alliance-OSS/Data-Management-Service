@@ -204,7 +204,7 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DocumentCacheAdministrativeContracts",
       "dotnet csharpier format src/dms/core"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "preflight-classification",

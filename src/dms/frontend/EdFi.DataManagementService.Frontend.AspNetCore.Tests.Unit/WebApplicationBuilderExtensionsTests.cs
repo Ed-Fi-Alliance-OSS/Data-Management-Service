@@ -276,6 +276,18 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        [Category("DownstreamPublicationHistory")]
+        public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+                .Should()
+                .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
+        }
+
+        [Test]
         public void It_uses_direct_typed_relational_repository_registrations()
         {
             var services = CreateServiceCollection("postgresql");
@@ -498,6 +510,18 @@ public class WebApplicationBuilderExtensionsTests
                 .GetRequiredService<IDocumentCacheDiagnosticSnapshotProvider>()
                 .Should()
                 .BeOfType<DocumentCacheDiagnosticSnapshotProvider>();
+        }
+
+        [Test]
+        [Category("DownstreamPublicationHistory")]
+        public void It_resolves_the_default_DocumentCache_downstream_publication_history_provider_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
+                .Should()
+                .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
         }
 
         [Test]

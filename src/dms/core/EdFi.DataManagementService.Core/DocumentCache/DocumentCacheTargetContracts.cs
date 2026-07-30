@@ -81,6 +81,8 @@ public enum DocumentCacheTargetDiagnosticCategory
     LifecycleObservationFailure,
     TransientCmsRefreshFailure,
     TargetReplaced,
+    DownstreamPublicationHistoryPresentOrUnknown,
+    ExpectedSourceMismatch,
     UnexpectedProviderFailure,
 }
 
