@@ -3571,6 +3571,51 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
             $result.SelectedDataStoreIds | Should -Be @([long]97) -Because "the phase must run to completion, not merely avoid the specific rejection"
         }
 
+        It "provision-dms-schema.ps1 resolves an export-declared dependency of the connection string" {
+            # Both manual phases reach the engine gate independently, so both are covered: a defect in
+            # this resolution stops a run at whichever phase the developer reaches first.
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "export-dependency-schema-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            try {
+                . $script:repo.ProvisionScript
+
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    return @(
+                        [pscustomobject]@{
+                            id = 98
+                            name = "ExportDependency"
+                            connectionString = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                            dataStoreContexts = @()
+                        }
+                    )
+                }
+
+                $envFile = Join-Path $script:repo.DockerComposeRoot "env-provision-export-dep-$([Guid]::NewGuid().ToString('N')).env"
+                @"
+POSTGRES_PASSWORD=isolated-pass
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(98) -DatabaseEngine mssql } |
+                    Should -Not -Throw
+
+                @(Get-Content -LiteralPath $capturePath) | Should -Contain "mssql"
+            }
+            finally { Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue }
+        }
+
         It "configure-local-data-store.ps1 accepts an operator-shaped dedicated-database expression" {
             # The start phase accepted this shape and this phase then threw "unsupported environment
             # expression", because the two resolved the database segment with different grammars. The

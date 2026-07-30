@@ -216,11 +216,15 @@ CUSTOM_KEY=preserved
     }
 
     It "preserves valid caller-authored MSSQL connection strings while completing a partial file" {
+        # CMS_DATABASE_NAME is a literal here. It used to reference ${MSSQL_DB_NAME}, which composition
+        # moves into the overlay block, leaving this base-block line ahead of its own dependency - so the
+        # composed file rendered Database= empty. The old assertion compared only the preserved line's
+        # RAW text and therefore passed anyway; the resolved assertion below would not have.
         $partialPath = Join-Path $script:work ".env.partial-custom-connections"
         Set-Content -LiteralPath $partialPath -Value @"
 DMS_CONFIG_DATASTORE=mssql
 MSSQL_DB_NAME=custom_database
-CMS_DATABASE_NAME=`${MSSQL_DB_NAME}
+CMS_DATABASE_NAME=custom_database
 DATABASE_CONNECTION_STRING_ADMIN=Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;
 DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
 "@ -NoNewline
@@ -230,6 +234,142 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
 
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Be "Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;"
         $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
+
+        # The written file must also RENDER one effective CMS declaration with the caller's host,
+        # database, and credentials - the raw line alone does not prove that.
+        $composed = Resolve-DotenvFileSequentially -Path $result
+        @($composed.Declarations | Where-Object { $_.Key -eq 'DMS_CONFIG_DATABASE_CONNECTION_STRING' }).Count |
+            Should -Be 1 -Because "composition must leave exactly one declaration of the key"
+        $composed.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            Should -BeExactly 'Server=custom-cms,1444;Database=custom_database;User Id=custom;Password=secret;'
+    }
+
+    # Validation and the write must describe the same artifact, so these assert the RETURNED FILE: one
+    # effective connection declaration, and the host, database, and credentials it actually renders.
+    # Asserting only "no exception" or only the raw line hid three divergences between the validated
+    # model and the written file.
+    It "writes one effective CMS declaration rendering the caller's values: <_.label>" -ForEach @(
+        @{
+            label = 'a preserved alias that depends on an overlay-only default'
+            lines = @(
+                'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+            expectedHost = 'dms-mssql,1433'
+            expectedDatabase = 'edfi_datamanagementservice'
+            expectedPassword = 'abcdefgh1!'
+        }
+        @{
+            label = 'an export-spelled caller declaration (must not survive alongside the overlay''s)'
+            lines = @(
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;'
+            )
+            expectedHost = 'custom-cms,1444'
+            expectedDatabase = 'edfi_datamanagementservice'
+            expectedPassword = 'secret'
+        }
+        @{
+            label = 'an outer-quoted caller value'
+            lines = @(
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;"'
+            )
+            expectedHost = 'custom-cms,1444'
+            expectedDatabase = 'edfi_datamanagementservice'
+            expectedPassword = 'secret'
+        }
+        @{
+            label = 'a whole-string reference caller value'
+            lines = @(
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'WHOLE_CONN=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
+            )
+            expectedHost = 'custom-cms,1444'
+            expectedDatabase = 'edfi_datamanagementservice'
+            expectedPassword = 'secret'
+        }
+        @{
+            # Narrowness: a PostgreSQL-shaped caller value must still lose to the overlay default, or a
+            # partially-edited file would keep a PostgreSQL CMS target on an MSSQL run.
+            label = 'a PostgreSQL-shaped caller value, which the overlay default must replace'
+            lines = @(
+                'MSSQL_DB_NAME=edfi_datamanagementservice'
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
+            )
+            expectedHost = 'dms-mssql,1433'
+            expectedDatabase = 'edfi_datamanagementservice'
+            expectedPassword = 'abcdefgh1!'
+        }
+    ) {
+        # The REAL overlay, because which keys the overlay owns decides what composition relocates.
+        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $path = Join-Path $script:work ".env.written-$([Guid]::NewGuid().ToString('N'))"
+        Set-Content -LiteralPath $path -Value ((@(
+            'MSSQL_SA_PASSWORD=abcdefgh1!'
+            'DMS_DATASTORE=mssql'
+            'DMS_CONFIG_DATASTORE=mssql'
+        ) + $_.lines) -join "`n") -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $path `
+            -DockerComposeRoot $realComposeRoot
+
+        $composed = Resolve-DotenvFileSequentially -Path $result
+        @($composed.Declarations | Where-Object { $_.Key -eq 'DMS_CONFIG_DATABASE_CONNECTION_STRING' }).Count |
+            Should -Be 1 -Because "the written file must carry exactly one declaration of the key"
+
+        $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $builder.set_ConnectionString([string]$composed.Effective['DMS_CONFIG_DATABASE_CONNECTION_STRING'])
+        [string]$builder['Server'] | Should -BeExactly $_.expectedHost
+        [string]$builder['Database'] | Should -BeExactly $_.expectedDatabase
+        [string]$builder['Password'] | Should -BeExactly $_.expectedPassword
+    }
+
+    It "recognizes an export-spelled, quoted topology marker in the engine gate too" {
+        # The marker's third consumer read it through the legacy parser, so the exported and quoted
+        # spellings approved elsewhere in this design were not recognized here and the shared-mode
+        # invariant ran against a separate-mode file.
+        $realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $path = Join-Path $script:work ".env.gate-marker"
+        Set-Content -LiteralPath $path -Value @"
+MSSQL_SA_PASSWORD=abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+export DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=some_third_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $path `
+                -DockerComposeRoot $realComposeRoot
+        } | Should -Not -Throw -Because "a separate-mode file is outside the shared-mode invariant's scope"
+    }
+
+    It "detects a caller value whose own dependency composition relocates, instead of writing an empty database" {
+        # CMS_DATABASE_NAME is not an overlay key, so it stays in the base block; MSSQL_DB_NAME is one, so
+        # it moves into the overlay block below. The base-block reference therefore resolves to nothing
+        # and the composed file would render Database= empty. Validating a separately-modelled
+        # environment could not see this; validating the composed lines does, and it fails loudly.
+        $partialPath = Join-Path $script:work ".env.relocated-dependency"
+        Set-Content -LiteralPath $partialPath -Value @"
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_DB_NAME=custom_database
+CMS_DATABASE_NAME=`${MSSQL_DB_NAME}
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $partialPath `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Throw "*must include Database or Initial Catalog*"
     }
 
     It "fails fast when a fully composed MSSQL environment points CMS at a different database" {
@@ -424,11 +564,12 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_conf
             shouldThrow = $true
         }
         @{
-            # The alias is declared in the file itself rather than relying on the overlay stand-in, so
-            # the premise - the default must NOT fire - holds independently of the fixture.
+            # The alias is declared in the file itself, as a LITERAL. Referencing ${MSSQL_DB_NAME} here
+            # would not hold: MSSQL_DB_NAME is an overlay-owned key, so composition moves it below this
+            # base-block line, the alias freezes empty, and ':-' fires after all.
             label = 'a default that does NOT fire, because the alias is defined, targets the shared name'
             segment = 'Database=${DMS_CONFIG_DATABASE_NAME:-legacy_config}'
-            extra = 'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+            extra = 'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice'
             shouldThrow = $false
         }
     ) {
