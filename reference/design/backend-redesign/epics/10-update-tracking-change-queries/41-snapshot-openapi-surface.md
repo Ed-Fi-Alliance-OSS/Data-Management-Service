@@ -15,6 +15,8 @@ Three served documents are package-authored: resources, descriptors, and the sta
 
 This split follows the precedent in `20-openapi-change-query-surface.md` (DMS-1183), which separated the already-delivered MetaEd contract from the DMS continuation that consumed it.
 
+Per `EPIC.md` § Follow-on Stories (spawned by DMS-1190), this story and its upstream publication are the release gate for the runtime changes delivered by Stories 39 and 40. That is a release-level rule, not a dependency of Story 42: Publisher validation and documentation may close independently, but those runtime changes must not ship while the served OpenAPI contract is stale.
+
 ## Upstream Prerequisite
 
 The following is MetaEd/ApiSchema work in the upstream repository, not DMS implementation work in this story. It is the input contract this story consumes.
@@ -41,6 +43,7 @@ The following is MetaEd/ApiSchema work in the upstream repository, not DMS imple
 
 ### Package intake
 
+- Release evidence confirms that the runtime changes delivered by Stories 39 and 40 are held from shipment until this story serves the matching contract from published upstream packages; a hand-authored document, backend fixture, prerelease-only artifact, or planned later package bump does not open the gate.
 - Every active ApiSchema version-selection surface is updated to published package versions containing the snapshot OpenAPI contract, for every one of the seven supported package families. That means the bundled path's `src/Directory.Packages.props` versions and the affected `packages.lock.json`, **and** the file-based path's tracked `SCHEMA_PACKAGES` pins in the `eng/docker-compose/` environment overlays together with the bootstrap schema catalog's core package identity and fallback version. Updating central versions alone does not satisfy this criterion, because five of the seven families have no direct `PackageReference` consumer and are served only through the file-based path.
 - Associated version assertions and documentation are updated in the same change, including the bootstrap Pester suites and `eng/docker-compose/README.md`, so the bump does not land as unexplained test breakage.
 - No new `PackageReference` is added merely to route a family through the bundled path. The existing bundled-versus-file-based topology is preserved.

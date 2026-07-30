@@ -71,7 +71,8 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 
 ### Cache and pool lifecycle
 
-- Primary validation-cache behavior remains unchanged.
+- Primary fingerprint and resource-key validation-cache behavior remains unchanged and permanent.
+- Primary and derivative fingerprint/resource-key validation verdicts never share a cache entry merely because their connection-string text matches. The implementation may enforce this through separate cache namespaces, a composite key that includes the target's policy class, or an equivalent mechanism, but a Primary always retains the permanent policy while derivatives retain bounded successful verdicts and immediate eviction of failed, missing, or malformed verdicts.
 - Failed, missing, and malformed derivative validation results are evicted immediately and are not cached at all; there is no retry TTL. The next request selecting that derivative revalidates from scratch.
 - Successful derivative fingerprint and resource-key validations are bounded by `CacheSettings.DerivativeValidationCacheExpirationSeconds`, a new independent setting, not by the data-store configuration cache interval. `DataStoreCacheRefreshEnabled` may be `false` and a non-positive `DataStoreCacheExpirationSeconds` means "hold until explicit reload", so a derived TTL would be unbounded.
 - `DerivativeValidationCacheExpirationSeconds` defaults to `600` seconds, accepts `1` through `3600`, and is resolved at startup: a zero, negative, or absent value resolves to `600`, and a value above `3600` resolves to `3600`. It never means "no expiration", inverting the `DataStoreCacheExpirationSeconds` convention, and that inversion is documented on the setting and in the configuration reference.
@@ -106,6 +107,7 @@ The existing data-store resolver remains authoritative for tenant, client, and r
 - Tests prove the derivative validation TTL stays bounded with `DataStoreCacheRefreshEnabled` set to `false` and with a zero or negative `DataStoreCacheExpirationSeconds`, and that a shorter data-store cache interval shortens the effective TTL.
 - Settings-resolution tests cover `DerivativeValidationCacheExpirationSeconds` at zero, negative, absent, `1`, `3600`, and above `3600`, asserting the resolved effective value and the startup warning for each out-of-range case.
 - Tests prove failed, missing, and malformed derivative validations are not cached, so the immediately following request revalidates rather than reusing the failure.
+- Tests use a Primary and a derivative with identical connection-string text and populate their fingerprint and resource-key validation verdicts in both orders, proving each target retains its own cache policy: the Primary verdict remains permanent, while the derivative success remains bounded and its failed, missing, or malformed verdict is evicted immediately.
 - The integration-test data-store provider double and configuration-provider unit tests are updated for the derivative-aware model.
 
 ## Dependencies
