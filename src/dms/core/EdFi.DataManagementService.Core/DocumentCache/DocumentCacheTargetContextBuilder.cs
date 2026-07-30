@@ -357,7 +357,11 @@ public sealed class DocumentCacheTargetContextBuilder(
         }
         catch (Exception exception)
         {
-            logger.LogDebug(exception, "DocumentCache target fingerprint read failed");
+            LogProviderFailure(
+                DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,
+                "physical source fingerprint read",
+                exception
+            );
             return DocumentCachePhysicalSourceFingerprintReadResult.Failure(
                 DocumentCachePhysicalSourceFingerprintReadStatus.SourceIdentityUnreadable,
                 "Physical source fingerprint is unreadable."
@@ -380,7 +384,11 @@ public sealed class DocumentCacheTargetContextBuilder(
         }
         catch (Exception exception)
         {
-            logger.LogDebug(exception, "DocumentCache target lifecycle read failed");
+            LogProviderFailure(
+                DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+                "lifecycle read",
+                exception
+            );
             return DocumentCacheLifecycleReadResult.Failure(
                 DocumentCacheLifecycleReadStatus.Unreadable,
                 "DocumentCache lifecycle is unreadable."
@@ -403,7 +411,11 @@ public sealed class DocumentCacheTargetContextBuilder(
         }
         catch (Exception exception)
         {
-            logger.LogDebug(exception, "DocumentCache target inventory validation failed");
+            LogProviderFailure(
+                DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+                "inventory validation",
+                exception
+            );
             return new DocumentCacheProviderInventoryValidationResult(
                 new DocumentCacheInventoryValidationResult(
                     DocumentCacheInventoryStatus.Unreadable,
@@ -507,7 +519,11 @@ public sealed class DocumentCacheTargetContextBuilder(
         }
         catch (Exception exception)
         {
-            logger.LogDebug(exception, "DocumentCache target provider prerequisite validation failed");
+            DocumentCacheTargetDiagnosticCategory failureCategory =
+                lifecycle.State == DocumentCacheLifecycleState.Disabled
+                    ? DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+                    : DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident;
+            LogProviderFailure(failureCategory, "provider prerequisite validation", exception);
             return DocumentCacheProviderPrerequisiteValidationResult.Initialization(
                 new DocumentCacheSqlServerPrerequisiteDetails(
                     new DocumentCacheProviderPrerequisiteResult(
@@ -524,6 +540,20 @@ public sealed class DocumentCacheTargetContextBuilder(
                 lifecycle
             );
         }
+    }
+
+    private void LogProviderFailure(
+        DocumentCacheTargetDiagnosticCategory failureCategory,
+        string operation,
+        Exception exception
+    )
+    {
+        logger.LogDebug(
+            "DocumentCache target provider operation failed for category {FailureCategory} during {Operation}; exception type {ExceptionType}",
+            failureCategory,
+            operation,
+            exception.GetType().Name
+        );
     }
 
     private static List<DocumentCacheTargetDiagnostic> BuildDiagnostics(

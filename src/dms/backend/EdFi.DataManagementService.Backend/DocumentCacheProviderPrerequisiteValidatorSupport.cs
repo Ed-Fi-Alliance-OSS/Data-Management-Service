@@ -105,10 +105,7 @@ internal static class DocumentCacheProviderPrerequisiteValidatorSupport
         }
         catch (Exception exception)
         {
-            logger.LogDebug(
-                exception,
-                "DocumentCache SQL Server prerequisite validation failed while opening provider connection"
-            );
+            LogPrerequisiteConnectionOpenFailure(logger, exception);
 
             return new DocumentCacheSqlServerPrerequisiteDetails(
                 Unreadable(
@@ -160,13 +157,32 @@ internal static class DocumentCacheProviderPrerequisiteValidatorSupport
         }
         catch (Exception exception)
         {
-            logger.LogDebug(
-                exception,
-                "DocumentCache SQL Server prerequisite {PrerequisiteName} validation failed while reading provider metadata",
-                name
-            );
+            LogPrerequisiteReadFailure(logger, name, exception);
             return Unreadable(name, unreadableMessage);
         }
+    }
+
+    private static void LogPrerequisiteConnectionOpenFailure(ILogger logger, Exception exception)
+    {
+        logger.LogDebug(
+            "DocumentCache SQL Server prerequisite validation failed while opening provider connection for category {FailureCategory}; exception type {ExceptionType}",
+            DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
+            exception.GetType().Name
+        );
+    }
+
+    private static void LogPrerequisiteReadFailure(
+        ILogger logger,
+        DocumentCacheProviderPrerequisiteName name,
+        Exception exception
+    )
+    {
+        logger.LogDebug(
+            "DocumentCache SQL Server prerequisite {PrerequisiteName} validation failed while reading provider metadata for category {FailureCategory}; exception type {ExceptionType}",
+            name,
+            DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
+            exception.GetType().Name
+        );
     }
 
     private static async Task<int?> ReadOptionalIntAsync(

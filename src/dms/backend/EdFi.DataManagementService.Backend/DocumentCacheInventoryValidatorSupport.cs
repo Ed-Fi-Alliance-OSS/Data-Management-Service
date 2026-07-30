@@ -127,10 +127,7 @@ internal static class DocumentCacheInventoryValidatorSupport
         }
         catch (Exception exception)
         {
-            logger.LogDebug(
-                exception,
-                "DocumentCache inventory validation failed while reading provider metadata"
-            );
+            LogInventoryValidationFailure(logger, exception);
             return new DocumentCacheProviderInventoryValidationResult(
                 new DocumentCacheInventoryValidationResult(
                     DocumentCacheInventoryStatus.Unreadable,
@@ -142,6 +139,15 @@ internal static class DocumentCacheInventoryValidatorSupport
                 )
             );
         }
+    }
+
+    private static void LogInventoryValidationFailure(ILogger logger, Exception exception)
+    {
+        logger.LogDebug(
+            "DocumentCache inventory validation failed while reading provider metadata for category {FailureCategory}; exception type {ExceptionType}",
+            DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+            exception.GetType().Name
+        );
     }
 
     private static IReadOnlyList<TableSpec> BuildTableSpecs(SqlDialect dialect)

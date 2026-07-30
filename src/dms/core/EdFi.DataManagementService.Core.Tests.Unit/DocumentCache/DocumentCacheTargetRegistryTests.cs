@@ -6,7 +6,9 @@
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -19,6 +21,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 [Category("DocumentCacheTargetRegistry")]
 public class DocumentCacheTargetRegistryTests
 {
+    private const string SensitiveProviderFailure =
+        "Server=prod-db.example.com;Database=StudentRecords;Password=Secret123;Host=ProdHost;";
+
     private static readonly DocumentCacheTargetKey _defaultTargetKey = DocumentCacheTargetKey.Create(null, 1);
 
     private static readonly DocumentCacheTargetKey _tenantTargetKey = DocumentCacheTargetKey.Create(
@@ -184,6 +189,49 @@ public class DocumentCacheTargetRegistryTests
                 .Should()
                 .BeSameAs(initialContext);
             fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
+        }
+
+        [Test]
+        public async Task It_logs_CMS_refresh_failures_without_raw_exception_details()
+        {
+            RecordingLogger<DocumentCacheTargetRegistry> logger = new();
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)], Logger: logger);
+            fixture.DataStoreProvider.QueueLoadFailure(
+                "TenantA",
+                new InvalidOperationException(SensitiveProviderFailure)
+            );
+
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+            LogRecord record = logger.Records.Single(record =>
+                record.Message.Contains("registry refresh failed", StringComparison.Ordinal)
+            );
+            record.Level.Should().Be(LogLevel.Debug);
+            record.Exception.Should().BeNull();
+            record
+                .Properties["FailureCategory"]
+                .Should()
+                .Be(DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure);
+            record.Properties["ExceptionType"].Should().Be(nameof(InvalidOperationException));
+            AssertLogDoesNotContainSensitiveProviderFailure(record);
+        }
+
+        private static void AssertLogDoesNotContainSensitiveProviderFailure(LogRecord record)
+        {
+            string renderedLogText = string.Join(
+                "\n",
+                [
+                    record.Message,
+                    .. record.Properties.Values.Select(value => value?.ToString() ?? string.Empty),
+                ]
+            );
+            renderedLogText.Should().NotContain("prod-db.example.com");
+            renderedLogText.Should().NotContain("StudentRecords");
+            renderedLogText.Should().NotContain("Secret123");
+            renderedLogText.Should().NotContain("ProdHost");
+            renderedLogText.Should().NotContain("Password");
+            renderedLogText.Should().NotContain("Server=");
+            renderedLogText.Should().NotContain("Database=");
         }
 
         [Test]
@@ -449,17 +497,23 @@ public class DocumentCacheTargetRegistryTests
 
         public DocumentCacheTargetRegistry Registry { get; }
 
-        public RegistryFixture(IReadOnlyList<(string TenantKey, long DataStoreId)> Targets)
-            : this(CreateOptions(Targets)) { }
+        public RegistryFixture(
+            IReadOnlyList<(string TenantKey, long DataStoreId)> Targets,
+            ILogger<DocumentCacheTargetRegistry>? Logger = null
+        )
+            : this(CreateOptions(Targets), Logger) { }
 
-        public RegistryFixture(DocumentCacheOptions options)
+        public RegistryFixture(
+            DocumentCacheOptions options,
+            ILogger<DocumentCacheTargetRegistry>? Logger = null
+        )
         {
             Registry = new DocumentCacheTargetRegistry(
                 DataStoreProvider,
                 ContextBuilder,
                 Options.Create(options),
                 TimeProvider,
-                NullLogger<DocumentCacheTargetRegistry>.Instance
+                Logger ?? NullLogger<DocumentCacheTargetRegistry>.Instance
             );
         }
     }

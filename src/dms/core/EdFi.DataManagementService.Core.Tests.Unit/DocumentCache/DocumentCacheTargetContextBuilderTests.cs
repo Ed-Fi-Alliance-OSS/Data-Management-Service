@@ -5,8 +5,10 @@
 
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -19,6 +21,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 public class DocumentCacheTargetContextBuilderTests
 {
     private const string TargetInput = "Server=hidden;Database=hidden;Password=hidden;";
+
+    private const string SensitiveProviderFailure =
+        "Server=prod-db.example.com;Database=StudentRecords;Password=Secret123;Host=ProdHost;";
 
     private static readonly DocumentCacheTargetKey _targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
 
@@ -390,6 +395,116 @@ public class DocumentCacheTargetContextBuilderTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Provider_Operation_Logging : DocumentCacheTargetContextBuilderTests
+    {
+        [Test]
+        public async Task It_logs_sanitized_failure_categories_without_raw_exceptions_for_context_observation_failures()
+        {
+            RecordingLogger<DocumentCacheTargetContextBuilder> logger = new();
+            BuilderFixture fixture = new(Logger: logger);
+            InvalidOperationException sensitiveException = SensitiveException();
+            A.CallTo(() =>
+                    fixture.FingerprintReader.ReadFingerprintAsync(TargetInput, A<CancellationToken>._)
+                )
+                .Returns(
+                    Task.FromException<DocumentCachePhysicalSourceFingerprintReadResult>(sensitiveException)
+                );
+            A.CallTo(() => fixture.LifecycleReader.ReadLifecycleAsync(TargetInput, A<CancellationToken>._))
+                .Returns(Task.FromException<DocumentCacheLifecycleReadResult>(sensitiveException));
+            A.CallTo(() =>
+                    fixture.InventoryValidator.ValidateInventoryAsync(TargetInput, A<CancellationToken>._)
+                )
+                .Returns(
+                    Task.FromException<DocumentCacheProviderInventoryValidationResult>(sensitiveException)
+                );
+
+            await fixture.Builder.BuildAsync(_targetKey, fixture.ResolvedDataStore, _generation);
+
+            logger.Records.Should().HaveCount(3);
+            logger
+                .Records.Select(record => record.Properties["FailureCategory"])
+                .Should()
+                .Equal(
+                    DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,
+                    DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+                    DocumentCacheTargetDiagnosticCategory.InventoryFailure
+                );
+            AssertProviderFailureLogsAreSanitized(logger.Records);
+        }
+
+        [Test]
+        public async Task It_logs_sanitized_failure_categories_without_raw_exceptions_for_prerequisite_failures()
+        {
+            RecordingLogger<DocumentCacheTargetContextBuilder> logger = new();
+            BuilderFixture fixture = new(
+                LifecycleResult: DocumentCacheLifecycleReadResult.Success(_disabledLifecycle),
+                Logger: logger
+            );
+            A.CallTo(() =>
+                    fixture.PrerequisiteValidator.ValidateInitializationAsync(
+                        TargetInput,
+                        _disabledLifecycle,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(
+                    Task.FromException<DocumentCacheProviderPrerequisiteValidationResult>(
+                        SensitiveException()
+                    )
+                );
+
+            DocumentCacheTargetContextBuildResult result = await fixture.Builder.BuildAsync(
+                _targetKey,
+                fixture.ResolvedDataStore,
+                _generation
+            );
+
+            logger.Records.Should().ContainSingle();
+            logger
+                .Records.Single()
+                .Properties["FailureCategory"]
+                .Should()
+                .Be(DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed);
+            result
+                .Observation.Diagnostics.Select(diagnostic => diagnostic.Category)
+                .Should()
+                .Contain(DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed);
+            AssertProviderFailureLogsAreSanitized(logger.Records);
+        }
+
+        private static InvalidOperationException SensitiveException() => new(SensitiveProviderFailure);
+
+        private static void AssertProviderFailureLogsAreSanitized(IReadOnlyList<LogRecord> records)
+        {
+            foreach (LogRecord record in records)
+            {
+                record.Level.Should().Be(LogLevel.Debug);
+                record.Exception.Should().BeNull();
+                record.Properties["ExceptionType"].Should().Be(nameof(InvalidOperationException));
+            }
+
+            string renderedLogText = string.Join(
+                "\n",
+                records
+                    .Select(record => record.Message)
+                    .Concat(
+                        records.SelectMany(record =>
+                            record.Properties.Values.Select(value => value?.ToString() ?? string.Empty)
+                        )
+                    )
+            );
+            renderedLogText.Should().NotContain("prod-db.example.com");
+            renderedLogText.Should().NotContain("StudentRecords");
+            renderedLogText.Should().NotContain("Secret123");
+            renderedLogText.Should().NotContain("ProdHost");
+            renderedLogText.Should().NotContain("Password");
+            renderedLogText.Should().NotContain("Server=");
+            renderedLogText.Should().NotContain("Database=");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Target_Context_Builder_Contracts : DocumentCacheTargetContextBuilderTests
     {
         [Test]
@@ -499,7 +614,8 @@ public class DocumentCacheTargetContextBuilderTests
             DocumentCachePhysicalSourceFingerprintReadResult? FingerprintResult = null,
             DocumentCacheLifecycleReadResult? LifecycleResult = null,
             DocumentCacheProviderInventoryValidationResult? InventoryResult = null,
-            DocumentCacheProviderPrerequisiteValidationResult? PrerequisiteResult = null
+            DocumentCacheProviderPrerequisiteValidationResult? PrerequisiteResult = null,
+            ILogger<DocumentCacheTargetContextBuilder>? Logger = null
         )
         {
             ResolvedDataStore = DocumentCacheResolvedTargetDataStore.From(DataStore ?? CreateDataStore());
@@ -548,7 +664,7 @@ public class DocumentCacheTargetContextBuilderTests
                 LifecycleReader,
                 InventoryValidator,
                 PrerequisiteValidator,
-                NullLogger<DocumentCacheTargetContextBuilder>.Instance
+                Logger ?? NullLogger<DocumentCacheTargetContextBuilder>.Instance
             );
         }
     }

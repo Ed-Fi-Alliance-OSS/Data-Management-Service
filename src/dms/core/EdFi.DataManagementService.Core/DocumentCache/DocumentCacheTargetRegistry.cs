@@ -221,15 +221,21 @@ public sealed class DocumentCacheTargetRegistry(
             }
             catch (Exception exception)
             {
-                logger.LogDebug(
-                    exception,
-                    "DocumentCache target registry refresh failed for a configured tenant"
-                );
+                LogTenantRefreshFailure(exception);
                 refreshResults.Add(tenantKey, TenantRefreshResult.Failure());
             }
         }
 
         return refreshResults.ToImmutable();
+    }
+
+    private void LogTenantRefreshFailure(Exception exception)
+    {
+        logger.LogDebug(
+            "DocumentCache target registry refresh failed for category {FailureCategory}; exception type {ExceptionType}",
+            DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure,
+            exception.GetType().Name
+        );
     }
 
     private async Task<TargetState> ResolveAfterSuccessfulTenantRefreshAsync(

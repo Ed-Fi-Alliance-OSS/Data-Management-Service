@@ -78,12 +78,21 @@ internal static class DocumentCacheLifecycleReaderSupport
         }
         catch (Exception exception)
         {
-            logger.LogDebug(exception, "DocumentCache lifecycle read failed while reading provider metadata");
+            LogLifecycleReadFailure(logger, exception);
             return DocumentCacheLifecycleReadResult.Failure(
                 DocumentCacheLifecycleReadStatus.Unreadable,
                 "dms.DocumentCacheState is unreadable."
             );
         }
+    }
+
+    private static void LogLifecycleReadFailure(ILogger logger, Exception exception)
+    {
+        logger.LogDebug(
+            "DocumentCache lifecycle read failed while reading provider metadata for category {FailureCategory}; exception type {ExceptionType}",
+            DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+            exception.GetType().Name
+        );
     }
 
     private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
