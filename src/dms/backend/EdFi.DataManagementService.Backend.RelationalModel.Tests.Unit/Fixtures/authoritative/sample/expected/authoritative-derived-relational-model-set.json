@@ -3329,6 +3329,18 @@
       ]
     },
     {
+      "name": "UX_AcademicWeek_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "AcademicWeek"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_AcademicWeek_NK",
       "table": {
         "schema": "edfi",
@@ -3415,6 +3427,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_AccountabilityRating_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "AccountabilityRating"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -3515,6 +3539,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Assessment_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Assessment"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -3655,6 +3691,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_AssessmentAdministration_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentAdministration"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -3815,6 +3863,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_AssessmentAdministrationParticipation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentAdministrationParticipation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -4059,6 +4119,18 @@
       ]
     },
     {
+      "name": "UX_AssessmentBatteryPart_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentBatteryPart"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_AssessmentBatteryPart_NK",
       "table": {
         "schema": "edfi",
@@ -4261,6 +4333,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_AssessmentItem_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentItem"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -4810,6 +4894,18 @@
       ]
     },
     {
+      "name": "UX_AssessmentScoreRangeLearningStandard_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentScoreRangeLearningStandard"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_AssessmentScoreRangeLearningStandard_NK",
       "table": {
         "schema": "edfi",
@@ -4953,6 +5049,18 @@
       ]
     },
     {
+      "name": "UX_BalanceSheetDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "BalanceSheetDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_BalanceSheetDimension_NK",
       "table": {
         "schema": "edfi",
@@ -5076,6 +5184,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_BellSchedule_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "BellSchedule"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -5306,6 +5426,18 @@
       ]
     },
     {
+      "name": "UX_Calendar_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Calendar"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Calendar_NK",
       "table": {
         "schema": "edfi",
@@ -5383,6 +5515,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_CalendarDate_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CalendarDate"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -5688,6 +5832,18 @@
       ]
     },
     {
+      "name": "UX_ChartOfAccount_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ChartOfAccount"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_ChartOfAccount_NK",
       "table": {
         "schema": "edfi",
@@ -5813,6 +5969,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ClassPeriod_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ClassPeriod"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -5967,6 +6135,18 @@
       ]
     },
     {
+      "name": "UX_Cohort_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Cohort"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Cohort_NK",
       "table": {
         "schema": "edfi",
@@ -6092,6 +6272,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_CommunityOrganization_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityOrganization"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -6697,6 +6889,18 @@
       ]
     },
     {
+      "name": "UX_CommunityProvider_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProvider"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_CommunityProvider_NK",
       "table": {
         "schema": "edfi",
@@ -7287,6 +7491,18 @@
       ]
     },
     {
+      "name": "UX_CommunityProviderLicense_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProviderLicense"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_CommunityProviderLicense_NK",
       "table": {
         "schema": "edfi",
@@ -7347,6 +7563,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_CompetencyObjective_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CompetencyObjective"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -7450,6 +7678,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Contact_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Contact"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -8144,6 +8384,18 @@
       ]
     },
     {
+      "name": "UX_Course_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Course"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Course_NK",
       "table": {
         "schema": "edfi",
@@ -8550,6 +8802,18 @@
       ]
     },
     {
+      "name": "UX_CourseOffering_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CourseOffering"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_CourseOffering_NK",
       "table": {
         "schema": "edfi",
@@ -8906,6 +9170,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_CourseTranscript_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CourseTranscript"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -9389,6 +9665,18 @@
       ]
     },
     {
+      "name": "UX_Credential_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Credential"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Credential_NK",
       "table": {
         "schema": "edfi",
@@ -9590,6 +9878,18 @@
       ]
     },
     {
+      "name": "UX_CrisisEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "CrisisEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_CrisisEvent_NK",
       "table": {
         "schema": "edfi",
@@ -9648,6 +9948,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DescriptorMapping_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "DescriptorMapping"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -9815,6 +10127,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DisciplineAction_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "DisciplineAction"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -10057,6 +10381,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_DisciplineIncident_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "DisciplineIncident"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -10321,6 +10657,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EducationContent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationContent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -10764,6 +11112,18 @@
       ]
     },
     {
+      "name": "UX_EducationOrganizationInterventionPrescriptionAsso_20e153bc2a",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationInterventionPrescriptionAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_EducationOrganizationInterventionPrescriptionAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -10822,6 +11182,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EducationOrganizationNetwork_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationNetwork"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -11051,6 +11423,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EducationOrganizationNetworkAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationNetworkAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -11479,6 +11863,18 @@
       ]
     },
     {
+      "name": "UX_EducationOrganizationPeerAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationPeerAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_EducationOrganizationPeerAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -11538,6 +11934,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EducationServiceCenter_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationServiceCenter"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -12161,6 +12569,18 @@
       ]
     },
     {
+      "name": "UX_EvaluationRubricDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "EvaluationRubricDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_EvaluationRubricDimension_NK",
       "table": {
         "schema": "edfi",
@@ -12236,6 +12656,18 @@
       ]
     },
     {
+      "name": "UX_FeederSchoolAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "FeederSchoolAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_FeederSchoolAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -12271,6 +12703,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_FunctionDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "FunctionDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -12372,6 +12816,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_FundDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "FundDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -12597,6 +13053,18 @@
       ]
     },
     {
+      "name": "UX_Grade_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Grade"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Grade_NK",
       "table": {
         "schema": "edfi",
@@ -12777,6 +13245,18 @@
       ]
     },
     {
+      "name": "UX_GradebookEntry_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "GradebookEntry"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_GradebookEntry_NK",
       "table": {
         "schema": "edfi",
@@ -12917,6 +13397,18 @@
       ]
     },
     {
+      "name": "UX_GradingPeriod_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "GradingPeriod"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_GradingPeriod_NK",
       "table": {
         "schema": "edfi",
@@ -13019,6 +13511,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_GraduationPlan_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "GraduationPlan"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -13564,6 +14068,18 @@
       ]
     },
     {
+      "name": "UX_Intervention_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Intervention"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Intervention_NK",
       "table": {
         "schema": "edfi",
@@ -14029,6 +14545,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_InterventionPrescription_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionPrescription"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -14509,6 +15037,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_InterventionStudy_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionStudy"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -15090,6 +15630,18 @@
       ]
     },
     {
+      "name": "UX_LearningStandard_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LearningStandard"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_LearningStandard_NK",
       "table": {
         "schema": "edfi",
@@ -15265,6 +15817,18 @@
       ]
     },
     {
+      "name": "UX_LearningStandardEquivalenceAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LearningStandardEquivalenceAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_LearningStandardEquivalenceAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -15432,6 +15996,18 @@
       ]
     },
     {
+      "name": "UX_LocalAccount_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalAccount"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_LocalAccount_NK",
       "table": {
         "schema": "edfi",
@@ -15574,6 +16150,18 @@
       ]
     },
     {
+      "name": "UX_LocalActual_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalActual"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_LocalActual_NK",
       "table": {
         "schema": "edfi",
@@ -15647,6 +16235,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_LocalBudget_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalBudget"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -15751,6 +16351,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_LocalContractedStaff_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalContractedStaff"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -15864,6 +16476,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_LocalEducationAgency_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -16560,6 +17184,18 @@
       ]
     },
     {
+      "name": "UX_LocalEncumbrance_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEncumbrance"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_LocalEncumbrance_NK",
       "table": {
         "schema": "edfi",
@@ -16664,6 +17300,18 @@
       ]
     },
     {
+      "name": "UX_LocalPayroll_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalPayroll"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_LocalPayroll_NK",
       "table": {
         "schema": "edfi",
@@ -16727,6 +17375,18 @@
       ]
     },
     {
+      "name": "UX_Location_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Location"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Location_NK",
       "table": {
         "schema": "edfi",
@@ -16775,6 +17435,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ObjectDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ObjectDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -16929,6 +17601,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ObjectiveAssessment_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ObjectiveAssessment"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -17310,6 +17994,18 @@
       ]
     },
     {
+      "name": "UX_OpenStaffPosition_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "OpenStaffPosition"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_OpenStaffPosition_NK",
       "table": {
         "schema": "edfi",
@@ -17444,6 +18140,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_OperationalUnitDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "OperationalUnitDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -17594,6 +18302,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_OrganizationDepartment_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "OrganizationDepartment"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -18137,6 +18857,18 @@
       ]
     },
     {
+      "name": "UX_Person_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Person"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Person_NK",
       "table": {
         "schema": "edfi",
@@ -18241,6 +18973,18 @@
       ]
     },
     {
+      "name": "UX_PostSecondaryEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "PostSecondaryEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_PostSecondaryEvent_NK",
       "table": {
         "schema": "edfi",
@@ -18312,6 +19056,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_PostSecondaryInstitution_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "PostSecondaryInstitution"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -18931,6 +19687,18 @@
       ]
     },
     {
+      "name": "UX_Program_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Program_NK",
       "table": {
         "schema": "edfi",
@@ -19031,6 +19799,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ProgramDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -19186,6 +19966,18 @@
       ]
     },
     {
+      "name": "UX_ProgramEvaluation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_ProgramEvaluation_NK",
       "table": {
         "schema": "edfi",
@@ -19313,6 +20105,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ProgramEvaluationElement_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluationElement"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -19526,6 +20330,18 @@
       ]
     },
     {
+      "name": "UX_ProgramEvaluationObjective_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluationObjective"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_ProgramEvaluationObjective_NK",
       "table": {
         "schema": "edfi",
@@ -19733,6 +20549,18 @@
       ]
     },
     {
+      "name": "UX_ProjectDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ProjectDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_ProjectDimension_NK",
       "table": {
         "schema": "edfi",
@@ -19888,6 +20716,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ReportCard_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "ReportCard"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -20218,6 +21058,18 @@
       ]
     },
     {
+      "name": "UX_RestraintEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "RestraintEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_RestraintEvent_NK",
       "table": {
         "schema": "edfi",
@@ -20490,6 +21342,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_School_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -21134,6 +21998,18 @@
       ]
     },
     {
+      "name": "UX_SchoolYearType_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolYearType"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_SchoolYearType_NK",
       "table": {
         "schema": "edfi",
@@ -21310,6 +22186,18 @@
       ]
     },
     {
+      "name": "UX_Section_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Section"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Section_NK",
       "table": {
         "schema": "edfi",
@@ -21419,6 +22307,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SectionAttendanceTakenEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SectionAttendanceTakenEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -21764,6 +22664,18 @@
       ]
     },
     {
+      "name": "UX_Session_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Session"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Session_NK",
       "table": {
         "schema": "edfi",
@@ -21920,6 +22832,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SourceDimension_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SourceDimension"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -22086,6 +23010,18 @@
       ]
     },
     {
+      "name": "UX_Staff_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Staff"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Staff_NK",
       "table": {
         "schema": "edfi",
@@ -22160,6 +23096,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StaffAbsenceEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffAbsenceEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -22447,6 +23395,18 @@
       ]
     },
     {
+      "name": "UX_StaffCohortAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffCohortAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StaffCohortAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -22600,6 +23560,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StaffDisciplineIncidentAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffDisciplineIncidentAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -22812,6 +23784,18 @@
       ]
     },
     {
+      "name": "UX_StaffEducationOrganizationAssignmentAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffEducationOrganizationAssignmentAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StaffEducationOrganizationAssignmentAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -22965,6 +23949,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StaffEducationOrganizationContactAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffEducationOrganizationContactAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -23210,6 +24206,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StaffEducationOrganizationEmploymentAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffEducationOrganizationEmploymentAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -23672,6 +24680,18 @@
       ]
     },
     {
+      "name": "UX_StaffLeave_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffLeave"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StaffLeave_NK",
       "table": {
         "schema": "edfi",
@@ -23887,6 +24907,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StaffProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -24121,6 +25153,18 @@
       ]
     },
     {
+      "name": "UX_StaffSchoolAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffSchoolAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StaffSchoolAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -24328,6 +25372,18 @@
       ]
     },
     {
+      "name": "UX_StaffSectionAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffSectionAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StaffSectionAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -24526,6 +25582,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StateEducationAgency_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StateEducationAgency"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -25233,6 +26301,18 @@
       ]
     },
     {
+      "name": "UX_Student_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Student_NK",
       "table": {
         "schema": "edfi",
@@ -25393,6 +26473,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentAcademicRecord_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAcademicRecord"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -25957,6 +27049,18 @@
       ]
     },
     {
+      "name": "UX_StudentAssessment_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessment"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentAssessment_NK",
       "table": {
         "schema": "edfi",
@@ -26139,6 +27243,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentAssessmentEducationOrganizationAssociation_7782db5730",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentEducationOrganizationAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -26480,6 +27596,18 @@
       ]
     },
     {
+      "name": "UX_StudentAssessmentRegistration_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentRegistration"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentAssessmentRegistration_NK",
       "table": {
         "schema": "edfi",
@@ -26692,6 +27820,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentAssessmentRegistrationBatteryPartAssociati_c93e0b5e80",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentRegistrationBatteryPartAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -27177,6 +28317,18 @@
       ]
     },
     {
+      "name": "UX_StudentCTEProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCTEProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentCTEProgramAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -27371,6 +28523,18 @@
       ]
     },
     {
+      "name": "UX_StudentCohortAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCohortAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentCohortAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -27544,6 +28708,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentCompetencyObjective_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCompetencyObjective"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -27799,6 +28975,18 @@
       ]
     },
     {
+      "name": "UX_StudentContactAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentContactAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentContactAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -27901,6 +29089,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentDisciplineIncidentBehaviorAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentDisciplineIncidentBehaviorAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -28112,6 +29312,18 @@
       ]
     },
     {
+      "name": "UX_StudentDisciplineIncidentNonOffenderAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentDisciplineIncidentNonOffenderAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentDisciplineIncidentNonOffenderAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -28237,6 +29449,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentEducationOrganizationAssessmentAccommodati_edec50a71d",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssessmentAccommodation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -28487,6 +29711,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentEducationOrganizationAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -29735,6 +30971,18 @@
       ]
     },
     {
+      "name": "UX_StudentEducationOrganizationResponsibilityAssocia_20da5da2b7",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationResponsibilityAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentEducationOrganizationResponsibilityAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -29864,6 +31112,18 @@
       ]
     },
     {
+      "name": "UX_StudentGradebookEntry_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentGradebookEntry"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentGradebookEntry_NK",
       "table": {
         "schema": "edfi",
@@ -29963,6 +31223,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentHealth_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentHealth"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -30323,6 +31595,18 @@
       ]
     },
     {
+      "name": "UX_StudentHomelessProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentHomelessProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentHomelessProgramAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -30606,6 +31890,18 @@
       ]
     },
     {
+      "name": "UX_StudentInterventionAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentInterventionAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentInterventionAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -30797,6 +32093,18 @@
       ]
     },
     {
+      "name": "UX_StudentInterventionAttendanceEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentInterventionAttendanceEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentInterventionAttendanceEvent_NK",
       "table": {
         "schema": "edfi",
@@ -30925,6 +32233,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentLanguageInstructionProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentLanguageInstructionProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -31271,6 +32591,18 @@
       ]
     },
     {
+      "name": "UX_StudentMigrantEducationProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentMigrantEducationProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentMigrantEducationProgramAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -31536,6 +32868,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentNeglectedOrDelinquentProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentNeglectedOrDelinquentProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -31896,6 +33240,18 @@
       ]
     },
     {
+      "name": "UX_StudentProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentProgramAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -32146,6 +33502,18 @@
       ]
     },
     {
+      "name": "UX_StudentProgramAttendanceEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentProgramAttendanceEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentProgramAttendanceEvent_NK",
       "table": {
         "schema": "edfi",
@@ -32291,6 +33659,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentProgramEvaluation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentProgramEvaluation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -32813,6 +34193,18 @@
       ]
     },
     {
+      "name": "UX_StudentSchoolAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentSchoolAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -33061,6 +34453,18 @@
       ]
     },
     {
+      "name": "UX_StudentSchoolAttendanceEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAttendanceEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentSchoolAttendanceEvent_NK",
       "table": {
         "schema": "edfi",
@@ -33190,6 +34594,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentSchoolFoodServiceProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolFoodServiceProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -33437,6 +34853,18 @@
       ]
     },
     {
+      "name": "UX_StudentSection504ProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSection504ProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentSection504ProgramAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -33645,6 +35073,18 @@
       ]
     },
     {
+      "name": "UX_StudentSectionAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSectionAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentSectionAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -33833,6 +35273,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentSectionAttendanceEvent_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSectionAttendanceEvent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -34040,6 +35492,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentSpecialEducationProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSpecialEducationProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -34577,6 +36041,18 @@
       ]
     },
     {
+      "name": "UX_StudentSpecialEducationProgramEligibilityAssociat_3ce9ec7e47",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSpecialEducationProgramEligibilityAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_StudentSpecialEducationProgramEligibilityAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -34717,6 +36193,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentTitleIPartAProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentTitleIPartAProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -34934,6 +36422,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentTransportation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentTransportation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -35177,6 +36677,18 @@
       ]
     },
     {
+      "name": "UX_Survey_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "Survey"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_Survey_NK",
       "table": {
         "schema": "edfi",
@@ -35277,6 +36789,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SurveyCourseAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyCourseAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -35382,6 +36906,18 @@
       ]
     },
     {
+      "name": "UX_SurveyProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_SurveyProgramAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -35469,6 +37005,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SurveyQuestion_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyQuestion"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -35601,6 +37149,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SurveyQuestionResponse_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyQuestionResponse"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -35808,6 +37368,18 @@
       ]
     },
     {
+      "name": "UX_SurveyResponse_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyResponse"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_SurveyResponse_NK",
       "table": {
         "schema": "edfi",
@@ -35912,6 +37484,18 @@
       ]
     },
     {
+      "name": "UX_SurveyResponseEducationOrganizationTargetAssociat_8fbd981297",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyResponseEducationOrganizationTargetAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_SurveyResponseEducationOrganizationTargetAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -36001,6 +37585,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SurveyResponseStaffTargetAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveyResponseStaffTargetAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -36102,6 +37698,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SurveySection_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySection"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -36212,6 +37820,18 @@
       ]
     },
     {
+      "name": "UX_SurveySectionAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_SurveySectionAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -36276,6 +37896,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SurveySectionResponse_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionResponse"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -36398,6 +38030,18 @@
       ]
     },
     {
+      "name": "UX_SurveySectionResponseEducationOrganizationTargetA_b928398df7",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionResponseEducationOrganizationTargetAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "IX_SurveySectionResponseStaffTargetAssociation_ContentVersion",
       "table": {
         "schema": "edfi",
@@ -36478,6 +38122,18 @@
       ]
     },
     {
+      "name": "UX_SurveySectionResponseStaffTargetAssociation_DocumentUuid",
+      "table": {
+        "schema": "edfi",
+        "name": "SurveySectionResponseStaffTargetAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
+      ]
+    },
+    {
       "name": "UX_SurveySectionResponseStaffTargetAssociation_NK",
       "table": {
         "schema": "edfi",
@@ -36512,6 +38168,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Bus_DocumentUuid",
+      "table": {
+        "schema": "sample",
+        "name": "Bus"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -36614,6 +38282,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_BusRoute_DocumentUuid",
+      "table": {
+        "schema": "sample",
+        "name": "BusRoute"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -37530,6 +39210,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentArtProgramAssociation_DocumentUuid",
+      "table": {
+        "schema": "sample",
+        "name": "StudentArtProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -38687,6 +40379,18 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_StudentGraduationPlanAssociation_DocumentUuid",
+      "table": {
+        "schema": "sample",
+        "name": "StudentGraduationPlanAssociation"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentUuid"
       ]
     },
     {
@@ -72886,6 +74590,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "Assessment_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -72975,6 +74735,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_AssessmentAdministration_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_AssessmentAdministration_NK",
@@ -73574,6 +75341,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ProgramEducationOrganizationId_Unified",
               "kind": "Scalar",
               "type": {
@@ -74005,6 +75828,13 @@
             }
           ],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ProgramEvaluationElement_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_ProgramEvaluationElement_NK",
@@ -74660,6 +76490,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "StudentUniqueId_Unified",
               "kind": "Scalar",
               "type": {
@@ -74957,6 +76843,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentAssessmentRegistration_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_StudentAssessmentRegistration_NK",
@@ -75741,6 +77634,62 @@
               }
             },
             {
+              "name": "CreatedAt",
+              "kind": "CreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CreatedByOwnershipTokenId",
+              "kind": "CreatedByOwnershipTokenId",
+              "type": null,
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "DocumentUuid",
+              "kind": "DocumentUuid",
+              "type": null,
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityLastModifiedAt",
+              "kind": "MirroredIdentityLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "IdentityVersion",
+              "kind": "MirroredIdentityVersion",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "SchoolId_Unified",
               "kind": "Scalar",
               "type": {
@@ -76226,6 +78175,13 @@
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociation_DocumentUuid",
+              "columns": [
+                "DocumentUuid"
+              ]
+            },
             {
               "kind": "Unique",
               "name": "UX_StudentSchoolAssociation_NK",

@@ -62,6 +62,34 @@ public static class RelationalNameConventions
     public static DbColumnName ContentLastModifiedAtColumnName { get; } = new("ContentLastModifiedAt");
 
     /// <summary>
+    /// The synthesized root-table column that mirrors <c>dms.Document.DocumentUuid</c> — the public API id —
+    /// for the row.
+    /// </summary>
+    public static DbColumnName DocumentUuidColumnName { get; } = new("DocumentUuid");
+
+    /// <summary>
+    /// The synthesized root-table column that mirrors <c>dms.Document.IdentityVersion</c> for the row.
+    /// </summary>
+    public static DbColumnName IdentityVersionColumnName { get; } = new("IdentityVersion");
+
+    /// <summary>
+    /// The synthesized root-table column that mirrors <c>dms.Document.IdentityLastModifiedAt</c> for the row.
+    /// </summary>
+    public static DbColumnName IdentityLastModifiedAtColumnName { get; } = new("IdentityLastModifiedAt");
+
+    /// <summary>
+    /// The synthesized root-table column that mirrors <c>dms.Document.CreatedAt</c> for the row.
+    /// </summary>
+    public static DbColumnName CreatedAtColumnName { get; } = new("CreatedAt");
+
+    /// <summary>
+    /// The synthesized root-table column that mirrors <c>dms.Document.CreatedByOwnershipTokenId</c> for the
+    /// row.
+    /// </summary>
+    public static DbColumnName CreatedByOwnershipTokenIdColumnName { get; } =
+        new("CreatedByOwnershipTokenId");
+
+    /// <summary>
     /// The standard stable row-identity column name used by persisted collection and extension child tables.
     /// </summary>
     public static DbColumnName CollectionItemIdColumnName { get; } = new("CollectionItemId");

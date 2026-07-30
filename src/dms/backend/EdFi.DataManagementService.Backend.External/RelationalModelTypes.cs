@@ -102,6 +102,33 @@ public enum ColumnKind
     /// triggers and excluded from client-writable projections.
     /// </summary>
     MirroredContentLastModifiedAt,
+
+    /// <summary>
+    /// A synthesized root-table column that mirrors <c>dms.Document.DocumentUuid</c> (the public API id).
+    /// Trigger-populated during the dual-write migration window; no source JSONPath, not client-writable.
+    /// </summary>
+    DocumentUuid,
+
+    /// <summary>
+    /// A synthesized root-table column that mirrors <c>dms.Document.IdentityVersion</c>.
+    /// </summary>
+    MirroredIdentityVersion,
+
+    /// <summary>
+    /// A synthesized root-table column that mirrors <c>dms.Document.IdentityLastModifiedAt</c>.
+    /// </summary>
+    MirroredIdentityLastModifiedAt,
+
+    /// <summary>
+    /// A synthesized root-table column that mirrors <c>dms.Document.CreatedAt</c>.
+    /// </summary>
+    CreatedAt,
+
+    /// <summary>
+    /// A synthesized root-table column that mirrors <c>dms.Document.CreatedByOwnershipTokenId</c>
+    /// (nullable; supports ownership-based authorization).
+    /// </summary>
+    CreatedByOwnershipTokenId,
 }
 
 /// <summary>

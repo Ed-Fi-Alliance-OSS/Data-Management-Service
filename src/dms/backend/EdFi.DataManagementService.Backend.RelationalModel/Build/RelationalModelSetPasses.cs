@@ -48,6 +48,11 @@ public static class RelationalModelSetPasses
             new ArrayUniquenessConstraintPass(),
             new StableCollectionConstraintPass(),
             new DescriptorForeignKeyConstraintPass(),
+            // Synthesize the dms.Document metadata columns (DocumentUuid, IdentityVersion,
+            // IdentityLastModifiedAt, CreatedAt, CreatedByOwnershipTokenId) and the per-root
+            // UX_<Table>_DocumentUuid unique constraint. Must precede constraint dialect hashing
+            // (the unique constraint participates) and index/trigger inventory derivation.
+            new DeriveDocumentMetadataColumnsPass(),
             new ApplyConstraintDialectHashingPass(),
             new ValidateForeignKeyStorageInvariantPass(),
             // Synthesize the change-version mirror columns on resource roots before index/trigger
