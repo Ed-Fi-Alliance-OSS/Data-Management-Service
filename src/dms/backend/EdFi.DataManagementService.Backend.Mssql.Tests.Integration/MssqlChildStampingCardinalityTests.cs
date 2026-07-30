@@ -27,6 +27,16 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
 
+    private static readonly DateTime RewoundContentLastModifiedAt = new(
+        2000,
+        1,
+        1,
+        0,
+        0,
+        0,
+        DateTimeKind.Utc
+    );
+
     private MssqlGeneratedDdlTestDatabase _database = null!;
 
     [OneTimeSetUp]
@@ -66,9 +76,9 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     {
         var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
         await InsertSchoolAsync(schoolDocumentId, schoolId: 170);
+        await RewindContentLastModifiedAtAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         // Multiple child rows for the same root in one INSERT statement exercise the statement-level
         // dedupe — the seed helpers insert one row per statement, so this is the only coverage of a
@@ -110,9 +120,9 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     public async Task It_should_allocate_one_content_version_for_a_multi_row_child_update()
     {
         var schoolDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 100, addressCount: 3);
+        await RewindContentLastModifiedAtAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         var changedRows = await _database.ExecuteNonQueryAsync(
             """
@@ -150,9 +160,9 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     public async Task It_should_allocate_one_content_version_for_a_multi_row_collection_aligned_extension_update()
     {
         var schoolDocumentId = await SeedSchoolWithExtensionAddressesAsync(schoolId: 110, addressCount: 3);
+        await RewindContentLastModifiedAtAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         var changedRows = await _database.ExecuteNonQueryAsync(
             """
@@ -214,7 +224,6 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         var beforeOld = await ReadStampPairAsync(oldRootDocumentId);
         var beforeNew = await ReadStampPairAsync(newRootDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         // Reparent both child rows from the old root to the new root in one statement.
         var changedRows = await _database.ExecuteNonQueryAsync(
@@ -253,7 +262,6 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         var firstRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 140, addressCount: 2);
         var secondRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 141, addressCount: 2);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         // One statement changes child rows belonging to two different roots.
         var changedRows = await _database.ExecuteNonQueryAsync(
@@ -288,9 +296,9 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     public async Task It_should_allocate_one_content_version_for_a_multi_row_child_delete()
     {
         var schoolDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 150, addressCount: 3);
+        await RewindContentLastModifiedAtAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         var deletedRows = await _database.ExecuteNonQueryAsync(
             """
@@ -598,16 +606,23 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         );
     }
 
-    private async Task DelayForDistinctTimestampsAsync()
+    private async Task RewindContentLastModifiedAtAsync(long documentId)
     {
-        // Server-side delay so a post-write ContentLastModifiedAt is strictly greater than the seed
-        // stamp, letting assertions use BeAfter instead of the weaker BeOnOrAfter.
-        //
-        // 50 ms rather than the PostgreSQL twin's 20 ms: WAITFOR DELAY is quantized to the scheduler
-        // tick, so a 20 ms request can realize as little as ~16 ms, which is too thin to guarantee
-        // sysutcdatetime() advances between the seed and the post-write stamp. Every other SQL Server
-        // test that needs a distinct stamp uses 50 ms; keep this in step with them.
-        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+        // Use a deterministic pre-operation stamp instead of depending on hosted-runner clock ticks
+        // between the seed writes and the write being tested.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [dms].[Document]
+            SET [ContentLastModifiedAt] = @contentLastModifiedAt
+            WHERE [DocumentId] = @documentId;
+
+            UPDATE [edfi].[School]
+            SET [ContentLastModifiedAt] = @contentLastModifiedAt
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@contentLastModifiedAt", RewoundContentLastModifiedAt),
+            new SqlParameter("@documentId", documentId)
+        );
     }
 
     private sealed record StampPair(StampValues Document, StampValues Mirror);
