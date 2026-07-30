@@ -442,10 +442,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
+            # Asserted as the EXACT line, not by wildcard: the claim is that only the legacy token span
+            # changes and everything else - the raw value's leading space, the wrapper quote, and the
+            # trailing comment - survives byte for byte. Wildcards would pass even if surrounding bytes
+            # moved. (The `export ` prefix is dropped because Write-DerivedEnvFile rewrites the line
+            # under the canonical key, which Compose treats identically.)
             $derivedLine = @([System.IO.File]::ReadAllLines($result) | Where-Object { $_ -like '*DMS_CONFIG_DATABASE_CONNECTION_STRING*' })[0]
-            $derivedLine | Should -BeLike '*database=${DMS_CONFIG_DATABASE_NAME};*' -Because "the legacy token must be migrated to the seam alias"
-            $derivedLine | Should -BeLike '*"host=*;"*' -Because "the authored outer quote is preserved"
-            $derivedLine | Should -BeLike '*# cms' -Because "the trailing comment is preserved"
+            $derivedLine | Should -BeExactly 'DMS_CONFIG_DATABASE_CONNECTION_STRING= "host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};" # cms'
 
             # And it must RENDER against the dedicated database with the real password intact.
             (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
@@ -656,6 +659,78 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 $result | Should -Not -Be $basePath
             }
             finally { Remove-Item Env:\DMS_CONFIG_DATABASE_CONNECTION_STRING -ErrorAction SilentlyContinue }
+        }
+    }
+
+    # The resolver and the validator run back to back on the start path, so they must agree about what
+    # the topology marker says. Sourcing it from the legacy parser in the validator made them disagree:
+    # the resolver could early-return an already-correct separate-mode file and the validator would then
+    # reject it as shared mode.
+    Context "the marker is read identically by the resolver and the validator (DMS-1270)" {
+        BeforeAll {
+            $script:markerConnectionString = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+        }
+
+        It "early-returns an already-correct separate file whose marker is spelled '<_>', then passes validation" -ForEach @(
+            'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true'
+            'export DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = "true"'
+            '  DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE="true" # topology'
+            "export DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = 'true'"
+        ) {
+            $basePath = Join-Path $script:work ".env.marker-$([Guid]::NewGuid().ToString('N'))"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                $_,
+                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice',
+                $script:markerConnectionString
+            ) -join "`n") -NoNewline
+
+            # Nothing needs changing, so the source file is handed straight to Compose ...
+            Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work |
+                Should -Be $basePath
+
+            # ... and the validator must read the same marker from that same file.
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $basePath -DatabaseEngine "postgresql" } |
+                Should -Not -Throw
+        }
+
+        It "treats a case-variant marker value as shared mode rather than a topology declaration" {
+            # The marker is written by this design as exactly "true" or "false". A hand-edited case
+            # variant is not a declaration, so it must not silently redirect CMS to the dedicated
+            # database; here shared mode is validated and the dedicated target is correctly rejected.
+            $basePath = Join-Path $script:work ".env.marker-case"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=TRUE',
+                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice',
+                $script:markerConnectionString
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $basePath -DatabaseEngine "postgresql" } |
+                Should -Throw "*topology mismatch*"
+        }
+
+        It "ignores an ambient marker value entirely" {
+            # A stray shell variable of the marker's name must not decide which mode is validated. The
+            # file below is shared mode, so an ambient "true" must not make the validator expect the
+            # dedicated database.
+            $basePath = Join-Path $script:work ".env.marker-ambient"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                $script:markerConnectionString
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE", "true")
+            try {
+                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $basePath -DatabaseEngine "postgresql" } |
+                    Should -Not -Throw -Because "the marker is read from the file's own declaration, never from the environment"
+            }
+            finally { Remove-Item Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE -ErrorAction SilentlyContinue }
         }
     }
 
