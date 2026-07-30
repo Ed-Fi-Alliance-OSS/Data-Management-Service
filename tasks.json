@@ -170,7 +170,7 @@
       "rg -n \"DocumentCache.*Diagnostic|Projection.*Diagnostic\" src/dms",
       "dotnet csharpier format src/dms/core src/dms/frontend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "administrative-contracts",

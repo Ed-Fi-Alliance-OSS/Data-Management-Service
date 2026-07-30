@@ -264,6 +264,18 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        [Category("DocumentCacheDiagnostics")]
+        public void It_resolves_the_DocumentCache_diagnostic_snapshot_provider_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDiagnosticSnapshotProvider>()
+                .Should()
+                .BeOfType<DocumentCacheDiagnosticSnapshotProvider>();
+        }
+
+        [Test]
         public void It_uses_direct_typed_relational_repository_registrations()
         {
             var services = CreateServiceCollection("postgresql");
@@ -474,6 +486,18 @@ public class WebApplicationBuilderExtensionsTests
                 .GetRequiredService<IDocumentCacheTargetRegistry>()
                 .Should()
                 .BeOfType<DocumentCacheTargetRegistry>();
+        }
+
+        [Test]
+        [Category("DocumentCacheDiagnostics")]
+        public void It_resolves_the_DocumentCache_diagnostic_snapshot_provider_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheDiagnosticSnapshotProvider>()
+                .Should()
+                .BeOfType<DocumentCacheDiagnosticSnapshotProvider>();
         }
 
         [Test]
