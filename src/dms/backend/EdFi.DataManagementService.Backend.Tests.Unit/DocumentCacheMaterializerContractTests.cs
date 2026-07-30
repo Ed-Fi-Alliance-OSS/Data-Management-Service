@@ -226,6 +226,41 @@ public class Given_DocumentCacheMaterializerContract
     }
 
     [Test]
+    public void It_sanitizes_diagnostic_keys_in_exception_messages()
+    {
+        var metadata = new DocumentCacheMaterializerFailureMetadata(
+            new DocumentCacheProjectionTargetKey("tenant-a\r\nFORGED!", new DataStoreId(7)),
+            new MappingSetKey("hash\r\nFORGED!", SqlDialect.Pgsql, "v1\r\nFORGED!"),
+            DocumentCacheMaterializationPurpose.DurableWorkProjection,
+            documentId: 123
+        );
+
+        var projectionException = new DocumentCacheProjectionProcessingException(
+            DocumentCacheProjectionProcessingFailureReason.DocumentJsonContainsEtag,
+            metadata
+        );
+        var mappingException = new DocumentCacheTargetMappingException(
+            DocumentCacheTargetMappingFailureReason.ReadPlanMissing,
+            metadata
+        );
+
+        projectionException
+            .Message.Should()
+            .Contain("tenant-aFORGED/7")
+            .And.Contain("hashFORGED/Pgsql/v1FORGED")
+            .And.NotContain("\r")
+            .And.NotContain("\n")
+            .And.NotContain("!");
+        mappingException
+            .Message.Should()
+            .Contain("tenant-aFORGED/7")
+            .And.Contain("hashFORGED/Pgsql/v1FORGED")
+            .And.NotContain("\r")
+            .And.NotContain("\n")
+            .And.NotContain("!");
+    }
+
+    [Test]
     public void It_keeps_cache_work_lifecycle_authorization_profile_and_kafka_services_out_of_the_runtime_boundary()
     {
         var constructor = typeof(DocumentCacheMaterializer)

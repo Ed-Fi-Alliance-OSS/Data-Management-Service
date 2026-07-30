@@ -82,7 +82,12 @@ public sealed record DocumentCacheMaterializationTargetContext
         MappingSet mappingSet,
         DocumentCacheMaterializationTargetValidation targetValidation
     )
-        : this(targetKey, mappingSet, targetValidation, targetDataStore: null) { }
+    {
+        TargetKey = targetKey ?? throw new ArgumentNullException(nameof(targetKey));
+        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        TargetValidation = RequireValidated(targetValidation, nameof(targetValidation));
+        TargetDataStore = null;
+    }
 
     public DocumentCacheMaterializationTargetContext(
         DocumentCacheProjectionTargetKey targetKey,
@@ -95,19 +100,6 @@ public sealed record DocumentCacheMaterializationTargetContext
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         TargetValidation = RequireValidated(targetValidation, nameof(targetValidation));
         TargetDataStore = new DocumentCacheMaterializationTargetDataStore(targetConnectionString);
-    }
-
-    private DocumentCacheMaterializationTargetContext(
-        DocumentCacheProjectionTargetKey targetKey,
-        MappingSet mappingSet,
-        DocumentCacheMaterializationTargetValidation targetValidation,
-        DocumentCacheMaterializationTargetDataStore? targetDataStore
-    )
-    {
-        TargetKey = targetKey ?? throw new ArgumentNullException(nameof(targetKey));
-        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
-        TargetValidation = RequireValidated(targetValidation, nameof(targetValidation));
-        TargetDataStore = targetDataStore;
     }
 
     /// <summary>
@@ -127,16 +119,6 @@ public sealed record DocumentCacheMaterializationTargetContext
     public DocumentCacheMaterializationTargetValidation TargetValidation { get; }
 
     internal DocumentCacheMaterializationTargetDataStore? TargetDataStore { get; }
-
-    internal DocumentCacheMaterializationTargetContext WithTargetDataStore(
-        DocumentCacheMaterializationTargetDataStore targetDataStore
-    ) =>
-        new(
-            TargetKey,
-            MappingSet,
-            TargetValidation,
-            targetDataStore ?? throw new ArgumentNullException(nameof(targetDataStore))
-        );
 
     private static DocumentCacheMaterializationTargetValidation RequireValidated(
         DocumentCacheMaterializationTargetValidation value,
@@ -192,7 +174,7 @@ public sealed record DocumentCacheMaterializationRequest
     )
     {
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
-        DocumentId = RequirePositive(documentId, nameof(documentId));
+        DocumentId = DocumentCacheMaterializerGuards.RequirePositive(documentId, nameof(documentId));
         if (selectedRequiredContentVersion is <= 0)
         {
             throw new ArgumentOutOfRangeException(
@@ -203,7 +185,11 @@ public sealed record DocumentCacheMaterializationRequest
         }
 
         SelectedRequiredContentVersion = selectedRequiredContentVersion;
-        Purpose = RequireDefined(purpose, nameof(purpose));
+        Purpose = DocumentCacheMaterializerGuards.RequireDefined(
+            purpose,
+            nameof(purpose),
+            "Unsupported materialization purpose."
+        );
         CancellationToken = cancellationToken;
     }
 
@@ -233,44 +219,6 @@ public sealed record DocumentCacheMaterializationRequest
     /// Cancellation for the materialization attempt. Cancellation uses the ordinary task exception flow.
     /// </summary>
     public CancellationToken CancellationToken { get; }
-
-    internal DocumentCacheMaterializationRequest WithTargetContext(
-        DocumentCacheMaterializationTargetContext targetContext
-    ) =>
-        new(
-            targetContext ?? throw new ArgumentNullException(nameof(targetContext)),
-            DocumentId,
-            SelectedRequiredContentVersion,
-            Purpose,
-            CancellationToken
-        );
-
-    private static long RequirePositive(long value, string parameterName)
-    {
-        if (value <= 0)
-        {
-            throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} must be positive.");
-        }
-
-        return value;
-    }
-
-    private static DocumentCacheMaterializationPurpose RequireDefined(
-        DocumentCacheMaterializationPurpose value,
-        string parameterName
-    )
-    {
-        if (!Enum.IsDefined(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Unsupported materialization purpose."
-            );
-        }
-
-        return value;
-    }
 }
 
 /// <summary>
@@ -291,12 +239,15 @@ public sealed record DocumentCacheMaterializationCandidate
         JsonObject documentJson
     )
     {
-        DocumentId = RequirePositive(documentId, nameof(documentId));
+        DocumentId = DocumentCacheMaterializerGuards.RequirePositive(documentId, nameof(documentId));
         DocumentUuid = documentUuid;
         ProjectName = RequireNonBlank(projectName, nameof(projectName));
         ResourceName = RequireNonBlank(resourceName, nameof(resourceName));
         ResourceVersion = RequireNonBlank(resourceVersion, nameof(resourceVersion));
-        ContentVersion = RequirePositive(contentVersion, nameof(contentVersion));
+        ContentVersion = DocumentCacheMaterializerGuards.RequirePositive(
+            contentVersion,
+            nameof(contentVersion)
+        );
         LastModifiedAt = lastModifiedAt;
         StreamEtag = RequireNonBlank(streamEtag, nameof(streamEtag));
         DocumentJson = documentJson ?? throw new ArgumentNullException(nameof(documentJson));
@@ -319,16 +270,6 @@ public sealed record DocumentCacheMaterializationCandidate
     public string StreamEtag { get; }
 
     public JsonObject DocumentJson { get; }
-
-    private static long RequirePositive(long value, string parameterName)
-    {
-        if (value <= 0)
-        {
-            throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} must be positive.");
-        }
-
-        return value;
-    }
 
     private static string RequireNonBlank(string value, string parameterName)
     {
@@ -435,8 +376,12 @@ public sealed record DocumentCacheMaterializerFailureMetadata
     {
         TargetKey = targetKey ?? throw new ArgumentNullException(nameof(targetKey));
         MappingSetKey = mappingSetKey;
-        Purpose = RequireDefined(purpose, nameof(purpose));
-        DocumentId = RequirePositive(documentId, nameof(documentId));
+        Purpose = DocumentCacheMaterializerGuards.RequireDefined(
+            purpose,
+            nameof(purpose),
+            "Unsupported materialization purpose."
+        );
+        DocumentId = DocumentCacheMaterializerGuards.RequirePositive(documentId, nameof(documentId));
     }
 
     public DocumentCacheProjectionTargetKey TargetKey { get; }
@@ -456,33 +401,6 @@ public sealed record DocumentCacheMaterializerFailureMetadata
     public string? ResourceName { get; init; }
 
     public string? ResourceVersion { get; init; }
-
-    private static long RequirePositive(long value, string parameterName)
-    {
-        if (value <= 0)
-        {
-            throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} must be positive.");
-        }
-
-        return value;
-    }
-
-    private static DocumentCacheMaterializationPurpose RequireDefined(
-        DocumentCacheMaterializationPurpose value,
-        string parameterName
-    )
-    {
-        if (!Enum.IsDefined(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Unsupported materialization purpose."
-            );
-        }
-
-        return value;
-    }
 }
 
 /// <summary>
@@ -495,7 +413,16 @@ public sealed class DocumentCacheProjectionProcessingException : Exception
         DocumentCacheProjectionProcessingFailureReason reason,
         DocumentCacheMaterializerFailureMetadata metadata
     )
-        : base(BuildMessage(RequireDefined(reason, nameof(reason)), metadata))
+        : base(
+            BuildMessage(
+                DocumentCacheMaterializerGuards.RequireDefined(
+                    reason,
+                    nameof(reason),
+                    "Unsupported projection-processing failure reason."
+                ),
+                metadata
+            )
+        )
     {
         Reason = reason;
         FailureMetadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
@@ -505,23 +432,6 @@ public sealed class DocumentCacheProjectionProcessingException : Exception
 
     public DocumentCacheMaterializerFailureMetadata FailureMetadata { get; }
 
-    private static DocumentCacheProjectionProcessingFailureReason RequireDefined(
-        DocumentCacheProjectionProcessingFailureReason value,
-        string parameterName
-    )
-    {
-        if (!Enum.IsDefined(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Unsupported projection-processing failure reason."
-            );
-        }
-
-        return value;
-    }
-
     private static string BuildMessage(
         DocumentCacheProjectionProcessingFailureReason reason,
         DocumentCacheMaterializerFailureMetadata metadata
@@ -530,7 +440,7 @@ public sealed class DocumentCacheProjectionProcessingException : Exception
         ArgumentNullException.ThrowIfNull(metadata);
 
         return $"DocumentCache materialization projection failure '{reason}' for target "
-            + $"'{metadata.TargetKey}', mapping set "
+            + $"'{DocumentCacheMaterializerDiagnosticFormatting.FormatTargetKey(metadata.TargetKey)}', mapping set "
             + $"'{DocumentCacheMaterializerDiagnosticFormatting.FormatMappingSetKey(metadata.MappingSetKey)}', "
             + $"document id {metadata.DocumentId}.";
     }
@@ -546,7 +456,16 @@ public sealed class DocumentCacheTargetMappingException : Exception
         DocumentCacheTargetMappingFailureReason reason,
         DocumentCacheMaterializerFailureMetadata metadata
     )
-        : base(BuildMessage(RequireDefined(reason, nameof(reason)), metadata))
+        : base(
+            BuildMessage(
+                DocumentCacheMaterializerGuards.RequireDefined(
+                    reason,
+                    nameof(reason),
+                    "Unsupported target-mapping failure reason."
+                ),
+                metadata
+            )
+        )
     {
         Reason = reason;
         FailureMetadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
@@ -556,23 +475,6 @@ public sealed class DocumentCacheTargetMappingException : Exception
 
     public DocumentCacheMaterializerFailureMetadata FailureMetadata { get; }
 
-    private static DocumentCacheTargetMappingFailureReason RequireDefined(
-        DocumentCacheTargetMappingFailureReason value,
-        string parameterName
-    )
-    {
-        if (!Enum.IsDefined(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Unsupported target-mapping failure reason."
-            );
-        }
-
-        return value;
-    }
-
     private static string BuildMessage(
         DocumentCacheTargetMappingFailureReason reason,
         DocumentCacheMaterializerFailureMetadata metadata
@@ -581,7 +483,7 @@ public sealed class DocumentCacheTargetMappingException : Exception
         ArgumentNullException.ThrowIfNull(metadata);
 
         return $"DocumentCache target mapping failure '{reason}' for target "
-            + $"'{metadata.TargetKey}', mapping set "
+            + $"'{DocumentCacheMaterializerDiagnosticFormatting.FormatTargetKey(metadata.TargetKey)}', mapping set "
             + $"'{DocumentCacheMaterializerDiagnosticFormatting.FormatMappingSetKey(metadata.MappingSetKey)}', "
             + $"document id {metadata.DocumentId}, resource key id "
             + $"{metadata.ResourceKeyId?.ToString() ?? "<unknown>"}.";
@@ -590,6 +492,9 @@ public sealed class DocumentCacheTargetMappingException : Exception
 
 internal static class DocumentCacheMaterializerDiagnosticFormatting
 {
+    public static string FormatTargetKey(DocumentCacheProjectionTargetKey key) =>
+        $"{LogSanitizer.SanitizeForLog(key.TenantKey)}/{key.DataStoreId.Value}";
+
     public static string FormatMappingSetKey(MappingSetKey key) =>
-        $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
+        $"{LogSanitizer.SanitizeForLog(key.EffectiveSchemaHash)}/{key.Dialect}/{LogSanitizer.SanitizeForLog(key.RelationalMappingVersion)}";
 }

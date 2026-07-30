@@ -525,26 +525,11 @@ internal sealed class DescriptorReadHandler(
     ) =>
         MaterializeDescriptorDocument(
             descriptorRow,
-            ToMaterializationMode(request.ReadMode),
+            request.ReadMode.ToMaterializationMode(),
             request.ReadableProfileProjectionContext,
             request.MappingSet.Key.EffectiveSchemaHash,
             request.ResponseContentCoding
         );
-
-    private static RelationalReadMaterializationMode ToMaterializationMode(
-        RelationalGetRequestReadMode readMode
-    ) =>
-        readMode switch
-        {
-            RelationalGetRequestReadMode.StoredDocument => RelationalReadMaterializationMode.StoredDocument,
-            RelationalGetRequestReadMode.ExternalResponse =>
-                RelationalReadMaterializationMode.ExternalResponse,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(readMode),
-                readMode,
-                "Unsupported relational GET read mode."
-            ),
-        };
 
     private static RelationalCommand BuildQueryCommand(SqlDialect dialect, PageKeysetSpec.Query plannedQuery)
     {

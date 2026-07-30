@@ -49,14 +49,6 @@ internal sealed class AmbientDocumentCacheMaterializationDataStore(
 
     public SqlDialect Dialect => _commandExecutor.Dialect;
 
-    public DocumentCacheMaterializationRequest BindToTargetDataStore(
-        DocumentCacheMaterializationRequest request
-    )
-    {
-        DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
-        return request;
-    }
-
     public Task<TResult> ExecuteReaderAsync<TResult>(
         DocumentCacheMaterializationRequest request,
         RelationalCommand command,

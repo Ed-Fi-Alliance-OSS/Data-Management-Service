@@ -46,9 +46,8 @@ public sealed record RelationalReadMaterializationRequest(
     /// <summary>
     /// Optional mapping set used to resolve <c>link.rel</c> / <c>link.href</c> slugs during
     /// reconstitution. <see langword="null"/> on call paths that do not have a mapping set
-    /// in scope, such as descriptor materialization. When <see langword="null"/>,
-    /// reconstitution falls back to the no-link overload regardless of
-    /// <see cref="ResourceLinksOptions.Enabled"/>.
+    /// in scope, such as descriptor materialization. Cache projection materialization requires
+    /// a mapping set because its stream representation always includes resource links.
     /// </summary>
     public MappingSet? MappingSet { get; init; }
 
@@ -81,9 +80,8 @@ public sealed record RelationalReadPageMaterializationRequest(
     /// <summary>
     /// Optional mapping set used to resolve <c>link.rel</c> / <c>link.href</c> slugs during
     /// reconstitution. <see langword="null"/> on call paths that do not have a mapping set
-    /// in scope, such as descriptor materialization. When <see langword="null"/>,
-    /// reconstitution falls back to the no-link overload regardless of
-    /// <see cref="ResourceLinksOptions.Enabled"/>.
+    /// in scope, such as descriptor materialization. Cache projection materialization requires
+    /// a mapping set because its stream representation always includes resource links.
     /// </summary>
     public MappingSet? MappingSet { get; init; }
 

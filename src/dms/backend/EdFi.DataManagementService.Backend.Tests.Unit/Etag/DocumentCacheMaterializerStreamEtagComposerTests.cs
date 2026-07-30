@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -86,38 +84,6 @@ public class Given_DocumentCacheMaterializerStreamEtagComposer
             .ComposeForDescriptor(servedEtagComposer, mappingSet, contentVersion: 91)
             .Should()
             .Be("91-01234567.j._.n.i");
-    }
-
-    [Test]
-    public void It_keeps_stream_etag_separate_from_cache_document_json()
-    {
-        var mappingSet = CreateMappingSet();
-        var streamEtag = DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
-            new ServedEtagComposer(),
-            mappingSet,
-            contentVersion: 91
-        );
-
-        var candidate = new DocumentCacheMaterializationCandidate(
-            documentId: 123,
-            documentUuid: new DocumentUuid(Guid.Parse("11111111-1111-2222-3333-444444444444")),
-            projectName: "Ed-Fi",
-            resourceName: "School",
-            resourceVersion: "5.3.0",
-            contentVersion: 91,
-            lastModifiedAt: DateTimeOffset.Parse("2026-04-03T14:10:11Z", CultureInfo.InvariantCulture),
-            streamEtag,
-            documentJson: JsonNode
-                .Parse(
-                    """
-                    {"id":"11111111-1111-2222-3333-444444444444","_lastModifiedDate":"2026-04-03T14:10:11Z","nameOfInstitution":"Lincoln High"}
-                    """
-                )!
-                .AsObject()
-        );
-
-        candidate.StreamEtag.Should().Be("91-01234567.j._.l.i");
-        candidate.DocumentJson.Should().NotContainKey("_etag");
     }
 
     [Test]

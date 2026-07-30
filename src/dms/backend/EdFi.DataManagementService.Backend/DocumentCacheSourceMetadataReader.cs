@@ -70,19 +70,11 @@ internal sealed record DocumentCacheCurrentSourceMetadata(
     DateTimeOffset ContentLastModifiedAt
 )
 {
-    public long DocumentId { get; } = RequirePositive(DocumentId, nameof(DocumentId));
+    public long DocumentId { get; } =
+        DocumentCacheMaterializerGuards.RequirePositive(DocumentId, nameof(DocumentId));
 
-    public long ContentVersion { get; } = RequirePositive(ContentVersion, nameof(ContentVersion));
-
-    private static long RequirePositive(long value, string parameterName)
-    {
-        if (value <= 0)
-        {
-            throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} must be positive.");
-        }
-
-        return value;
-    }
+    public long ContentVersion { get; } =
+        DocumentCacheMaterializerGuards.RequirePositive(ContentVersion, nameof(ContentVersion));
 }
 
 internal abstract record DocumentCacheResolvedSourceMetadata
@@ -97,7 +89,7 @@ internal abstract record DocumentCacheResolvedSourceMetadata
         DateTimeOffset contentLastModifiedAt
     )
     {
-        DocumentId = RequirePositive(documentId, nameof(documentId));
+        DocumentId = DocumentCacheMaterializerGuards.RequirePositive(documentId, nameof(documentId));
         DocumentUuid = documentUuid;
         ResourceKeyId = resourceKeyId;
         ResourceKey = resourceKey ?? throw new ArgumentNullException(nameof(resourceKey));
@@ -106,7 +98,10 @@ internal abstract record DocumentCacheResolvedSourceMetadata
         ResourceVersion = ResourceKey.ResourceVersion;
         ConcreteResourceModel =
             concreteResourceModel ?? throw new ArgumentNullException(nameof(concreteResourceModel));
-        ContentVersion = RequirePositive(contentVersion, nameof(contentVersion));
+        ContentVersion = DocumentCacheMaterializerGuards.RequirePositive(
+            contentVersion,
+            nameof(contentVersion)
+        );
         ContentLastModifiedAt = contentLastModifiedAt;
     }
 
@@ -183,16 +178,6 @@ internal abstract record DocumentCacheResolvedSourceMetadata
             ContentVersion,
             ContentLastModifiedAt
         );
-
-    private static long RequirePositive(long value, string parameterName)
-    {
-        if (value <= 0)
-        {
-            throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} must be positive.");
-        }
-
-        return value;
-    }
 }
 
 internal sealed class DocumentCacheSourceMetadataReader(

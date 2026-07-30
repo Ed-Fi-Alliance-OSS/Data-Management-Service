@@ -5,7 +5,9 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -78,7 +80,7 @@ public class Given_MaterializedDocumentFixtureCatalog
                     ResourceKeyId: 1,
                     ContentVersion: 42,
                     ContentLastModifiedAt: DateTimeOffset.Parse(
-                        "2026-01-15T17:18:19.1234567Z",
+                        "2026-01-15T17:18:19.123456Z",
                         CultureInfo.InvariantCulture
                     )
                 )
@@ -130,6 +132,35 @@ public class Given_MaterializedDocumentFixtureCatalog
     }
 
     [Test]
+    public void It_uses_contract_shaped_stream_etags_for_cache_and_cdc_expectations()
+    {
+        _allFixtures
+            .Where(fixture => fixture.ExpectedStreamEtag is not null)
+            .Should()
+            .AllSatisfy(fixture =>
+            {
+                var streamEtag = fixture.ExpectedStreamEtag!;
+                streamEtag.Should().NotStartWith("\"");
+                streamEtag.Should().NotEndWith("\"");
+
+                EtagValue
+                    .TryParse(streamEtag, out var contentVersion, out var variantKeyValue)
+                    .Should()
+                    .BeTrue();
+                contentVersion
+                    .Should()
+                    .Be(fixture.ExpectedCacheRow!.ContentVersion.ToString(CultureInfo.InvariantCulture));
+
+                var variantKey = new VariantKey(variantKeyValue);
+                variantKey.TryParseComponents(out var components).Should().BeTrue();
+                components.Format.Should().Be("j");
+                components.ProfileCode.Should().Be(VariantKey.NoProfileCode);
+                components.LinkFlag.Should().Be(HasTags(fixture, "descriptor") ? "n" : "l");
+                components.ContentCoding.Should().Be("i");
+            });
+    }
+
+    [Test]
     public void It_includes_the_representative_DMS_1312_materialized_document_cases()
     {
         _allFixtures
@@ -176,6 +207,10 @@ public class Given_MaterializedDocumentFixtureCatalog
                 cacheRow.StreamEtag.Should().Be(fixture.ExpectedStreamEtag);
                 cacheRow.DocumentJson.Should().ContainKey("id");
                 cacheRow.DocumentJson.Should().ContainKey("_lastModifiedDate");
+                cacheRow.DocumentJson["_lastModifiedDate"]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be(FormatLastModifiedDate(cacheRow.LastModifiedAt));
                 cacheRow.DocumentJson.Should().NotContainKey("_etag");
             });
     }
@@ -228,4 +263,7 @@ public class Given_MaterializedDocumentFixtureCatalog
 
     private static bool HasTags(MaterializedDocumentFixture fixture, params string[] tags) =>
         Array.TrueForAll(tags, tag => fixture.Manifest.CoverageTags?.Contains(tag) == true);
+
+    private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
+        lastModifiedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss'Z'", CultureInfo.InvariantCulture);
 }

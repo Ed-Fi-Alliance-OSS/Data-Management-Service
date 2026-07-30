@@ -142,10 +142,19 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             {
                 var connectionString = targetConnectionStrings.Dequeue();
 
-                return currentRequest.WithTargetContext(
-                    currentRequest.TargetContext.WithTargetDataStore(
-                        new DocumentCacheMaterializationTargetDataStore(connectionString)
-                    )
+                var targetContext = new DocumentCacheMaterializationTargetContext(
+                    currentRequest.TargetContext.TargetKey,
+                    currentRequest.TargetContext.MappingSet,
+                    currentRequest.TargetContext.TargetValidation,
+                    connectionString
+                );
+
+                return new DocumentCacheMaterializationRequest(
+                    targetContext,
+                    currentRequest.DocumentId,
+                    currentRequest.SelectedRequiredContentVersion,
+                    currentRequest.Purpose,
+                    currentRequest.CancellationToken
                 );
             }
         );

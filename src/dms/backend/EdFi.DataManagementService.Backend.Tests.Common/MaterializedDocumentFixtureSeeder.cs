@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -20,7 +21,11 @@ public sealed record MaterializedDocumentFixtureSqlCommand(
     IReadOnlyList<MaterializedDocumentFixtureSqlParameter> Parameters
 );
 
-public sealed record MaterializedDocumentFixtureSqlParameter(string Name, object? Value);
+public sealed record MaterializedDocumentFixtureSqlParameter(
+    string Name,
+    object? Value,
+    Action<DbParameter>? ConfigureParameter = null
+);
 
 public sealed class MaterializedDocumentFixtureSeeder(
     MaterializedDocumentFixtureSqlDialect dialect,
@@ -86,6 +91,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = parameterSpec.Name;
                 parameter.Value = parameterSpec.Value ?? DBNull.Value;
+                parameterSpec.ConfigureParameter?.Invoke(parameter);
                 command.Parameters.Add(parameter);
             }
 
@@ -281,12 +287,12 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 new(_dialect.ParameterName(1), Guid.Parse(document.DocumentUuid)),
                 new(_dialect.ParameterName(2), document.ResourceKeyId),
                 new(_dialect.ParameterName(3), document.ContentVersion),
-                new(_dialect.ParameterName(4), DocumentTimestampValue(document.ContentLastModifiedAt)),
+                DocumentTimestampParameter(4, document.ContentLastModifiedAt),
             };
 
             commands.Add(
                 new(
-                    _dialect.Insert(
+                    _dialect.InsertDocument(
                         "dms",
                         "Document",
                         [
@@ -310,7 +316,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             parameters[4].Name,
                             parameters[4].Name,
                             parameters[4].Name,
-                        ]
+                        ],
+                        useExplicitIdentityInsert: !_options.CreateSchemasAndTables
                     ),
                     parameters
                 )
@@ -407,7 +414,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
             var parameters = new List<MaterializedDocumentFixtureSqlParameter>
             {
                 new(_dialect.ParameterName(0), document.ContentVersion),
-                new(_dialect.ParameterName(1), DocumentTimestampValue(document.ContentLastModifiedAt)),
+                DocumentTimestampParameter(1, document.ContentLastModifiedAt),
                 new(_dialect.ParameterName(2), document.DocumentId),
             };
 
@@ -463,7 +470,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
             return "integer";
         }
 
-        if (columnName.EndsWith("Date", StringComparison.Ordinal))
+        if (IsDateColumn(columnName))
         {
             return "date";
         }
@@ -555,7 +562,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
             JsonValue value when TryGetValue<long>(value, out var longValue) => longValue,
             JsonValue value when TryGetValue<decimal>(value, out var decimalValue) => decimalValue,
             JsonValue value when TryGetValue<string>(value, out var stringValue) => ParseScalarString(
-                stringValue
+                stringValue,
+                columnName
             ),
             _ => node.ToJsonString(),
         };
@@ -565,6 +573,9 @@ public sealed class MaterializedDocumentFixtureSeeder(
         columnName.EndsWith("DocumentId", StringComparison.Ordinal)
         || columnName.EndsWith("DescriptorId", StringComparison.Ordinal)
         || columnName == "CollectionItemId";
+
+    private static bool IsDateColumn(string columnName) =>
+        columnName.EndsWith("Date", StringComparison.Ordinal);
 
     private static JsonNode? JsonObjectValueOrNull(JsonObject jsonObject, string propertyName) =>
         jsonObject.TryGetPropertyValue(propertyName, out var value) ? value : null;
@@ -587,8 +598,10 @@ public sealed class MaterializedDocumentFixtureSeeder(
             : DateOnly.Parse(scalarValue!.ToString()!, CultureInfo.InvariantCulture);
     }
 
-    private static object ParseScalarString(string value) =>
-        DateOnly.TryParseExact(
+    private static object ParseScalarString(string value, string? columnName) =>
+        columnName is not null
+        && IsDateColumn(columnName)
+        && DateOnly.TryParseExact(
             value,
             "yyyy-MM-dd",
             CultureInfo.InvariantCulture,
@@ -598,11 +611,17 @@ public sealed class MaterializedDocumentFixtureSeeder(
             ? date
             : value;
 
-    private object DocumentTimestampValue(DateTimeOffset value) =>
-        _options.CreateSchemasAndTables ? FormatDateTimeOffset(value) : value;
+    private object DocumentTimestampValue(DateTimeOffset value) => _dialect.TimestampValue(value);
 
-    private static string FormatDateTimeOffset(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+    private MaterializedDocumentFixtureSqlParameter DocumentTimestampParameter(
+        int ordinal,
+        DateTimeOffset value
+    ) =>
+        new(
+            _dialect.ParameterName(ordinal),
+            DocumentTimestampValue(value),
+            _dialect.ConfigureTimestampParameter
+        );
 
     private static bool TryGetValue<T>(JsonNode node, out T value)
     {
@@ -641,6 +660,10 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
         public abstract string Text(int length);
 
+        public abstract object TimestampValue(DateTimeOffset value);
+
+        public virtual Action<DbParameter>? ConfigureTimestampParameter => null;
+
         public string QualifiedTable(string schema, string table) => $"{Quote(schema)}.{Quote(table)}";
 
         public string Insert(
@@ -656,6 +679,14 @@ public sealed class MaterializedDocumentFixtureSeeder(
             return $"INSERT INTO {QualifiedTable(schema, table)} ({columnList}) VALUES ({valueList})";
         }
 
+        public abstract string InsertDocument(
+            string schema,
+            string table,
+            IReadOnlyList<string> columns,
+            IReadOnlyList<string> values,
+            bool useExplicitIdentityInsert
+        );
+
         public abstract string InsertIfMissing(
             string schema,
             string table,
@@ -669,7 +700,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
     {
         public override string UuidColumnType => "uuid";
 
-        public override string TimestampWithOffsetColumnType => "text";
+        public override string TimestampWithOffsetColumnType => "timestamp with time zone";
 
         public override string BooleanColumnType => "boolean";
 
@@ -692,6 +723,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
         public override string Text(int length) =>
             $"varchar({length.ToString(CultureInfo.InvariantCulture)})";
 
+        public override object TimestampValue(DateTimeOffset value) => value.ToUniversalTime();
+
         public override string InsertIfMissing(
             string schema,
             string table,
@@ -701,13 +734,32 @@ public sealed class MaterializedDocumentFixtureSeeder(
         ) =>
             Insert(schema, table, columns, values)
             + $" ON CONFLICT ({string.Join(", ", keyColumns.Select(Quote))}) DO NOTHING";
+
+        public override string InsertDocument(
+            string schema,
+            string table,
+            IReadOnlyList<string> columns,
+            IReadOnlyList<string> values,
+            bool useExplicitIdentityInsert
+        )
+        {
+            if (!useExplicitIdentityInsert)
+            {
+                return Insert(schema, table, columns, values);
+            }
+
+            var columnList = string.Join(", ", columns.Select(Quote));
+            var valueList = string.Join(", ", values);
+
+            return $"INSERT INTO {QualifiedTable(schema, table)} ({columnList}) OVERRIDING SYSTEM VALUE VALUES ({valueList})";
+        }
     }
 
     private sealed class MssqlFixtureSqlDialect : FixtureSqlDialect
     {
         public override string UuidColumnType => "uniqueidentifier";
 
-        public override string TimestampWithOffsetColumnType => "nvarchar(64)";
+        public override string TimestampWithOffsetColumnType => "datetime2(7)";
 
         public override string BooleanColumnType => "bit";
 
@@ -735,6 +787,11 @@ public sealed class MaterializedDocumentFixtureSeeder(
         public override string Text(int length) =>
             $"nvarchar({length.ToString(CultureInfo.InvariantCulture)})";
 
+        public override object TimestampValue(DateTimeOffset value) => value.UtcDateTime;
+
+        public override Action<DbParameter>? ConfigureTimestampParameter =>
+            static parameter => parameter.DbType = DbType.DateTime2;
+
         public override string InsertIfMissing(
             string schema,
             string table,
@@ -750,6 +807,27 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
             return $"IF NOT EXISTS (SELECT 1 FROM {QualifiedTable(schema, table)} WHERE {keyPredicate}) "
                 + Insert(schema, table, columns, values);
+        }
+
+        public override string InsertDocument(
+            string schema,
+            string table,
+            IReadOnlyList<string> columns,
+            IReadOnlyList<string> values,
+            bool useExplicitIdentityInsert
+        )
+        {
+            var insert = Insert(schema, table, columns, values);
+            if (!useExplicitIdentityInsert)
+            {
+                return insert;
+            }
+
+            return $"""
+                SET IDENTITY_INSERT {QualifiedTable(schema, table)} ON
+                {insert}
+                SET IDENTITY_INSERT {QualifiedTable(schema, table)} OFF
+                """;
         }
     }
 }

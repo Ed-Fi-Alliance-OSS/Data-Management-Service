@@ -2526,7 +2526,7 @@ public sealed class RelationalDocumentStoreRepository(
                     documentMetadata,
                     hydratedPage.TableRowsInDependencyOrder,
                     hydratedPage.DescriptorRowsInPlanOrder,
-                    ToMaterializationMode(relationalGetRequest.ReadMode)
+                    relationalGetRequest.ReadMode.ToMaterializationMode()
                 )
                 {
                     MappingSet = mappingSet,
@@ -3014,21 +3014,6 @@ public sealed class RelationalDocumentStoreRepository(
             _ => throw new ArgumentOutOfRangeException(
                 nameof(relationalGetRequest),
                 relationalGetRequest.ReadMode,
-                "Unsupported relational GET read mode."
-            ),
-        };
-
-    private static RelationalReadMaterializationMode ToMaterializationMode(
-        RelationalGetRequestReadMode readMode
-    ) =>
-        readMode switch
-        {
-            RelationalGetRequestReadMode.StoredDocument => RelationalReadMaterializationMode.StoredDocument,
-            RelationalGetRequestReadMode.ExternalResponse =>
-                RelationalReadMaterializationMode.ExternalResponse,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(readMode),
-                readMode,
                 "Unsupported relational GET read mode."
             ),
         };

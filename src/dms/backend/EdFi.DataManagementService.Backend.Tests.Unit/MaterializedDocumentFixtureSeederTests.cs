@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -62,6 +63,15 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Should()
             .Contain(command =>
                 command.Contains(
+                    "\"ContentLastModifiedAt\" timestamp with time zone",
+                    StringComparison.Ordinal
+                )
+            );
+        commands
+            .Select(command => command.CommandText)
+            .Should()
+            .Contain(command =>
+                command.Contains(
                     "CREATE TABLE IF NOT EXISTS \"edfi\".\"StudentSchoolAssociation\"",
                     StringComparison.Ordinal
                 )
@@ -74,7 +84,10 @@ public class Given_MaterializedDocumentFixtureSeeder
 
         documentInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 970101L));
         documentInsert
-            .Parameters.Any(parameter => Equals(parameter.Value, "2026-07-30T14:15:16.1234567+00:00"))
+            .Parameters.Any(parameter =>
+                parameter.Value is DateTimeOffset value
+                && value == _ordinaryFixture.SourceSetup.Documents[0].ContentLastModifiedAt
+            )
             .Should()
             .BeTrue();
 
@@ -112,6 +125,12 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Contain(command =>
                 command.Contains("IF OBJECT_ID(N'[dms].[Document]', N'U') IS NULL", StringComparison.Ordinal)
             );
+        commands
+            .Select(command => command.CommandText)
+            .Should()
+            .Contain(command =>
+                command.Contains("[ContentLastModifiedAt] datetime2(7)", StringComparison.Ordinal)
+            );
 
         var descriptorInsert = commands.Single(command =>
             command.CommandText.StartsWith("INSERT INTO [dms].[Descriptor]", StringComparison.Ordinal)
@@ -146,6 +165,76 @@ public class Given_MaterializedDocumentFixtureSeeder
     }
 
     [Test]
+    public void It_keeps_date_shaped_strings_as_text_when_the_column_is_not_a_date_column()
+    {
+        var fixture = new MaterializedDocumentFixture(
+            CaseDirectory: "",
+            Manifest: new MaterializedDocumentFixtureManifest(
+                FixtureVersion: "materialized-document-fixture-v1",
+                CaseName: "date-shaped-text-column",
+                CoverageTags: null,
+                SourceSetupPath: "source-setup.json",
+                ExpectedCacheRowPath: null,
+                ExpectedStreamEtagPath: null,
+                ExpectedPublicCdcDocumentPath: null,
+                ExpectedProjectionFailurePath: null
+            ),
+            SourceSetup: new MaterializedDocumentSourceSetup(
+                Documents:
+                [
+                    new MaterializedDocumentSourceDocument(
+                        DocumentId: 1,
+                        DocumentUuid: "11111111-2222-3333-4444-555555555555",
+                        ResourceKeyId: 1,
+                        ContentVersion: 1,
+                        ContentLastModifiedAt: new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero)
+                    ),
+                ],
+                Descriptors: [],
+                ConcreteRootRows:
+                [
+                    new MaterializedDocumentSourceTableRow(
+                        Schema: "edfi",
+                        Table: "Student",
+                        DocumentId: 1,
+                        Values: new JsonObject { ["BirthDate"] = "2026-01-02", ["LocalCode"] = "2026-01-02" }
+                    ),
+                ],
+                ChildRows: [],
+                ExtensionRows: [],
+                ReferentialIdentityRows: []
+            ),
+            ExpectedCacheRow: null,
+            ExpectedStreamEtag: null,
+            ExpectedPublicCdcDocument: null,
+            ExpectedProjectionFailure: null
+        );
+
+        var commands = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Postgresql
+        ).BuildSetupCommands(fixture);
+
+        commands
+            .Select(command => command.CommandText)
+            .Should()
+            .Contain(command =>
+                command.Contains("\"BirthDate\" date", StringComparison.Ordinal)
+                && command.Contains("\"LocalCode\" varchar(1024)", StringComparison.Ordinal)
+            );
+
+        var sourceInsert = commands.Single(command =>
+            command.CommandText.StartsWith("INSERT INTO \"edfi\".\"Student\"", StringComparison.Ordinal)
+        );
+        sourceInsert
+            .Parameters.Any(parameter =>
+                parameter.Value is DateOnly value && value == new DateOnly(2026, 1, 2)
+            )
+            .Should()
+            .BeTrue();
+        sourceInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, "2026-01-02"));
+    }
+
+    [Test]
     public void It_can_target_an_existing_generated_schema_without_creating_tables()
     {
         var commands = new MaterializedDocumentFixtureSeeder(
@@ -162,6 +251,7 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Should()
             .Contain(command =>
                 command.StartsWith("INSERT INTO \"dms\".\"Document\"", StringComparison.Ordinal)
+                && command.Contains("OVERRIDING SYSTEM VALUE", StringComparison.Ordinal)
             );
         commands
             .Select(command => command.CommandText)
@@ -173,7 +263,43 @@ public class Given_MaterializedDocumentFixtureSeeder
         );
         stampUpdate
             .Parameters.Any(parameter =>
-                Equals(parameter.Value, _failureFixture.SourceSetup.Documents[0].ContentLastModifiedAt)
+                parameter.Value is DateTimeOffset value
+                && value == _failureFixture.SourceSetup.Documents[0].ContentLastModifiedAt
+            )
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_wraps_document_identity_insert_when_targeting_an_existing_mssql_generated_schema()
+    {
+        var commands = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Mssql,
+            new MaterializedDocumentFixtureSeederOptions { CreateSchemasAndTables = false }
+        ).BuildSetupCommands(_failureFixture);
+
+        commands
+            .Select(command => command.CommandText)
+            .Should()
+            .NotContain(command => command.Contains("CREATE TABLE", StringComparison.Ordinal));
+
+        var documentInsert = commands.Single(command =>
+            command.CommandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+            && command.Parameters.Any(parameter =>
+                Equals(parameter.Value, _failureFixture.SourceSetup.Documents[0].DocumentId)
+            )
+        );
+
+        documentInsert
+            .CommandText.Should()
+            .Contain("SET IDENTITY_INSERT [dms].[Document] ON")
+            .And.Contain("INSERT INTO [dms].[Document]")
+            .And.Contain("SET IDENTITY_INSERT [dms].[Document] OFF");
+        documentInsert
+            .Parameters.Any(parameter =>
+                parameter.Value is DateTime value
+                && value == _failureFixture.SourceSetup.Documents[0].ContentLastModifiedAt.UtcDateTime
+                && parameter.ConfigureParameter is not null
             )
             .Should()
             .BeTrue();

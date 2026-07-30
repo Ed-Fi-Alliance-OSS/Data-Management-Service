@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -23,13 +24,10 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 public class Given_Postgresql_DocumentCacheMaterializer_Descriptor
 {
     private const long DescriptorDocumentId = 970301;
-    private const short DescriptorResourceKeyId = 13;
     private const long ContentVersion = 222;
 
     private static readonly Guid DescriptorDocumentGuid = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000301");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 30, 14, 15, 16, TimeSpan.Zero);
-    private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
-
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private NpgsqlDataSource _dataSource = null!;
     private MappingSet _mappingSet = null!;
@@ -40,7 +38,7 @@ public class Given_Postgresql_DocumentCacheMaterializer_Descriptor
     {
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateEmptyAsync();
         _dataSource = NpgsqlDataSource.Create(_database.ConnectionString);
-        _mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        _mappingSet = DocumentCacheMaterializerDescriptorMappingSet.Create(SqlDialect.Pgsql);
 
         await using (var connection = await _dataSource.OpenConnectionAsync())
         {
@@ -194,95 +192,6 @@ public class Given_Postgresql_DocumentCacheMaterializer_Descriptor
             DocumentCacheMaterializationPurpose.Fixture,
             CancellationToken.None
         );
-
-    private static MappingSet CreateMappingSet(SqlDialect dialect)
-    {
-        var descriptorKey = new ResourceKeyEntry(DescriptorResourceKeyId, DescriptorResource, "1.0", false);
-        var descriptorModel = new ConcreteResourceModel(
-            descriptorKey,
-            ResourceStorageKind.SharedDescriptorTable,
-            CreateDescriptorRelationalModel()
-        );
-        var effectiveSchema = new EffectiveSchemaInfo(
-            ApiSchemaFormatVersion: "1.0",
-            RelationalMappingVersion: "v1",
-            EffectiveSchemaHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            ResourceKeyCount: 1,
-            ResourceKeySeedHash: new byte[32],
-            SchemaComponentsInEndpointOrder: [],
-            ResourceKeysInIdOrder: [descriptorKey]
-        );
-
-        return new MappingSet(
-            new MappingSetKey(effectiveSchema.EffectiveSchemaHash, dialect, "v1"),
-            new DerivedRelationalModelSet(
-                effectiveSchema,
-                dialect,
-                ProjectSchemasInEndpointOrder: [],
-                ConcreteResourcesInNameOrder: [descriptorModel],
-                AbstractIdentityTablesInNameOrder: [],
-                AbstractUnionViewsInNameOrder: [],
-                IndexesInCreateOrder: [],
-                TriggersInCreateOrder: []
-            ),
-            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
-            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
-            {
-                [DescriptorResource] = DescriptorResourceKeyId,
-            },
-            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
-            {
-                [DescriptorResourceKeyId] = descriptorKey,
-            },
-            SecurableElementColumnPathsByResource: new Dictionary<
-                QualifiedResourceName,
-                IReadOnlyList<ResolvedSecurableElementPath>
-            >()
-        );
-    }
-
-    private static RelationalResourceModel CreateDescriptorRelationalModel()
-    {
-        var descriptorTable = new DbTableModel(
-            new DbTableName(new DbSchemaName("dms"), "Descriptor"),
-            new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_Descriptor",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    false,
-                    null,
-                    null
-                ),
-            ],
-            []
-        )
-        {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.Root,
-                [new DbColumnName("DocumentId")],
-                [new DbColumnName("DocumentId")],
-                [],
-                []
-            ),
-        };
-
-        return new RelationalResourceModel(
-            DescriptorResource,
-            new DbSchemaName("dms"),
-            ResourceStorageKind.SharedDescriptorTable,
-            descriptorTable,
-            [descriptorTable],
-            [],
-            []
-        );
-    }
 
     private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
     {

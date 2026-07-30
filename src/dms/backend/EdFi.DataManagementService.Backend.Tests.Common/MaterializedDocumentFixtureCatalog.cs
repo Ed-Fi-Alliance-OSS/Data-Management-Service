@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -14,6 +15,7 @@ public static class MaterializedDocumentFixtureCatalog
         "src/dms/backend/Fixtures/document-cache/materialized-documents";
 
     private const string CurrentFixtureVersion = "materialized-document-fixture-v1";
+    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -333,6 +335,16 @@ public static class MaterializedDocumentFixtureCatalog
                 $"Expected cache row '{path}' documentJson.id must match documentUuid."
             );
         }
+
+        if (
+            expectedCacheRow.DocumentJson["_lastModifiedDate"]?.GetValue<string>()
+            != FormatLastModifiedDate(expectedCacheRow.LastModifiedAt)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Expected cache row '{path}' documentJson._lastModifiedDate must match lastModifiedAt at whole-second UTC precision."
+            );
+        }
     }
 
     private static void ValidateStreamEtagExpectation(MaterializedDocumentStreamEtagExpectation expectation)
@@ -505,6 +517,9 @@ public static class MaterializedDocumentFixtureCatalog
     private static JsonObject CloneObject(JsonObject source) =>
         JsonNode.Parse(source.ToJsonString(_jsonOptions))?.AsObject()
         ?? throw new InvalidOperationException("Failed to clone fixture JSON object.");
+
+    private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
+        lastModifiedAt.UtcDateTime.ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
 }
 
 public sealed record MaterializedDocumentFixture(
