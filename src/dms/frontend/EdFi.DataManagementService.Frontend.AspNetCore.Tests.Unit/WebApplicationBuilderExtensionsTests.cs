@@ -252,6 +252,18 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        [Category("DocumentCacheTargetRegistry")]
+        public void It_resolves_the_DocumentCacheTarget_registry_with_postgresql_provider()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetRegistry>()
+                .Should()
+                .BeOfType<DocumentCacheTargetRegistry>();
+        }
+
+        [Test]
         public void It_uses_direct_typed_relational_repository_registrations()
         {
             var services = CreateServiceCollection("postgresql");
@@ -450,6 +462,18 @@ public class WebApplicationBuilderExtensionsTests
                 .GetRequiredService<DocumentCacheProcessProviderToken>()
                 .ProviderToken.Should()
                 .Be(RelationalProviderToken.SqlServer);
+        }
+
+        [Test]
+        [Category("DocumentCacheTargetRegistry")]
+        public void It_resolves_the_DocumentCacheTarget_registry_with_sqlserver_provider()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheTargetRegistry>()
+                .Should()
+                .BeOfType<DocumentCacheTargetRegistry>();
         }
 
         [Test]

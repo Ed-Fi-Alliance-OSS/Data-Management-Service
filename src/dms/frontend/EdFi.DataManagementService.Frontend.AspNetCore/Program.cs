@@ -6,6 +6,7 @@
 using System.Linq;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Startup;
@@ -355,6 +356,22 @@ async Task InitializeDataStores(WebApplication app)
     {
         await InitializeDataStoresForSingleTenancy(app, dataStoreProvider);
     }
+
+    await InitializeDocumentCacheTargets(app);
+}
+
+async Task InitializeDocumentCacheTargets(WebApplication app)
+{
+    IDocumentCacheTargetRegistry targetRegistry =
+        app.Services.GetRequiredService<IDocumentCacheTargetRegistry>();
+    DocumentCacheTargetRegistrySnapshot snapshot = await targetRegistry.RefreshAsync(
+        DocumentCacheTargetRefreshReason.Startup
+    );
+
+    app.Logger.LogInformation(
+        "DocumentCache target registry startup refresh completed for {TargetCount} configured targets",
+        snapshot.Targets.Length
+    );
 }
 
 async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStoreProvider dataStoreProvider)

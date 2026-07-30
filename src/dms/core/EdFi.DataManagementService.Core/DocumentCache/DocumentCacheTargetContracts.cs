@@ -825,6 +825,54 @@ public sealed record DocumentCacheTargetObservation
             retryState: null,
             diagnostics
         );
+
+    public DocumentCacheTargetObservation WithAdditionalDiagnostic(DocumentCacheTargetDiagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+
+        return new(
+            TargetKey,
+            ResolutionState,
+            EligibilityState,
+            EffectiveSettings,
+            Generation,
+            ReplacedByGeneration,
+            ProviderToken,
+            PhysicalSourceFingerprint,
+            Lifecycle,
+            Inventory,
+            EnqueueTrigger,
+            SqlServerPrerequisites,
+            RetryState,
+            Diagnostics.Add(diagnostic)
+        );
+    }
+
+    public DocumentCacheTargetObservation WithRetryDiagnostic(
+        DocumentCacheResolutionRetryState retryState,
+        DocumentCacheTargetDiagnostic diagnostic
+    )
+    {
+        ArgumentNullException.ThrowIfNull(retryState);
+        ArgumentNullException.ThrowIfNull(diagnostic);
+
+        return new(
+            TargetKey,
+            ResolutionState,
+            EligibilityState,
+            EffectiveSettings,
+            Generation,
+            ReplacedByGeneration,
+            ProviderToken,
+            PhysicalSourceFingerprint,
+            Lifecycle,
+            Inventory,
+            EnqueueTrigger,
+            SqlServerPrerequisites,
+            retryState,
+            Diagnostics.Add(diagnostic)
+        );
+    }
 }
 
 internal static class DocumentCacheDiagnosticText

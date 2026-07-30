@@ -208,6 +208,7 @@ public static class WebApplicationBuilderExtensions
             IDocumentCacheTargetContextBuilder,
             DocumentCacheTargetContextBuilder
         >();
+        webAppBuilder.Services.AddSingleton<IDocumentCacheTargetRegistry, DocumentCacheTargetRegistry>();
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
