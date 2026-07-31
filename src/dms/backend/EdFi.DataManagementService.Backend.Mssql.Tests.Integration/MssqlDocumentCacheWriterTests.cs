@@ -138,6 +138,63 @@ public class Given_A_Mssql_DocumentCacheWriter
     }
 
     [Test]
+    public async Task It_returns_already_current_without_work_when_cache_matches_source()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 10);
+        await DeleteWorkAsync(source.DocumentId);
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate: null);
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_reports_needs_materialization_without_candidate_for_current_pending_work()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate: null);
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.NeedsMaterialization>()
+            .Which.CurrentContentVersion.Should()
+            .Be(10);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_writes_a_current_candidate_in_rebuilding_lifecycle()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Rebuilding);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-rebuilding");
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_suppresses_a_stale_candidate_without_cache_dml_or_acknowledgement()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
@@ -181,6 +238,28 @@ public class Given_A_Mssql_DocumentCacheWriter
     }
 
     [Test]
+    public async Task It_reports_matching_version_resource_metadata_mismatch_as_an_invariant_failure()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(
+            source,
+            "candidate-wrong-resource",
+            resourceName: "School"
+        );
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure>()
+            .Which.Reason.Should()
+            .Be(DocumentCacheWriterInvariantFailureReason.MatchingVersionResourceMetadataMismatch);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_a_lifecycle_fence_without_classifying_or_acknowledging_when_disabled()
     {
         DocumentCacheMaterializationTargetContext targetContext = CreateTargetContext();
@@ -199,6 +278,89 @@ public class Given_A_Mssql_DocumentCacheWriter
         var fenced = result.Should().BeOfType<DocumentCacheWriterResult.LifecycleOrLatchFenced>().Subject;
         fenced.Reason.Should().Be(DocumentCacheWriterFenceReason.LifecycleNotEligible);
         fenced.LifecycleState.Should().Be(DocumentCacheLifecycleState.Disabled);
+    }
+
+    [TestCase(DocumentCacheLifecycleState.Disabled)]
+    [TestCase(DocumentCacheLifecycleState.Resetting)]
+    public async Task It_fences_ineligible_lifecycle_states_without_cache_dml_or_acknowledgement(
+        DocumentCacheLifecycleState lifecycleState
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-fenced");
+        await SetLifecycleAsync(lifecycleState);
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        DocumentCacheWriterResult.LifecycleOrLatchFenced fenced = AssertLifecycleFence(
+            result,
+            DocumentCacheWriterFenceReason.LifecycleNotEligible
+        );
+        fenced.LifecycleState.Should().Be(lifecycleState);
+        fenced.CacheAheadRecoveryRequired.Should().BeFalse();
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_fences_set_latch_without_cache_dml_or_acknowledgement()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-latch-fenced");
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true);
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        DocumentCacheWriterResult.LifecycleOrLatchFenced fenced = AssertLifecycleFence(
+            result,
+            DocumentCacheWriterFenceReason.CacheAheadRecoveryRequired
+        );
+        fenced.LifecycleState.Should().Be(DocumentCacheLifecycleState.Tracking);
+        fenced.CacheAheadRecoveryRequired.Should().BeTrue();
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_fences_missing_lifecycle_state_without_cache_dml_or_acknowledgement()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-missing-state");
+        await DeleteLifecycleStateAsync();
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        DocumentCacheWriterResult.LifecycleOrLatchFenced fenced = AssertLifecycleFence(
+            result,
+            DocumentCacheWriterFenceReason.StateMissing
+        );
+        fenced.LifecycleState.Should().BeNull();
+        fenced.CacheAheadRecoveryRequired.Should().BeNull();
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_fences_invalid_lifecycle_state_without_cache_dml_or_acknowledgement()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-invalid-state");
+        await SetInvalidLifecycleStateAsync();
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        DocumentCacheWriterResult.LifecycleOrLatchFenced fenced = AssertLifecycleFence(
+            result,
+            DocumentCacheWriterFenceReason.StateInvalid
+        );
+        fenced.LifecycleState.Should().BeNull();
+        fenced.CacheAheadRecoveryRequired.Should().BeNull();
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
     }
 
     [Test]
@@ -413,6 +575,89 @@ public class Given_A_Mssql_DocumentCacheWriter
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_rolls_back_cache_write_when_source_and_work_advance_before_acknowledgement()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-current");
+        PausingFaultInjectionObserver observer = new(
+            DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement
+        );
+        MssqlDocumentCacheWriter pausedWriter = CreateWriter(observer);
+
+        Task<DocumentCacheWriterResult> firstWrite = pausedWriter.WriteAsync(
+            CreateRequest(source, candidate)
+        );
+
+        await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+        await AdvanceSourceAndWorkVersionAsync(source.DocumentId, contentVersion: 11);
+
+        observer.Release();
+
+        DocumentCacheWriterResult result = await firstWrite.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result.Should().BeSameAs(DocumentCacheWriterResult.RacingWriterLost.Instance);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(11);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_blocks_same_document_canonical_enqueue_during_acknowledgement_without_blocking_unrelated_documents()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 10);
+        SourceDocument unrelatedSource = await InsertSourceDocumentAsync(contentVersion: 20);
+        PausingFaultInjectionObserver observer = new(
+            DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit
+        );
+        MssqlDocumentCacheWriter pausedWriter = CreateWriter(observer);
+
+        Task<DocumentCacheWriterResult> acknowledgement = pausedWriter.WriteAsync(
+            CreateRequest(source, candidate: null)
+        );
+
+        await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+
+        await AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+            unrelatedSource.DocumentId,
+            contentVersion: 21
+        );
+
+        SqlException exception = (
+            await FluentActions
+                .Awaiting(() =>
+                    AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                        source.DocumentId,
+                        contentVersion: 11
+                    )
+                )
+                .Should()
+                .ThrowAsync<SqlException>()
+        ).Which;
+
+        exception.Number.Should().Be(1222);
+        new MssqlRelationalWriteExceptionClassifier().IsTransientFailure(exception).Should().BeTrue();
+
+        observer.Release();
+
+        DocumentCacheWriterResult result = await acknowledgement.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadSourceContentVersionAsync(source.DocumentId)).Should().Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadSourceContentVersionAsync(unrelatedSource.DocumentId)).Should().Be(21);
+        (await ReadWorkRequiredContentVersionAsync(unrelatedSource.DocumentId)).Should().Be(21);
+    }
+
     private async Task<DocumentCacheWriterResult> WriteAsync(
         SourceDocument source,
         DocumentCacheMaterializationCandidate? candidate
@@ -456,6 +701,30 @@ public class Given_A_Mssql_DocumentCacheWriter
             {
                 Value = cacheAheadRecoveryRequired,
             }
+        );
+    }
+
+    private async Task DeleteLifecycleStateAsync()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM [dms].[DocumentCacheState]
+            WHERE [StateId] = 1;
+            """
+        );
+    }
+
+    private async Task SetInvalidLifecycleStateAsync()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            ALTER TABLE [dms].[DocumentCacheState]
+            DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+
+            UPDATE [dms].[DocumentCacheState]
+            SET [ProjectionLifecycleState] = 'Paused'
+            WHERE [StateId] = 1;
+            """
         );
     }
 
@@ -514,6 +783,48 @@ public class Given_A_Mssql_DocumentCacheWriter
                 Value = new DateTime(2026, 7, 31, 12, 5, 0, DateTimeKind.Utc),
             }
         );
+    }
+
+    private async Task AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+        long documentId,
+        long contentVersion
+    )
+    {
+        await using SqlConnection connection = new(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using SqlTransaction transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            await using SqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                SET LOCK_TIMEOUT 100;
+
+                UPDATE [dms].[Document]
+                SET [ContentVersion] = @contentVersion,
+                    [ContentLastModifiedAt] = @lastModifiedAt
+                WHERE [DocumentId] = @documentId;
+                """;
+            command.Parameters.Add(
+                new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
+            );
+            command.Parameters.Add(
+                new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
+                {
+                    Value = new DateTime(2026, 7, 31, 12, 10, 0, DateTimeKind.Utc),
+                }
+            );
+            command.Parameters.Add(new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId });
+
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     private async Task<SourceDocument> InsertSourceDocumentAsync(long contentVersion)
@@ -619,14 +930,17 @@ public class Given_A_Mssql_DocumentCacheWriter
         SourceDocument source,
         string value,
         long? contentVersion = null,
-        Guid? documentUuid = null
+        Guid? documentUuid = null,
+        string projectName = "Ed-Fi",
+        string resourceName = "Person",
+        string resourceVersion = "5.0.0"
     ) =>
         new(
             source.DocumentId,
             new DocumentUuid(documentUuid ?? source.DocumentUuid),
-            "Ed-Fi",
-            "Person",
-            "5.0.0",
+            projectName,
+            resourceName,
+            resourceVersion,
             contentVersion ?? source.ContentVersion,
             LastModifiedAt,
             $"etag-{contentVersion ?? source.ContentVersion}",
@@ -638,6 +952,16 @@ public class Given_A_Mssql_DocumentCacheWriter
             """
             SELECT COUNT_BIG(*)
             FROM [dms].[DocumentProjectionWork]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId }
+        );
+
+    private async Task<long> ReadSourceContentVersionAsync(long documentId) =>
+        await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT [ContentVersion]
+            FROM [dms].[Document]
             WHERE [DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId }
@@ -703,6 +1027,19 @@ public class Given_A_Mssql_DocumentCacheWriter
             WHERE [StateId] = 1;
             """
         );
+
+    private static DocumentCacheWriterResult.LifecycleOrLatchFenced AssertLifecycleFence(
+        DocumentCacheWriterResult result,
+        DocumentCacheWriterFenceReason reason
+    )
+    {
+        DocumentCacheWriterResult.LifecycleOrLatchFenced fenced = result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.LifecycleOrLatchFenced>()
+            .Subject;
+        fenced.Reason.Should().Be(reason);
+        return fenced;
+    }
 
     private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
 

@@ -623,15 +623,19 @@ BEGIN
     UPDATE work
     SET work.[RequiredContentVersion] = req.[RequiredContentVersion],
         work.[LastEnqueuedAt] = @enqueuedAt
-    FROM [dms].[DocumentProjectionWork] work
-    INNER JOIN @required req ON req.[DocumentId] = work.[DocumentId]
-    WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion];
+    FROM @required req
+    INNER LOOP JOIN [dms].[DocumentProjectionWork] work WITH (UPDLOCK, ROWLOCK) ON work.[DocumentId] = req.[DocumentId]
+    WHERE work.[RequiredContentVersion] < req.[RequiredContentVersion]
+    OPTION (FORCE ORDER);
 
     INSERT INTO [dms].[DocumentProjectionWork] ([DocumentId], [RequiredContentVersion], [FirstEnqueuedAt], [LastEnqueuedAt])
     SELECT req.[DocumentId], req.[RequiredContentVersion], @enqueuedAt, @enqueuedAt
     FROM @required req
-    LEFT JOIN [dms].[DocumentProjectionWork] work ON work.[DocumentId] = req.[DocumentId]
-    WHERE work.[DocumentId] IS NULL;
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM [dms].[DocumentProjectionWork] work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+        WHERE work.[DocumentId] = req.[DocumentId]
+    );
 END;
 GO
 
