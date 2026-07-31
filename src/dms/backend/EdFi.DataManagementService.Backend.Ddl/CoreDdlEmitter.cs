@@ -330,6 +330,28 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("Discriminator"), StringType(128), false)},"
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Uri"), StringType(306), false)},");
+            // dms.Document metadata mirrored onto the descriptor row by TR_Descriptor_Stamp_Document.
+            // Unlike the root tables (whose PostgreSQL stamping trigger is BEFORE INSERT and can set
+            // NEW directly), the descriptor trigger is AFTER INSERT and mirrors through a separate
+            // UPDATE, so the client INSERT must already satisfy NOT NULL on its own: every mirrored
+            // column carries a DF_ default that the trigger immediately overwrites.
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("DocumentUuid"), _dialect.UuidColumnType, false, "DF_Descriptor_DocumentUuid", _dialect.NewGuidDefaultExpression)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("IdentityVersion"), "bigint", false, "DF_Descriptor_IdentityVersion", "0")},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("IdentityLastModifiedAt"), DateTimeType, false, "DF_Descriptor_IdentityLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("CreatedAt"), DateTimeType, false, "DF_Descriptor_CreatedAt", _dialect.CurrentTimestampDefaultExpression)},"
+            );
+            // Forward-compatible placeholder: dms.Document has no CreatedByOwnershipTokenId column,
+            // so nothing copies a value here and the column stays nullable and unwritten.
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("CreatedByOwnershipTokenId"), _dialect.SmallintColumnType, true)},"
+            );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", "0")},"
             );
@@ -339,6 +361,15 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Descriptor", [Col("DocumentId")]));
         }
         writer.AppendLine(");");
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.AddUniqueConstraint(
+                _descriptorTable,
+                "UX_Descriptor_DocumentUuid",
+                [Col("DocumentUuid")]
+            )
+        );
         writer.AppendLine();
 
         writer.AppendLine(
@@ -836,8 +867,11 @@ public sealed class CoreDdlEmitter
     // ── Descriptor stamping trigger (dms.Descriptor → dms.Document) ────────
 
     /// <summary>
-    /// Stored columns on <c>dms.Descriptor</c> in the order they are emitted by
-    /// <see cref="EmitDescriptorTable"/>, paired with their <see cref="ScalarKind"/>.
+    /// Client-supplied content columns on <c>dms.Descriptor</c> in the order they are emitted by
+    /// <see cref="EmitDescriptorTable"/>, paired with their <see cref="ScalarKind"/>. The
+    /// trigger-maintained mirrors (the content stamp pair and
+    /// <see cref="_descriptorMirroredDocumentColumns"/>) plus the never-written
+    /// <c>CreatedByOwnershipTokenId</c> are deliberately excluded.
     /// The kind metadata is load-bearing for the MSSQL trigger: <see cref="ScalarKind.String"/>
     /// columns are compared via <c>CAST(... AS varbinary(max))</c> so that trailing-space-only
     /// and case-only changes (which default CI collation + ANSI padding would miss) are still
@@ -857,10 +891,54 @@ public sealed class CoreDdlEmitter
         };
 
     /// <summary>
+    /// The <c>dms.Document</c> metadata columns the descriptor stamping trigger copies onto the
+    /// <c>dms.Descriptor</c> row in addition to the <c>ContentVersion</c>/<c>ContentLastModifiedAt</c>
+    /// pair, in the order every copy list uses. The order is load-bearing on SQL Server:
+    /// <c>OUTPUT ... INTO @stamped</c> carries no explicit column list and therefore binds positionally,
+    /// so the <c>@stamped</c> declaration, the seeding <c>INSERT</c>, and the <c>OUTPUT</c> list must
+    /// agree. <c>CreatedByOwnershipTokenId</c> is deliberately absent: <c>dms.Document</c> has no such
+    /// column, so there is nothing to copy.
+    /// <para>
+    /// These columns are intentionally <em>not</em> part of <see cref="_descriptorStoredColumns"/>.
+    /// They are trigger-owned mirror targets rather than client content, so they must stay out of the
+    /// no-op change detection — which is also what bounds the recursion the mirror <c>UPDATE</c> would
+    /// otherwise cause (it re-fires this same trigger).
+    /// </para>
+    /// </summary>
+    private static readonly string[] _descriptorMirroredDocumentColumns =
+    [
+        "DocumentUuid",
+        "IdentityVersion",
+        "IdentityLastModifiedAt",
+        "CreatedAt",
+    ];
+
+    /// <summary>
+    /// Appends <c>, DocumentUuid, IdentityVersion, IdentityLastModifiedAt, CreatedAt</c> — each quoted
+    /// for the dialect and optionally prefixed with <paramref name="qualifier"/> and a dot — for the
+    /// <c>dms.Document</c> metadata the descriptor stamping trigger copies. Callers always emit the
+    /// leading key/content-stamp columns first, so this starts with a separator.
+    /// </summary>
+    private void AppendDescriptorMirroredDocumentColumns(SqlWriter writer, string? qualifier)
+    {
+        foreach (var column in _descriptorMirroredDocumentColumns)
+        {
+            writer.Append(", ");
+            if (qualifier is not null)
+            {
+                writer.Append(qualifier);
+                writer.Append(".");
+            }
+            writer.Append(Quote(column));
+        }
+    }
+
+    /// <summary>
     /// Emits the PostgreSQL descriptor stamping trigger function and trigger.
     /// On INSERT, DELETE, or a real value change to any stored column of <c>dms.Descriptor</c>,
     /// bumps <c>dms.Document.ContentVersion</c> and <c>ContentLastModifiedAt</c> on
-    /// the owning document row, then mirrors those captured stamps back to the descriptor
+    /// the owning document row, then mirrors those captured stamps — plus
+    /// <see cref="_descriptorMirroredDocumentColumns"/> — back to the descriptor
     /// (INSERT copies the existing document stamp; DELETE stamps the document only, since
     /// the descriptor row is already gone).
     /// A DB-level no-op guard (<c>IS DISTINCT FROM</c> across every stored column)
@@ -906,6 +984,7 @@ public sealed class CoreDdlEmitter
                     writer.Append(Quote("ContentVersion"));
                     writer.Append(", ");
                     writer.Append(Quote("ContentLastModifiedAt"));
+                    AppendDescriptorMirroredDocumentColumns(writer, qualifier: null);
                     writer.AppendLine();
                     writer.Append("FROM ");
                     writer.AppendLine(documentTable);
@@ -938,12 +1017,15 @@ public sealed class CoreDdlEmitter
                     writer.Append(" = NEW.");
                     writer.Append(Quote("DocumentId"));
                     writer.AppendLine();
+                    // The four mirrored metadata columns are unchanged by this UPDATE, but returning
+                    // them keeps the mirror statement one shape across both branches.
                     writer.Append("RETURNING ");
                     writer.Append(Quote("DocumentId"));
                     writer.Append(", ");
                     writer.Append(Quote("ContentVersion"));
                     writer.Append(", ");
                     writer.Append(Quote("ContentLastModifiedAt"));
+                    AppendDescriptorMirroredDocumentColumns(writer, qualifier: null);
                     writer.AppendLine();
                 }
                 writer.AppendLine(")");
@@ -1011,6 +1093,13 @@ public sealed class CoreDdlEmitter
         writer.Append(Quote("ContentLastModifiedAt"));
         writer.Append(" = stamped.");
         writer.Append(Quote("ContentLastModifiedAt"));
+        foreach (var column in _descriptorMirroredDocumentColumns)
+        {
+            writer.Append(", ");
+            writer.Append(Quote(column));
+            writer.Append(" = stamped.");
+            writer.Append(Quote(column));
+        }
         writer.AppendLine();
         writer.AppendLine("FROM stamped");
         writer.Append("WHERE r.");
@@ -1026,6 +1115,8 @@ public sealed class CoreDdlEmitter
     /// through the null-safe per-column diff predicates across every stored descriptor
     /// column, so no-op UPDATEs produce no CTE rows and the downstream stamp/mirror
     /// updates stamp nothing. DELETE rows stamp the owning document before it is removed.
+    /// The mirror writes the content stamp pair plus
+    /// <see cref="_descriptorMirroredDocumentColumns"/>.
     /// </summary>
     private void EmitMssqlDescriptorStampingTrigger(SqlWriter writer)
     {
@@ -1051,13 +1142,21 @@ public sealed class CoreDdlEmitter
             {
                 writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
                 writer.AppendLine("[ContentVersion] bigint NOT NULL,");
-                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
+                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL,");
+                // OUTPUT ... INTO @stamped binds positionally, so this declaration order must match
+                // _descriptorMirroredDocumentColumns.
+                writer.AppendLine("[DocumentUuid] uniqueidentifier NOT NULL,");
+                writer.AppendLine("[IdentityVersion] bigint NOT NULL,");
+                writer.AppendLine("[IdentityLastModifiedAt] datetime2(7) NOT NULL,");
+                writer.AppendLine("[CreatedAt] datetime2(7) NOT NULL");
             }
             writer.AppendLine(");");
-            writer.AppendLine(
-                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])"
-            );
-            writer.AppendLine("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+            writer.Append("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt]");
+            AppendDescriptorMirroredDocumentColumns(writer, qualifier: null);
+            writer.AppendLine(")");
+            writer.Append("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+            AppendDescriptorMirroredDocumentColumns(writer, "d");
+            writer.AppendLine();
             writer.Append("FROM ");
             writer.Append(documentTable);
             writer.AppendLine(" d");
@@ -1112,9 +1211,13 @@ public sealed class CoreDdlEmitter
             writer.Append(", d.");
             writer.Append(Quote("ContentLastModifiedAt"));
             writer.AppendLine(" = sysutcdatetime()");
-            writer.AppendLine(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+            // The mirrored metadata columns are unchanged by this UPDATE; capturing them from the
+            // post-update row image keeps one mirror statement shape for insert and update rows alike.
+            writer.Append(
+                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt]"
             );
+            AppendDescriptorMirroredDocumentColumns(writer, "inserted");
+            writer.AppendLine(" INTO @stamped");
             writer.Append("FROM ");
             writer.Append(documentTable);
             writer.AppendLine(" d");
@@ -1140,6 +1243,14 @@ public sealed class CoreDdlEmitter
                 writer.Append(Quote("ContentLastModifiedAt"));
                 writer.Append(" = s.");
                 writer.Append(Quote("ContentLastModifiedAt"));
+                foreach (var column in _descriptorMirroredDocumentColumns)
+                {
+                    writer.AppendLine(",");
+                    writer.Append("    r.");
+                    writer.Append(Quote(column));
+                    writer.Append(" = s.");
+                    writer.Append(Quote(column));
+                }
                 writer.AppendLine();
                 writer.Append("FROM ");
                 writer.Append(descriptorTable);

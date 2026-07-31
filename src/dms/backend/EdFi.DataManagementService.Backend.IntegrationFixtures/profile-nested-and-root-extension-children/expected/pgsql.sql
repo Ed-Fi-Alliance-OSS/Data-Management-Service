@@ -93,10 +93,28 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "IdentityVersion" bigint NOT NULL DEFAULT 0,
+    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "CreatedByOwnershipTokenId" smallint NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'UX_Descriptor_DocumentUuid'
+        AND conrelid = to_regclass('"dms"."Descriptor"')
+    )
+    THEN
+        ALTER TABLE "dms"."Descriptor"
+        ADD CONSTRAINT "UX_Descriptor_DocumentUuid" UNIQUE ("DocumentUuid");
+    END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -414,12 +432,12 @@ BEGIN
     END IF;
     IF TG_OP = 'INSERT' THEN
         WITH stamped AS (
-            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentId" = NEW."DocumentId"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt"
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
@@ -427,10 +445,10 @@ BEGIN
             UPDATE "dms"."Document"
             SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = NEW."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt"
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'DELETE' THEN

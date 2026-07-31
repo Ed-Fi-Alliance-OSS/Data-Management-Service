@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -244,6 +245,30 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_default_every_descriptor_document_metadata_mirror_column()
+    {
+        // TR_Descriptor_Stamp_Document is AFTER INSERT and mirrors through a separate UPDATE, so the
+        // client INSERT — which supplies none of these columns — must satisfy NOT NULL on its own.
+        // Without the defaults, every descriptor create would fail before the trigger could run.
+        var block = DescriptorTableColumnExtractor.ExtractPgBlock(_ddl);
+
+        block.Should().Contain("\"DocumentUuid\" uuid NOT NULL DEFAULT gen_random_uuid()");
+        block.Should().Contain("\"IdentityVersion\" bigint NOT NULL DEFAULT 0");
+        block.Should().Contain("\"IdentityLastModifiedAt\" timestamp with time zone NOT NULL DEFAULT now()");
+        block.Should().Contain("\"CreatedAt\" timestamp with time zone NOT NULL DEFAULT now()");
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_created_by_ownership_token_id_as_a_nullable_placeholder()
+    {
+        // dms.Document has no CreatedByOwnershipTokenId column, so nothing copies a value onto the
+        // descriptor; the column exists only so the shape matches the root tables.
+        var block = DescriptorTableColumnExtractor.ExtractPgBlock(_ddl);
+
+        block.Should().Contain("\"CreatedByOwnershipTokenId\" smallint NULL");
+    }
+
+    [Test]
     public void It_should_create_document_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"");
@@ -409,6 +434,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_have_unique_on_descriptor_uri_discriminator()
     {
         _ddl.Should().Contain("\"UX_Descriptor_Uri_Discriminator\" UNIQUE");
+    }
+
+    [Test]
+    public void It_should_have_unique_on_descriptor_document_uuid()
+    {
+        _ddl.Should().Contain("\"UX_Descriptor_DocumentUuid\" UNIQUE (\"DocumentUuid\")");
     }
 
     [Test]
@@ -650,14 +681,70 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_capture_descriptor_document_stamps_with_returning_and_mirror_them()
     {
         _ddl.Should().Contain("WITH stamped AS (");
-        _ddl.Should().Contain("RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
-        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
         _ddl.Should()
             .Contain(
-                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+                "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\", "
+                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\""
             );
+        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
+        _ddl.Should().Contain(PgsqlDescriptorMirrorSetClause);
         _ddl.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
     }
+
+    [Test]
+    public void It_should_mirror_every_document_metadata_column_onto_the_descriptor_row()
+    {
+        // Both branches share one mirror statement, so the INSERT branch's SELECT and the UPDATE
+        // branch's RETURNING have to surface the same columns even though an UPDATE leaves the four
+        // metadata values unchanged. Phase 2's descriptor reads depend on the row being self-sufficient.
+        var insertBranch = SliceBranch(_ddl, "IF TG_OP = 'INSERT' THEN", "ELSIF TG_OP = 'UPDATE' THEN");
+        var updateBranch = SliceBranch(_ddl, "ELSIF TG_OP = 'UPDATE' THEN", "ELSIF TG_OP = 'DELETE' THEN");
+
+        insertBranch
+            .Should()
+            .Contain(
+                "SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\", "
+                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\""
+            );
+        insertBranch.Should().Contain(PgsqlDescriptorMirrorSetClause);
+        updateBranch.Should().Contain(PgsqlDescriptorMirrorSetClause);
+    }
+
+    private static string SliceBranch(string ddl, string startMarker, string endMarker)
+    {
+        var start = ddl.IndexOf(startMarker, StringComparison.Ordinal);
+        start.Should().BeGreaterOrEqualTo(0, $"'{startMarker}' must be emitted");
+        var end = ddl.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start, $"'{endMarker}' must follow '{startMarker}'");
+        return ddl[start..end];
+    }
+
+    [Test]
+    public void It_should_not_copy_created_by_ownership_token_id_onto_the_descriptor()
+    {
+        // dms.Document has no such column, so there is nothing to copy. The descriptor column is a
+        // nullable placeholder and must not appear anywhere in the stamping trigger.
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+        var functionEnd = _ddl.IndexOf("$func$ LANGUAGE plpgsql;", functionStart, StringComparison.Ordinal);
+        functionEnd.Should().BeGreaterThan(functionStart);
+
+        _ddl[functionStart..functionEnd].Should().NotContain("CreatedByOwnershipTokenId");
+    }
+
+    /// <summary>
+    /// The mirror <c>SET</c> list both branches of the PostgreSQL descriptor stamping trigger share.
+    /// </summary>
+    private const string PgsqlDescriptorMirrorSetClause =
+        "SET \"ContentVersion\" = stamped.\"ContentVersion\", "
+        + "\"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\", "
+        + "\"DocumentUuid\" = stamped.\"DocumentUuid\", "
+        + "\"IdentityVersion\" = stamped.\"IdentityVersion\", "
+        + "\"IdentityLastModifiedAt\" = stamped.\"IdentityLastModifiedAt\", "
+        + "\"CreatedAt\" = stamped.\"CreatedAt\"";
 
     [Test]
     public void It_should_diff_every_non_key_descriptor_column_in_stamping_trigger()
@@ -667,15 +754,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // to EmitDescriptorTable adds or renames a column without updating that list,
         // real value changes to the new column will silently fail to bump stamps.
         // This test re-derives the column set from the emitted Descriptor table and
-        // asserts each non-PK, non-stamp column appears as an IS DISTINCT FROM predicate.
-        // The change-version mirror columns are stamp targets, not client content, so they are
-        // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
-        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
+        // asserts each non-PK, non-mirror column appears as an IS DISTINCT FROM predicate.
         var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns.Should().Contain("DocumentId", "sanity check the extractor found PK column");
 
-        foreach (var column in columns.Where(c => c != "DocumentId" && !stampColumns.Contains(c)))
+        foreach (
+            var column in columns.Where(c =>
+                c != "DocumentId" && !DescriptorTableColumnExtractor.TriggerMaintainedColumns.Contains(c)
+            )
+        )
         {
             _ddl.Should()
                 .Contain(
@@ -685,12 +773,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
                 );
         }
 
-        foreach (var stampColumn in stampColumns)
+        foreach (var mirrorColumn in DescriptorTableColumnExtractor.TriggerMaintainedColumns)
         {
             _ddl.Should()
                 .NotContain(
-                    $"OLD.\"{stampColumn}\" IS DISTINCT FROM NEW.\"{stampColumn}\"",
-                    "change-version mirror columns are stamp targets and must not appear in the no-op diff"
+                    $"OLD.\"{mirrorColumn}\" IS DISTINCT FROM NEW.\"{mirrorColumn}\"",
+                    "dms.Document mirror columns are trigger-maintained and must not appear in the "
+                        + "no-op diff — that exclusion is what stops the mirror UPDATE from recursing"
                 );
         }
     }
@@ -959,6 +1048,31 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0");
     }
 
+    [Test]
+    public void It_should_default_every_descriptor_document_metadata_mirror_column()
+    {
+        // TR_Descriptor_Stamp_Document is AFTER INSERT and mirrors through a separate UPDATE, so the
+        // client INSERT — which supplies none of these columns — must satisfy NOT NULL on its own.
+        _ddl.Should()
+            .Contain(
+                "[DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_Descriptor_DocumentUuid] DEFAULT newid()"
+            );
+        _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_IdentityVersion] DEFAULT 0");
+        _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_IdentityLastModifiedAt] DEFAULT (sysutcdatetime())");
+        _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_CreatedAt] DEFAULT (sysutcdatetime())");
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_created_by_ownership_token_id_as_a_nullable_placeholder()
+    {
+        // dms.Document has no CreatedByOwnershipTokenId column, so nothing copies a value onto the
+        // descriptor; the column exists only so the shape matches the root tables.
+        DescriptorTableColumnExtractor
+            .ExtractMssqlBlock(_ddl)
+            .Should()
+            .Contain("[CreatedByOwnershipTokenId] smallint NULL");
+    }
+
     // ── MSSQL named default constraints ─────────────────────────────
 
     [Test]
@@ -1009,6 +1123,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_clustered_pk_for_descriptor()
     {
         _ddl.Should().Contain("CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])");
+    }
+
+    [Test]
+    public void It_should_have_unique_on_descriptor_document_uuid()
+    {
+        _ddl.Should().Contain("ADD CONSTRAINT [UX_Descriptor_DocumentUuid] UNIQUE ([DocumentUuid]);");
     }
 
     [Test]
@@ -1234,8 +1354,15 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
     {
         _ddl.Should()
-            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
-        _ddl.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+            .Contain(
+                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], "
+                    + "[DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt])"
+            );
+        _ddl.Should()
+            .Contain(
+                "SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], "
+                    + "d.[DocumentUuid], d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt]"
+            );
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
@@ -1248,13 +1375,66 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("DECLARE @stamped TABLE (");
         _ddl.Should()
             .Contain(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], "
+                    + "inserted.[DocumentUuid], inserted.[IdentityVersion], "
+                    + "inserted.[IdentityLastModifiedAt], inserted.[CreatedAt] INTO @stamped"
             );
         _ddl.Should().Contain("UPDATE r");
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
-        _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]");
+        _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt],");
+        _ddl.Should().Contain("r.[DocumentUuid] = s.[DocumentUuid],");
+        _ddl.Should().Contain("r.[IdentityVersion] = s.[IdentityVersion],");
+        _ddl.Should().Contain("r.[IdentityLastModifiedAt] = s.[IdentityLastModifiedAt],");
+        _ddl.Should().Contain("r.[CreatedAt] = s.[CreatedAt]");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
         _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
+    }
+
+    [Test]
+    public void It_should_declare_the_stamped_capture_table_in_output_binding_order()
+    {
+        // OUTPUT ... INTO @stamped carries no explicit column list, so it binds positionally: the
+        // declaration order, the seeding INSERT list, and the OUTPUT list must all agree or the
+        // mirror silently writes one column's value into another.
+        var declareStart = _ddl.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
+        declareStart.Should().BeGreaterOrEqualTo(0);
+        var declareEnd = _ddl.IndexOf(");", declareStart, StringComparison.Ordinal);
+        declareEnd.Should().BeGreaterThan(declareStart);
+
+        var declaredColumns = Regex
+            .Matches(_ddl[declareStart..declareEnd], @"\[(?<name>[A-Za-z][A-Za-z0-9]*)\]\s+\S")
+            .Select(m => m.Groups["name"].Value)
+            .ToList();
+
+        declaredColumns
+            .Should()
+            .Equal(
+                "DocumentId",
+                "ContentVersion",
+                "ContentLastModifiedAt",
+                "DocumentUuid",
+                "IdentityVersion",
+                "IdentityLastModifiedAt",
+                "CreatedAt"
+            );
+        _ddl.Should().Contain("[DocumentUuid] uniqueidentifier NOT NULL,");
+        _ddl.Should().Contain("[IdentityVersion] bigint NOT NULL,");
+    }
+
+    [Test]
+    public void It_should_not_copy_created_by_ownership_token_id_onto_the_descriptor()
+    {
+        // dms.Document has no such column, so there is nothing to copy. The descriptor column is a
+        // nullable placeholder and must not appear anywhere in the stamping trigger.
+        var triggerStart = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+        var triggerEnd = _ddl.IndexOf("END;", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+
+        _ddl[triggerStart..triggerEnd].Should().NotContain("CreatedByOwnershipTokenId");
     }
 
     [Test]
@@ -1264,9 +1444,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // CAST(... AS varbinary(max)) so case-only / trailing-space-only changes are
         // detected under default CI collation; non-string columns use plain <>. If a
         // future column addition forgets to wire the right comparator, this test fails.
-        // The change-version mirror columns are stamp targets, not client content, so they are
-        // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
-        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns
@@ -1275,7 +1452,10 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain("DocumentId", "sanity check the extractor found PK column");
 
         foreach (
-            var (name, type) in columns.Where(c => c.Name != "DocumentId" && !stampColumns.Contains(c.Name))
+            var (name, type) in columns.Where(c =>
+                c.Name != "DocumentId"
+                && !DescriptorTableColumnExtractor.TriggerMaintainedColumns.Contains(c.Name)
+            )
         )
         {
             var isStringType = type.Contains("char", StringComparison.OrdinalIgnoreCase);
@@ -1290,12 +1470,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 );
         }
 
-        foreach (var stampColumn in stampColumns)
+        foreach (var mirrorColumn in DescriptorTableColumnExtractor.TriggerMaintainedColumns)
         {
             _ddl.Should()
                 .NotContain(
-                    $"i.[{stampColumn}] <> del.[{stampColumn}]",
-                    "change-version mirror columns are stamp targets and must not appear in the no-op diff"
+                    $"i.[{mirrorColumn}] <> del.[{mirrorColumn}]",
+                    "dms.Document mirror columns are trigger-maintained and must not appear in the "
+                        + "no-op diff — that exclusion is what stops the mirror UPDATE from recursing"
                 );
         }
     }
@@ -1596,7 +1777,7 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
     public void It_should_place_the_tombstone_after_the_document_stamp_update()
     {
         var documentStampUpdate = _ddl.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt],",
             StringComparison.Ordinal
         );
         documentStampUpdate.Should().BeGreaterOrEqualTo(0);

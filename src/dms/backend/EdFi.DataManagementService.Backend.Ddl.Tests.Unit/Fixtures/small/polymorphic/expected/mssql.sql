@@ -142,10 +142,22 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_Descriptor_DocumentUuid] DEFAULT newid(),
+    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_IdentityVersion] DEFAULT 0,
+    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
+    [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = N'UX_Descriptor_DocumentUuid' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+)
+ALTER TABLE [dms].[Descriptor]
+ADD CONSTRAINT [UX_Descriptor_DocumentUuid] UNIQUE ([DocumentUuid]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.key_constraints
@@ -396,10 +408,14 @@ BEGIN
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
         [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentLastModifiedAt] datetime2(7) NOT NULL,
+        [DocumentUuid] uniqueidentifier NOT NULL,
+        [IdentityVersion] bigint NOT NULL,
+        [IdentityLastModifiedAt] datetime2(7) NOT NULL,
+        [CreatedAt] datetime2(7) NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], [DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt])
+    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], d.[DocumentUuid], d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -417,14 +433,18 @@ BEGIN
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], inserted.[DocumentUuid], inserted.[IdentityVersion], inserted.[IdentityLastModifiedAt], inserted.[CreatedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt],
+            r.[DocumentUuid] = s.[DocumentUuid],
+            r.[IdentityVersion] = s.[IdentityVersion],
+            r.[IdentityLastModifiedAt] = s.[IdentityLastModifiedAt],
+            r.[CreatedAt] = s.[CreatedAt]
         FROM [dms].[Descriptor] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
