@@ -1359,7 +1359,17 @@ public class PostgresqlReferentialIdentityTests
         ((Guid)referentialId["ReferentialId"]!).Should().Be(expectedReferentialId);
         ((long)referentialId["DocumentId"]!).Should().Be(documentId);
 
-        // Act — delete the dms.Document row (CASCADE removes RI via FK)
+        // Act — production delete ordering (OrderedDeleteCommandBuilder / DMS-1180): the resource row
+        // first, then the dms.Document row, whose FK CASCADE removes RI. Deleting dms.Document while
+        // the resource row still exists is not a supported ordering: the root row's stamping trigger
+        // would then fire from the FK cascade with the dms.Document row already gone, and its stamp
+        // capture fails loudly.
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM "edfi"."Student" WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
         await _database.ExecuteNonQueryAsync(
             """
             DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;
@@ -1383,7 +1393,14 @@ public class PostgresqlReferentialIdentityTests
         referentialIds.Should().HaveCount(2);
         referentialIds.All(r => (long)r["DocumentId"]! == documentId).Should().BeTrue();
 
-        // Act
+        // Act — production delete ordering (OrderedDeleteCommandBuilder / DMS-1180): the resource row
+        // first, then the dms.Document row, whose FK CASCADE removes both the primary and alias RI rows.
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM "edfi"."School" WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
         await _database.ExecuteNonQueryAsync(
             """
             DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;
