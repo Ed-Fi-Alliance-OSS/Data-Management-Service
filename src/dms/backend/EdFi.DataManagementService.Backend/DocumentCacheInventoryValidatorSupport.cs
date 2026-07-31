@@ -179,9 +179,35 @@ internal static class DocumentCacheInventoryValidatorSupport
                 [
                     Bigint(DocumentCacheInventoryDefinition.DocumentColumns.DocumentId.Value, dialect),
                     Uuid(DocumentCacheInventoryDefinition.DocumentColumns.DocumentUuid.Value, dialect),
+                    Smallint(DocumentCacheInventoryDefinition.DocumentColumns.ResourceKeyId.Value, dialect),
                     Bigint(DocumentCacheInventoryDefinition.DocumentColumns.ContentVersion.Value, dialect),
                 ],
                 ExactColumnSet: false
+            ),
+            new TableSpec(
+                DocumentCacheInventoryDefinition.ResourceKey,
+                [
+                    Smallint(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceKeyId.Value,
+                        dialect
+                    ),
+                    String(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ProjectName.Value,
+                        dialect,
+                        256
+                    ),
+                    String(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceName.Value,
+                        dialect,
+                        256
+                    ),
+                    String(
+                        DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceVersion.Value,
+                        dialect,
+                        32
+                    ),
+                ],
+                ExactColumnSet: true
             ),
             new TableSpec(
                 DocumentCacheInventoryDefinition.DocumentCache,
@@ -349,6 +375,31 @@ internal static class DocumentCacheInventoryValidatorSupport
                         definition,
                         DataStoreIdentityTableDefinition.DataStoreIdentitySingletonId.Value
                     ),
+                inventoryIssues,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await RequirePrimaryKeyAsync(
+                connection,
+                dialect,
+                DocumentCacheInventoryDefinition.ResourceKey,
+                DocumentCacheInventoryDefinition.ResourceKeyConstraints.PrimaryKey,
+                [DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceKeyId.Value],
+                inventoryIssues,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        await RequireForeignKeyAsync(
+                connection,
+                dialect,
+                DocumentCacheInventoryDefinition.Document,
+                DocumentCacheInventoryDefinition.DocumentConstraints.ForeignKeyToResourceKey,
+                [DocumentCacheInventoryDefinition.DocumentColumns.ResourceKeyId.Value],
+                DocumentCacheInventoryDefinition.ResourceKey,
+                [DocumentCacheInventoryDefinition.ResourceKeyColumns.ResourceKeyId.Value],
+                deleteAction: "NO_ACTION",
+                updateAction: "NO_ACTION",
                 inventoryIssues,
                 cancellationToken
             )
@@ -2142,8 +2193,11 @@ internal static class DocumentCacheInventoryValidatorSupport
             "UPDATEWORK",
             "SETWORKREQUIREDCONTENTVERSION=REQREQUIREDCONTENTVERSION",
             "WORKREQUIREDCONTENTVERSION<REQREQUIREDCONTENTVERSION",
+            "INNERLOOPJOINDMSDOCUMENTPROJECTIONWORK",
+            "OPTIONFORCEORDER",
             "INSERTINTODMSDOCUMENTPROJECTIONWORK",
-            "LEFTJOINDMSDOCUMENTPROJECTIONWORK"
+            "WHERENOTEXISTS",
+            "WORKWITHUPDLOCKHOLDLOCKROWLOCK"
         );
 
     private static bool HasNormalizedTokens(string? definition, params string[] tokens) =>

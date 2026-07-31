@@ -54,6 +54,46 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_rejects_missing_resource_key_inventory()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE "dms"."ResourceKey" RENAME TO "ResourceKeyRenamed";
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+        result.Inventory.Message.Should().Contain("dms.ResourceKey");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_rejects_a_document_table_without_resource_key_fencing()
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE "dms"."Document" DROP CONSTRAINT "FK_Document_ResourceKey";
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+        result.Inventory.Message.Should().Contain("FK_Document_ResourceKey");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_classifies_missing_required_objects_as_missing_inventory()
     {
         await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();

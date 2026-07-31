@@ -3,9 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -36,6 +40,70 @@ public class DocumentCacheTargetRegistryTests
 
     private static readonly DocumentCachePhysicalSourceFingerprint _fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    );
+
+    private static readonly byte[] _resourceKeySeedHash =
+    [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+    ];
+
+    private static readonly EffectiveSchemaSet _effectiveSchemaSet = new(
+        new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "5.2.0",
+            RelationalMappingVersion: "relational-v1",
+            EffectiveSchemaHash: "schema-hash",
+            ResourceKeyCount: 1,
+            ResourceKeySeedHash: _resourceKeySeedHash,
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder:
+            [
+                new ResourceKeyEntry(
+                    ResourceKeyId: 1,
+                    Resource: new QualifiedResourceName("Ed-Fi", "Student"),
+                    ResourceVersion: "5.2.0",
+                    IsAbstractResource: false
+                ),
+            ]
+        ),
+        ProjectsInEndpointOrder: []
+    );
+
+    private static readonly DatabaseFingerprint _databaseFingerprint = new(
+        ApiSchemaFormatVersion: "5.2.0",
+        EffectiveSchemaHash: "schema-hash",
+        ResourceKeyCount: 1,
+        ResourceKeySeedHash: [.. _resourceKeySeedHash]
     );
 
     private static readonly DocumentCacheLifecycleObservation _trackingLifecycle = new(
@@ -638,6 +706,10 @@ public class DocumentCacheTargetRegistryTests
 
         public RecordingInventoryValidator InventoryValidator { get; } = new();
 
+        public RecordingDatabaseFingerprintReader DatabaseFingerprintReader { get; } = new();
+
+        public RecordingResourceKeyValidator ResourceKeyValidator { get; } = new();
+
         public RecordingPrerequisiteValidator PrerequisiteValidator { get; } = new();
 
         public FakeTimeProvider TimeProvider { get; } =
@@ -651,6 +723,9 @@ public class DocumentCacheTargetRegistryTests
             DocumentCacheTargetContextBuilder contextBuilder = new(
                 Options.Create(options),
                 new DocumentCacheProcessProviderToken(RelationalProviderToken.Postgresql),
+                new StaticEffectiveSchemaSetProvider(_effectiveSchemaSet),
+                DatabaseFingerprintReader,
+                ResourceKeyValidator,
                 FingerprintReader,
                 LifecycleReader,
                 InventoryValidator,
@@ -697,6 +772,37 @@ public class DocumentCacheTargetRegistryTests
         {
             ConnectionInputs.Add(connectionString);
             return Task.FromResult(DocumentCacheLifecycleReadResult.Success(_trackingLifecycle));
+        }
+    }
+
+    private sealed class RecordingDatabaseFingerprintReader : IDatabaseFingerprintReader
+    {
+        public List<string> ConnectionInputs { get; } = [];
+
+        public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString)
+        {
+            ConnectionInputs.Add(connectionString);
+            return Task.FromResult<DatabaseFingerprint?>(_databaseFingerprint);
+        }
+    }
+
+    private sealed class RecordingResourceKeyValidator : IResourceKeyValidator
+    {
+        public List<string> ConnectionInputs { get; } = [];
+
+        public Task<ResourceKeyValidationResult> ValidateAsync(
+            DatabaseFingerprint dbFingerprint,
+            short expectedResourceKeyCount,
+            ImmutableArray<byte> expectedResourceKeySeedHash,
+            IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ConnectionInputs.Add(connectionString);
+            return Task.FromResult<ResourceKeyValidationResult>(
+                new ResourceKeyValidationResult.ValidationSuccess()
+            );
         }
     }
 
@@ -751,6 +857,17 @@ public class DocumentCacheTargetRegistryTests
                     DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
                 )
             );
+    }
+
+    private sealed class StaticEffectiveSchemaSetProvider(EffectiveSchemaSet effectiveSchemaSet)
+        : IEffectiveSchemaSetProvider
+    {
+        public EffectiveSchemaSet EffectiveSchemaSet { get; } = effectiveSchemaSet;
+
+        public bool IsInitialized => true;
+
+        public void Initialize(EffectiveSchemaSet effectiveSchemaSet) =>
+            throw new InvalidOperationException("Static test provider is already initialized.");
     }
 
     private sealed class RecordingTargetContextBuilder : IDocumentCacheTargetContextBuilder

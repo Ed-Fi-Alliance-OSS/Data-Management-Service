@@ -338,7 +338,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DocumentCacheTargetContextBuilder.",
       "Run provider integration tests that make an isolated DocumentCache target missing or drifting dms.ResourceKey or dms.EffectiveSchema and confirm the target is ineligible and the writer is not invoked."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "cache-ahead",

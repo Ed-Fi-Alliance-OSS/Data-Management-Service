@@ -14,6 +14,8 @@ public static class DocumentCacheInventoryDefinition
 
     public static readonly DbTableName Document = new(DmsSchema, "Document");
 
+    public static readonly DbTableName ResourceKey = new(DmsSchema, "ResourceKey");
+
     public static readonly DbTableName DocumentCache = new(DmsSchema, "DocumentCache");
 
     public static readonly DbTableName DocumentCacheState = new(DmsSchema, "DocumentCacheState");
@@ -37,6 +39,14 @@ public static class DocumentCacheInventoryDefinition
         public static readonly DbColumnName ContentLastModifiedAt = new("ContentLastModifiedAt");
         public static readonly DbColumnName IdentityLastModifiedAt = new("IdentityLastModifiedAt");
         public static readonly DbColumnName CreatedAt = new("CreatedAt");
+    }
+
+    public static class ResourceKeyColumns
+    {
+        public static readonly DbColumnName ResourceKeyId = new("ResourceKeyId");
+        public static readonly DbColumnName ProjectName = new("ProjectName");
+        public static readonly DbColumnName ResourceName = new("ResourceName");
+        public static readonly DbColumnName ResourceVersion = new("ResourceVersion");
     }
 
     public static class DocumentCacheColumns
@@ -75,6 +85,17 @@ public static class DocumentCacheInventoryDefinition
         public const string ComputedAtDefault = "DF_DocumentCache_ComputedAt";
         public const string PgsqlJsonObject = "CK_DocumentCache_JsonObject";
         public const string MssqlJsonObject = "CK_DocumentCache_IsJsonObject";
+    }
+
+    public static class DocumentConstraints
+    {
+        public const string ForeignKeyToResourceKey = "FK_Document_ResourceKey";
+    }
+
+    public static class ResourceKeyConstraints
+    {
+        public const string PrimaryKey = "PK_ResourceKey";
+        public const string UniqueProjectNameResourceName = "UX_ResourceKey_ProjectName_ResourceName";
     }
 
     public static class DocumentCacheStateConstraints

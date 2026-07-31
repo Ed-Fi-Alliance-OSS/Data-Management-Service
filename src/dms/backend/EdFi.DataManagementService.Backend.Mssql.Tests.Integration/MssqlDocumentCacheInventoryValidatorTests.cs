@@ -63,6 +63,46 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
     }
 
     [Test]
+    public async Task It_rejects_missing_resource_key_inventory()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            EXEC sp_rename N'dms.ResourceKey', N'ResourceKeyRenamed';
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+        result.Inventory.Message.Should().Contain("dms.ResourceKey");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_rejects_a_document_table_without_resource_key_fencing()
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            """
+            ALTER TABLE [dms].[Document] DROP CONSTRAINT [FK_Document_ResourceKey];
+            """
+        );
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Missing);
+        result.Inventory.Message.Should().Contain("FK_Document_ResourceKey");
+        result.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_classifies_missing_required_objects_as_missing_inventory()
     {
         await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
@@ -282,8 +322,11 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
                     UPDATE work
                     SET work.RequiredContentVersion = req.RequiredContentVersion
                     work.RequiredContentVersion < req.RequiredContentVersion
+                    INNER LOOP JOIN dms.DocumentProjectionWork
+                    OPTION (FORCE ORDER)
                     INSERT INTO dms.DocumentProjectionWork
-                    LEFT JOIN dms.DocumentProjectionWork
+                    WHERE NOT EXISTS
+                    work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 */
                 RETURN;
             END;
@@ -329,8 +372,11 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
                     UPDATE work
                     SET work.RequiredContentVersion = req.RequiredContentVersion
                     work.RequiredContentVersion < req.RequiredContentVersion
+                    INNER LOOP JOIN dms.DocumentProjectionWork
+                    OPTION (FORCE ORDER)
                     INSERT INTO dms.DocumentProjectionWork
-                    LEFT JOIN dms.DocumentProjectionWork
+                    WHERE NOT EXISTS
+                    work WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 */
                 RETURN;
             END;
