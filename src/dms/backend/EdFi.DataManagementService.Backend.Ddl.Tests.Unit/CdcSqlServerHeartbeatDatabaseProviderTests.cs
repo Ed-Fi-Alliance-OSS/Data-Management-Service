@@ -185,7 +185,10 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && observation.SafeObservedValues["source_object"] == "dms.DocumentCache"
                 && observation.SafeObservedValues["role_name"] == "dms_binding_gate"
                 && observation.SafeObservedValues["supports_net_changes"] == "False"
-                && observation.SafeObservedValues["source_index"] == "PK_DocumentCache"
+                && observation.SafeObservedValues["source_index"] == "none"
+                && observation.SafeObservedValues["expected_source_index"] == "none"
+                && observation.SafeObservedValues["partition_switch"] == "False"
+                && observation.SafeObservedValues["expected_partition_switch"] == "disabled"
                 && observation.SafeObservedValues["captured_column_count"] == "10"
             );
         _result
@@ -423,6 +426,60 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && observation.SafeArtifactName.Value == "dms_binding_document_cache"
                 && observation.State == CdcProviderArtifactState.Mismatched
                 && observation.SafeObservedValues["supports_net_changes"] == "True"
+            );
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_capture_instance_uses_source_index_or_partition_switch()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances:
+            [
+                RecordingSqlServerCaptureInstance.Expected(
+                    CdcSourceTableKind.DocumentCache,
+                    indexName: "PK_DocumentCache"
+                ),
+                RecordingSqlServerCaptureInstance.Expected(
+                    CdcSourceTableKind.Document,
+                    partitionSwitch: true
+                ),
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.CdcHeartbeat),
+            ]
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_cache"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["source_index"] == "PK_DocumentCache"
+                && observation.SafeObservedValues["expected_source_index"] == "none"
+            )
+            .And.Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["partition_switch"] == "True"
+                && observation.SafeObservedValues["expected_partition_switch"] == "disabled"
             );
         result
             .Diagnostics.Should()
@@ -1346,7 +1403,7 @@ internal sealed record RecordingSqlServerCaptureInstance(
     bool HasDropPending = false,
     string IndexName = "",
     string FilegroupName = "",
-    bool PartitionSwitch = true,
+    bool PartitionSwitch = false,
     bool SourceIsPartitioned = false
 )
 {
@@ -1359,7 +1416,7 @@ internal sealed record RecordingSqlServerCaptureInstance(
         bool hasDropPending = false,
         string? indexName = null,
         string filegroupName = "",
-        bool partitionSwitch = true,
+        bool partitionSwitch = false,
         bool sourceIsPartitioned = false
     )
     {
@@ -1375,7 +1432,7 @@ internal sealed record RecordingSqlServerCaptureInstance(
             capturedColumns ?? table.Columns.Select(column => column.ColumnName.Value).ToArray(),
             supportsNetChanges,
             hasDropPending,
-            indexName ?? ExpectedPrimaryKeyName(tableKind),
+            indexName ?? "",
             filegroupName,
             partitionSwitch,
             sourceIsPartitioned
@@ -1434,19 +1491,6 @@ internal sealed record RecordingSqlServerCaptureInstance(
             CdcSourceTableKind.Document => "dms_binding_document",
             CdcSourceTableKind.DocumentCache => "dms_binding_document_cache",
             CdcSourceTableKind.CdcHeartbeat => "dms_binding_cdc_heartbeat",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC source table kind."
-            ),
-        };
-
-    private static string ExpectedPrimaryKeyName(CdcSourceTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.Document => "PK_Document",
-            CdcSourceTableKind.DocumentCache => "PK_DocumentCache",
-            CdcSourceTableKind.CdcHeartbeat => "PK_CdcHeartbeat",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(tableKind),
                 tableKind,

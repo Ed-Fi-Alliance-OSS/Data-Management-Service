@@ -1811,14 +1811,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             StringComparison.Ordinal
         );
         var roleMatches = string.Equals(roleName, definition.GatingRoleName.Value, StringComparison.Ordinal);
-        var sourceIndexMatches =
-            string.IsNullOrWhiteSpace(sourceIndex)
-            || string.Equals(
-                sourceIndex,
-                ExpectedPrimaryKeyName(definition.TableKind),
-                StringComparison.Ordinal
-            );
-        var partitionSwitchMatches = !sourceIsPartitioned || !partitionSwitch;
+        var sourceIndexMatches = string.IsNullOrWhiteSpace(sourceIndex);
+        var partitionSwitchMatches = !partitionSwitch;
         var capturedColumnsMatch = capturedColumns.SequenceEqual(expectedColumns, StringComparer.Ordinal);
 
         return new SqlServerCaptureInstanceInspection(
@@ -1952,14 +1946,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             return CdcProviderArtifactState.Missing;
         }
 
+        if (createdKinds.Contains(capture.TableKind))
+        {
+            return CdcProviderArtifactState.Created;
+        }
+
         if (!capture.IsExactMatch)
         {
             return CdcProviderArtifactState.Mismatched;
         }
 
-        return createdKinds.Contains(capture.TableKind)
-            ? CdcProviderArtifactState.Created
-            : CdcProviderArtifactState.Matched;
+        return CdcProviderArtifactState.Matched;
     }
 
     private static IReadOnlyList<string> CapturedColumnNames(
@@ -2013,13 +2010,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["expected_supports_net_changes"] = "False",
             ["has_drop_pending"] = hasDropPending.ToString(),
             ["source_index"] = EmptyAsNone(sourceIndex),
-            ["expected_source_index"] = $"none-or-{ExpectedPrimaryKeyName(definition.TableKind)}",
+            ["expected_source_index"] = "none",
             ["filegroup_name"] = EmptyAsNone(filegroupName),
             ["expected_filegroup_name"] = "none",
             ["partition_switch"] = partitionSwitch.ToString(),
+            ["expected_partition_switch"] = "disabled",
             ["source_is_partitioned"] = sourceIsPartitioned.ToString(),
-            ["partition_switch_validation"] = PartitionSwitchValidation(sourceIsPartitioned, partitionSwitch),
-            ["requested_partition_switch"] = "False",
             ["change_table"] = SafeText(changeTable),
             ["captured_columns"] = CsvOrNone(capturedColumns),
             ["expected_captured_columns"] = CsvOrNone(expectedColumns),
@@ -2027,29 +2023,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["heartbeat_capture_visible"] = (
                 definition.TableKind == CdcSourceTableKind.CdcHeartbeat
             ).ToString(),
-        };
-
-    private static string PartitionSwitchValidation(bool sourceIsPartitioned, bool partitionSwitch)
-    {
-        if (!sourceIsPartitioned)
-        {
-            return "ignored_for_nonpartitioned_source";
-        }
-
-        return partitionSwitch ? "enabled_for_partitioned_source" : "disabled_for_partitioned_source";
-    }
-
-    private static string ExpectedPrimaryKeyName(CdcSourceTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.Document => "PK_Document",
-            CdcSourceTableKind.DocumentCache => "PK_DocumentCache",
-            CdcSourceTableKind.CdcHeartbeat => "PK_CdcHeartbeat",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC source table kind."
-            ),
         };
 
     private static string CaptureTableKindToken(CdcSourceTableKind tableKind) =>

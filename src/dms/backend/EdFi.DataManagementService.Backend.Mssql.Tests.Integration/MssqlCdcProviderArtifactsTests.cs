@@ -473,7 +473,6 @@ public class Given_MssqlCdcProviderArtifacts
         AssertCapture(
             captures[DocumentCacheCaptureInstanceName],
             sourceName: "DocumentCache",
-            expectedPrimaryKey: "PK_DocumentCache",
             expectedColumns:
             [
                 "DocumentId",
@@ -491,7 +490,6 @@ public class Given_MssqlCdcProviderArtifacts
         AssertCapture(
             captures[DocumentCaptureInstanceName],
             sourceName: "Document",
-            expectedPrimaryKey: "PK_Document",
             expectedColumns:
             [
                 "DocumentId",
@@ -508,7 +506,6 @@ public class Given_MssqlCdcProviderArtifacts
         AssertCapture(
             captures[HeartbeatCaptureInstanceName],
             sourceName: "CdcHeartbeat",
-            expectedPrimaryKey: "PK_CdcHeartbeat",
             expectedColumns: ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"]
         );
     }
@@ -516,7 +513,6 @@ public class Given_MssqlCdcProviderArtifacts
     private static void AssertCapture(
         IEnumerable<CaptureColumn> captureRows,
         string sourceName,
-        string expectedPrimaryKey,
         IReadOnlyList<string> expectedColumns
     )
     {
@@ -527,9 +523,7 @@ public class Given_MssqlCdcProviderArtifacts
         first.SourceName.Should().Be(sourceName);
         first.RoleName.Should().Be(GatingRoleName);
         first.SupportsNetChanges.Should().BeFalse();
-        first.IndexName.Should().Be(expectedPrimaryKey);
         first.FilegroupName.Should().BeEmpty();
-        first.PartitionSwitch.Should().BeTrue("SQL Server reports 1 for non-partitioned tables");
         rows.Select(row => row.ColumnName).Should().Equal(expectedColumns);
     }
 

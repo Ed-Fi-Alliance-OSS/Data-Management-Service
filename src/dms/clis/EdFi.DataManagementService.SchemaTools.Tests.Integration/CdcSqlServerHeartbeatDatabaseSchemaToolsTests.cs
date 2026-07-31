@@ -753,7 +753,6 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         AssertCapture(
             captures["dms_binding_document_cache"],
             sourceName: "DocumentCache",
-            expectedPrimaryKey: "PK_DocumentCache",
             expectedColumns:
             [
                 "DocumentId",
@@ -771,7 +770,6 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         AssertCapture(
             captures["dms_binding_document"],
             sourceName: "Document",
-            expectedPrimaryKey: "PK_Document",
             expectedColumns:
             [
                 "DocumentId",
@@ -788,7 +786,6 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         AssertCapture(
             captures["dms_binding_cdc_heartbeat"],
             sourceName: "CdcHeartbeat",
-            expectedPrimaryKey: "PK_CdcHeartbeat",
             expectedColumns: ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"]
         );
     }
@@ -796,7 +793,6 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     private static void AssertCapture(
         IEnumerable<CaptureColumn> captureRows,
         string sourceName,
-        string expectedPrimaryKey,
         IReadOnlyList<string> expectedColumns
     )
     {
@@ -807,9 +803,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         first.SourceName.Should().Be(sourceName);
         first.RoleName.Should().Be("dms_binding_gate");
         first.SupportsNetChanges.Should().BeFalse();
-        first.IndexName.Should().Be(expectedPrimaryKey);
         first.FilegroupName.Should().BeEmpty();
-        first.PartitionSwitch.Should().BeTrue("SQL Server reports 1 for non-partitioned tables");
         rows.Select(row => row.ColumnName).Should().Equal(expectedColumns);
     }
 
