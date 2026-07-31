@@ -1646,6 +1646,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 }
             )
         );
+        var dmsSchema = EscapeSqlLiteral(DmsTableNames.DmsSchema.Value);
         var workTableSchema = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Schema.Value);
         var workTableName = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Name);
 
@@ -1727,12 +1728,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 LEFT JOIN expected_capture_instances expected_by_source
                     ON expected_by_source.source_schema = source_schema.name
                     AND expected_by_source.source_name = source_table.name
-                WHERE expected_by_instance.capture_instance IS NOT NULL
-                OR expected_by_source.source_name IS NOT NULL
-                OR (
-                    source_schema.name = N'{workTableSchema}'
-                    AND source_table.name = N'{workTableName}'
-                )
+                WHERE source_schema.name = N'{dmsSchema}'
                 ORDER BY
                     COALESCE(expected_by_instance.table_order, expected_by_source.table_order, 1000),
                     capture_info.capture_instance,
@@ -1882,7 +1878,23 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         if (!string.Equals(tableKind, "document_projection_work", StringComparison.Ordinal))
         {
-            return new UnexpectedSqlServerCaptureInstance(artifact, []);
+            return new UnexpectedSqlServerCaptureInstance(
+                artifact,
+                [
+                    new CdcProviderDiagnostic(
+                        Code: "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE",
+                        Category: CdcProviderDiagnosticCategory.ValidationMismatch,
+                        Severity: CdcProviderDiagnosticSeverity.Error,
+                        PrincipalKind: CdcPrincipalKind.None,
+                        ArtifactKind: CdcProviderArtifactKind.SqlServerCaptureInstance,
+                        SafeName: safeName,
+                        ExpectedValue: "only-dms.DocumentCache-dms.Document-dms.CdcHeartbeat-captured",
+                        ObservedValue: SafeText($"{sourceSchema}.{sourceName}:capture:{captureInstanceName}"),
+                        ProviderErrorClass: null,
+                        Classification: CdcProviderRetryContinuityClassification.FailClosed
+                    ),
+                ]
+            );
         }
 
         return new UnexpectedSqlServerCaptureInstance(

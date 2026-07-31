@@ -102,9 +102,75 @@ public class Given_MssqlCdcProviderArtifacts
         }
     }
 
+    [Test]
+    public async Task It_should_fail_closed_when_an_extra_dms_schema_capture_instance_exists()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var manifestOutputDirectory = Directory.CreateTempSubdirectory("mssql-cdc-extra-capture-");
+
+        try
+        {
+            var initialResult = await RunSetupAsync(connection, new CdcProviderArtifactOutputRequest(false));
+            initialResult
+                .Outcome.Should()
+                .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(initialResult.Diagnostics));
+
+            await EnableUnexpectedDescriptorCaptureAsync(connection);
+
+            var validationResult = await RunSetupAsync(
+                connection,
+                new CdcProviderArtifactOutputRequest(
+                    IncludeManifestPayload: true,
+                    ManifestOutputDirectoryPath: manifestOutputDirectory.FullName
+                ),
+                CdcProviderSetupMode.ValidateOnly
+            );
+
+            validationResult
+                .Outcome.Should()
+                .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validationResult.Diagnostics));
+            validationResult
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
+                    && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+                    && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                    && diagnostic.SafeName.Value == "dms_unexpected_descriptor"
+                    && diagnostic.ObservedValue == "dms.Descriptor_capture_dms_unexpected_descriptor"
+                );
+            validationResult
+                .ArtifactInventory.Should()
+                .Contain(observation =>
+                    observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                    && observation.SafeArtifactName.Value == "dms_unexpected_descriptor"
+                    && observation.State == CdcProviderArtifactState.Mismatched
+                    && observation.SafeObservedValues["source_object"] == "dms.Descriptor"
+                    && observation.SafeObservedValues["role_name"] == "other_cdc_gate"
+                );
+            validationResult
+                .ProviderHistoryObservations.Should()
+                .Contain(observation =>
+                    observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                    && observation.SafeArtifactName.Value == "dms_unexpected_descriptor"
+                    && observation.SafeObservedValues["source_object"] == "dms.Descriptor"
+                    && observation.Classification == CdcProviderRetryContinuityClassification.FailClosed
+                );
+            validationResult.ManifestPayload!.Json.Should().Contain("dms_unexpected_descriptor");
+            validationResult.ManifestPayload.Json.Should().Contain("dms.Descriptor");
+            validationResult.ManifestPayload.Json.Should().Contain("other_cdc_gate");
+            validationResult.ManifestPayload.Json.Should().NotContain(_database.ConnectionString);
+        }
+        finally
+        {
+            Directory.Delete(manifestOutputDirectory.FullName, recursive: true);
+        }
+    }
+
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
-        CdcProviderArtifactOutputRequest artifactOutput
+        CdcProviderArtifactOutputRequest artifactOutput,
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch
     )
     {
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
@@ -113,7 +179,7 @@ public class Given_MssqlCdcProviderArtifacts
         return await service.SetupAsync(
             new CdcProviderSetupRequest(
                 provider: CdcProvider.SqlServer,
-                mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
+                mode: mode,
                 boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
                     CdcProvider.SqlServer,
                     await ReadDataStoreIdentityAsync(connection)
@@ -136,6 +202,29 @@ public class Given_MssqlCdcProviderArtifacts
                 databaseExecutor: executor
             )
         );
+    }
+
+    private static async Task EnableUnexpectedDescriptorCaptureAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            IF DATABASE_PRINCIPAL_ID(N'other_cdc_gate') IS NULL
+            BEGIN
+                CREATE ROLE [other_cdc_gate];
+            END;
+
+            EXEC sys.sp_cdc_enable_table
+                @source_schema = N'dms',
+                @source_name = N'Descriptor',
+                @capture_instance = N'dms_unexpected_descriptor',
+                @supports_net_changes = 0,
+                @role_name = N'other_cdc_gate',
+                @index_name = NULL,
+                @captured_column_list = NULL,
+                @filegroup_name = NULL,
+                @allow_partition_switch = 0;
+            """;
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task AssertOrdinaryProvisioningOmitsProviderArtifactsAsync(
