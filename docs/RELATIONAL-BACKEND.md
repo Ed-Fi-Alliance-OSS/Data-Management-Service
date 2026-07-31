@@ -257,8 +257,9 @@ to the phase that makes these columns authoritative.
 
 This is a **dual-write**, but the two sides no longer serve the same traffic. `dms.Document` remains
 the **write** path's anchor — writes lock its row, load current state from it, and detect insert versus
-update there — while the **read** path has moved off it: each read below now takes its metadata from a
-row it was already reading, so a wrong served value points at the mirror, not at `dms.Document`.
+update there — while the **read** path has moved off it for everything it serves: each read below now
+takes its metadata from a row it was already reading, so a wrong *served* value points at the mirror,
+not at `dms.Document`.
 
 - **GET metadata** (`id`, `_etag`, `_lastModifiedDate`) — the hydration batch's metadata `SELECT` reads
   the root table when the caller asks for it, per
@@ -288,8 +289,21 @@ row it was already reading, so a wrong served value points at the mirror, not at
   [`DocumentLinkSlugResolver.cs`](../src/dms/core/EdFi.DataManagementService.Core/DocumentLinkSlugResolver.cs)).
 - **Tracked-change trigger bodies** — take old/new values from the root row image (`OLD` / `NEW` in
   PostgreSQL, the `deleted` / `inserted` pseudo-tables in SQL Server) and the `ContentVersion` the
-  stamping step just captured, so writing a tracked-change row reads `dms.Document` zero times
+  stamping step just captured, so writing a tracked-change row reads `dms.Document` zero times. A body
+  whose tracked identity columns are descriptor-typed still joins `dms.Descriptor` for its
+  `Old<Ref>_Namespace` / `Old<Ref>_CodeValue` values — that join is unrelated to the metadata mirrors
   ([`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs)).
+
+One reader has **not** moved. On GET-by-id, the relationship-authorization stored-target CTE still
+joins `dms.Document`, solely for its `ContentVersion`
+([`SingleRecordRelationshipAuthorizationSqlCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs)) —
+that compiler is shared with the DELETE and write callers, which discard the value, so re-pointing it
+belongs to the phase that moves the write path. A relationship-authorized GET therefore compares the
+two sides: the authorization boundary's version comes from `dms.Document` while the representation it
+authorizes comes from the root mirror, and a disagreement makes the read re-resolve its target instead
+of serving the row. That comparison **fails closed** — on PostgreSQL, where a root mirror gets no
+tamper repair (below), a tampered mirror disagrees on every attempt, exhausts the two read attempts,
+and the request fails rather than serving a stale representation.
 
 Caveats when debugging a mismatch — all of them concern rows written **out of band**, since the
 generated triggers are the only legitimate writers of these columns:
@@ -297,9 +311,13 @@ generated triggers are the only legitimate writers of these columns:
 - `CreatedByOwnershipTokenId` is a forward-compatible placeholder and is **permanently NULL** — this
   schema base has no `dms.Document.CreatedByOwnershipTokenId` to copy from, so no trigger writes it.
   It is deliberately left unindexed until the phase that populates it.
-- Tamper repair differs by dialect: PostgreSQL's `BEFORE` trigger assigns `DocumentUuid` / `CreatedAt`
-  only on `INSERT` and does **not** self-heal a later out-of-band change to them, while SQL Server's
-  `AFTER` trigger re-mirrors all six from the post-update `dms.Document` row image on every stamp.
+- Tamper repair differs by dialect **and by table kind**. On resource **root** tables, PostgreSQL's
+  `BEFORE` trigger assigns `DocumentUuid` / `CreatedAt` only on `INSERT` and does **not** self-heal a
+  later out-of-band change to them, while SQL Server's `AFTER` trigger re-mirrors all six from the
+  post-update `dms.Document` row image on every stamp. On `dms.Descriptor`, **both** dialects
+  self-heal: the descriptor stamping trigger's `UPDATE` branch re-asserts all seven — those six plus
+  `ResourceKeyId` — from the `dms.Document` image on every stamp, so a tampered descriptor mirror is
+  repaired by the next write to that row.
 - Reads **fail closed rather than loudly**: the mirror predicates are equality comparisons and NULL
   matches nothing, so a trigger-bypassed `dms.Descriptor` row whose `ResourceKeyId` is NULL is invisible
   to descriptor reads — a **404**, not an error. `DescriptorReadRowReader`'s "must not be null"
