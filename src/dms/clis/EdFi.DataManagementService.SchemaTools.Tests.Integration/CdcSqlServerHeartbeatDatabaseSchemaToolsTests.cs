@@ -203,6 +203,48 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
+    public async Task CdcWorkTableExclusion_should_exclude_projection_work_from_result_and_raw_cdc()
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var documentId = InsertDocumentBeforeProviderCapture(connection);
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(result.Diagnostics));
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        result
+            .SourceTableInventory.Select(table => $"{table.TableName.Schema.Value}.{table.TableName.Name}")
+            .Should()
+            .BeEquivalentTo("dms.Document", "dms.DocumentCache", "dms.CdcHeartbeat")
+            .And.NotContain("dms.DocumentProjectionWork");
+        result
+            .ArtifactInventory.Where(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .Should()
+            .HaveCount(3)
+            .And.NotContain(observation =>
+                observation.SafeObservedValues.Values.Any(value =>
+                    value.Contains("DocumentProjectionWork", StringComparison.Ordinal)
+                )
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant => grant.SafeObjectName.Value == "dms.DocumentProjectionWork");
+        result.ManifestPayload!.Json.Should().NotContain("DocumentProjectionWork");
+
+        ExecuteProjectionWorkDml(connection, documentId);
+
+        AssertNoProjectionWorkCapture(connection);
+    }
+
+    [Test]
     public async Task It_should_exact_match_existing_database_cdc_and_heartbeat_without_mutating_heartbeat()
     {
         await using var connection = new SqlConnection(_connectionString);
@@ -782,6 +824,66 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         using var command = connection.CreateCommand();
         command.CommandText = sql;
         command.ExecuteNonQuery();
+    }
+
+    private static long InsertDocumentBeforeProviderCapture(SqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            OUTPUT INSERTED.[DocumentId]
+            VALUES (@documentUuid, 1);
+            """;
+        command.Parameters.AddWithValue("documentUuid", Guid.NewGuid());
+
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    private static void ExecuteProjectionWorkDml(SqlConnection connection, long documentId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM [dms].[DocumentProjectionWork]
+            WHERE [DocumentId] = @documentId;
+
+            INSERT INTO [dms].[DocumentProjectionWork] (
+                [DocumentId],
+                [RequiredContentVersion],
+                [FirstEnqueuedAt],
+                [LastEnqueuedAt]
+            )
+            VALUES (@documentId, 1, SYSUTCDATETIME(), SYSUTCDATETIME());
+
+            UPDATE [dms].[DocumentProjectionWork]
+            SET [RequiredContentVersion] = [RequiredContentVersion] + 1,
+                [LastEnqueuedAt] = SYSUTCDATETIME()
+            WHERE [DocumentId] = @documentId;
+
+            DELETE FROM [dms].[DocumentProjectionWork]
+            WHERE [DocumentId] = @documentId;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+        command.ExecuteNonQuery();
+    }
+
+    private static void AssertNoProjectionWorkCapture(SqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM cdc.change_tables capture_info
+            INNER JOIN sys.tables source_table
+                ON source_table.object_id = capture_info.source_object_id
+            INNER JOIN sys.schemas source_schema
+                ON source_schema.schema_id = source_table.schema_id
+            WHERE source_schema.name = N'dms'
+            AND source_table.name = N'DocumentProjectionWork';
+            """;
+
+        Convert
+            .ToInt64(command.ExecuteScalar())
+            .Should()
+            .Be(0, "DocumentProjectionWork must not have a CDC capture instance or change table");
     }
 
     private static string QuoteIdentifier(string identifier) => $"[{identifier.Replace("]", "]]")}]";

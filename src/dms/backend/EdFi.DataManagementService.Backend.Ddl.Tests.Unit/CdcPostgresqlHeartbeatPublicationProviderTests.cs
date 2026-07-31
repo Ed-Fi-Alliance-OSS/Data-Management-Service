@@ -187,7 +187,10 @@ public class Given_PostgresqlCdcHeartbeatPublication_ValidateOnly
             );
         result
             .Diagnostics.Should()
-            .Contain(diagnostic => diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH");
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableCaptureViolation
+            );
         executor.ExecutedSql.Should().BeEmpty();
     }
 }

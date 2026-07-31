@@ -412,11 +412,17 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
 
             if (!publication.IsExactMatch)
             {
-                return ArtifactOnly(
-                    CdcProviderArtifactKind.PostgresqlPublication,
-                    publicationName,
-                    CdcProviderArtifactState.Mismatched,
-                    publication.ObservedValues
+                return new CdcProviderSetupStepResult(
+                    artifactInventory:
+                    [
+                        new CdcProviderArtifactObservation(
+                            CdcProviderArtifactKind.PostgresqlPublication,
+                            publicationName,
+                            CdcProviderArtifactState.Mismatched,
+                            publication.ObservedValues
+                        ),
+                    ],
+                    diagnostics: publication.Diagnostics
                 );
             }
 
@@ -1036,7 +1042,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             return new PublicationInspection(
                 Exists: false,
                 IsExactMatch: false,
-                new Dictionary<string, string> { ["publication"] = "missing" }
+                new Dictionary<string, string> { ["publication"] = "missing" },
+                Diagnostics: []
             );
         }
 
@@ -1078,21 +1085,51 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             && allColumns
             && noRowFilters;
 
+        var observedValues = new Dictionary<string, string>
+        {
+            ["tables"] = string.Join(",", observedTables.Order(StringComparer.Ordinal)),
+            ["expected_tables"] = string.Join(",", expectedTables),
+            ["publish"] = $"{publishesInsert},{publishesUpdate},{publishesDelete}",
+            ["publishes_truncate"] = publishesTruncate.ToString(),
+            ["publishes_all_tables"] = publishesAllTables.ToString(),
+            ["publish_via_partition_root"] = publishViaPartitionRoot,
+            ["row_filters"] = noRowFilters ? "absent" : "present",
+            ["column_lists"] = allColumns ? "absent" : "present",
+        };
+
         return new PublicationInspection(
             Exists: true,
             exactTables && exactProperties,
-            new Dictionary<string, string>
-            {
-                ["tables"] = string.Join(",", observedTables.Order(StringComparer.Ordinal)),
-                ["expected_tables"] = string.Join(",", expectedTables),
-                ["publish"] = $"{publishesInsert},{publishesUpdate},{publishesDelete}",
-                ["publishes_truncate"] = publishesTruncate.ToString(),
-                ["publishes_all_tables"] = publishesAllTables.ToString(),
-                ["publish_via_partition_root"] = publishViaPartitionRoot,
-                ["row_filters"] = noRowFilters ? "absent" : "present",
-                ["column_lists"] = allColumns ? "absent" : "present",
-            }
+            observedValues,
+            PublicationDiagnostics(publicationName, observedTableSet)
         );
+    }
+
+    private static IReadOnlyList<CdcProviderDiagnostic> PublicationDiagnostics(
+        CdcSafeName publicationName,
+        HashSet<string> observedTableSet
+    )
+    {
+        if (!observedTableSet.Contains("dms.DocumentProjectionWork"))
+        {
+            return [];
+        }
+
+        return
+        [
+            new CdcProviderDiagnostic(
+                Code: "CDC_POSTGRESQL_WORK_TABLE_PUBLICATION_FORBIDDEN",
+                Category: CdcProviderDiagnosticCategory.WorkTableCaptureViolation,
+                Severity: CdcProviderDiagnosticSeverity.Error,
+                PrincipalKind: CdcPrincipalKind.None,
+                ArtifactKind: CdcProviderArtifactKind.PostgresqlPublication,
+                SafeName: publicationName,
+                ExpectedValue: "dms.DocumentProjectionWork-not-published",
+                ObservedValue: "published",
+                ProviderErrorClass: null,
+                Classification: CdcProviderRetryContinuityClassification.FailClosed
+            ),
+        ];
     }
 
     private static string PublicationPropertiesSql(
@@ -2242,7 +2279,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
     private sealed record PublicationInspection(
         bool Exists,
         bool IsExactMatch,
-        IReadOnlyDictionary<string, string> ObservedValues
+        IReadOnlyDictionary<string, string> ObservedValues,
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
     );
 
     private sealed record ReplicationSlotInspection(

@@ -236,7 +236,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcWorkTableExclusion",
       "Manually inspect the PostgreSQL publication and SQL Server cdc.change_tables output in provider integration databases when diagnosing failures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "retry-and-mismatch-contract-tests",

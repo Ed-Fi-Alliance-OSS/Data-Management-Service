@@ -235,6 +235,48 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     }
 
     [Test]
+    public async Task CdcWorkTableExclusion_should_exclude_projection_work_from_result_and_raw_pgoutput()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var documentId = InsertDocumentBeforeProviderSlot(connection);
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result.Diagnostics.Should().BeEmpty();
+        result
+            .SourceTableInventory.Select(table => $"{table.TableName.Schema.Value}.{table.TableName.Name}")
+            .Should()
+            .BeEquivalentTo("dms.Document", "dms.DocumentCache", "dms.CdcHeartbeat")
+            .And.NotContain("dms.DocumentProjectionWork");
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication
+                && observation.SafeObservedValues["tables"]
+                    == "dms.CdcHeartbeat,dms.Document,dms.DocumentCache"
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant => grant.SafeObjectName.Value == "dms.DocumentProjectionWork");
+        result.ManifestPayload!.Json.Should().NotContain("DocumentProjectionWork");
+        AssertPublication(connection);
+
+        ExecuteProjectionWorkDml(connection, documentId);
+
+        CountPeekedPgoutputChanges(connection)
+            .Should()
+            .Be(0, "DocumentProjectionWork is not in the provider publication");
+
+        ExecuteNonQuery(connection, result.HeartbeatActionQuery!.Sql);
+        CountPeekedPgoutputChanges(connection)
+            .Should()
+            .BeGreaterThan(0, "the same slot should still observe published heartbeat changes");
+    }
+
+    [Test]
     public async Task PostgresqlCdcBindingAwareValidation_should_fail_before_creating_artifacts_when_source_fingerprint_mismatches()
     {
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -536,6 +578,74 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         var snapshot = new HeartbeatSnapshot(reader.GetInt16(0), reader.GetInt64(1));
         reader.Read().Should().BeFalse();
         return snapshot;
+    }
+
+    private static long InsertDocumentBeforeProviderSlot(NpgsqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
+            VALUES (@document_uuid, 1)
+            RETURNING "DocumentId";
+            """;
+        command.Parameters.AddWithValue("document_uuid", Guid.NewGuid());
+
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    private static void ExecuteProjectionWorkDml(NpgsqlConnection connection, long documentId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM dms."DocumentProjectionWork"
+            WHERE "DocumentId" = @document_id;
+
+            INSERT INTO dms."DocumentProjectionWork" (
+                "DocumentId",
+                "RequiredContentVersion",
+                "FirstEnqueuedAt",
+                "LastEnqueuedAt"
+            )
+            VALUES (@document_id, 1, now(), now());
+
+            UPDATE dms."DocumentProjectionWork"
+            SET "RequiredContentVersion" = "RequiredContentVersion" + 1,
+                "LastEnqueuedAt" = now()
+            WHERE "DocumentId" = @document_id;
+
+            DELETE FROM dms."DocumentProjectionWork"
+            WHERE "DocumentId" = @document_id;
+            """;
+        command.Parameters.AddWithValue("document_id", documentId);
+        command.ExecuteNonQuery();
+    }
+
+    private static long CountPeekedPgoutputChanges(NpgsqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM pg_catalog.pg_logical_slot_peek_binary_changes(
+                CAST(@slot_name AS name),
+                NULL::pg_lsn,
+                NULL::integer,
+                'proto_version',
+                '1',
+                'publication_names',
+                CAST(@publication_name AS text)
+            );
+            """;
+        command.Parameters.AddWithValue("slot_name", ReplicationSlotName);
+        command.Parameters.AddWithValue("publication_name", PublicationName);
+
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    private static void ExecuteNonQuery(NpgsqlConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
     }
 
     private static void AssertDocumentReplicaIdentityFull(NpgsqlConnection connection)
