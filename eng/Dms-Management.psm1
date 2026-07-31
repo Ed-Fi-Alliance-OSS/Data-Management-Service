@@ -1049,12 +1049,36 @@ function Add-DataStore {
         [string]$Tenant = ""
     )
 
-    # Build the PostgreSQL connection string from the credential and individual parameters
-    # unless a pre-built connection string (e.g. MSSQL) was supplied.
+    # Build the PostgreSQL connection string from the credential and individual parameters unless a
+    # pre-built connection string (e.g. MSSQL) was supplied.
+    #
+    # Built through New-DataStoreConnectionString rather than string interpolation. Interpolation placed
+    # every value into the string unescaped, but this value is later PARSED - SchemaTools reads the
+    # database back out with NpgsqlConnectionStringBuilder before quoting it into CREATE DATABASE - and
+    # the parser does not return unescaped text verbatim. Measured: a database name registered as
+    # 'edfi_configurationservice ' parsed back as 'edfi_configurationservice', so the datastore reached
+    # the dedicated Configuration Service database while the registered text said otherwise; and a name
+    # containing ';' introduced a whole second Database segment, which won. DbConnectionStringBuilder
+    # quotes exactly those values, and the parsed database is then the name verbatim - which is what the
+    # registered-name collision guard relies on being true.
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-        $postgresUser = $PostgresCredential.UserName
+        # ConvertTo-PostgresCredential deliberately accepts an empty secret, but
+        # New-DataStoreConnectionString requires a non-empty password - so name the missing value here
+        # rather than surfacing a parameter-binding error about an argument the caller never passed.
+        # Interpolation used to accept it and register `password=`, which only failed much later at
+        # connect time.
         $postgresPassword = $PostgresCredential.GetNetworkCredential().Password
-        $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$postgresUser;password=$postgresPassword;database=$PostgresDbName;"
+        if ([string]::IsNullOrEmpty($postgresPassword)) {
+            throw "Add-DataStore: the PostgreSQL credential carries an empty password, so no usable datastore connection string can be registered. Set POSTGRES_PASSWORD, or pass -ConnectionString to supply a pre-built connection string."
+        }
+
+        $ConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine "postgresql" `
+            -DbHost $PostgresHost `
+            -Port $PostgresPort `
+            -Username $PostgresCredential.UserName `
+            -Password $postgresPassword `
+            -DatabaseName $PostgresDbName
     }
 
     $dataStoreData = @{

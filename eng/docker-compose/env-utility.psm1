@@ -2124,6 +2124,55 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         [System.StringComparison]::OrdinalIgnoreCase)
 }
 
+function Get-RegisteredDatastoreDatabaseValue {
+    <#
+    .SYNOPSIS
+        The database value a PROVIDER actually receives for a registered datastore database name - the
+        name after connection-string serialization and parsing, not the raw parameter text.
+
+    .DESCRIPTION
+        A registered datastore name does not travel to the database server as text. Add-DataStore
+        serializes it into the CMS data-store record's connection string with DbConnectionStringBuilder
+        (via New-DataStoreConnectionString), and SchemaTools reads the database back out with
+        NpgsqlConnectionStringBuilder before quoting it into CREATE DATABASE. Judging a collision against
+        the raw parameter is what let a trailing space through: serialized UNQUOTED by the previous
+        string-interpolation build, the parser discarded the space and the datastore landed in
+        edfi_configurationservice while the registered text claimed a different name. A name carrying ';'
+        was worse - it introduced a second Database segment that won.
+
+        So the collision authority compares THIS value. It round-trips through the same ADO.NET
+        writer/parser pair the real transport uses, which means the string compared is the string the
+        provider will use, and a future change to how the datastore connection string is built is
+        followed here instead of silently diverging.
+
+        Measured against NpgsqlConnectionStringBuilder - the exact parser SchemaTools' GetDatabaseName
+        uses - for whitespace (leading, trailing, tab), both quote characters, ';', '=', a newline and
+        '${...}': the read-back is IDENTICAL to the input in every case, and identical to what Npgsql
+        returns. That identity is the property that makes "registered verbatim" a fact rather than a hope,
+        and a test pins it against the real serializer.
+
+    .PARAMETER DatastoreDatabaseName
+        The datastore database name as the caller supplied it.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatastoreDatabaseName
+    )
+
+    $writer = [System.Data.Common.DbConnectionStringBuilder]::new()
+    $writer["database"] = $DatastoreDatabaseName
+
+    $reader = [System.Data.Common.DbConnectionStringBuilder]::new()
+    # .psbase is REQUIRED, not stylistic: PowerShell's IDictionary adapter intercepts a plain
+    # `.ConnectionString = ` assignment on this type and stores a literal "ConnectionString" KEY instead
+    # of invoking the property setter, so the string is never parsed and every lookup silently misses.
+    $reader.psbase.ConnectionString = $writer.ConnectionString
+
+    # An empty name serializes to a key with no value, which the reader drops entirely. Callers treat a
+    # blank name as absence anyway, so report it as the empty string rather than throwing.
+    if (-not $reader.ContainsKey("database")) { return "" }
+    return [string]$reader["database"]
+}
+
 function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
     <#
     .SYNOPSIS
@@ -2132,21 +2181,24 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
 
     .DESCRIPTION
         Models the OTHER creation mechanism, and must not be confused with the local initialization path:
-        -DataStoreDatabaseName is copied verbatim into the datastore connection string registered in CMS,
-        and the database itself is created by SchemaTools. It never reaches postgresql-init.sh, so the
-        unquoted-identifier folding that governs
-        Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase does not apply and must not be
-        borrowed here.
+        -DataStoreDatabaseName never reaches postgresql-init.sh, so the unquoted-identifier folding that
+        governs Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase does not apply and must not
+        be borrowed here.
 
-        PostgreSQL: SchemaTools creates the database with a QUOTED identifier
-        (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), and a connection string's database
-        name is passed verbatim. Neither folds, so EDFI_ConfigurationService is a genuinely distinct
-        physical database from edfi_configurationservice - measured, both coexisting in pg_database. The
-        comparison is therefore ORDINAL and exact: only the reserved name itself collides, and rejecting a
-        mixed-case name here would refuse a working configuration.
+        The value compared is not the raw parameter but
+        Get-RegisteredDatastoreDatabaseValue - the database a provider actually receives after the
+        registered connection string is serialized and parsed. Comparing the raw text was wrong for the
+        transport that existed: it judged one string while the provider consumed another.
 
-        SQL Server: the name is matched under the server's collation, whose default is case-insensitive,
-        so a case variant does name the same database.
+        PostgreSQL: the parsed database value is passed to the server as-is and SchemaTools creates it
+        with a QUOTED identifier (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), so nothing
+        folds. EDFI_ConfigurationService is a genuinely distinct physical database from
+        edfi_configurationservice - measured, both coexisting in pg_database - and so is a name whose only
+        difference is surrounding whitespace, now that the whitespace survives serialization. The
+        comparison is therefore ORDINAL and exact against the parsed value.
+
+        SQL Server: quoting does not decide identity at all; the server matches database names under its
+        collation, whose default is case-insensitive, so a case variant names the same database.
 
         -DatabaseEngine is mandatory: on this path the two engines genuinely disagree, so there is no
         engine-neutral answer to give.
@@ -2165,6 +2217,9 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
 
     if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
 
+    # The value the provider will actually receive, not the parameter text.
+    $registeredDatabaseValue = Get-RegisteredDatastoreDatabaseValue -DatastoreDatabaseName $DatastoreDatabaseName
+
     $comparison =
         if ($DatabaseEngine -eq "mssql") {
             [System.StringComparison]::OrdinalIgnoreCase
@@ -2173,7 +2228,7 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
             [System.StringComparison]::Ordinal
         }
 
-    return [string]::Equals($DatastoreDatabaseName, "edfi_configurationservice", $comparison)
+    return [string]::Equals($registeredDatabaseValue, "edfi_configurationservice", $comparison)
 }
 
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
