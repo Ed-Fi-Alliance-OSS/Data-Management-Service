@@ -765,7 +765,9 @@ function Get-CurrentSchoolYear {
     The database user.
 
 .PARAMETER Password
-    The database password.
+    The database password. May be empty for postgresql, where a passwordless (trust-authenticated)
+    server is a real configuration and the value serializes as an explicit empty password= segment;
+    must be non-empty for mssql.
 
 .PARAMETER DatabaseName
     The target database name.
@@ -798,7 +800,7 @@ function New-DataStoreConnectionString {
         [string]$Username,
 
         [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
+        [AllowEmptyString()]
         [string]$Password,
 
         [Parameter(Mandatory)]
@@ -817,6 +819,15 @@ function New-DataStoreConnectionString {
     $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
 
     if ($DatabaseEngine -eq "mssql") {
+        # SQL Server auth in this stack is sa + MSSQL_SA_PASSWORD, which the container itself
+        # requires to be non-empty, so an empty password is a configuration error - named here, at
+        # the same serialization boundary that previously rejected it by parameter binding.
+        # PostgreSQL differs on purpose: a passwordless (trust-authenticated) server is a real
+        # configuration, so an empty password serializes as an explicit empty password= value there.
+        if ([string]::IsNullOrEmpty($Password)) {
+            throw "New-DataStoreConnectionString: an empty password is not supported for the mssql engine. Provide a non-empty password (MSSQL_SA_PASSWORD)."
+        }
+
         $builder["Server"] = "$DbHost,$Port"
         $builder["Database"] = $DatabaseName
         $builder["User Id"] = $Username
@@ -1062,15 +1073,11 @@ function Add-DataStore {
     # quotes exactly those values, and the parsed database is then the name verbatim - which is what the
     # registered-name collision guard relies on being true.
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-        # ConvertTo-PostgresCredential deliberately accepts an empty secret, but
-        # New-DataStoreConnectionString requires a non-empty password - so name the missing value here
-        # rather than surfacing a parameter-binding error about an argument the caller never passed.
-        # Interpolation used to accept it and register `password=`, which only failed much later at
-        # connect time.
+        # ConvertTo-PostgresCredential deliberately accepts an empty secret, and the serializer
+        # accepts one for PostgreSQL: a passwordless (trust-authenticated) server is a real
+        # configuration, and the registered string then carries an explicit empty password= value -
+        # the same wire shape the interpolated build always produced.
         $postgresPassword = $PostgresCredential.GetNetworkCredential().Password
-        if ([string]::IsNullOrEmpty($postgresPassword)) {
-            throw "Add-DataStore: the PostgreSQL credential carries an empty password, so no usable datastore connection string can be registered. Set POSTGRES_PASSWORD, or pass -ConnectionString to supply a pre-built connection string."
-        }
 
         $ConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine "postgresql" `
