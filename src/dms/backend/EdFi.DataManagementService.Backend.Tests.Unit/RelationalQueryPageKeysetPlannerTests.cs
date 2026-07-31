@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalQueryPageKeysetPlanner
 {
     [Test]
-    public void It_should_convert_supported_query_value_types_into_typed_sql_parameters_and_compile_document_uuid_join_sql()
+    public void It_should_convert_supported_query_value_types_into_typed_sql_parameters_and_compile_root_document_uuid_sql()
     {
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
         var queryResult = planner.Plan(
@@ -109,9 +109,10 @@ public class Given_RelationalQueryPageKeysetPlanner
 
         var keyset = queryResult;
 
-        keyset.Plan.PageDocumentIdSql.Should().Contain("INNER JOIN \"dms\".\"Document\" doc");
-        keyset.Plan.PageDocumentIdSql.Should().Contain("doc.\"DocumentUuid\" = @id");
-        keyset.Plan.TotalCountSql.Should().Contain("doc.\"DocumentUuid\" = @id");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("INNER JOIN \"dms\".\"Document\"");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"DocumentUuid\" = @id");
+        keyset.Plan.TotalCountSql.Should().NotContain("INNER JOIN \"dms\".\"Document\"");
+        keyset.Plan.TotalCountSql.Should().Contain("r.\"DocumentUuid\" = @id");
         keyset.Plan.PageParametersInOrder.Should().Contain(parameter => parameter.ParameterName == "id");
 
         keyset.ParameterValues["offset"].Should().Be(0L);

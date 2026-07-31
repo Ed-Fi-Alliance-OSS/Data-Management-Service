@@ -134,7 +134,7 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    public void It_should_join_document_table_when_any_predicate_targets_document_uuid()
+    public void It_should_filter_document_uuid_on_the_root_table()
     {
         var plan = _compiler.Compile(
             CreateSpec(
@@ -155,15 +155,21 @@ public class Given_PageDocumentIdSqlCompiler
             )
         );
 
-        const string ExpectedDocumentJoin =
-            "INNER JOIN \"dms\".\"Document\" doc ON doc.\"DocumentId\" = r.\"DocumentId\"";
-        const string ExpectedDocumentUuidPredicate = "doc.\"DocumentUuid\" = @documentUuid";
+        const string DroppedDocumentJoin = "INNER JOIN \"dms\".\"Document\"";
+        const string ExpectedDocumentUuidPredicate = "r.\"DocumentUuid\" = @documentUuid";
 
-        plan.PageDocumentIdSql.Should().Contain(ExpectedDocumentJoin);
+        // The DocumentUuid target keeps its own sort key, so it still precedes root-column
+        // predicates exactly as it did while the predicate bound to the dms.Document join.
+        const string ExpectedOrderedPredicates =
+            "    (r.\"DocumentUuid\" = @documentUuid)\n    AND (r.\"SchoolId\" = @schoolId)";
+
+        plan.PageDocumentIdSql.Should().NotContain(DroppedDocumentJoin);
         plan.PageDocumentIdSql.Should().Contain(ExpectedDocumentUuidPredicate);
+        plan.PageDocumentIdSql.Should().Contain(ExpectedOrderedPredicates);
         plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql.Should().Contain(ExpectedDocumentJoin);
+        plan.TotalCountSql.Should().NotContain(DroppedDocumentJoin);
         plan.TotalCountSql.Should().Contain(ExpectedDocumentUuidPredicate);
+        plan.TotalCountSql.Should().Contain(ExpectedOrderedPredicates);
     }
 
     [Test]
@@ -924,11 +930,11 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" doc", "doc.\"DocumentUuid\" = @id")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document] doc", "doc.[DocumentUuid] = @id")]
-    public void It_should_join_document_only_when_document_uuid_predicates_are_present(
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" doc", "r.\"DocumentUuid\" = @id")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document] doc", "r.[DocumentUuid] = @id")]
+    public void It_should_never_join_document_for_document_uuid_predicates(
         SqlDialect dialect,
-        string expectedJoinFragment,
+        string droppedJoinFragment,
         string expectedPredicateFragment
     )
     {
@@ -947,9 +953,9 @@ public class Given_PageDocumentIdSqlCompiler
             )
         );
 
-        plan.PageDocumentIdSql.Should().Contain($"INNER JOIN {expectedJoinFragment} ON");
+        plan.PageDocumentIdSql.Should().NotContain($"INNER JOIN {droppedJoinFragment}");
         plan.PageDocumentIdSql.Should().Contain(expectedPredicateFragment);
-        plan.TotalCountSql.Should().Contain($"INNER JOIN {expectedJoinFragment} ON");
+        plan.TotalCountSql.Should().NotContain($"INNER JOIN {droppedJoinFragment}");
         plan.TotalCountSql.Should().Contain(expectedPredicateFragment);
     }
 

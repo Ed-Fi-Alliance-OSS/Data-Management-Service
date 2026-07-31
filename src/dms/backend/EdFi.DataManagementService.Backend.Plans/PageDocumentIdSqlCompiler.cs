@@ -22,9 +22,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private const string DocumentUuidColumnName = "DocumentUuid";
     private const string MissingPresenceColumnSortValue = "";
     private static readonly string _rootAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root);
-    private static readonly string _documentAlias = PlanNamingConventions.GetFixedAlias(
-        PlanSqlAliasRole.Document
-    );
     private static readonly string _descriptorAlias = PlanNamingConventions.GetFixedAlias(
         PlanSqlAliasRole.Descriptor
     );
@@ -68,9 +65,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var authorization = NormalizeAuthorization(spec.Authorization);
         var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
         var namespacePrefixParameterization = authorization?.NamespacePrefixParameterization;
-        var requiresDocumentUuidJoin = rewrittenPredicates.Any(static predicate =>
-            predicate.Target is QueryPredicateTarget.DocumentUuid
-        );
         // The descriptor join also covers the descriptor-alias namespace check used by descriptor
         // queries: the page subquery roots on dms.Document for ResourceKeyId paging, while the
         // Namespace column lives on the joined dms.Descriptor row.
@@ -102,7 +96,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             rewrittenPredicates,
             authorization,
             authorizationClaimParameterization,
-            requiresDocumentUuidJoin,
             requiresDescriptorJoin
         );
         var totalCountSql = spec.IncludeTotalCountSql
@@ -111,7 +104,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 rewrittenPredicates,
                 authorization,
                 authorizationClaimParameterization,
-                requiresDocumentUuidJoin,
                 requiresDescriptorJoin
             )
             : null;
@@ -507,7 +499,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         IReadOnlyList<RewrittenPredicate> predicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
-        bool requiresDocumentUuidJoin,
         bool requiresDescriptorJoin
     )
     {
@@ -521,7 +512,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .AppendRelation(new SqlRelationRef.PhysicalTable(spec.RootTable))
             .AppendLine($" {_rootAlias}");
 
-        AppendDocumentJoin(writer, requiresDocumentUuidJoin);
         AppendDescriptorJoin(writer, requiresDescriptorJoin);
         AppendWhereClause(
             writer,
@@ -547,7 +537,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         IReadOnlyList<RewrittenPredicate> predicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
-        bool requiresDocumentUuidJoin,
         bool requiresDescriptorJoin
     )
     {
@@ -559,32 +548,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .AppendRelation(new SqlRelationRef.PhysicalTable(rootTable))
             .AppendLine($" {_rootAlias}");
 
-        AppendDocumentJoin(writer, requiresDocumentUuidJoin);
         AppendDescriptorJoin(writer, requiresDescriptorJoin);
         AppendWhereClause(writer, rootTable, predicates, authorization, authorizationClaimParameterization);
         writer.AppendLine(";");
 
         return writer.ToString();
-    }
-
-    /// <summary>
-    /// Emits the optional <c>dms.Document</c> join required for <c>?id=</c> filtering.
-    /// </summary>
-    private static void AppendDocumentJoin(SqlWriter writer, bool requiresDocumentUuidJoin)
-    {
-        if (!requiresDocumentUuidJoin)
-        {
-            return;
-        }
-
-        writer
-            .Append("INNER JOIN ")
-            .AppendRelation(new SqlRelationRef.PhysicalTable(_documentTable))
-            .Append($" {_documentAlias} ON {_documentAlias}.")
-            .AppendQuoted(DocumentIdColumnName)
-            .Append($" = {_rootAlias}.")
-            .AppendQuoted(DocumentIdColumnName)
-            .AppendLine();
     }
 
     /// <summary>
@@ -1352,14 +1320,17 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Returns the fixed SQL alias for a predicate target.
+    /// Returns the fixed SQL alias for a predicate target. <c>?id=</c> filtering binds to the root
+    /// alias because every root table mirrors <c>DocumentUuid</c>, so no <c>dms.Document</c> join is
+    /// needed. The target is kept distinct from <see cref="QueryPredicateTarget.RootColumn"/> so the
+    /// pinned predicate sort order stays stable and the uuid comparison stays scalar-kind free.
     /// </summary>
     private static string GetTargetAlias(QueryPredicateTarget target)
     {
         return target switch
         {
             QueryPredicateTarget.RootColumn => _rootAlias,
-            QueryPredicateTarget.DocumentUuid => _documentAlias,
+            QueryPredicateTarget.DocumentUuid => _rootAlias,
             QueryPredicateTarget.DescriptorColumn => _descriptorAlias,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(target),
