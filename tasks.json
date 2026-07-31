@@ -406,7 +406,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterTelemetry.",
       "Run provider descriptor-write telemetry or contention evidence for PostgreSQL and SQL Server if covered at integration level."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "target-resolution-follow-up",

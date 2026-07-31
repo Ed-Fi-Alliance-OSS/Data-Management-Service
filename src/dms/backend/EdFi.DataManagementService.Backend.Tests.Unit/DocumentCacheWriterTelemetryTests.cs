@@ -3,12 +3,20 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
+using System.Data.Common;
 using System.Diagnostics.Metrics;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -184,6 +192,133 @@ public class Given_DocumentCacheWriterTelemetry
         joinedLabels.Should().NotContain("ResourceName");
     }
 
+    [TestCase(DescriptorTelemetryWritePath.PostInsert)]
+    [TestCase(DescriptorTelemetryWritePath.PostAsUpdate)]
+    [TestCase(DescriptorTelemetryWritePath.PutUpdate)]
+    public async Task It_records_descriptor_applied_writes_in_the_same_canonical_writer_wait_family(
+        DescriptorTelemetryWritePath writePath
+    )
+    {
+        using MetricCollector collector = new();
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateDescriptorWriteHandler(
+            targetLookupService,
+            sessionFactory,
+            collector.CreateTelemetry(),
+            CreateSelectedDataStoreSelection()
+        );
+        var mappingSet = CreateDescriptorMappingSet(SqlDialect.Pgsql);
+
+        switch (writePath)
+        {
+            case DescriptorTelemetryWritePath.PostInsert:
+                targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(
+                    documentUuid
+                );
+                sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(42L)]);
+
+                await sut.HandlePostAsync(CreatePostDescriptorWriteRequest(mappingSet, documentUuid))
+                    .ConfigureAwait(false);
+                break;
+
+            case DescriptorTelemetryWritePath.PostAsUpdate:
+                targetLookupService.PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    44L
+                );
+                sessionFactory.Session.ScalarResults.Enqueue(44L);
+                sessionFactory.Session.Executor.ResultSets.Enqueue([
+                    CreatePersistedDescriptorResultSet(description: "Previous"),
+                ]);
+                sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+                await sut.HandlePostAsync(CreatePostDescriptorWriteRequest(mappingSet, documentUuid))
+                    .ConfigureAwait(false);
+                break;
+
+            case DescriptorTelemetryWritePath.PutUpdate:
+                targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    44L
+                );
+                sessionFactory.Session.ScalarResults.Enqueue(44L);
+                sessionFactory.Session.Executor.ResultSets.Enqueue([
+                    CreatePersistedDescriptorResultSet(description: "Previous"),
+                ]);
+                sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+                await sut.HandlePutAsync(
+                        CreatePutDescriptorWriteRequest(
+                            mappingSet,
+                            documentUuid,
+                            description: "Updated Description"
+                        )
+                    )
+                    .ConfigureAwait(false);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(writePath), writePath, null);
+        }
+
+        MetricMeasurement sameDocumentWait = collector
+            .MeasurementsFor(DocumentCacheWriterTelemetry.SameDocumentWaitName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        sameDocumentWait.Tags["provider"].Should().Be("postgresql");
+        sameDocumentWait.Tags["target_key"].Should().Be("selected:99");
+        sameDocumentWait.Tags["purpose"].Should().Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
+        sameDocumentWait.Tags["lifecycle"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
+        sameDocumentWait
+            .Tags["outcome"]
+            .Should()
+            .Be(nameof(RelationalWriteExecutorAttemptOutcome.AppliedWrite));
+        sameDocumentWait.Tags["participant"].Should().Be("CanonicalWriter");
+        sameDocumentWait.Tags["phase"].Should().Be("CanonicalPersist");
+        sameDocumentWait.DoubleValue.Should().BeGreaterThanOrEqualTo(0);
+    }
+
+    [Test]
+    public async Task It_does_not_record_descriptor_canonical_writer_wait_for_no_op_put_rollbacks()
+    {
+        using MetricCollector collector = new();
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
+        var sut = CreateDescriptorWriteHandler(
+            targetLookupService,
+            sessionFactory,
+            collector.CreateTelemetry(),
+            CreateSelectedDataStoreSelection()
+        );
+
+        await sut.HandlePutAsync(
+                CreatePutDescriptorWriteRequest(CreateDescriptorMappingSet(SqlDialect.Pgsql), documentUuid)
+            )
+            .ConfigureAwait(false);
+
+        collector.MeasurementsFor(DocumentCacheWriterTelemetry.SameDocumentWaitName).Should().BeEmpty();
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    public enum DescriptorTelemetryWritePath
+    {
+        PostInsert,
+        PostAsUpdate,
+        PutUpdate,
+    }
+
     private sealed class MetricCollector : IDisposable
     {
         private readonly Meter _meter = new($"DocumentCacheWriterTelemetryTests.{Guid.NewGuid()}");
@@ -256,6 +391,332 @@ public class Given_DocumentCacheWriterTelemetry
             }
 
             return result;
+        }
+    }
+
+    private static DescriptorWriteHandler CreateDescriptorWriteHandler(
+        IRelationalWriteTargetLookupService targetLookupService,
+        IRelationalWriteSessionFactory writeSessionFactory,
+        IDocumentCacheWriterTelemetry telemetry,
+        IDataStoreSelection dataStoreSelection
+    )
+    {
+        return new DescriptorWriteHandler(
+            targetLookupService,
+            new NoOpRelationalWriteExceptionClassifier(),
+            A.Fake<IRelationalDeleteConstraintResolver>(),
+            writeSessionFactory,
+            NullLogger<DescriptorWriteHandler>.Instance,
+            new ServedEtagComposer(),
+            documentCacheWriterTelemetry: telemetry,
+            dataStoreSelection: dataStoreSelection
+        );
+    }
+
+    private static IDataStoreSelection CreateSelectedDataStoreSelection()
+    {
+        var selection = new DataStoreSelection();
+        selection.SetSelectedDataStore(
+            new DataStore(
+                99,
+                "postgresql",
+                "telemetry-test",
+                "Host=localhost;Database=telemetry-test",
+                [],
+                RelationalProviderToken.Postgresql
+            )
+        );
+
+        return selection;
+    }
+
+    private static DescriptorWriteRequest CreatePostDescriptorWriteRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid,
+        string description = "Charter"
+    )
+    {
+        return new DescriptorWriteRequest(
+            mappingSet,
+            DescriptorResource,
+            CreateDescriptorRequestBody(description),
+            documentUuid,
+            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+            new TraceId("descriptor-post-telemetry")
+        );
+    }
+
+    private static DescriptorWriteRequest CreatePutDescriptorWriteRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid,
+        string description = "Charter"
+    )
+    {
+        return new DescriptorWriteRequest(
+            mappingSet,
+            DescriptorResource,
+            CreateDescriptorRequestBody(description),
+            documentUuid,
+            null,
+            new TraceId("descriptor-put-telemetry")
+        );
+    }
+
+    private static JsonNode CreateDescriptorRequestBody(string description)
+    {
+        return JsonNode.Parse(
+            $$"""
+            {
+              "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+              "codeValue": "Charter",
+              "shortDescription": "Charter",
+              "description": "{{description}}",
+              "effectiveBeginDate": "2024-01-01"
+            }
+            """
+        )!;
+    }
+
+    private static InMemoryRelationalResultSet CreateContentVersionResultSet(long contentVersion) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
+        );
+
+    private static InMemoryRelationalResultSet CreatePersistedDescriptorResultSet(
+        string description = "Charter"
+    ) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?>
+            {
+                ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                ["CodeValue"] = "Charter",
+                ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
+                ["ShortDescription"] = "Charter",
+                ["Description"] = description,
+                ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
+                ["EffectiveEndDate"] = null,
+            }
+        );
+
+    private static MappingSet CreateDescriptorMappingSet(SqlDialect dialect)
+    {
+        var resourceKey = new ResourceKeyEntry(1, DescriptorResource, "1.0.0", true);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolTypeDescriptor"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_SchoolTypeDescriptor",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+        var resourceModel = new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.SharedDescriptorTable,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", dialect, "v1"),
+            Model: new DerivedRelationalModelSet(
+                EffectiveSchema: new EffectiveSchemaInfo(
+                    ApiSchemaFormatVersion: "1.0",
+                    RelationalMappingVersion: "v1",
+                    EffectiveSchemaHash: "schema-hash",
+                    ResourceKeyCount: 1,
+                    ResourceKeySeedHash: [1, 2, 3],
+                    SchemaComponentsInEndpointOrder:
+                    [
+                        new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
+                    ],
+                    ResourceKeysInIdOrder: [resourceKey]
+                ),
+                Dialect: dialect,
+                ProjectSchemasInEndpointOrder:
+                [
+                    new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
+                ],
+                ConcreteResourcesInNameOrder:
+                [
+                    new ConcreteResourceModel(resourceKey, resourceModel.StorageKind, resourceModel),
+                ],
+                AbstractIdentityTablesInNameOrder: [],
+                AbstractUnionViewsInNameOrder: [],
+                IndexesInCreateOrder: [],
+                TriggersInCreateOrder: []
+            ),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
+
+    private sealed class RecordingRelationalCommandExecutor(SqlDialect dialect) : IRelationalCommandExecutor
+    {
+        public SqlDialect Dialect { get; } = dialect;
+
+        public Queue<IReadOnlyList<InMemoryRelationalResultSet>> ResultSets { get; } = [];
+
+        public async Task<TResult> ExecuteReaderAsync<TResult>(
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            IReadOnlyList<InMemoryRelationalResultSet> resultSets =
+                ResultSets.Count == 0 ? [] : ResultSets.Dequeue();
+
+            await using var reader = new InMemoryRelationalCommandReader(resultSets);
+            return await readAsync(reader, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class RecordingRelationalWriteSessionFactory(SqlDialect dialect)
+        : IRelationalWriteSessionFactory
+    {
+        public RecordingRelationalWriteSession Session { get; } = new(dialect);
+
+        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IRelationalWriteSession>(Session);
+        }
+    }
+
+    private sealed class RecordingRelationalWriteSession : IRelationalWriteSession
+    {
+        private readonly RecordingDbConnection _connection = new(
+            new RecordingDbCommand(new DataTable().CreateDataReader())
+        );
+        private readonly RecordingDbTransaction _transaction;
+
+        public RecordingRelationalWriteSession()
+            : this(SqlDialect.Pgsql) { }
+
+        public RecordingRelationalWriteSession(SqlDialect dialect)
+        {
+            _transaction = new RecordingDbTransaction(_connection, IsolationLevel.ReadCommitted);
+            Executor = new RecordingRelationalCommandExecutor(dialect);
+        }
+
+        public DbConnection Connection => _connection;
+
+        public DbTransaction Transaction => _transaction;
+
+        public RecordingRelationalCommandExecutor Executor { get; }
+
+        public Queue<object?> ScalarResults { get; } = [];
+
+        public int CommitCallCount { get; private set; }
+
+        public int RollbackCallCount { get; private set; }
+
+        public DbCommand CreateCommand(RelationalCommand command)
+        {
+            var dbCommand = new RecordingDbCommand(new DataTable().CreateDataReader())
+            {
+                CommandText = command.CommandText,
+                ScalarResult = ScalarResults.Count == 0 ? null : ScalarResults.Dequeue(),
+            };
+
+            foreach (var parameter in command.Parameters)
+            {
+                var dbParameter = dbCommand.CreateParameter();
+                dbParameter.ParameterName = parameter.Name;
+                dbParameter.Value = parameter.Value ?? DBNull.Value;
+                parameter.ConfigureParameter?.Invoke(dbParameter);
+                dbCommand.Parameters.Add((RecordingDbParameter)dbParameter);
+            }
+
+            return dbCommand;
+        }
+
+        public IRelationalCommandExecutor CreateCommandExecutor() => Executor;
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CommitCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RollbackCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class StubRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
+    {
+        public RelationalWriteTargetLookupResult PostResult { get; set; } =
+            new RelationalWriteTargetLookupResult.NotFound();
+
+        public RelationalWriteTargetLookupResult PutResult { get; set; } =
+            new RelationalWriteTargetLookupResult.NotFound();
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(PostResult);
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(PutResult);
         }
     }
 
