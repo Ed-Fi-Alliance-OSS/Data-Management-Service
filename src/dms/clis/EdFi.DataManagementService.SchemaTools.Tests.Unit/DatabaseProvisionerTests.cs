@@ -12,6 +12,7 @@ using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
@@ -136,6 +137,303 @@ public class DatabaseProvisionerTests
         public void It_includes_a_clear_error_message()
         {
             _action.Should().Throw<InvalidOperationException>().WithMessage("*database name*");
+        }
+    }
+
+    [TestFixture]
+    public class Given_PgsqlDatabaseProvisioner_Parsing_Names_Serialized_By_The_Registration_Transport
+    {
+        private const string ReservedName = "edfi_configurationservice";
+
+        private string _serializedWithTrailingLineFeed = null!;
+        private string _exactReservedName = null!;
+        private string _mixedCase = null!;
+        private string _trailingSpace = null!;
+        private string _trailingLineFeed = null!;
+        private string _trailingCarriageReturn = null!;
+        private string _trailingCarriageReturnLineFeed = null!;
+        private string _embeddedLineFeed = null!;
+        private string _semicolonBearing = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var provisioner = new PgsqlDatabaseProvisioner(A.Fake<ILogger>());
+            _serializedWithTrailingLineFeed = SerializePgsqlRegistrationConnectionString($"{ReservedName}\n");
+
+            _exactReservedName = provisioner.GetDatabaseName(
+                SerializePgsqlRegistrationConnectionString(ReservedName)
+            );
+            _mixedCase = provisioner.GetDatabaseName(
+                SerializePgsqlRegistrationConnectionString("EDFI_ConfigurationService")
+            );
+            _trailingSpace = provisioner.GetDatabaseName(
+                SerializePgsqlRegistrationConnectionString($"{ReservedName} ")
+            );
+            _trailingLineFeed = provisioner.GetDatabaseName(_serializedWithTrailingLineFeed);
+            _trailingCarriageReturn = provisioner.GetDatabaseName(
+                SerializePgsqlRegistrationConnectionString($"{ReservedName}\r")
+            );
+            _trailingCarriageReturnLineFeed = provisioner.GetDatabaseName(
+                SerializePgsqlRegistrationConnectionString($"{ReservedName}\r\n")
+            );
+            _embeddedLineFeed = provisioner.GetDatabaseName(
+                SerializePgsqlRegistrationConnectionString("edfi_configuration\nservice")
+            );
+            _semicolonBearing = provisioner.GetDatabaseName(
+                SerializePgsqlRegistrationConnectionString($"edfi_dms;Database={ReservedName}")
+            );
+        }
+
+        // Serializes with the same ADO.NET writer and key set the PowerShell registration
+        // serializer (New-DataStoreConnectionString) uses, so the parses here are measured against
+        // the transport's real wire shape rather than hand-authored strings.
+        private static string SerializePgsqlRegistrationConnectionString(string databaseName)
+        {
+            DbConnectionStringBuilder builder = new()
+            {
+                ["host"] = "dms-postgresql",
+                ["port"] = "5432",
+                ["username"] = "postgres",
+                ["password"] = "abcdefgh1!",
+                ["database"] = databaseName,
+            };
+            return builder.ConnectionString;
+        }
+
+        [Test]
+        public void It_parses_the_exact_reserved_name_verbatim()
+        {
+            _exactReservedName.Should().Be(ReservedName);
+        }
+
+        [Test]
+        public void It_preserves_mixed_case()
+        {
+            _mixedCase.Should().Be("EDFI_ConfigurationService");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_space()
+        {
+            _trailingSpace.Should().Be($"{ReservedName} ");
+        }
+
+        [Test]
+        public void It_removes_a_bare_trailing_line_feed()
+        {
+            _trailingLineFeed.Should().Be(ReservedName);
+        }
+
+        [Test]
+        public void It_still_carries_the_line_feed_in_the_serialized_text()
+        {
+            // Non-vacuous: the LF-bearing value is present on the wire (the writer leaves a bare
+            // trailing LF unquoted), so the removal above happens at parse time.
+            _serializedWithTrailingLineFeed.Should().Contain($"{ReservedName}\n");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_carriage_return()
+        {
+            _trailingCarriageReturn.Should().Be($"{ReservedName}\r");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_carriage_return_line_feed_pair()
+        {
+            _trailingCarriageReturnLineFeed.Should().Be($"{ReservedName}\r\n");
+        }
+
+        [Test]
+        public void It_preserves_an_embedded_line_feed()
+        {
+            _embeddedLineFeed.Should().Be("edfi_configuration\nservice");
+        }
+
+        [Test]
+        public void It_keeps_a_semicolon_bearing_value_in_one_database_key()
+        {
+            _semicolonBearing.Should().Be($"edfi_dms;Database={ReservedName}");
+        }
+    }
+
+    [TestFixture]
+    public class Given_MssqlDatabaseProvisioner_Parsing_Names_Serialized_By_The_Registration_Transport
+    {
+        private const string ReservedName = "edfi_configurationservice";
+
+        private string _serializedWithTrailingLineFeed = null!;
+        private string _exactReservedName = null!;
+        private string _mixedCase = null!;
+        private string _trailingSpace = null!;
+        private string _trailingLineFeed = null!;
+        private string _trailingCarriageReturn = null!;
+        private string _trailingCarriageReturnLineFeed = null!;
+        private string _embeddedLineFeed = null!;
+        private string _trailingIdeographicSpace = null!;
+        private string _semicolonBearing = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var provisioner = new MssqlDatabaseProvisioner(A.Fake<ILogger>());
+            _serializedWithTrailingLineFeed = SerializeMssqlRegistrationConnectionString($"{ReservedName}\n");
+
+            _exactReservedName = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString(ReservedName)
+            );
+            _mixedCase = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString("EDFI_ConfigurationService")
+            );
+            _trailingSpace = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString($"{ReservedName} ")
+            );
+            _trailingLineFeed = provisioner.GetDatabaseName(_serializedWithTrailingLineFeed);
+            _trailingCarriageReturn = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString($"{ReservedName}\r")
+            );
+            _trailingCarriageReturnLineFeed = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString($"{ReservedName}\r\n")
+            );
+            _embeddedLineFeed = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString("edfi_configuration\nservice")
+            );
+            _trailingIdeographicSpace = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString($"{ReservedName}\u3000")
+            );
+            _semicolonBearing = provisioner.GetDatabaseName(
+                SerializeMssqlRegistrationConnectionString($"edfi_dms;Database={ReservedName}")
+            );
+        }
+
+        // Serializes with the same ADO.NET writer and key set the PowerShell registration
+        // serializer (New-DataStoreConnectionString) uses, so the parses here are measured against
+        // the transport's real wire shape rather than hand-authored strings.
+        private static string SerializeMssqlRegistrationConnectionString(string databaseName)
+        {
+            DbConnectionStringBuilder builder = new()
+            {
+                ["Server"] = "dms-mssql,1433",
+                ["Database"] = databaseName,
+                ["User Id"] = "sa",
+                ["Password"] = "abcdefgh1!",
+                ["TrustServerCertificate"] = "true",
+            };
+            return builder.ConnectionString;
+        }
+
+        [Test]
+        public void It_parses_the_exact_reserved_name_verbatim()
+        {
+            _exactReservedName.Should().Be(ReservedName);
+        }
+
+        [Test]
+        public void It_preserves_mixed_case()
+        {
+            _mixedCase.Should().Be("EDFI_ConfigurationService");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_space()
+        {
+            _trailingSpace.Should().Be($"{ReservedName} ");
+        }
+
+        [Test]
+        public void It_removes_a_bare_trailing_line_feed()
+        {
+            _trailingLineFeed.Should().Be(ReservedName);
+        }
+
+        [Test]
+        public void It_still_carries_the_line_feed_in_the_serialized_text()
+        {
+            // Non-vacuous: the LF-bearing value is present on the wire (the writer leaves a bare
+            // trailing LF unquoted), so the removal above happens at parse time.
+            _serializedWithTrailingLineFeed.Should().Contain($"{ReservedName}\n");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_carriage_return()
+        {
+            _trailingCarriageReturn.Should().Be($"{ReservedName}\r");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_carriage_return_line_feed_pair()
+        {
+            _trailingCarriageReturnLineFeed.Should().Be($"{ReservedName}\r\n");
+        }
+
+        [Test]
+        public void It_preserves_an_embedded_line_feed()
+        {
+            _embeddedLineFeed.Should().Be("edfi_configuration\nservice");
+        }
+
+        [Test]
+        public void It_preserves_a_trailing_ideographic_space()
+        {
+            // The PARSE preserves U+3000; it is SQL Server's collation-level name comparison that
+            // folds it onto a space. Parser coverage here must never be mistaken for collation
+            // coverage - the server-side equivalence is owned by the PowerShell predicate tests.
+            _trailingIdeographicSpace.Should().Be($"{ReservedName}\u3000");
+        }
+
+        [Test]
+        public void It_keeps_a_semicolon_bearing_value_in_one_database_key()
+        {
+            _semicolonBearing.Should().Be($"edfi_dms;Database={ReservedName}");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pgsql_Registration_Connection_String_With_An_Empty_Password
+    {
+        private string _serialized = null!;
+        private NpgsqlConnectionStringBuilder _parsedByProvider = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // The generic ADO.NET reader drops an empty-valued key on parse, so the wire text and
+            // the provider parser are the oracles for an empty password - never generic-reader key
+            // presence. A passwordless (trust-authenticated) PostgreSQL server is a real
+            // configuration, and registration must preserve the ability to express it.
+            DbConnectionStringBuilder builder = new()
+            {
+                ["host"] = "dms-postgresql",
+                ["port"] = "5432",
+                ["username"] = "postgres",
+                ["password"] = "",
+                ["database"] = "edfi_datamanagementservice",
+            };
+            _serialized = builder.ConnectionString;
+            _parsedByProvider = new NpgsqlConnectionStringBuilder(_serialized);
+        }
+
+        [Test]
+        public void It_serializes_an_explicit_empty_password_segment()
+        {
+            _serialized.Should().Contain("password=;");
+        }
+
+        [Test]
+        public void It_reads_no_password_value_back()
+        {
+            // The CLR Password property is null for an explicitly-empty password= segment (a pwsh
+            // probe of the same property reports "" because PowerShell's IDictionary adapter serves
+            // the dictionary view instead of the property). Present-but-empty on the wire is pinned
+            // by the serialized-text assertion above; here the provider must read no VALUE back.
+            _parsedByProvider.Password.Should().BeNullOrEmpty();
+        }
+
+        [Test]
+        public void It_keeps_the_database_name_intact()
+        {
+            _parsedByProvider.Database.Should().Be("edfi_datamanagementservice");
         }
     }
 

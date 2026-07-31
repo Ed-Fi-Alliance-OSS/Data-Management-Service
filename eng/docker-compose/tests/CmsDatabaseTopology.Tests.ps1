@@ -1768,55 +1768,145 @@ Describe "the registered datastore database name survives the transport that car
             $interpolated | Should -BeNullOrEmpty -Because "an interpolated database= segment cannot escape its value"
         }
 
-        It "names the missing password instead of failing on a parameter it was never handed" {
-            # ConvertTo-PostgresCredential accepts an empty secret by design, and the escaping serializer
-            # rejects one - so the empty case has to be reported as the missing environment value it is.
-            # Interpolation used to register `password=` here, which only failed later at connect time.
+    }
+
+    Context "Add-DataStore registers an empty PostgreSQL password safely" {
+        # ConvertTo-PostgresCredential accepts an empty secret by design - a passwordless
+        # (trust-authenticated) PostgreSQL server is a real configuration - and the interpolated
+        # build always registered `password=`. These tests pin that the serializer path preserves
+        # the ability. Invoke-Api is mocked, so no HTTP request is ever made; the registration
+        # request is captured through a global closure function because a mock body's own scope is
+        # not readable from the test.
+        BeforeEach {
+            $script:capturedRegistrations = [System.Collections.Generic.List[hashtable]]::new()
+            $capturedRegistrations = $script:capturedRegistrations
+            Set-Item -Path Function:\global:Save-DataStoreRegistrationCapture -Value {
+                param([hashtable]$Registration)
+                $capturedRegistrations.Add($Registration)
+            }.GetNewClosure()
+
+            Mock -ModuleName Dms-Management Invoke-Api {
+                Save-DataStoreRegistrationCapture @{ RelativeUrl = $RelativeUrl; Body = $Body }
+                [pscustomobject]@{ id = 42 }
+            }
+        }
+
+        AfterEach {
+            Remove-Item -Path Function:\global:Save-DataStoreRegistrationCapture -ErrorAction SilentlyContinue
+        }
+
+        It "registers an explicit empty password= value for an empty PostgreSQL credential" {
+            # The generic ADO.NET reader DROPS an empty-valued key on parse, so the empty password
+            # is asserted on the RAW registered text; the database is parsed independently of it.
+            # (The provider-side proof that Npgsql reads this wire shape back as an empty password
+            # lives in the SchemaTools unit suite, which runs unconditionally in CI.)
             $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
 
-            { Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
-                    -PostgresCredential $emptyCredential -PostgresDbName 'edfi_datamanagementservice' } |
-                Should -Throw "*empty password*POSTGRES_PASSWORD*"
+            $dataStoreId = Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                -PostgresCredential $emptyCredential -PostgresDbName 'edfi_datamanagementservice'
+
+            $dataStoreId | Should -Be 42
+            Should -Invoke Invoke-Api -ModuleName Dms-Management -Times 1 -Exactly
+            $script:capturedRegistrations | Should -HaveCount 1
+            $script:capturedRegistrations[0].RelativeUrl | Should -Be 'v3/dataStores'
+
+            $registered = ($script:capturedRegistrations[0].Body | ConvertFrom-Json).connectionString
+            $registered | Should -BeLike "*password=;*"
+            Get-ParsedDatabaseValue -ConnectionString $registered |
+                Should -BeExactly 'edfi_datamanagementservice'
+        }
+
+        It "keeps the database escaped and exactly round-tripped alongside an empty password" {
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+            $metacharacterName = 'edfi_dms;Database=edfi_configurationservice'
+
+            Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                -PostgresCredential $emptyCredential -PostgresDbName $metacharacterName | Out-Null
+
+            $registered = ($script:capturedRegistrations[0].Body | ConvertFrom-Json).connectionString
+            Get-ParsedDatabaseValue -ConnectionString $registered | Should -BeExactly $metacharacterName
+
+            $reader = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $reader.psbase.ConnectionString = $registered
+            @($reader.Keys | Where-Object { $_ -match '^(database|dbname)$' }).Count |
+                Should -Be 1 -Because "an escaped value cannot introduce another database key"
+        }
+
+        It "emits no diagnostic carrying the connection string or a password fragment" {
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+
+            $diagnostics = & {
+                Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                    -PostgresCredential $emptyCredential -PostgresDbName 'edfi_datamanagementservice' | Out-Null
+            } *>&1
+
+            @($diagnostics | Where-Object { "$_" -match 'password=' }) | Should -BeNullOrEmpty
+        }
+
+        It "passes a prebuilt MSSQL connection string through verbatim with the credential unconsulted" {
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+            $prebuilt = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true'
+
+            Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                -PostgresCredential $emptyCredential -ConnectionString $prebuilt | Out-Null
+
+            ($script:capturedRegistrations[0].Body | ConvertFrom-Json).connectionString |
+                Should -BeExactly $prebuilt
         }
     }
 
-    Context "the serialized-then-parsed database value equals the registered name" {
-        It "round-trips <Label> unchanged" -ForEach @(
-            @{ Label = 'a plain name'; Name = 'edfi_datamanagementservice' }
-            @{ Label = 'a mixed-case name'; Name = 'EDFI_ConfigurationService' }
-            @{ Label = 'a trailing space'; Name = 'edfi_configurationservice ' }
-            @{ Label = 'two trailing spaces'; Name = 'edfi_configurationservice  ' }
-            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
-            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
-            @{ Label = 'an embedded semicolon that would otherwise start a new segment'; Name = 'edfi_dms;Database=edfi_configurationservice' }
-            @{ Label = 'a double quote'; Name = 'edfi_dms"x' }
-            @{ Label = 'a single quote'; Name = "edfi_dms'x" }
-            @{ Label = 'both quote characters'; Name = 'edfi_dms"x''y' }
-            @{ Label = 'an equals sign'; Name = 'edfi_dms=x' }
+    Context "the serialized-then-parsed database value equals the expected provider value" {
+        It "parses <Label> to exactly the expected provider value" -ForEach @(
+            @{ Label = 'a plain name'; Input = 'edfi_datamanagementservice'; ExpectedProviderValue = 'edfi_datamanagementservice' }
+            @{ Label = 'a mixed-case name'; Input = 'EDFI_ConfigurationService'; ExpectedProviderValue = 'EDFI_ConfigurationService' }
+            @{ Label = 'a trailing space'; Input = 'edfi_configurationservice '; ExpectedProviderValue = 'edfi_configurationservice ' }
+            @{ Label = 'two trailing spaces'; Input = 'edfi_configurationservice  '; ExpectedProviderValue = 'edfi_configurationservice  ' }
+            @{ Label = 'a leading space'; Input = ' edfi_configurationservice'; ExpectedProviderValue = ' edfi_configurationservice' }
+            @{ Label = 'a trailing tab'; Input = "edfi_configurationservice`t"; ExpectedProviderValue = "edfi_configurationservice`t" }
+            @{ Label = 'a trailing carriage return'; Input = "edfi_configurationservice`r"; ExpectedProviderValue = "edfi_configurationservice`r" }
+            @{ Label = 'a trailing CRLF pair'; Input = "edfi_configurationservice`r`n"; ExpectedProviderValue = "edfi_configurationservice`r`n" }
+            @{ Label = 'an embedded line feed'; Input = "edfi_configuration`nservice"; ExpectedProviderValue = "edfi_configuration`nservice" }
+            @{ Label = 'a trailing line feed - the one measured shape the transport removes'; Input = "edfi_configurationservice`n"; ExpectedProviderValue = 'edfi_configurationservice' }
+            @{ Label = 'an embedded semicolon that would otherwise start a new segment'; Input = 'edfi_dms;Database=edfi_configurationservice'; ExpectedProviderValue = 'edfi_dms;Database=edfi_configurationservice' }
+            @{ Label = 'a double quote'; Input = 'edfi_dms"x'; ExpectedProviderValue = 'edfi_dms"x' }
+            @{ Label = 'a single quote'; Input = "edfi_dms'x"; ExpectedProviderValue = "edfi_dms'x" }
+            @{ Label = 'both quote characters'; Input = 'edfi_dms"x''y'; ExpectedProviderValue = 'edfi_dms"x''y' }
+            @{ Label = 'an equals sign'; Input = 'edfi_dms=x'; ExpectedProviderValue = 'edfi_dms=x' }
         ) {
-            # Before the serializer change, the unquoted forms of the first six of these parsed back as
-            # a DIFFERENT name (whitespace discarded) and the semicolon form introduced a second
-            # Database segment that won - so the datastore reached edfi_configurationservice while the
-            # registered text said otherwise.
+            # Explicit Input/ExpectedProviderValue pairs: the expected value is data, never an
+            # assumption that every input round-trips - that assumption is what previously made the
+            # trailing-LF exception inexpressible in this table. The trailing-CR, trailing-CRLF, and
+            # embedded-LF rows pin the exception's boundary: a broad newline normalization anywhere
+            # in the transport fails those rows instead of hiding inside the LF exception. Before
+            # the serializer change, the unquoted whitespace forms parsed back as a DIFFERENT name
+            # and the semicolon form introduced a second Database segment that won.
+            # ($_ rather than a bound variable: 'Input' is a PowerShell AUTOMATIC variable, so
+            # Pester cannot surface that key as $Input - it silently binds empty.)
             $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
                 -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
-                -DatabaseName $Name
+                -DatabaseName $_.Input
 
             Get-ParsedDatabaseValue -ConnectionString $connectionString |
-                Should -BeExactly $Name -Because "the collision guard compares this value, so it must be the registered name"
+                Should -BeExactly $_.ExpectedProviderValue -Because "the collision guard compares this value, so it must be what the provider receives"
         }
 
         It "drops a TRAILING LINE FEED, the one measured shape the transport does not preserve" {
-            # Stated as its own case so the round-trip claim above is precise rather than accidentally
-            # silent. Both the ADO.NET reader and Npgsql return the value without the trailing 0x0A, while
-            # a trailing CR, tab, vertical tab, form feed and space all survive. This is also the clearest
-            # demonstration of why the guard must read the parsed value: judged as raw text this name looks
-            # distinct, and the provider is handed the reserved database.
+            # Stated as its own case so the matrix claim above is precise rather than accidentally
+            # silent. Mechanism, measured: the writer leaves a value with a bare trailing 0x0A
+            # UNQUOTED (while quoting trailing CR or space), and the parser then discards it as
+            # surrounding whitespace of an unquoted value - so the removal happens at parse time,
+            # not serialization. Both the ADO.NET reader and Npgsql return the value without the
+            # trailing 0x0A, while a trailing CR, CRLF, tab, vertical tab, form feed and space all
+            # survive. This is the clearest demonstration of why the guard must read the parsed
+            # value: judged as raw text this name looks distinct, and the provider is handed the
+            # reserved database.
             $withLineFeed = "edfi_configurationservice`n"
             $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
                 -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
                 -DatabaseName $withLineFeed
 
+            $connectionString.Contains($withLineFeed) |
+                Should -BeTrue -Because "the LF-bearing value is present on the wire, so the assertion below is about parsing, not about the serializer already having stripped it"
             Get-ParsedDatabaseValue -ConnectionString $connectionString |
                 Should -BeExactly 'edfi_configurationservice'
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $withLineFeed |
@@ -1843,6 +1933,7 @@ Describe "the registered datastore database name survives the transport that car
             @{ Label = 'a mixed-case name'; Name = 'EDFI_ConfigurationService' }
             @{ Label = 'a trailing space'; Name = 'edfi_configurationservice ' }
             @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
+            @{ Label = 'a trailing line feed that parses to the reserved name'; Name = "edfi_configurationservice`n" }
             @{ Label = 'a semicolon-bearing name'; Name = 'edfi_dms;Database=edfi_configurationservice' }
         ) {
             # One assertion, both sides: whether the predicate says "collides" must equal whether the
@@ -1877,7 +1968,10 @@ Describe "the registered datastore database name survives the transport that car
 
         It "returns the same value as Npgsql itself for every transported shape" {
             # Skipped rather than silently vacuous when the SchemaTools Release output is not built: the
-            # provider assembly is the only way to compare against the real parser.
+            # provider assembly is the only way to compare against the real parser here. The guaranteed
+            # always-running provider oracle for these same shapes is DatabaseProvisionerTests.cs in the
+            # SchemaTools unit-test project; this assertion additionally proves the PowerShell model
+            # agrees with the real parser byte-for-byte, including on the one divergent shape.
             $npgsql = Join-Path $script:engRoot "../src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0/Npgsql.dll"
             $npgsql = [System.IO.Path]::GetFullPath($npgsql)
             if (-not (Test-Path -LiteralPath $npgsql)) {
@@ -1886,20 +1980,60 @@ Describe "the registered datastore database name survives the transport that car
             }
             [System.Reflection.Assembly]::LoadFrom($npgsql) | Out-Null
 
-            foreach ($name in @(
-                'edfi_configurationservice', 'EDFI_ConfigurationService', 'edfi_configurationservice ',
-                ' edfi_configurationservice', "edfi_configurationservice`t",
-                'edfi_dms;Database=edfi_configurationservice', 'edfi_dms"x', "edfi_dms'x", 'edfi_dms=x'
+            # Explicit Input/ExpectedProviderValue pairs, LF exception and its boundary controls
+            # (trailing CR, trailing CRLF, embedded LF) included - never an assumption that the
+            # expected value equals the input, which is what previously kept LF out of this loop.
+            foreach ($case in @(
+                @{ Input = 'edfi_configurationservice'; ExpectedProviderValue = 'edfi_configurationservice' }
+                @{ Input = 'EDFI_ConfigurationService'; ExpectedProviderValue = 'EDFI_ConfigurationService' }
+                @{ Input = 'edfi_configurationservice '; ExpectedProviderValue = 'edfi_configurationservice ' }
+                @{ Input = ' edfi_configurationservice'; ExpectedProviderValue = ' edfi_configurationservice' }
+                @{ Input = "edfi_configurationservice`t"; ExpectedProviderValue = "edfi_configurationservice`t" }
+                @{ Input = "edfi_configurationservice`r"; ExpectedProviderValue = "edfi_configurationservice`r" }
+                @{ Input = "edfi_configurationservice`r`n"; ExpectedProviderValue = "edfi_configurationservice`r`n" }
+                @{ Input = "edfi_configuration`nservice"; ExpectedProviderValue = "edfi_configuration`nservice" }
+                @{ Input = "edfi_configurationservice`n"; ExpectedProviderValue = 'edfi_configurationservice' }
+                @{ Input = 'edfi_dms;Database=edfi_configurationservice'; ExpectedProviderValue = 'edfi_dms;Database=edfi_configurationservice' }
+                @{ Input = 'edfi_dms"x'; ExpectedProviderValue = 'edfi_dms"x' }
+                @{ Input = "edfi_dms'x"; ExpectedProviderValue = "edfi_dms'x" }
+                @{ Input = 'edfi_dms=x'; ExpectedProviderValue = 'edfi_dms=x' }
             )) {
                 $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
                     -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
-                    -DatabaseName $name
+                    -DatabaseName $case.Input
                 $fromProvider = [Npgsql.NpgsqlConnectionStringBuilder]::new($connectionString).Database
                 $fromModel = Get-ParsedDatabaseValue -ConnectionString $connectionString
 
-                $fromProvider | Should -BeExactly $name
+                $fromProvider | Should -BeExactly $case.ExpectedProviderValue
                 $fromModel | Should -BeExactly $fromProvider
             }
+        }
+
+        It "proves the trailing-LF collision against the real provider parser" {
+            # The direct provider-backed statement of the one load-bearing exception: the serialized
+            # string still carries the LF-bearing value, the REAL parser returns the bare reserved
+            # name, the generic model agrees, and the collision predicate says true.
+            $npgsql = Join-Path $script:engRoot "../src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0/Npgsql.dll"
+            $npgsql = [System.IO.Path]::GetFullPath($npgsql)
+            if (-not (Test-Path -LiteralPath $npgsql)) {
+                Set-ItResult -Skipped -Because "Npgsql.dll is only present once SchemaTools has been built in Release"
+                return
+            }
+            [System.Reflection.Assembly]::LoadFrom($npgsql) | Out-Null
+
+            $withLineFeed = "edfi_configurationservice`n"
+            $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
+                -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
+                -DatabaseName $withLineFeed
+
+            $connectionString.Contains($withLineFeed) |
+                Should -BeTrue -Because "the LF-bearing value must be present on the wire for this to prove anything about parsing"
+            $fromProvider = [Npgsql.NpgsqlConnectionStringBuilder]::new($connectionString).Database
+            $fromProvider | Should -BeExactly 'edfi_configurationservice'
+            Get-ParsedDatabaseValue -ConnectionString $connectionString |
+                Should -BeExactly $fromProvider -Because "the generic model must return the same provider value"
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $withLineFeed |
+                Should -BeTrue
         }
     }
 }

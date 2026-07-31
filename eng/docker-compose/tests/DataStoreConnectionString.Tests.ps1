@@ -76,6 +76,35 @@ Describe "New-DataStoreConnectionString (DMS-1238)" {
         $parsed.set_ConnectionString($cs)
         $parsed["Password"] | Should -Be $Secret
     }
+
+    It "serializes an empty postgresql password as an explicit empty password= segment" {
+        # A passwordless (trust-authenticated) PostgreSQL server is a real configuration, and the
+        # pre-serializer interpolated build always registered `password=`. The generic ADO.NET
+        # reader DROPS an empty-valued key on parse, so the empty password is asserted on the RAW
+        # serialized text and the database is parsed independently of it. (Npgsql reading this wire
+        # shape back as an empty password is pinned by the SchemaTools unit suite.)
+        $cs = New-DataStoreConnectionString `
+            -DatabaseEngine postgresql -DbHost "dms-postgresql" -Port 5432 `
+            -Username "postgres" -Password "" -DatabaseName "edfi_datamanagementservice"
+
+        $cs | Should -BeLike "*password=;*"
+
+        $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $parsed.set_ConnectionString($cs)
+        $parsed["database"] | Should -Be "edfi_datamanagementservice"
+    }
+
+    It "rejects an empty mssql password at the serialization boundary" {
+        # SQL Server auth in this stack is sa + MSSQL_SA_PASSWORD, which the container itself
+        # requires to be non-empty. The rejection moved from parameter binding to an explicit
+        # engine-scoped check when the postgresql branch started accepting an empty password;
+        # this pins that mssql kept it.
+        {
+            New-DataStoreConnectionString `
+                -DatabaseEngine mssql -DbHost "dms-mssql" -Port 1433 `
+                -Username "sa" -Password "" -DatabaseName "edfi_datamanagementservice"
+        } | Should -Throw "*empty password*mssql*"
+    }
 }
 
 Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
