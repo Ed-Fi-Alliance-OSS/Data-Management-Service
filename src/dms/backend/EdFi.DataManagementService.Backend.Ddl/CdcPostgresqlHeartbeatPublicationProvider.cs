@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
@@ -496,6 +497,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 )
                 .ConfigureAwait(false);
             var state = CdcProviderArtifactState.Matched;
+            var createdDuringCurrentCall = false;
 
             if (!slot.Exists)
             {
@@ -537,6 +539,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 }
 
                 state = CdcProviderArtifactState.Created;
+                createdDuringCurrentCall = true;
                 slot = await InspectReplicationSlotAsync(
                         executor,
                         replicationSlotName,
@@ -557,12 +560,38 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 );
             }
 
-            return ReplicationSlotResult(
-                replicationSlotName,
-                state,
-                slot.ObservedValues,
-                slot.Classification
-            );
+            if (context.Mode == CdcProviderSetupStepMode.CreateOrExactMatch && !createdDuringCurrentCall)
+            {
+                var proofDiagnostics = InitialReplicationSlotProofDiagnostics(
+                    context.Request,
+                    replicationSlotName,
+                    slot
+                );
+                if (proofDiagnostics.Count > 0)
+                {
+                    return ReplicationSlotResult(
+                        replicationSlotName,
+                        CdcProviderArtifactState.Mismatched,
+                        slot.ObservedValues,
+                        proofDiagnostics
+                            .FirstOrDefault(diagnostic =>
+                                diagnostic.Category
+                                    == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                                || diagnostic.Category
+                                    == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                            )
+                            ?.Classification
+                            ?? CdcProviderRetryContinuityClassification.FailClosed,
+                        proofDiagnostics
+                    );
+                }
+            }
+
+            var observedValues = createdDuringCurrentCall
+                ? AddInitialSlotProofObservedValues(context.Request, replicationSlotName, slot)
+                : slot.ObservedValues;
+
+            return ReplicationSlotResult(replicationSlotName, state, observedValues, slot.Classification);
         }
         catch (DbException exception)
         {
@@ -1192,7 +1221,10 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 IsExactMatch: false,
                 ObservedValues: new Dictionary<string, string> { ["slot"] = "missing" },
                 Classification: CdcProviderRetryContinuityClassification.SourceHistoryLost,
-                Diagnostics: []
+                Diagnostics: [],
+                DatabaseIdentity: null,
+                RestartLsn: null,
+                ConfirmedFlushLsn: null
             );
         }
 
@@ -1264,7 +1296,10 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             IsExactMatch: exactShape && noLostHistory && activeAllowed,
             ObservedValues: observedValues,
             Classification: classification,
-            Diagnostics: diagnostics
+            Diagnostics: diagnostics,
+            DatabaseIdentity: database,
+            RestartLsn: restartLsn,
+            ConfirmedFlushLsn: confirmedFlushLsn
         );
     }
 
@@ -2156,6 +2191,181 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         return diagnostics;
     }
 
+    private static IReadOnlyList<CdcProviderDiagnostic> InitialReplicationSlotProofDiagnostics(
+        CdcProviderSetupRequest request,
+        CdcSafeName replicationSlotName,
+        ReplicationSlotInspection slot
+    )
+    {
+        var proof = request.PostgresqlInitialReplicationSlotProof;
+        if (proof is null)
+        {
+            return
+            [
+                InitialSlotProofUnavailable(
+                    replicationSlotName,
+                    "CDC_POSTGRESQL_REPLICATION_SLOT_INITIAL_PROOF_MISSING",
+                    expectedValue: "matching-same-workflow-initial-slot-proof",
+                    observedValue: "missing"
+                ),
+            ];
+        }
+
+        List<string> mismatches = [];
+        if (!proof.ReplicationSlotName.Equals(replicationSlotName))
+        {
+            mismatches.Add(
+                $"slot_name={SafeText(proof.ReplicationSlotName.Value)};expected={SafeText(replicationSlotName.Value)}"
+            );
+        }
+
+        if (proof.SourceFingerprint != request.BoundPhysicalSourceFingerprint)
+        {
+            mismatches.Add(
+                $"source_fingerprint={FingerprintValue(proof.SourceFingerprint)};expected={FingerprintValue(request.BoundPhysicalSourceFingerprint)}"
+            );
+        }
+
+        if (!string.Equals(proof.DatabaseIdentity.Value, slot.DatabaseIdentity, StringComparison.Ordinal))
+        {
+            mismatches.Add(
+                $"database_identity={SafeText(proof.DatabaseIdentity.Value)};expected={SafeText(slot.DatabaseIdentity ?? "<missing>")}"
+            );
+        }
+
+        var proofRestartReadable = TryParsePostgresqlLsn(proof.RetainedRestartLsn, out var proofRestartLsn);
+        var proofConfirmedFlushReadable = TryParsePostgresqlLsn(
+            proof.RetainedConfirmedFlushLsn,
+            out var proofConfirmedFlushLsn
+        );
+        var observedRestartReadable = TryParsePostgresqlLsn(slot.RestartLsn, out var observedRestartLsn);
+        var observedConfirmedFlushReadable = TryParsePostgresqlLsn(
+            slot.ConfirmedFlushLsn,
+            out var observedConfirmedFlushLsn
+        );
+        var retainedPositionsReadable =
+            proofRestartReadable
+            && proofConfirmedFlushReadable
+            && observedRestartReadable
+            && observedConfirmedFlushReadable;
+
+        if (!retainedPositionsReadable)
+        {
+            mismatches.Add("retained_position=unreadable");
+        }
+
+        if (mismatches.Count > 0)
+        {
+            return
+            [
+                InitialSlotProofUnavailable(
+                    replicationSlotName,
+                    "CDC_POSTGRESQL_REPLICATION_SLOT_INITIAL_PROOF_MISMATCH",
+                    expectedValue: "same-slot-source-database-retained-position-proof",
+                    observedValue: string.Join(";", mismatches)
+                ),
+            ];
+        }
+
+        if (observedRestartLsn > proofRestartLsn || observedConfirmedFlushLsn > proofConfirmedFlushLsn)
+        {
+            return
+            [
+                ProviderHistoryLossEvidence(
+                    replicationSlotName,
+                    "CDC_POSTGRESQL_REPLICATION_SLOT_ADVANCED_BEFORE_CONNECTOR_REGISTRATION",
+                    expectedValue: "unadvanced-same-workflow-initial-slot",
+                    observedValue: $"restart_lsn={SafeText(slot.RestartLsn!)};proved_restart_lsn={SafeText(proof.RetainedRestartLsn)};confirmed_flush_lsn={SafeText(slot.ConfirmedFlushLsn!)};proved_confirmed_flush_lsn={SafeText(proof.RetainedConfirmedFlushLsn)}"
+                ),
+            ];
+        }
+
+        if (observedRestartLsn < proofRestartLsn || observedConfirmedFlushLsn < proofConfirmedFlushLsn)
+        {
+            return
+            [
+                InitialSlotProofUnavailable(
+                    replicationSlotName,
+                    "CDC_POSTGRESQL_REPLICATION_SLOT_INITIAL_PROOF_MISMATCH",
+                    expectedValue: "same-workflow-retained-position-not-before-proof",
+                    observedValue: $"restart_lsn={SafeText(slot.RestartLsn!)};proved_restart_lsn={SafeText(proof.RetainedRestartLsn)};confirmed_flush_lsn={SafeText(slot.ConfirmedFlushLsn!)};proved_confirmed_flush_lsn={SafeText(proof.RetainedConfirmedFlushLsn)}"
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyDictionary<string, string> AddInitialSlotProofObservedValues(
+        CdcProviderSetupRequest request,
+        CdcSafeName replicationSlotName,
+        ReplicationSlotInspection slot
+    )
+    {
+        Dictionary<string, string> observedValues = new(slot.ObservedValues)
+        {
+            ["initial_slot_proof"] = "available",
+            ["initial_slot_proof_slot_name"] = SafeText(replicationSlotName.Value),
+            ["initial_slot_proof_source_fingerprint_version"] = SafeText(
+                request.BoundPhysicalSourceFingerprint.Version
+            ),
+            ["initial_slot_proof_source_fingerprint"] = SafeText(
+                request.BoundPhysicalSourceFingerprint.Value
+            ),
+            ["initial_slot_proof_database_identity"] = SafeText(slot.DatabaseIdentity ?? ""),
+            ["initial_slot_proof_restart_lsn"] = SafeText(slot.RestartLsn ?? ""),
+            ["initial_slot_proof_confirmed_flush_lsn"] = SafeText(slot.ConfirmedFlushLsn ?? ""),
+        };
+
+        return observedValues;
+    }
+
+    private static CdcProviderDiagnostic InitialSlotProofUnavailable(
+        CdcSafeName replicationSlotName,
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: CdcProviderArtifactKind.PostgresqlReplicationSlot,
+            SafeName: replicationSlotName,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+        );
+
+    private static bool TryParsePostgresqlLsn(string? value, out ulong lsn)
+    {
+        lsn = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Replace('_', '/');
+        var parts = normalized.Split('/', 2);
+        if (parts.Length != 2)
+        {
+            return false;
+        }
+
+        if (
+            !uint.TryParse(parts[0], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var high)
+            || !uint.TryParse(parts[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var low)
+        )
+        {
+            return false;
+        }
+
+        lsn = ((ulong)high << 32) | low;
+        return true;
+    }
+
     private static CdcProviderDiagnostic ProviderHistoryLossEvidence(
         CdcSafeName replicationSlotName,
         string code,
@@ -2183,6 +2393,9 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ["replica_identity"] = ReplicaIdentityDisplayName(relReplicaIdentity),
             ["required_replica_identity"] = "FULL",
         };
+
+    private static string FingerprintValue(CdcSourceFingerprint fingerprint) =>
+        $"{SafeText(fingerprint.Version)}:{SafeText(fingerprint.Value)}";
 
     private static string ReplicaIdentityDisplayName(string? relReplicaIdentity) =>
         relReplicaIdentity switch
@@ -2288,7 +2501,10 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         bool IsExactMatch,
         IReadOnlyDictionary<string, string> ObservedValues,
         CdcProviderRetryContinuityClassification Classification,
-        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics,
+        string? DatabaseIdentity,
+        string? RestartLsn,
+        string? ConfirmedFlushLsn
     );
 
     private sealed record ConnectorPrincipalAccessInspection(

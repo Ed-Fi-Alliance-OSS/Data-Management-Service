@@ -133,7 +133,13 @@ public class Given_PostgresqlCdcProviderAccessRetry
         var slotSnapshot = await ReadReplicationSlotSnapshotAsync(connection);
         slotSnapshot.Should().NotBeNull();
 
-        var rerunResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        var initialSlotProof = BuildInitialSlotProof(setupResult);
+
+        var rerunResult = await RunSetupAsync(
+            connection,
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            postgresqlInitialReplicationSlotProof: initialSlotProof
+        );
 
         rerunResult.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
         rerunResult.Diagnostics.Should().BeEmpty();
@@ -161,6 +167,58 @@ public class Given_PostgresqlCdcProviderAccessRetry
         (await ReadEffectiveSchemaHashAsync(connection)).Should().Be(effectiveSchemaHash);
         (await ReadHeartbeatSnapshotAsync(connection)).Should().Be(heartbeatSnapshot);
         (await ReadReplicationSlotSnapshotAsync(connection)).Should().Be(slotSnapshot);
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_initial_rerun_has_existing_slot_without_same_workflow_proof()
+    {
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult.Diagnostics.Should().BeEmpty();
+        var slotSnapshot = await ReadReplicationSlotSnapshotAsync(connection);
+        slotSnapshot.Should().NotBeNull();
+
+        var rerunResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        rerunResult.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        rerunResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_INITIAL_PROOF_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+            );
+        (await ReadReplicationSlotSnapshotAsync(connection)).Should().Be(slotSnapshot);
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_proved_initial_slot_advanced_before_connector_registration()
+    {
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult.Diagnostics.Should().BeEmpty();
+        var initialSlotProof = BuildInitialSlotProof(setupResult);
+
+        await AdvanceReplicationSlotWithHeartbeatAsync(connection, setupResult.HeartbeatActionQuery!.Sql);
+
+        var rerunResult = await RunSetupAsync(
+            connection,
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            postgresqlInitialReplicationSlotProof: initialSlotProof
+        );
+
+        rerunResult.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        rerunResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_ADVANCED_BEFORE_CONNECTOR_REGISTRATION"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
     }
 
     [Test]
@@ -226,7 +284,11 @@ public class Given_PostgresqlCdcProviderAccessRetry
 
         SetConnectorRoleReplication(canReplicate: true);
 
-        var retryResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        var retryResult = await RunSetupAsync(
+            connection,
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            postgresqlInitialReplicationSlotProof: BuildInitialSlotProof(failedSetupResult)
+        );
 
         retryResult.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
         retryResult.Diagnostics.Should().BeEmpty();
@@ -351,7 +413,8 @@ public class Given_PostgresqlCdcProviderAccessRetry
         NpgsqlConnection connection,
         CdcProviderSetupMode mode,
         string? boundSourceIdentity = null,
-        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
+        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null,
+        CdcPostgresqlInitialReplicationSlotProof? postgresqlInitialReplicationSlotProof = null
     )
     {
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
@@ -375,9 +438,26 @@ public class Given_PostgresqlCdcProviderAccessRetry
                 expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
                     SqlDialectFactory.Create(SqlDialect.Pgsql)
                 ),
+                postgresqlInitialReplicationSlotProof: postgresqlInitialReplicationSlotProof,
                 connectorPrincipalProbeFactory: connectorPrincipalProbeFactory,
                 databaseExecutor: executor
             )
+        );
+    }
+
+    private CdcPostgresqlInitialReplicationSlotProof BuildInitialSlotProof(CdcProviderSetupResult result)
+    {
+        var observation = result.ProviderHistoryObservations.Single(observation =>
+            observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+            && observation.SafeArtifactName.Value == _replicationSlotName
+        );
+
+        return new CdcPostgresqlInitialReplicationSlotProof(
+            new CdcSafeName(_replicationSlotName),
+            result.ObservedSourceFingerprint!,
+            new CdcSafeName(observation.SafeObservedValues["initial_slot_proof_database_identity"]),
+            observation.SafeObservedValues["initial_slot_proof_restart_lsn"],
+            observation.SafeObservedValues["initial_slot_proof_confirmed_flush_lsn"]
         );
     }
 
@@ -496,6 +576,33 @@ public class Given_PostgresqlCdcProviderAccessRetry
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task AdvanceReplicationSlotWithHeartbeatAsync(
+        NpgsqlConnection connection,
+        string heartbeatSql
+    )
+    {
+        await ExecuteNonQueryAsync(connection, heartbeatSql);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM pg_catalog.pg_logical_slot_get_binary_changes(
+                CAST(@slot_name AS name),
+                NULL::pg_lsn,
+                NULL::integer,
+                'proto_version',
+                '1',
+                'publication_names',
+                CAST(@publication_name AS text)
+            );
+            """;
+        command.Parameters.AddWithValue("slot_name", _replicationSlotName);
+        command.Parameters.AddWithValue("publication_name", PublicationName);
+
+        var consumedChanges = Convert.ToInt64(await command.ExecuteScalarAsync());
+        consumedChanges.Should().BeGreaterThan(0);
     }
 
     private static async Task<string> ReadDataStoreIdentityAsync(NpgsqlConnection connection)

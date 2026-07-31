@@ -41,6 +41,7 @@ internal static class CdcProviderSetupContractTestData
         CdcProviderArtifactOutputRequest? artifactOutput = null,
         CdcProviderArtifactNames? artifactNames = null,
         ICdcProviderDatabaseExecutor? databaseExecutor = null,
+        CdcPostgresqlInitialReplicationSlotProof? postgresqlInitialReplicationSlotProof = null,
         ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
     ) =>
         new(
@@ -53,6 +54,7 @@ internal static class CdcProviderSetupContractTestData
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildRequiredSourceInventory(),
+            postgresqlInitialReplicationSlotProof: postgresqlInitialReplicationSlotProof,
             connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
                 ?? new TestConnectorPrincipalProbeFactory(),
             databaseExecutor: databaseExecutor
@@ -155,6 +157,21 @@ internal static class CdcProviderSetupContractTestData
 
     internal static IReadOnlyList<CdcSourceTableInventory> BuildSqlServerRequiredSourceInventory() =>
         CdcSourceInventoryBuilder.BuildExpectedSourceInventory(SqlDialectFactory.Create(SqlDialect.Mssql));
+
+    internal static CdcPostgresqlInitialReplicationSlotProof BuildPostgresqlInitialSlotProof(
+        string replicationSlotName = "dms_binding_slot",
+        CdcSourceFingerprint? sourceFingerprint = null,
+        string databaseIdentity = "dms_test",
+        string retainedRestartLsn = "0_16B6C50",
+        string retainedConfirmedFlushLsn = "0_16B6C50"
+    ) =>
+        new(
+            new CdcSafeName(replicationSlotName),
+            sourceFingerprint ?? PostgresqlSourceFingerprint,
+            new CdcSafeName(databaseIdentity),
+            retainedRestartLsn,
+            retainedConfirmedFlushLsn
+        );
 }
 
 internal static class CdcDms1320ArtifactNameTestAdapter
@@ -207,6 +224,18 @@ public class Given_CdcProviderSetupContract_Request
         request.ArtifactNames.Postgresql.Should().NotBeNull();
         request.ArtifactNames.Postgresql!.PublicationName.Value.Should().Be("dms_binding_publication");
         request.ArtifactNames.Postgresql.ReplicationSlotName.Value.Should().Be("dms_binding_slot");
+    }
+
+    [Test]
+    public void It_should_expose_metadata_safe_postgresql_initial_slot_proof()
+    {
+        var proof = CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof();
+
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+            postgresqlInitialReplicationSlotProof: proof
+        );
+
+        request.PostgresqlInitialReplicationSlotProof.Should().Be(proof);
     }
 
     [Test]
@@ -364,11 +393,16 @@ public class Given_CdcProviderSetupContract_Serialization
     [Test]
     public void It_should_not_serialize_probe_factories_or_secret_shaped_fields()
     {
-        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest();
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+            postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+        );
         var json = JsonSerializer.Serialize(request);
 
         json.Should().NotContain(nameof(CdcProviderSetupRequest.ConnectorPrincipalProbeFactory));
         json.Should().NotContain(nameof(CdcProviderSetupRequest.DatabaseExecutor));
+        json.Should().Contain(nameof(CdcProviderSetupRequest.PostgresqlInitialReplicationSlotProof));
+        json.Should().Contain("dms_binding_slot");
+        json.Should().Contain("0_16B6C50");
         json.Should().NotContain("Credential");
         json.Should().NotContain("ConnectionString");
         json.Should().NotContain("Password");
@@ -378,5 +412,6 @@ public class Given_CdcProviderSetupContract_Serialization
         json.Should().NotContain("ServerName");
         json.Should().NotContain("DatabaseName");
         json.Should().NotContain("ConnectorJson");
+        json.Should().NotContain(CdcProviderSetupContractTestData.SourceIdentity);
     }
 }

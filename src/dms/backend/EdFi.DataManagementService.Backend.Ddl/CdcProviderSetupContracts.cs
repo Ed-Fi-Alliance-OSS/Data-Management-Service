@@ -179,6 +179,57 @@ internal sealed record CdcPostgresqlProviderArtifactNames(
     }
 }
 
+internal sealed record CdcPostgresqlInitialReplicationSlotProof
+{
+    public CdcPostgresqlInitialReplicationSlotProof(
+        CdcSafeName replicationSlotName,
+        CdcSourceFingerprint sourceFingerprint,
+        CdcSafeName databaseIdentity,
+        string retainedRestartLsn,
+        string retainedConfirmedFlushLsn
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sourceFingerprint);
+
+        ReplicationSlotName = replicationSlotName;
+        SourceFingerprint = sourceFingerprint;
+        DatabaseIdentity = databaseIdentity;
+        RetainedRestartLsn = ValidateRetainedPosition(retainedRestartLsn, nameof(retainedRestartLsn));
+        RetainedConfirmedFlushLsn = ValidateRetainedPosition(
+            retainedConfirmedFlushLsn,
+            nameof(retainedConfirmedFlushLsn)
+        );
+    }
+
+    public CdcSafeName ReplicationSlotName { get; }
+
+    public CdcSourceFingerprint SourceFingerprint { get; }
+
+    public CdcSafeName DatabaseIdentity { get; }
+
+    public string RetainedRestartLsn { get; }
+
+    public string RetainedConfirmedFlushLsn { get; }
+
+    private static string ValidateRetainedPosition(string value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("PostgreSQL CDC retained positions must be supplied.", parameterName);
+        }
+
+        if (value.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "PostgreSQL CDC retained positions must not contain control characters.",
+                parameterName
+            );
+        }
+
+        return value;
+    }
+}
+
 internal sealed record CdcSqlServerProviderArtifactNames(
     CdcSafeName GatingRoleName,
     IReadOnlyDictionary<CdcSourceTableKind, CdcSafeName> CaptureInstanceNames
@@ -413,6 +464,7 @@ internal sealed record CdcProviderSetupRequest
         CdcProviderArtifactNames artifactNames,
         CdcProviderArtifactOutputRequest artifactOutput,
         IReadOnlyList<CdcSourceTableInventory> expectedSourceInventory,
+        CdcPostgresqlInitialReplicationSlotProof? postgresqlInitialReplicationSlotProof = null,
         ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null,
         ICdcProviderDatabaseExecutor? databaseExecutor = null
     )
@@ -424,6 +476,13 @@ internal sealed record CdcProviderSetupRequest
         ArgumentNullException.ThrowIfNull(artifactOutput);
 
         artifactNames.ValidateFor(provider);
+        if (provider != CdcProvider.Postgresql && postgresqlInitialReplicationSlotProof is not null)
+        {
+            throw new ArgumentException(
+                "PostgreSQL initial replication slot proof can only be supplied for PostgreSQL CDC setup.",
+                nameof(postgresqlInitialReplicationSlotProof)
+            );
+        }
 
         Provider = provider;
         Mode = mode;
@@ -436,6 +495,7 @@ internal sealed record CdcProviderSetupRequest
             expectedSourceInventory,
             nameof(expectedSourceInventory)
         );
+        PostgresqlInitialReplicationSlotProof = postgresqlInitialReplicationSlotProof;
         ConnectorPrincipalProbeFactory = connectorPrincipalProbeFactory;
         DatabaseExecutor = databaseExecutor;
     }
@@ -448,6 +508,7 @@ internal sealed record CdcProviderSetupRequest
     public CdcProviderArtifactNames ArtifactNames { get; }
     public CdcProviderArtifactOutputRequest ArtifactOutput { get; }
     public IReadOnlyList<CdcSourceTableInventory> ExpectedSourceInventory { get; }
+    public CdcPostgresqlInitialReplicationSlotProof? PostgresqlInitialReplicationSlotProof { get; }
 
     [JsonIgnore]
     public ICdcConnectorPrincipalProbeFactory? ConnectorPrincipalProbeFactory { get; }

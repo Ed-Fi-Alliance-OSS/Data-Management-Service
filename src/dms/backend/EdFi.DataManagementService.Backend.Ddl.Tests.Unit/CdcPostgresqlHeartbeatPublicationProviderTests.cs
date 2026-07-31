@@ -219,6 +219,9 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
                 && observation.SafeObservedValues["plugin"] == "pgoutput"
                 && observation.SafeObservedValues["slot_type"] == "logical"
                 && observation.SafeObservedValues["temporary"] == "False"
+                && observation.SafeObservedValues["initial_slot_proof"] == "available"
+                && observation.SafeObservedValues["initial_slot_proof_restart_lsn"] == "0_16B6C50"
+                && observation.SafeObservedValues["initial_slot_proof_confirmed_flush_lsn"] == "0_16B6C50"
             );
         result
             .ProviderHistoryObservations.Should()
@@ -238,7 +241,10 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
 
         var result = await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -253,7 +259,28 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
     }
 
     [Test]
-    public async Task It_should_return_retained_positions_without_classifying_offset_gaps_when_no_committed_offset_is_supplied()
+    public async Task It_should_fail_closed_when_existing_initial_slot_has_no_same_workflow_proof()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts();
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_INITIAL_PROOF_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_should_exact_match_existing_initial_slot_when_same_workflow_proof_matches()
     {
         var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(
             slotConfirmedFlushLsn: "0/16B6D00"
@@ -261,7 +288,12 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
 
         var result = await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof(
+                    retainedConfirmedFlushLsn: "0_16B6D00"
+                )
+            )
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
@@ -274,6 +306,33 @@ public class Given_PostgresqlCdcSlotHistory_Initial_Setup
                 && observation.SafeObservedValues["retained_position_gap_evaluation"]
                     == "not_evaluated_without_committed_offset"
             );
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_proved_initial_slot_advanced_before_connector_registration()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(
+            slotRestartLsn: "0/16B6D10",
+            slotConfirmedFlushLsn: "0/16B6D10"
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_ADVANCED_BEFORE_CONNECTOR_REGISTRATION"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+        executor.ExecutedSql.Should().BeEmpty();
     }
 }
 
@@ -401,7 +460,10 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
 
         var result = await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
@@ -463,7 +525,10 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
 
         var result = await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -490,7 +555,10 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
 
         var result = await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -513,7 +581,10 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
 
         var result = await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -535,6 +606,7 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
         var result = await service.SetupAsync(
             CdcProviderSetupContractTestData.BuildPostgresqlRequest(
                 databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof(),
                 connectorPrincipalProbeFactory: new FailingConnectorPrincipalProbeFactory()
             )
         );

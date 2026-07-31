@@ -96,7 +96,10 @@ public class Given_CdcWorkTableExclusion_Postgresql
     {
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
         return await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
         );
     }
 
