@@ -45,7 +45,9 @@ shared by queue processing and optional direct fill.
   fence and provider-equivalent lock order. Measure same-document canonical-writer wait
   and retry complete canonical transactions after enqueue-related deadlock/serialization
   failures.
-- Route projector and direct-fill writes through the shared component.
+- Deliver and register the shared writer component so 18-04 hosted-projector and 18-05
+  direct-fill read-path integrations consume it rather than creating separate cache
+  writers.
 - Add sanitized outcome metrics and performance coverage.
 
 ## Resolved Cache Writer Scope and Runtime Contract
@@ -93,13 +95,15 @@ shared by queue processing and optional direct fill.
   - work mismatch or missing-work anomaly left pending;
   - cache-ahead latch set or cache-ahead disappeared on recheck;
   - duplicate/racing writer lost with no durable change; and
-  - retryable provider concurrency failure surfaced to the caller's retry policy.
+  - exhausted retry budget or caller-aborted provider concurrency retry surfaced to the
+    caller.
 - When reporting `W` absent with cache absent/behind, distinguish ordinary `Tracking`
   missing-work anomalies from rows that may still be unseeded during an incomplete
   `Rebuilding` baseline. The writer still performs no cache DML, no acknowledgement, and
   no repair; rebuild-page seeding and repair remain owned by 18-04.
-- Direct fill uses the same result model but remains best effort. It records bounded
-  diagnostics and metrics, then returns the relational response path's result unchanged.
+- Direct fill uses the same writer result model. The later 18-05 read-path wrapper remains
+  best effort: it records bounded diagnostics and metrics, handles writer failures, and
+  returns the relational response path's result unchanged.
 
 ### Main Transaction Shape
 
@@ -244,7 +248,7 @@ Each attempt uses one short provider transaction:
 
 ### Answers 1
 
-1. The shared cache writer should own a bounded provider retry loop for deadlock, serialization, lock-timeout, and equivalent transient failures. Each retry must replay the complete cache-write/conditional-acknowledgement transaction, including lifecycle lock, current `S/C/W` classification, cache DML, acknowledgement, and cache-ahead reclassification when applicable. The caller's retry/backoff policy should see only cancellation, non-transient failures, or an exhausted writer retry budget surfaced as a retryable writer outcome/exception. The story should later narrow any "retryable provider concurrency failure surfaced to the caller" wording to exhausted-budget or caller-aborted cases, not first transient failure.
+1. The shared cache writer should own a bounded provider retry loop for deadlock, serialization, lock-timeout, and equivalent transient failures. Each retry must replay the complete cache-write/conditional-acknowledgement transaction, including lifecycle lock, current `S/C/W` classification, cache DML, acknowledgement, and cache-ahead reclassification when applicable. The caller's retry/backoff policy should see only cancellation, non-transient failures, or an exhausted writer retry budget surfaced as a retryable writer outcome/exception. "Provider concurrency retry surfaced to the caller" means exhausted-budget or caller-aborted cases, not the first transient failure.
 2. If the healthy pending path discovers that another writer made the cache current before this attempt's final acknowledgement, this attempt should still run the final conditional work delete. When the acknowledgement predicate observes current durable `S = C = W` and deletes the matching work row, return the already-current/work-acknowledged outcome. Return duplicate/racing-writer-lost only when no cache DML from this attempt remains committed and the final acknowledgement cannot prove and delete matching current work, such as because the work row was already deleted, advanced, or the source/cache relationship changed.
 3. In `Rebuilding`, report `W` absent with cache absent or behind as possible unseeded baseline whenever the writer lacks a matching work row. Do not pass baseline/page cursor context into the writer in v1. The writer should perform no cache DML, acknowledgement, latch mutation, or work repair; 18-04 baseline seeding and bounded page repair remain responsible for eventually inserting or repairing work. The same relationship in `Tracking` is a missing-work anomaly for explicit scrub repair.
 4. Add a production-safe, test-disabled-by-default transaction fault-injection observer with these named hook points: after main state lock and `S/C/W` classification before cache DML, after successful cache DML before acknowledgement, after successful acknowledgement before commit, and after cache-ahead latch update before the incident transaction commits. Closing the provider connection or forcing rollback at those points should prove no partial cache/acknowledgement commit and no partial latch commit. Do not add after-commit hooks or process-local durable latches as correctness evidence.
@@ -267,3 +271,17 @@ Each attempt uses one short provider transaction:
 4. Use `ContentVersion` as the stale-candidate boundary after the `DocumentId` programming-error check. If the candidate `ContentVersion` differs from current `S`, suppress it as stale and leave work pending when appropriate. If the candidate version equals current `S` but `DocumentUuid`, `ProjectName`, `ResourceName`, or `ResourceVersion` does not match the current durable source/target context, return a deterministic invariant/target failure, perform no cache DML or acknowledgement, and leave work visible for retry or operator diagnosis.
 5. 18-03 owns making enqueue-related canonical write retries true for this feature boundary. Reuse the existing full repository-call deadlock retry pipeline where it already wraps canonical write transactions; add or wire only the missing classification/instrumentation needed so enqueue-related deadlock, serialization, and configured lock-timeout results replay the complete canonical transaction. If the existing pipeline already covers a case, 18-03 should add focused evidence for that case rather than adding a second retry layer. Never retry only the enqueue trigger or work-table upsert after canonical commit.
 6. Reuse the existing `DeadlockRetry` configuration and retry semantics: configured budget, exponential backoff, jitter, retry-disabled behavior, transient-provider classification, and sanitized retry logging. Do not route the cache writer through the API handler resilience pipeline or force cache-writer results into HTTP handler result unions just to reuse retry. 18-03 should add or reuse a small retry adapter/policy factory that consumes the same `DeadlockRetry` settings and executes the complete cache-write/conditional-acknowledgement transaction delegate on each retry. The cache writer should expose cache-writer-specific exhausted-budget, caller-aborted, and non-transient outcomes. Tests should prove each retry replays lifecycle lock, `S/C/W` classification, cache DML, acknowledgement, and cache-ahead reclassification when applicable.
+
+### Questions 3
+
+1. Does 18-03 own adding production call sites in projector and direct-fill paths, or should it deliver only the shared writer, adapters, retry/metrics hooks, and focused tests while 18-04 and 18-05 own the actual hosted-projector and read-path integrations?
+2. Should the writer's current-state classification and conditional cache DML join and bind current `ResourceKey` metadata (`ProjectName`, `ResourceName`, `ResourceVersion`) as source predicates alongside `DocumentUuid` and `ContentVersion`, or may it trust matching-version candidate metadata produced by 18-02?
+3. When the writer returns a deterministic invariant/target failure for matching-version candidate metadata mismatch, should callers treat it as target-fatal and pause projection eligibility, or as a per-document poison/anomaly that leaves work visible under the normal projector backoff path?
+4. For direct fill, should the shared writer itself swallow exhausted retry, invariant, and non-transient failures when caller purpose is `DirectFill`, or should it surface the same outcomes/exceptions as durable projection and leave best-effort swallowing plus relational-response preservation to the 18-05 read-path integration?
+
+### Answers 3
+
+1. 18-03 should deliver the shared writer, provider transaction adapters, retry adapter, metrics/test hooks, service registration, and focused unit/provider evidence. It should not add the production hosted-projector or direct-fill read-path call sites. 18-04 owns the projector call site when it implements the reconciliation loop, and 18-05 owns the direct-fill call site when it implements cache-backed reads. The shared-component requirement means those later production integrations must consume this component rather than creating another writer.
+2. Yes. The writer's classification should join current `dms.Document` to the durable `dms.ResourceKey` row and carry the current `DocumentUuid`, `ContentVersion`, `ProjectName`, `ResourceName`, and `ResourceVersion` tuple. Conditional cache DML for a candidate write must repeat those source/work/candidate predicates, including the resource metadata, and may write only when the candidate exactly matches that current tuple. Do not trust matching-version candidate metadata by itself, and do not repair a metadata mismatch by substituting source metadata over a mismatched candidate body or `StreamEtag`.
+3. Treat matching-version candidate metadata mismatch as a deterministic target/projection invariant failure, not as an ordinary per-document poison item. The writer should perform no cache DML, no acknowledgement, no latch mutation, and leave work visible. The 18-04 projector supervisor should pause projection eligibility for that target execution context and surface bounded sanitized diagnostics until the target is refreshed, restarted, or administratively corrected; it should not continue normal per-document backoff on the same invariant.
+4. The shared writer should surface the same typed outcomes and deterministic/non-transient exceptions for `DirectFill` as it does for durable projection. It may emit the shared sanitized writer metrics, but it should not swallow failures based on caller purpose. 18-05 owns the best-effort direct-fill wrapper: catch or translate exhausted retry, invariant, and non-transient writer failures, record bounded diagnostics/metrics, preserve the relational response unchanged, and route any target-fatal diagnostic through the same target-health path used by projection.
