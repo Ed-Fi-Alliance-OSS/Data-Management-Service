@@ -3058,18 +3058,31 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
         # executable could run; a Constant function cannot be replaced at all. Both are preconditions
         # rather than things to work around: this runs BEFORE any snapshot, staging, or mutation, so an
         # operator's alias is left exactly as they set it and there is nothing to restore.
-        function script:Assert-OwnershipCellPrecondition {
-            foreach ($name in $script:ownershipInterceptedCommand) {
-                $alias = Get-Command $name -CommandType Alias -ErrorAction SilentlyContinue
-                if ($null -ne $alias) {
-                    throw "Ownership cell precondition failed: an alias named '$name' takes precedence over the recording stand-in, so interception cannot be guaranteed. Remove the alias before running these tests."
-                }
+        #
+        # The predicate lives in ONE place, as text, because a Constant function cannot be created in this
+        # session without poisoning it - a Constant function can be neither replaced nor removed. The
+        # isolated test therefore runs this same text in a subprocess rather than restating the condition,
+        # so deleting or inverting the Constant branch breaks both the matrix path and that test. A probe
+        # holding its own copy of the condition is what let the branch be deleted with the suite still green.
+        $script:ownershipPreconditionBody = @'
+param([Parameter(Mandatory)] [string[]]$InterceptedCommand)
 
-                $existing = Get-Item -LiteralPath "Function:\$name" -ErrorAction SilentlyContinue
-                if ($null -ne $existing -and ($existing.Options -band [System.Management.Automation.ScopedItemOptions]::Constant)) {
-                    throw "Ownership cell precondition failed: the function '$name' is Constant and cannot be shadowed by the recording stand-in."
-                }
-            }
+foreach ($name in $InterceptedCommand) {
+    $alias = Get-Command $name -CommandType Alias -ErrorAction SilentlyContinue
+    if ($null -ne $alias) {
+        throw "Ownership cell precondition failed: an alias named '$name' takes precedence over the recording stand-in, so interception cannot be guaranteed. Remove the alias before running these tests."
+    }
+
+    $existing = Get-Item -LiteralPath "Function:\$name" -ErrorAction SilentlyContinue
+    if ($null -ne $existing -and ($existing.Options -band [System.Management.Automation.ScopedItemOptions]::Constant)) {
+        throw "Ownership cell precondition failed: the function '$name' is Constant and cannot be shadowed by the recording stand-in."
+    }
+}
+'@
+
+        function script:Assert-OwnershipCellPrecondition {
+            & ([scriptblock]::Create($script:ownershipPreconditionBody)) `
+                -InterceptedCommand $script:ownershipInterceptedCommand
         }
 
         # The default location stack as an ordered path list, top first. Uses .ToArray() rather than
@@ -3259,7 +3272,10 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
                 [switch]$InfraOnly,
                 [switch]$SeparateConfigDatabase,
                 # Forces staging to fail part-way, to prove restoration and cleanup still happen.
-                [switch]$FailStaging
+                [switch]$FailStaging,
+                # Seeds an unparsable line into the real observation file, so the actual read/parse path
+                # fails and restoration can be proven unconditional.
+                [switch]$CorruptObservation
             )
 
             # Preconditions FIRST: before the snapshot, before the staging directory exists, before any
@@ -3273,6 +3289,7 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
             $recorded = [System.Collections.Generic.List[string]]::new()
             $caught = $null
             $restore = $null
+            $observationFailure = $null
             try {
                 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 
@@ -3327,34 +3344,59 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
                 if ($InfraOnly) { $scriptArgs['InfraOnly'] = $true }
                 if ($SeparateConfigDatabase) { $scriptArgs['SeparateConfigDatabase'] = $true }
 
+                if ($CorruptObservation) {
+                    # Seeded before the run, so the very first line the real reader meets is unparsable.
+                    # Nothing about the read path is stubbed - this is the production observation file.
+                    Add-Content -LiteralPath (Join-Path $stage 'sibling-observations.jsonl') -Value '{ this is not valid json'
+                }
+
                 & (Join-Path $stage $StartScript) @scriptArgs *>$null
             }
             catch { $caught = $_ }
             finally {
-                # Read the observation BEFORE the staging directory is removed.
-                $observationFile = Join-Path $stage 'sibling-observations.jsonl'
-                $script:ownershipObservation = @()
-                if (Test-Path -LiteralPath $observationFile) {
-                    $script:ownershipObservation = @(
-                        Get-Content -LiteralPath $observationFile |
-                            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-                            ForEach-Object { $_ | ConvertFrom-Json }
-                    )
+                # Reading the observation must not be able to skip restoration. Get-Content and
+                # ConvertFrom-Json both throw on a malformed file, and an exception raised inside a finally
+                # block abandons the rest of it - measured: one unparsable observation line left the
+                # sentinel environment value clobbered and leaked 24 staging directories. So the read sits
+                # in its own guarded block and restoration runs from a NESTED finally, which executes
+                # whether staging, the start script, the read, or the parse failed.
+                $observationRecord = @()
+                try {
+                    # Before the staging directory is removed, since the file lives inside it.
+                    $observationFile = Join-Path $stage 'sibling-observations.jsonl'
+                    if (Test-Path -LiteralPath $observationFile) {
+                        $observationRecord = @(
+                            Get-Content -LiteralPath $observationFile -ErrorAction Stop |
+                                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                                ForEach-Object { $_ | ConvertFrom-Json -ErrorAction Stop }
+                        )
+                    }
                 }
-
-                $restore = Restore-OwnershipCellState -State $state -StagingPath $stage
+                catch {
+                    # The exception TYPE only. A parse error's message can quote the offending text, and
+                    # these records name parameters including -NewClientSecret; a diagnostic must not become
+                    # the disclosure path the observation format itself avoids.
+                    $observationFailure = "the sibling observation file could not be read or parsed ($($_.Exception.GetType().Name))"
+                    $observationRecord = @()
+                }
+                finally {
+                    $restore = Restore-OwnershipCellState -State $state -StagingPath $stage
+                }
             }
 
-            $observation = @($script:ownershipObservation)
+            $observation = @($observationRecord)
             return [PSCustomObject]@{
-                InitDbCount    = @($observation | Where-Object { $_.Script -eq 'setup-openiddict.ps1' -and $_.InitDb }).Count
-                KeycloakCount  = @($observation | Where-Object { $_.Script -eq 'setup-keycloak.ps1' }).Count
-                Observation    = $observation
-                DockerCommand  = @($recorded)
-                ErrorMessage   = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
-                RestoreFailure = @($restore.RestoreFailure)
-                Imbalance      = @($restore.Imbalance)
-                StagingPath    = $stage
+                InitDbCount        = @($observation | Where-Object { $_.Script -eq 'setup-openiddict.ps1' -and $_.InitDb }).Count
+                KeycloakCount      = @($observation | Where-Object { $_.Script -eq 'setup-keycloak.ps1' }).Count
+                Observation        = $observation
+                DockerCommand      = @($recorded)
+                # The execution failure is preserved as-is; an observation failure is reported alongside it
+                # rather than replacing it, so a malformed file cannot hide why the run actually stopped.
+                ErrorMessage       = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
+                ObservationFailure = $observationFailure
+                RestoreFailure     = @($restore.RestoreFailure)
+                Imbalance          = @($restore.Imbalance)
+                StagingPath        = $stage
             }
         }
 
@@ -3774,16 +3816,26 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
         It "shadows and restores a pre-existing ReadOnly function" {
             function global:docker { 'sentinel-readonly' }
             (Get-Item Function:\docker).Options = 'ReadOnly'
-            $before = Get-Item Function:\docker
+            # Independent SCALAR values, not a held FunctionInfo. A FunctionInfo is a live wrapper: for a
+            # plain function replaced in place by Set-Item it follows the replacement, so holding one would
+            # compare the stand-in against itself. (Measured: it does not follow here, because overwriting
+            # a ReadOnly function replaces the object rather than mutating it - but the oracle must not
+            # depend on that subtlety to be sound.)
+            $definitionBefore = (Get-Item Function:\docker).Definition
+            $optionsBefore = (Get-Item Function:\docker).Options
+            $optionsBefore | Should -Be 'ReadOnly' -Because "this test needs a genuinely ReadOnly function"
             try {
                 $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained'
 
                 $cell.RestoreFailure | Should -BeNullOrEmpty
                 @($cell.DockerCommand | Where-Object { $_ -like 'compose *' }).Count |
                     Should -BeGreaterThan 0 -Because "the stand-in must have shadowed the ReadOnly function (Set-Item -Force)"
-                (Get-Item Function:\docker).Definition | Should -Be $before.Definition
-                (Get-Item Function:\docker).Options | Should -Be $before.Options
-                docker | Should -Be 'sentinel-readonly'
+
+                $restored = Get-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
+                $restored | Should -Not -BeNullOrEmpty -Because "the caller's function must exist again"
+                $restored.Definition | Should -Be $definitionBefore
+                $restored.Options | Should -Be $optionsBefore -Because "ReadOnly is part of the state contract, not just the definition"
+                docker | Should -Be 'sentinel-readonly' -Because "the restored function must be the caller's, not the stand-in"
             }
             finally {
                 # AfterEach restores whatever this session had; clearing ReadOnly here so the restore can
@@ -3823,25 +3875,54 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
             }
         }
 
-        It "refuses to run when a Constant function cannot be shadowed" {
-            # A Constant function can be neither replaced nor removed, so interception is impossible and
-            # the cell must refuse before mutating anything. It runs in a CHILD PROCESS because a Constant
-            # function cannot be cleaned up afterwards - creating one in this session would poison every
-            # later test. A Constant function must also be created with New-Item -Options Constant;
-            # promoting an existing function fails with "Functions can be made constant only at creation
-            # time."
-            $probeScript = @'
-$null = New-Item -Path Function:\global:docker -Value { "constant-docker" } -Options Constant
-$item = Get-Item -LiteralPath "Function:\docker"
-if (-not ($item.Options -band [System.Management.Automation.ScopedItemOptions]::Constant)) { "NOT-CONSTANT"; exit }
-"CONSTANT-DETECTED"
-try { Set-Item -Path Function:\global:docker -Force -Value { "standin" } -ErrorAction Stop; "SHADOW-SUCCEEDED" }
-catch { "SHADOW-BLOCKED" }
-'@
+        It "refuses to run when a Constant function cannot be shadowed: <_>" -ForEach @(
+            'docker', 'Start-Sleep'
+        ) {
+            # Runs the REAL precondition text - $script:ownershipPreconditionBody, the same definition
+            # Assert-OwnershipCellPrecondition executes for every cell - against a genuinely Constant
+            # function. The subprocess exists because a Constant function can be neither replaced nor
+            # removed, so creating one in this session would poison every later test; it is not a second
+            # copy of the predicate. An earlier version of this test restated the condition itself, which
+            # meant deleting the real branch left the suite green.
+            $constantName = $_
+            $probeScript = @"
+`$ErrorActionPreference = 'Stop'
+`$staging = [System.IO.Path]::GetTempPath()
+`$before = @(Get-ChildItem `$staging -Directory -Filter 'dms-ownership-*' -ErrorAction SilentlyContinue).Count
+
+# A Constant function must be created as such; promoting one fails with "Functions can be made constant
+# only at creation time."
+`$null = New-Item -Path 'Function:\global:$constantName' -Value { 'constant-sentinel' } -Options Constant
+`$item = Get-Item -LiteralPath 'Function:\$constantName'
+if (-not (`$item.Options -band [System.Management.Automation.ScopedItemOptions]::Constant)) { 'SETUP-FAILED'; exit 1 }
+`$definitionBefore = `$item.Definition
+`$optionsBefore = `$item.Options
+
+`$predicate = [scriptblock]::Create(@'
+$($script:ownershipPreconditionBody)
+'@)
+
+try {
+    & `$predicate -InterceptedCommand @('docker', 'Start-Sleep')
+    'NO-THROW'
+}
+catch {
+    if (`$_.Exception.Message -like "*is Constant and cannot be shadowed*") { 'CONSTANT-REFUSED' } else { "WRONG-DIAGNOSTIC: `$(`$_.Exception.Message)" }
+}
+
+`$after = @(Get-ChildItem `$staging -Directory -Filter 'dms-ownership-*' -ErrorAction SilentlyContinue).Count
+if (`$after -eq `$before) { 'NO-STAGING-CREATED' } else { 'STAGING-LEAKED' }
+
+`$itemAfter = Get-Item -LiteralPath 'Function:\$constantName'
+if (`$itemAfter.Definition -eq `$definitionBefore -and `$itemAfter.Options -eq `$optionsBefore) { 'CONSTANT-UNCHANGED' } else { 'CONSTANT-ALTERED' }
+"@
             $probe = @(pwsh -NoProfile -Command $probeScript)
 
-            $probe | Should -Contain 'CONSTANT-DETECTED' -Because "the precondition's detection expression must recognize a Constant function"
-            $probe | Should -Contain 'SHADOW-BLOCKED' -Because "the precondition is necessary: a Constant function genuinely cannot be shadowed"
+            $probe | Should -Contain 'CONSTANT-REFUSED' -Because "the real precondition must refuse a Constant '$constantName' with its own diagnostic"
+            $probe | Should -Not -Contain 'NO-THROW' -Because "a Constant function makes interception impossible"
+            $probe | Should -Contain 'NO-STAGING-CREATED' -Because "the refusal must precede any staging"
+            $probe | Should -Contain 'CONSTANT-UNCHANGED' -Because "the caller's Constant function must be left exactly as it was"
+            $LASTEXITCODE | Should -Be 0 -Because "the disposable context must terminate cleanly"
         }
 
         It "restores the module table: path multiset, command provenance, and default-root behavior" {
@@ -3870,6 +3951,56 @@ catch { "SHADOW-BLOCKED" }
                 Should -Be $provenanceBefore -Because "commands must resolve from the same module as before the cell"
             @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine 'postgresql') |
                 Should -Be @('db', 'dms-postgresql') -Because "the module's default compose root must still be the real one"
+        }
+
+        It "restores everything when the observation file cannot be parsed" {
+            # Reading the observation happens inside the cleanup boundary, so a throw there used to abandon
+            # the rest of it. Measured against the pre-fix harness: one unparsable line left the sentinel
+            # environment value clobbered and leaked 24 staging directories. Restoration must therefore be
+            # unconditional with respect to the read, and the read failure must be reported rather than
+            # swallowed or allowed to replace the run's own error.
+            $sentinelIdentity = 'sentinel-malformed-observation'
+            [System.Environment]::SetEnvironmentVariable('DMS_CONFIG_IDENTITY_PROVIDER', $sentinelIdentity)
+            [System.Environment]::SetEnvironmentVariable('DMS_CONFIG_CLAIMS_SOURCE', 'sentinel-claims')
+            Set-Variable -Name LASTEXITCODE -Scope Global -Value 63
+            function global:docker { 'sentinel-observation-docker' }
+            $dockerDefinitionBefore = (Get-Item Function:\docker).Definition
+            $locationBefore = (Get-Location).Path
+            $stackBefore = @(Get-OwnershipLocationStack)
+            $provenanceBefore = (Get-Command Get-ComposeDatabaseServiceHostAlias).Module.Path
+            $moduleBefore = @{}
+            foreach ($name in $script:ownershipStagedModule) {
+                $moduleBefore[$name] = @(Get-Module $name -All | ForEach-Object { $_.Path })
+            }
+
+            $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' `
+                -IdentityProvider 'self-contained' -CorruptObservation
+
+            # Reported, and named by exception type only - never the malformed content, which sits in a
+            # file whose records name -NewClientSecret.
+            $cell.ObservationFailure | Should -Not -BeNullOrEmpty -Because "an unreadable observation must be reported"
+            $cell.ObservationFailure | Should -BeLike "*could not be read or parsed*"
+            $cell.ObservationFailure | Should -Not -BeLike "*not valid json*" -Because "diagnostics must not echo the malformed content"
+            $cell.ErrorMessage | Should -BeLike "*Docker environment*" -Because "the run's own failure must not be replaced by the observation failure"
+
+            # Every resource in the inventory, restored despite the parse failure.
+            $cell.RestoreFailure | Should -BeNullOrEmpty
+            $cell.Imbalance | Should -BeNullOrEmpty
+            [System.Environment]::GetEnvironmentVariable('DMS_CONFIG_IDENTITY_PROVIDER') | Should -Be $sentinelIdentity
+            [System.Environment]::GetEnvironmentVariable('DMS_CONFIG_CLAIMS_SOURCE') | Should -Be 'sentinel-claims'
+            $global:LASTEXITCODE | Should -Be 63
+            (Get-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue).Definition | Should -Be $dockerDefinitionBefore
+            (Get-Location).Path | Should -Be $locationBefore
+            @(Get-OwnershipLocationStack) | Should -Be $stackBefore
+            (Get-Command Get-ComposeDatabaseServiceHostAlias).Module.Path | Should -Be $provenanceBefore
+            foreach ($name in $script:ownershipStagedModule) {
+                @(Get-Module $name -All | ForEach-Object { $_.Path }) | Should -Be $moduleBefore[$name]
+            }
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine 'postgresql') | Should -Be @('db', 'dms-postgresql')
+            Test-Path -LiteralPath $cell.StagingPath | Should -BeFalse -Because "the staging directory must be removed even when the parse failed"
+
+            # And the interception still held: the recorded compose calls prove no real docker ran.
+            @($cell.DockerCommand | Where-Object { $_ -like 'compose *' }).Count | Should -BeGreaterThan 0
         }
 
         It "restores everything and cleans up when staging fails part-way" {
