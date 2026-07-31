@@ -54,22 +54,26 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     private PostgresqlDocumentCacheWriter CreateWriter(
-        ITransactionFaultInjectionObserver? faultInjectionObserver = null
+        ITransactionFaultInjectionObserver? faultInjectionObserver = null,
+        IDocumentCacheWriterTelemetry? telemetry = null,
+        int maxRetryAttempts = 0
     ) =>
         new(
             _dataSourceCache,
             new DocumentCacheWriterRetryAdapter(
                 new DeadlockRetrySettings
                 {
-                    MaxRetryAttempts = 0,
+                    MaxRetryAttempts = maxRetryAttempts,
                     BaseDelayMilliseconds = 1,
                     UseJitter = false,
                 },
                 new PostgresqlRelationalWriteExceptionClassifier(),
-                NullLogger<DocumentCacheWriterRetryAdapter>.Instance
+                NullLogger<DocumentCacheWriterRetryAdapter>.Instance,
+                telemetry
             ),
             NullLogger<PostgresqlDocumentCacheWriter>.Instance,
-            faultInjectionObserver
+            faultInjectionObserver,
+            telemetry
         );
 
     [TearDown]
@@ -601,20 +605,174 @@ public class Given_A_Postgresql_DocumentCacheWriter
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
+    [Test]
+    [Category("DocumentCacheWriterPerformance")]
+    public async Task DocumentCacheWriterPerformance_it_records_DMS_1313_component_evidence()
+    {
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        _writer = CreateWriter(telemetry: telemetry, maxRetryAttempts: 1);
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+
+        SourceDocument equalVersion = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(equalVersion, contentVersion: 10);
+        (await WriteAsync(equalVersion, candidate: null, DocumentCacheWriterPurpose.DurableWorkProjection))
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>();
+
+        SourceDocument directFillCandidate = await InsertSourceDocumentAsync(contentVersion: 20);
+        (
+            await WriteAsync(
+                directFillCandidate,
+                CreateCandidate(directFillCandidate, "performance-direct-fill"),
+                DocumentCacheWriterPurpose.DirectFill
+            )
+        )
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>();
+
+        SourceDocument directFillNoCandidate = await InsertSourceDocumentAsync(contentVersion: 30);
+        (await WriteAsync(directFillNoCandidate, candidate: null, DocumentCacheWriterPurpose.DirectFill))
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.NeedsMaterialization>();
+
+        SourceDocument staleCandidate = await InsertSourceDocumentAsync(contentVersion: 40);
+        (
+            await WriteAsync(
+                staleCandidate,
+                CreateCandidate(staleCandidate, "performance-stale", contentVersion: 39),
+                DocumentCacheWriterPurpose.DurableWorkProjection
+            )
+        )
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.StaleCandidateSuppressed>();
+
+        SourceDocument duplicate = await InsertSourceDocumentAsync(contentVersion: 50);
+        DocumentCacheMaterializationCandidate duplicateCandidate = CreateCandidate(
+            duplicate,
+            "performance-duplicate"
+        );
+        var pauseBeforeAcknowledgement = new PausingFaultInjectionObserver(
+            DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement
+        );
+        PostgresqlDocumentCacheWriter pausedWriter = CreateWriter(
+            pauseBeforeAcknowledgement,
+            telemetry,
+            maxRetryAttempts: 1
+        );
+        Task<DocumentCacheWriterResult> firstDuplicateWrite = pausedWriter.WriteAsync(
+            CreateRequest(duplicate, duplicateCandidate, DocumentCacheWriterPurpose.DurableWorkProjection)
+        );
+        await pauseBeforeAcknowledgement.WaitUntilReachedAsync(TimeSpan.FromSeconds(5));
+        Task<DocumentCacheWriterResult> secondDuplicateWrite = _writer.WriteAsync(
+            CreateRequest(duplicate, duplicateCandidate, DocumentCacheWriterPurpose.DurableWorkProjection)
+        );
+        pauseBeforeAcknowledgement.Release();
+        DocumentCacheWriterResult[] duplicateResults = await Task.WhenAll(
+                firstDuplicateWrite,
+                secondDuplicateWrite
+            )
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        DocumentCacheWriterOutcome[] duplicateOutcomes = duplicateResults
+            .Select(result => result.Outcome)
+            .ToArray();
+        duplicateOutcomes
+            .Count(outcome => outcome == DocumentCacheWriterOutcome.CandidateWrittenAcknowledged)
+            .Should()
+            .Be(1);
+        duplicateOutcomes
+            .Should()
+            .BeSubsetOf([
+                DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
+                DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                DocumentCacheWriterOutcome.RacingWriterLost,
+            ]);
+        (await ReadCacheCountAsync(duplicate.DocumentId)).Should().Be(1);
+        (await ReadWorkCountAsync(duplicate.DocumentId)).Should().Be(0);
+
+        SourceDocument canonicalContention = await InsertSourceDocumentAsync(contentVersion: 60);
+        await InsertCacheRowAsync(canonicalContention, contentVersion: 60);
+        var pauseAfterAcknowledgement = new PausingFaultInjectionObserver(
+            DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit
+        );
+        PostgresqlDocumentCacheWriter acknowledgementHoldingWriter = CreateWriter(
+            pauseAfterAcknowledgement,
+            telemetry,
+            maxRetryAttempts: 1
+        );
+        Task<DocumentCacheWriterResult> acknowledgement = acknowledgementHoldingWriter.WriteAsync(
+            CreateRequest(
+                canonicalContention,
+                candidate: null,
+                DocumentCacheWriterPurpose.DurableWorkProjection
+            )
+        );
+        await pauseAfterAcknowledgement.WaitUntilReachedAsync(TimeSpan.FromSeconds(5));
+        (
+            await FluentActions
+                .Awaiting(() =>
+                    AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                        canonicalContention.DocumentId,
+                        contentVersion: 61
+                    )
+                )
+                .Should()
+                .ThrowAsync<PostgresException>()
+        )
+            .Which.SqlState.Should()
+            .Be(PostgresErrorCodes.LockNotAvailable);
+        pauseAfterAcknowledgement.Release();
+        (await acknowledgement.WaitAsync(TimeSpan.FromSeconds(10)))
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>();
+        (await ReadSourceContentVersionAsync(canonicalContention.DocumentId)).Should().Be(60);
+
+        SourceDocument retry = await InsertSourceDocumentAsync(contentVersion: 70);
+        var transientFault = new ThrowOncePostgresqlTransientFaultInjectionObserver();
+        PostgresqlDocumentCacheWriter retryingWriter = CreateWriter(
+            transientFault,
+            telemetry,
+            maxRetryAttempts: 1
+        );
+        (
+            await retryingWriter.WriteAsync(
+                CreateRequest(
+                    retry,
+                    CreateCandidate(retry, "performance-retry"),
+                    DocumentCacheWriterPurpose.DurableWorkProjection
+                )
+            )
+        )
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>();
+        transientFault.ObservedAttemptCount.Should().Be(2);
+
+        SourceDocument cacheAhead = await InsertSourceDocumentAsync(contentVersion: 80);
+        await InsertCacheRowAsync(cacheAhead, contentVersion: 81);
+        (await WriteAsync(cacheAhead, candidate: null, DocumentCacheWriterPurpose.DirectFill))
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CacheAheadLatchSet>();
+        (await ReadCacheAheadLatchAsync()).Should().BeTrue();
+
+        AssertDms1313PerformanceTelemetry(telemetry, "postgresql");
+    }
+
     private async Task<DocumentCacheWriterResult> WriteAsync(
         SourceDocument source,
-        DocumentCacheMaterializationCandidate? candidate
-    ) => await _writer.WriteAsync(CreateRequest(source, candidate));
+        DocumentCacheMaterializationCandidate? candidate,
+        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection
+    ) => await _writer.WriteAsync(CreateRequest(source, candidate, purpose));
 
     private DocumentCacheWriterRequest CreateRequest(
         SourceDocument source,
-        DocumentCacheMaterializationCandidate? candidate
+        DocumentCacheMaterializationCandidate? candidate,
+        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection
     ) =>
         new(
             CreateTargetContext(),
             source.DocumentId,
             selectedRequiredContentVersion: source.ContentVersion,
-            DocumentCacheWriterPurpose.DurableWorkProjection,
+            purpose,
             candidate,
             CancellationToken.None
         );
@@ -726,6 +884,50 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 Value = new DateTimeOffset(2026, 7, 31, 12, 5, 0, TimeSpan.Zero),
             }
         );
+    }
+
+    private async Task AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+        long documentId,
+        long contentVersion
+    )
+    {
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            await using NpgsqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                SET LOCAL lock_timeout = '100ms';
+
+                UPDATE "dms"."Document"
+                SET "ContentVersion" = @contentVersion,
+                    "ContentLastModifiedAt" = @lastModifiedAt
+                WHERE "DocumentId" = @documentId;
+                """;
+            command.Parameters.Add(
+                new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
+            );
+            command.Parameters.Add(
+                new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
+                {
+                    Value = new DateTimeOffset(2026, 7, 31, 12, 10, 0, TimeSpan.Zero),
+                }
+            );
+            command.Parameters.Add(
+                new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+            );
+
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     private async Task<SourceDocument> InsertSourceDocumentAsync(long contentVersion)
@@ -849,6 +1051,16 @@ public class Given_A_Postgresql_DocumentCacheWriter
             new JsonObject { ["value"] = value }
         );
 
+    private async Task<long> ReadSourceContentVersionAsync(long documentId) =>
+        await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT "ContentVersion"
+            FROM "dms"."Document"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+        );
+
     private async Task<long> ReadWorkCountAsync(long documentId) =>
         await _database.ExecuteScalarAsync<long>(
             """
@@ -934,6 +1146,109 @@ public class Given_A_Postgresql_DocumentCacheWriter
             .Subject;
         fenced.Reason.Should().Be(reason);
         return fenced;
+    }
+
+    private static void AssertDms1313PerformanceTelemetry(
+        RecordingDocumentCacheWriterTelemetry telemetry,
+        string provider
+    )
+    {
+        telemetry
+            .Records.Where(record => record.Name == RecordingDocumentCacheWriterTelemetry.Outcome)
+            .Select(record => record.Context.Outcome)
+            .Should()
+            .Contain([
+                nameof(DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged),
+                nameof(DocumentCacheWriterOutcome.CandidateWrittenAcknowledged),
+                nameof(DocumentCacheWriterOutcome.NeedsMaterialization),
+                nameof(DocumentCacheWriterOutcome.StaleCandidateSuppressed),
+                nameof(DocumentCacheWriterOutcome.CacheAheadLatchSet),
+            ]);
+
+        telemetry
+            .Records.Select(record => record.Context.Purpose)
+            .Should()
+            .Contain([
+                nameof(DocumentCacheWriterPurpose.DurableWorkProjection),
+                nameof(DocumentCacheWriterPurpose.DirectFill),
+            ]);
+        telemetry
+            .Records.Should()
+            .Contain(record => record.Name == RecordingDocumentCacheWriterTelemetry.TransactionDuration);
+        telemetry
+            .Records.Should()
+            .Contain(record => record.Name == RecordingDocumentCacheWriterTelemetry.CacheDmlDuration);
+        telemetry
+            .Records.Should()
+            .Contain(record => record.Name == RecordingDocumentCacheWriterTelemetry.AcknowledgementDuration);
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Retry
+                && record.AttemptCount == 2
+                && record.Context.Outcome == nameof(DocumentCacheWriterOutcome.CandidateWrittenAcknowledged)
+            );
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.SameDocumentWait
+                && record.Participant == DocumentCacheWriterContentionParticipant.CacheWriter
+                && record.Phase == DocumentCacheWriterContentionPhase.CacheDml
+            );
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.SameDocumentWait
+                && record.Participant == DocumentCacheWriterContentionParticipant.CacheWriter
+                && record.Phase == DocumentCacheWriterContentionPhase.Acknowledgement
+            );
+
+        telemetry
+            .Records.Select(record => record.Context)
+            .Where(context => !IsExpectedTelemetryContext(context, provider))
+            .Should()
+            .BeEmpty();
+        string labels = string.Join(
+            "|",
+            telemetry
+                .Records.SelectMany(record =>
+                    new[]
+                    {
+                        record.Context.Provider,
+                        record.Context.TargetKey,
+                        record.Context.Purpose,
+                        record.Context.Lifecycle,
+                        record.Context.Outcome,
+                    }
+                )
+                .Distinct()
+        );
+        labels.Should().NotContain("DocumentId");
+        labels.Should().NotContain("DocumentUuid");
+        labels.Should().NotContain("DocumentJson");
+        labels.Should().NotContain("authorization");
+        labels.Should().NotContain("Person");
+    }
+
+    private static bool IsExpectedTelemetryContext(DocumentCacheWriterMetricContext context, string provider)
+    {
+        string joinedLabels = string.Join(
+            "|",
+            context.Provider,
+            context.TargetKey,
+            context.Purpose,
+            context.Lifecycle,
+            context.Outcome
+        );
+
+        return context.Provider == provider
+            && context.TargetKey == "tenant-cache-writer:7"
+            && context.Provider.Length <= 128
+            && context.TargetKey.Length <= 128
+            && context.Purpose.Length <= 128
+            && context.Lifecycle.Length <= 128
+            && context.Outcome.Length <= 128
+            && !joinedLabels.Contains('\n');
     }
 
     private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
@@ -1037,4 +1352,119 @@ public class Given_A_Postgresql_DocumentCacheWriter
             _release.TrySetResult();
         }
     }
+
+    private sealed class ThrowOncePostgresqlTransientFaultInjectionObserver
+        : ITransactionFaultInjectionObserver
+    {
+        private bool _throwTransient = true;
+
+        public int ObservedAttemptCount { get; private set; }
+
+        public ValueTask ObserveAsync(
+            DocumentCacheWriterFaultInjectionContext context,
+            DocumentCacheWriterFaultInjectionControl control,
+            CancellationToken cancellationToken
+        )
+        {
+            if (
+                context.Hook
+                != DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml
+            )
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            ObservedAttemptCount++;
+            if (!_throwTransient)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            _throwTransient = false;
+            throw new PostgresException(
+                messageText: "simulated lock timeout",
+                severity: "ERROR",
+                invariantSeverity: "ERROR",
+                sqlState: PostgresErrorCodes.LockNotAvailable,
+                detail: string.Empty,
+                hint: string.Empty,
+                position: 0,
+                internalPosition: 0,
+                internalQuery: string.Empty,
+                where: string.Empty,
+                schemaName: "dms",
+                tableName: "DocumentCache",
+                columnName: string.Empty,
+                dataTypeName: string.Empty,
+                constraintName: string.Empty,
+                file: "test.sql",
+                line: "1",
+                routine: "Execute"
+            );
+        }
+    }
+
+    private sealed class RecordingDocumentCacheWriterTelemetry : IDocumentCacheWriterTelemetry
+    {
+        public const string Outcome = nameof(Outcome);
+        public const string TransactionDuration = nameof(TransactionDuration);
+        public const string CacheDmlDuration = nameof(CacheDmlDuration);
+        public const string AcknowledgementDuration = nameof(AcknowledgementDuration);
+        public const string Retry = nameof(Retry);
+        public const string SameDocumentWait = nameof(SameDocumentWait);
+
+        public List<TelemetryRecord> Records { get; } = [];
+
+        public void RecordOutcome(DocumentCacheWriterMetricContext context)
+        {
+            Records.Add(new TelemetryRecord(Outcome, context));
+        }
+
+        public void RecordTransactionDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
+        {
+            Records.Add(new TelemetryRecord(TransactionDuration, context, Duration: duration));
+        }
+
+        public void RecordCacheDmlDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
+        {
+            Records.Add(new TelemetryRecord(CacheDmlDuration, context, Duration: duration));
+        }
+
+        public void RecordAcknowledgementDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
+        {
+            Records.Add(new TelemetryRecord(AcknowledgementDuration, context, Duration: duration));
+        }
+
+        public void RecordRetry(DocumentCacheWriterMetricContext context, TimeSpan duration, int attemptCount)
+        {
+            Records.Add(new TelemetryRecord(Retry, context, Duration: duration, AttemptCount: attemptCount));
+        }
+
+        public void RecordSameDocumentWait(
+            DocumentCacheWriterMetricContext context,
+            DocumentCacheWriterContentionParticipant participant,
+            DocumentCacheWriterContentionPhase phase,
+            TimeSpan duration
+        )
+        {
+            Records.Add(
+                new TelemetryRecord(
+                    SameDocumentWait,
+                    context,
+                    Duration: duration,
+                    Participant: participant,
+                    Phase: phase
+                )
+            );
+        }
+    }
+
+    private sealed record TelemetryRecord(
+        string Name,
+        DocumentCacheWriterMetricContext Context,
+        TimeSpan? Duration = null,
+        int? AttemptCount = null,
+        DocumentCacheWriterContentionParticipant? Participant = null,
+        DocumentCacheWriterContentionPhase? Phase = null
+    );
 }

@@ -264,7 +264,7 @@
       "Run the component-level performance test command or benchmark documented by the implementation for SQL Server.",
       "Review emitted metrics or benchmark output to confirm labels are bounded and include both DurableWorkProjection and DirectFill purpose modes."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "final-validation",
