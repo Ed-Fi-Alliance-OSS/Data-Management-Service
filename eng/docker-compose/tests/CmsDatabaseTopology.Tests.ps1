@@ -1259,6 +1259,43 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 Should -Throw "*physically distinct*"
         }
 
+        It "rejects a case-variant datastore collision on PostgreSQL: the unquoted CREATE DATABASE folds it" {
+            # postgresql-init.sh runs `CREATE DATABASE ${POSTGRES_DB_NAME};` with the identifier NOT
+            # SQL-quoted, and PostgreSQL folds an unquoted identifier to lower case - so this datastore
+            # physically creates edfi_configurationservice, the database separate mode reserves for CMS.
+            # An ordinal comparison here accepted exactly that while promising two distinct databases.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=EDFI_ConfigurationService',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+            ) -join "`n") -NoNewline
+
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw "*physically distinct*" -PassThru
+
+            # BeLikeExactly, not BeLike: -like is case-insensitive, so the case-insensitive form would
+            # match the reserved literal the message legitimately names and assert nothing.
+            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "the diagnostic names the key, never the resolved database-name value"
+        }
+
+        It "rejects an ambient POSTGRES_DB_NAME case variant of the dedicated CMS database name" {
+            # The ambient value is what genuinely moves the running datastore container, so it goes
+            # through the same collision authority as a file-declared name.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "EDFI_ConfigurationService")
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw "*physically distinct*"
+        }
+
         It "rejects an ambient datastore-name override that collides with the dedicated CMS database" {
             # Resolved with Compose precedence like everything else: an ambient POSTGRES_DB_NAME
             # genuinely moves the running datastore, so an ambient collision is a real collision.
@@ -2730,20 +2767,20 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
-        It "compares -DataStoreDatabaseName with the engine's own identifier case semantics" {
-            # SQL Server database names are case-insensitive, so a case-variant names the SAME physical
-            # database and collides. PostgreSQL names are case-sensitive (an unquoted identifier folds
-            # to lower case, so a name with upper-case characters is a genuinely different database),
-            # and rejecting it there would refuse a valid distinct target.
-            $mssqlRun = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
+        It "rejects a -DataStoreDatabaseName case variant on BOTH engines: the datastore creation path folds or collates it (<_>)" -ForEach @('mssql', 'postgresql') {
+            # One authority answers this for both engines, so the two paths cannot drift apart again.
+            # PostgreSQL: postgresql-init.sh runs an UNQUOTED `CREATE DATABASE ${POSTGRES_DB_NAME};`,
+            # which PostgreSQL folds to lower case, so the case-variant creates the reserved CMS
+            # database. SQL Server: database names match under a case-insensitive default collation.
+            # The earlier claim here - that a PostgreSQL case-variant is a physically distinct database
+            # and must be accepted - was wrong, and accepting it silently re-shared the database.
+            $engine = $_
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine $engine -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
-            $mssqlRun.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "SQL Server treats the case-variant as the same database"
 
-            $postgresRun = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
-            }
-            $postgresRun.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*" -Because "PostgreSQL identifiers are case-sensitive, so this is a physically distinct database"
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "$engine resolves the case-variant to the same physical database"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
         It "does not reject a colliding -DataStoreDatabaseName in a shape that never consumes it" {
