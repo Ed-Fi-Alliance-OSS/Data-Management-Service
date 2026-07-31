@@ -34,6 +34,10 @@ public class Given_MssqlDocumentCacheWriterParameterBinding
         parameters["@resourceVersion"].SqlDbType.Should().Be(SqlDbType.NVarChar);
         parameters["@resourceVersion"].Size.Should().Be(32);
         parameters["@resourceVersion"].Value.Should().Be("5.0.0-学");
+
+        parameters["@streamEtag"].SqlDbType.Should().Be(SqlDbType.VarChar);
+        parameters["@streamEtag"].Size.Should().Be(64);
+        parameters["@streamEtag"].Value.Should().Be("etag-23");
     }
 
     private static IReadOnlyDictionary<string, SqlParameter> BuildCandidateParameters()

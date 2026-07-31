@@ -442,5 +442,22 @@
       "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
     ],
     "completed": true
+  },
+  {
+    "category": "provider-sqlserver",
+    "description": "Low: Align SQL Server cache-writer StreamEtag parameter sizing with the dms.DocumentCache schema. The DDL and inventory contract define StreamEtag as varchar(64), but MssqlDocumentCacheWriter and its writer fixture bind @streamEtag as varchar(128), which weakens the exact physical-contract evidence around cache writes.",
+    "acceptance-criteria": [
+      "MssqlDocumentCacheWriter binds @streamEtag as SqlDbType.VarChar with size 64.",
+      "SQL Server document-cache writer test helpers bind @streamEtag with the same size as the production writer or assert the production parameter metadata directly.",
+      "The change does not alter the shared served-etag format or PostgreSQL behavior.",
+      "Focused evidence covers the SQL Server cache-writer StreamEtag parameter size against the varchar(64) DocumentCache contract."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlDocumentCacheWriter.cs AddCandidateParameters for @streamEtag size 64.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheWriterTests.cs for matching fixture or assertion coverage.",
+      "Run dotnet csharpier format on modified SQL Server writer and test files.",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
+    ],
+    "completed": true
   }
 ]

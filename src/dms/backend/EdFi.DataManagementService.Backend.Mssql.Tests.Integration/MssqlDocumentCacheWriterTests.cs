@@ -1291,7 +1291,7 @@ public class Given_A_Mssql_DocumentCacheWriter
                 Value = resourceKey.ResourceVersion,
             },
             new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@streamEtag", SqlDbType.VarChar, 128) { Value = $"etag-{contentVersion}" },
+            new SqlParameter("@streamEtag", SqlDbType.VarChar, 64) { Value = $"etag-{contentVersion}" },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {

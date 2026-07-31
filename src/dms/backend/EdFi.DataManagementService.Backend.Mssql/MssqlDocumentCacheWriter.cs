@@ -1099,7 +1099,7 @@ internal sealed class MssqlDocumentCacheWriter(
             new SqlParameter("@resourceVersion", SqlDbType.NVarChar, 32) { Value = candidate.ResourceVersion }
         );
         command.Parameters.Add(
-            new SqlParameter("@streamEtag", SqlDbType.VarChar, 128) { Value = candidate.StreamEtag }
+            new SqlParameter("@streamEtag", SqlDbType.VarChar, 64) { Value = candidate.StreamEtag }
         );
         command.Parameters.Add(
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
