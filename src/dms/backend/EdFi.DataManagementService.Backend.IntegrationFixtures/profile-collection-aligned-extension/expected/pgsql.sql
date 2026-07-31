@@ -638,8 +638,6 @@ CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParentChildrenExtensionChi
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ParentResource_CreatedByOwnershipTokenId" ON "edfi"."ParentResource" ("CreatedByOwnershipTokenId");
-
 CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"()
 RETURNS TRIGGER AS $func$
 BEGIN

@@ -172,26 +172,11 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
             );
         }
 
-        // Single-column support index for ownership-based authorization filters on the row-local
-        // CreatedByOwnershipTokenId mirror. Only resource root tables carry that column, so this naturally
-        // targets roots only.
-        var ownershipTokenColumn = table.Columns.FirstOrDefault(column =>
-            column.Kind == ColumnKind.CreatedByOwnershipTokenId
-        );
-
-        if (ownershipTokenColumn is not null)
-        {
-            IReadOnlyList<DbColumnName> ownershipColumns = [ownershipTokenColumn.ColumnName];
-            tableIndexes.Add(
-                new DbIndexInfo(
-                    new DbIndexName(ConstraintNaming.BuildExplicitIndexName(table.Table, ownershipColumns)),
-                    table.Table,
-                    ownershipColumns,
-                    IsUnique: false,
-                    DbIndexKind.Explicit
-                )
-            );
-        }
+        // No support index is derived for the row-local CreatedByOwnershipTokenId mirror. That column is a
+        // forward-compatible placeholder: this v8.0.0 base has no dms.Document source column to copy from, so
+        // the stamping triggers never write it and it stays permanently NULL. Indexing an all-NULL column
+        // only costs storage and write time. The index returns in the phase that starts populating the
+        // column for ownership-based authorization filters.
 
         inventory.AddRange(tableIndexes);
     }

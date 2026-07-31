@@ -619,14 +619,6 @@ IF NOT EXISTS (
 )
 CREATE INDEX [IX_ParentResource_ContentVersion] ON [edfi].[ParentResource] ([ContentVersion]);
 
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ParentResource' AND i.name = N'IX_ParentResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ParentResource_CreatedByOwnershipTokenId] ON [edfi].[ParentResource] ([CreatedByOwnershipTokenId]);
-
 GO
 CREATE OR ALTER TRIGGER [aligned].[TR_ParentResourceExtensionParent_Stamp]
 ON [aligned].[ParentResourceExtensionParent]

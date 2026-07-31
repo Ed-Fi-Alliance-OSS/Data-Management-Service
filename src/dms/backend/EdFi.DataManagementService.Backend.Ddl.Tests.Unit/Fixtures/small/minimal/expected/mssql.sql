@@ -503,14 +503,6 @@ IF NOT EXISTS (
 )
 CREATE INDEX [IX_Person_ContentVersion] ON [edfi].[Person] ([ContentVersion]);
 
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Person' AND i.name = N'IX_Person_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Person_CreatedByOwnershipTokenId] ON [edfi].[Person] ([CreatedByOwnershipTokenId]);
-
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_Person_ReferentialIdentity]
 ON [edfi].[Person]

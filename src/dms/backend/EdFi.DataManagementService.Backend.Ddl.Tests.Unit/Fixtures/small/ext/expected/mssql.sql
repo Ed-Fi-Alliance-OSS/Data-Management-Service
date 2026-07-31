@@ -571,14 +571,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_School_CreatedByOwnershipTokenId] ON [edfi].[School] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'sample' AND t.name = N'SchoolExtensionAddress' AND i.name = N'IX_SchoolExtensionAddress_BaseCollectionItemId_School_DocumentId'
 )
 CREATE INDEX [IX_SchoolExtensionAddress_BaseCollectionItemId_School_DocumentId] ON [sample].[SchoolExtensionAddress] ([BaseCollectionItemId], [School_DocumentId]);

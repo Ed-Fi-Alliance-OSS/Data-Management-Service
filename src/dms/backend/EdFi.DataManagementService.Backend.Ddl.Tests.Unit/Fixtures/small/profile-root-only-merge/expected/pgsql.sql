@@ -637,15 +637,11 @@ CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"
 
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_ContentVersion" ON "edfi"."ProfileRootOnlyMergeItem" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_CreatedByOwnershipTokenId" ON "edfi"."ProfileRootOnlyMergeItem" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescrip_5313ae7036" ON "edfi"."ProfileRootOnlyMergeItem" ("PrimarySchoolTypeDescriptor_Unified_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_StudentReference_Student_706047d2af" ON "edfi"."ProfileRootOnlyMergeItem" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_Student_CreatedByOwnershipTokenId" ON "edfi"."Student" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProfileRootOnlyMergeItem_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

@@ -603,14 +603,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ParentResource' AND i.name = N'IX_ParentResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ParentResource_CreatedByOwnershipTokenId] ON [edfi].[ParentResource] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ParentResourceParentChildren' AND i.name = N'IX_ParentResourceParentChildren_ParentCollectionItemId_ParentResource_DocumentId'
 )
 CREATE INDEX [IX_ParentResourceParentChildren_ParentCollectionItemId_ParentResource_DocumentId] ON [edfi].[ParentResourceParentChildren] ([ParentCollectionItemId], [ParentResource_DocumentId]);

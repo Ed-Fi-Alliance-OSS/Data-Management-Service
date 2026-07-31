@@ -29259,14 +29259,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AcademicWeek' AND i.name = N'IX_AcademicWeek_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_AcademicWeek_CreatedByOwnershipTokenId] ON [edfi].[AcademicWeek] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'AcademicWeek' AND i.name = N'IX_AcademicWeek_School_SchoolId_School_DocumentId'
 )
 CREATE INDEX [IX_AcademicWeek_School_SchoolId_School_DocumentId] ON [edfi].[AcademicWeek] ([School_SchoolId], [School_DocumentId]);
@@ -29278,14 +29270,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'AccountabilityRating' AND i.name = N'IX_AccountabilityRating_ContentVersion'
 )
 CREATE INDEX [IX_AccountabilityRating_ContentVersion] ON [edfi].[AccountabilityRating] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AccountabilityRating' AND i.name = N'IX_AccountabilityRating_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_AccountabilityRating_CreatedByOwnershipTokenId] ON [edfi].[AccountabilityRating] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29326,14 +29310,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'Assessment' AND i.name = N'IX_Assessment_ContentVersion'
 )
 CREATE INDEX [IX_Assessment_ContentVersion] ON [edfi].[Assessment] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Assessment' AND i.name = N'IX_Assessment_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Assessment_CreatedByOwnershipTokenId] ON [edfi].[Assessment] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29403,14 +29379,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministration' AND i.name = N'IX_AssessmentAdministration_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_AssessmentAdministration_CreatedByOwnershipTokenId] ON [edfi].[AssessmentAdministration] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationAssessmentBatteryPart' AND i.name = N'IX_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_AssessmentBatteryPartName_AssessmentBatteryPar_2f81256ce2'
 )
 CREATE INDEX [IX_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_AssessmentBatteryPartName_AssessmentBatteryPar_2f81256ce2] ON [edfi].[AssessmentAdministrationAssessmentBatteryPart] ([AssessmentBatteryPart_AssessmentBatteryPartName], [AssessmentBatteryPart_AssessmentIdentifier], [AssessmentBatteryPart_Namespace], [AssessmentBatteryPart_DocumentId]);
@@ -29438,14 +29406,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipation' AND i.name = N'IX_AssessmentAdministrationParticipation_ContentVersion'
 )
 CREATE INDEX [IX_AssessmentAdministrationParticipation_ContentVersion] ON [edfi].[AssessmentAdministrationParticipation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipation' AND i.name = N'IX_AssessmentAdministrationParticipation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_AssessmentAdministrationParticipation_CreatedByOwnershipTokenId] ON [edfi].[AssessmentAdministrationParticipation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29494,14 +29454,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'AssessmentBatteryPart' AND i.name = N'IX_AssessmentBatteryPart_ContentVersion'
 )
 CREATE INDEX [IX_AssessmentBatteryPart_ContentVersion] ON [edfi].[AssessmentBatteryPart] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentBatteryPart' AND i.name = N'IX_AssessmentBatteryPart_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_AssessmentBatteryPart_CreatedByOwnershipTokenId] ON [edfi].[AssessmentBatteryPart] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29558,14 +29510,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'AssessmentItem' AND i.name = N'IX_AssessmentItem_ContentVersion'
 )
 CREATE INDEX [IX_AssessmentItem_ContentVersion] ON [edfi].[AssessmentItem] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentItem' AND i.name = N'IX_AssessmentItem_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_AssessmentItem_CreatedByOwnershipTokenId] ON [edfi].[AssessmentItem] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29691,14 +29635,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentScoreRangeLearningStandard' AND i.name = N'IX_AssessmentScoreRangeLearningStandard_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_AssessmentScoreRangeLearningStandard_CreatedByOwnershipTokenId] ON [edfi].[AssessmentScoreRangeLearningStandard] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'AssessmentScoreRangeLearningStandard' AND i.name = N'IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth'
 )
 CREATE INDEX [IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth] ON [edfi].[AssessmentScoreRangeLearningStandard] ([Namespace_Unified]);
@@ -29731,14 +29667,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'BalanceSheetDimension' AND i.name = N'IX_BalanceSheetDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_BalanceSheetDimension_CreatedByOwnershipTokenId] ON [edfi].[BalanceSheetDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'BalanceSheetDimensionReportingTag' AND i.name = N'IX_BalanceSheetDimensionReportingTag_ReportingTagDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_BalanceSheetDimensionReportingTag_ReportingTagDescriptor_DescriptorId] ON [edfi].[BalanceSheetDimensionReportingTag] ([ReportingTagDescriptor_DescriptorId]);
@@ -29750,14 +29678,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'BellSchedule' AND i.name = N'IX_BellSchedule_ContentVersion'
 )
 CREATE INDEX [IX_BellSchedule_ContentVersion] ON [edfi].[BellSchedule] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'BellSchedule' AND i.name = N'IX_BellSchedule_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_BellSchedule_CreatedByOwnershipTokenId] ON [edfi].[BellSchedule] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -29811,14 +29731,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Calendar' AND i.name = N'IX_Calendar_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Calendar_CreatedByOwnershipTokenId] ON [edfi].[Calendar] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Calendar' AND i.name = N'IX_Calendar_SchoolYear_SchoolYear_SchoolYear_DocumentId'
 )
 CREATE INDEX [IX_Calendar_SchoolYear_SchoolYear_SchoolYear_DocumentId] ON [edfi].[Calendar] ([SchoolYear_SchoolYear], [SchoolYear_DocumentId]);
@@ -29867,14 +29779,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CalendarDate' AND i.name = N'IX_CalendarDate_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CalendarDate_CreatedByOwnershipTokenId] ON [edfi].[CalendarDate] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'CalendarDateCalendarEvent' AND i.name = N'IX_CalendarDateCalendarEvent_CalendarEventDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_CalendarDateCalendarEvent_CalendarEventDescriptor_DescriptorId] ON [edfi].[CalendarDateCalendarEvent] ([CalendarEventDescriptor_DescriptorId]);
@@ -29910,14 +29814,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ChartOfAccount' AND i.name = N'IX_ChartOfAccount_ContentVersion'
 )
 CREATE INDEX [IX_ChartOfAccount_ContentVersion] ON [edfi].[ChartOfAccount] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ChartOfAccount' AND i.name = N'IX_ChartOfAccount_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ChartOfAccount_CreatedByOwnershipTokenId] ON [edfi].[ChartOfAccount] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30011,14 +29907,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ClassPeriod' AND i.name = N'IX_ClassPeriod_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ClassPeriod_CreatedByOwnershipTokenId] ON [edfi].[ClassPeriod] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ClassPeriod' AND i.name = N'IX_ClassPeriod_School_SchoolId_Auth'
 )
 CREATE INDEX [IX_ClassPeriod_School_SchoolId_Auth] ON [edfi].[ClassPeriod] ([School_SchoolId]);
@@ -30067,14 +29955,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Cohort' AND i.name = N'IX_Cohort_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Cohort_CreatedByOwnershipTokenId] ON [edfi].[Cohort] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Cohort' AND i.name = N'IX_Cohort_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_Cohort_EducationOrganization_DocumentId] ON [edfi].[Cohort] ([EducationOrganization_DocumentId]);
@@ -30110,14 +29990,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'CommunityOrganization' AND i.name = N'IX_CommunityOrganization_ContentVersion'
 )
 CREATE INDEX [IX_CommunityOrganization_ContentVersion] ON [edfi].[CommunityOrganization] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CommunityOrganization' AND i.name = N'IX_CommunityOrganization_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CommunityOrganization_CreatedByOwnershipTokenId] ON [edfi].[CommunityOrganization] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30246,14 +30118,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'CommunityProvider' AND i.name = N'IX_CommunityProvider_ContentVersion'
 )
 CREATE INDEX [IX_CommunityProvider_ContentVersion] ON [edfi].[CommunityProvider] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CommunityProvider' AND i.name = N'IX_CommunityProvider_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CommunityProvider_CreatedByOwnershipTokenId] ON [edfi].[CommunityProvider] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30419,14 +30283,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CommunityProviderLicense' AND i.name = N'IX_CommunityProviderLicense_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CommunityProviderLicense_CreatedByOwnershipTokenId] ON [edfi].[CommunityProviderLicense] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'CommunityProviderLicense' AND i.name = N'IX_CommunityProviderLicense_LicenseStatusDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_CommunityProviderLicense_LicenseStatusDescriptor_DescriptorId] ON [edfi].[CommunityProviderLicense] ([LicenseStatusDescriptor_DescriptorId]);
@@ -30451,14 +30307,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CompetencyObjective' AND i.name = N'IX_CompetencyObjective_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CompetencyObjective_CreatedByOwnershipTokenId] ON [edfi].[CompetencyObjective] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'CompetencyObjective' AND i.name = N'IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] ON [edfi].[CompetencyObjective] ([ObjectiveGradeLevelDescriptor_DescriptorId]);
@@ -30470,14 +30318,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'Contact' AND i.name = N'IX_Contact_ContentVersion'
 )
 CREATE INDEX [IX_Contact_ContentVersion] ON [edfi].[Contact] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Contact' AND i.name = N'IX_Contact_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Contact_CreatedByOwnershipTokenId] ON [edfi].[Contact] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -30667,14 +30507,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Course' AND i.name = N'IX_Course_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Course_CreatedByOwnershipTokenId] ON [edfi].[Course] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Course' AND i.name = N'IX_Course_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_Course_EducationOrganization_DocumentId] ON [edfi].[Course] ([EducationOrganization_DocumentId]);
@@ -30771,14 +30603,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseOffering' AND i.name = N'IX_CourseOffering_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CourseOffering_CreatedByOwnershipTokenId] ON [edfi].[CourseOffering] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'CourseOffering' AND i.name = N'IX_CourseOffering_SchoolId_Unified_Auth'
 )
 CREATE INDEX [IX_CourseOffering_SchoolId_Unified_Auth] ON [edfi].[CourseOffering] ([SchoolId_Unified]);
@@ -30854,14 +30678,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_CourseRepeatCodeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_CourseTranscript_CourseRepeatCodeDescriptor_DescriptorId] ON [edfi].[CourseTranscript] ([CourseRepeatCodeDescriptor_DescriptorId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CourseTranscript' AND i.name = N'IX_CourseTranscript_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CourseTranscript_CreatedByOwnershipTokenId] ON [edfi].[CourseTranscript] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31011,14 +30827,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Credential' AND i.name = N'IX_Credential_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Credential_CreatedByOwnershipTokenId] ON [edfi].[Credential] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Credential' AND i.name = N'IX_Credential_CredentialFieldDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Credential_CredentialFieldDescriptor_DescriptorId] ON [edfi].[Credential] ([CredentialFieldDescriptor_DescriptorId]);
@@ -31091,14 +30899,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'CrisisEvent' AND i.name = N'IX_CrisisEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_CrisisEvent_CreatedByOwnershipTokenId] ON [edfi].[CrisisEvent] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'CrisisEvent' AND i.name = N'IX_CrisisEvent_CrisisTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_CrisisEvent_CrisisTypeDescriptor_DescriptorId] ON [edfi].[CrisisEvent] ([CrisisTypeDescriptor_DescriptorId]);
@@ -31110,14 +30910,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'DescriptorMapping' AND i.name = N'IX_DescriptorMapping_ContentVersion'
 )
 CREATE INDEX [IX_DescriptorMapping_ContentVersion] ON [edfi].[DescriptorMapping] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'DescriptorMapping' AND i.name = N'IX_DescriptorMapping_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_DescriptorMapping_CreatedByOwnershipTokenId] ON [edfi].[DescriptorMapping] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31150,14 +30942,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'DisciplineAction' AND i.name = N'IX_DisciplineAction_ContentVersion'
 )
 CREATE INDEX [IX_DisciplineAction_ContentVersion] ON [edfi].[DisciplineAction] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'DisciplineAction' AND i.name = N'IX_DisciplineAction_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_DisciplineAction_CreatedByOwnershipTokenId] ON [edfi].[DisciplineAction] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31230,14 +31014,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'DisciplineIncident' AND i.name = N'IX_DisciplineIncident_ContentVersion'
 )
 CREATE INDEX [IX_DisciplineIncident_ContentVersion] ON [edfi].[DisciplineIncident] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'DisciplineIncident' AND i.name = N'IX_DisciplineIncident_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_DisciplineIncident_CreatedByOwnershipTokenId] ON [edfi].[DisciplineIncident] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31323,14 +31099,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationContent' AND i.name = N'IX_EducationContent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EducationContent_CreatedByOwnershipTokenId] ON [edfi].[EducationContent] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'EducationContent' AND i.name = N'IX_EducationContent_InteractivityStyleDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_EducationContent_InteractivityStyleDescriptor_DescriptorId] ON [edfi].[EducationContent] ([InteractivityStyleDescriptor_DescriptorId]);
@@ -31395,14 +31163,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationInterventionPrescriptionAssociation' AND i.name = N'IX_EducationOrganizationInterventionPrescriptionAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EducationOrganizationInterventionPrescriptionAssociation_CreatedByOwnershipTokenId] ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationInterventionPrescriptionAssociation' AND i.name = N'IX_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -31422,14 +31182,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationNetwork' AND i.name = N'IX_EducationOrganizationNetwork_ContentVersion'
 )
 CREATE INDEX [IX_EducationOrganizationNetwork_ContentVersion] ON [edfi].[EducationOrganizationNetwork] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationNetwork' AND i.name = N'IX_EducationOrganizationNetwork_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EducationOrganizationNetwork_CreatedByOwnershipTokenId] ON [edfi].[EducationOrganizationNetwork] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31486,14 +31238,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationNetworkAssociation' AND i.name = N'IX_EducationOrganizationNetworkAssociation_ContentVersion'
 )
 CREATE INDEX [IX_EducationOrganizationNetworkAssociation_ContentVersion] ON [edfi].[EducationOrganizationNetworkAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationNetworkAssociation' AND i.name = N'IX_EducationOrganizationNetworkAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EducationOrganizationNetworkAssociation_CreatedByOwnershipTokenId] ON [edfi].[EducationOrganizationNetworkAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31603,14 +31347,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationPeerAssociation' AND i.name = N'IX_EducationOrganizationPeerAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EducationOrganizationPeerAssociation_CreatedByOwnershipTokenId] ON [edfi].[EducationOrganizationPeerAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'EducationOrganizationPeerAssociation' AND i.name = N'IX_EducationOrganizationPeerAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_EducationOrganizationPeerAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[EducationOrganizationPeerAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -31630,14 +31366,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'EducationServiceCenter' AND i.name = N'IX_EducationServiceCenter_ContentVersion'
 )
 CREATE INDEX [IX_EducationServiceCenter_ContentVersion] ON [edfi].[EducationServiceCenter] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EducationServiceCenter' AND i.name = N'IX_EducationServiceCenter_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EducationServiceCenter_CreatedByOwnershipTokenId] ON [edfi].[EducationServiceCenter] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31771,14 +31499,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EvaluationRubricDimension' AND i.name = N'IX_EvaluationRubricDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EvaluationRubricDimension_CreatedByOwnershipTokenId] ON [edfi].[EvaluationRubricDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'EvaluationRubricDimension' AND i.name = N'IX_EvaluationRubricDimension_EvaluationRubricRatingLevelDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_EvaluationRubricDimension_EvaluationRubricRatingLevelDescriptor_DescriptorId] ON [edfi].[EvaluationRubricDimension] ([EvaluationRubricRatingLevelDescriptor_DescriptorId]);
@@ -31835,14 +31555,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'FeederSchoolAssociation' AND i.name = N'IX_FeederSchoolAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_FeederSchoolAssociation_CreatedByOwnershipTokenId] ON [edfi].[FeederSchoolAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'FeederSchoolAssociation' AND i.name = N'IX_FeederSchoolAssociation_FeederSchool_SchoolId_FeederSchool_DocumentId'
 )
 CREATE INDEX [IX_FeederSchoolAssociation_FeederSchool_SchoolId_FeederSchool_DocumentId] ON [edfi].[FeederSchoolAssociation] ([FeederSchool_SchoolId], [FeederSchool_DocumentId]);
@@ -31875,14 +31587,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'FunctionDimension' AND i.name = N'IX_FunctionDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_FunctionDimension_CreatedByOwnershipTokenId] ON [edfi].[FunctionDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'FunctionDimensionReportingTag' AND i.name = N'IX_FunctionDimensionReportingTag_ReportingTagDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_FunctionDimensionReportingTag_ReportingTagDescriptor_DescriptorId] ON [edfi].[FunctionDimensionReportingTag] ([ReportingTagDescriptor_DescriptorId]);
@@ -31899,14 +31603,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'FundDimension' AND i.name = N'IX_FundDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_FundDimension_CreatedByOwnershipTokenId] ON [edfi].[FundDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'FundDimensionReportingTag' AND i.name = N'IX_FundDimensionReportingTag_ReportingTagDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_FundDimensionReportingTag_ReportingTagDescriptor_DescriptorId] ON [edfi].[FundDimensionReportingTag] ([ReportingTagDescriptor_DescriptorId]);
@@ -31918,14 +31614,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'Grade' AND i.name = N'IX_Grade_ContentVersion'
 )
 CREATE INDEX [IX_Grade_ContentVersion] ON [edfi].[Grade] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Grade' AND i.name = N'IX_Grade_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Grade_CreatedByOwnershipTokenId] ON [edfi].[Grade] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -31995,14 +31683,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'GradebookEntry' AND i.name = N'IX_GradebookEntry_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_GradebookEntry_CreatedByOwnershipTokenId] ON [edfi].[GradebookEntry] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'GradebookEntry' AND i.name = N'IX_GradebookEntry_GradebookEntryTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_GradebookEntry_GradebookEntryTypeDescriptor_DescriptorId] ON [edfi].[GradebookEntry] ([GradebookEntryTypeDescriptor_DescriptorId]);
@@ -32051,14 +31731,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'GradingPeriod' AND i.name = N'IX_GradingPeriod_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_GradingPeriod_CreatedByOwnershipTokenId] ON [edfi].[GradingPeriod] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'GradingPeriod' AND i.name = N'IX_GradingPeriod_SchoolYear_SchoolYear_SchoolYear_DocumentId'
 )
 CREATE INDEX [IX_GradingPeriod_SchoolYear_SchoolYear_SchoolYear_DocumentId] ON [edfi].[GradingPeriod] ([SchoolYear_SchoolYear], [SchoolYear_DocumentId]);
@@ -32086,14 +31758,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'GraduationPlan' AND i.name = N'IX_GraduationPlan_ContentVersion'
 )
 CREATE INDEX [IX_GraduationPlan_ContentVersion] ON [edfi].[GraduationPlan] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'GraduationPlan' AND i.name = N'IX_GraduationPlan_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_GraduationPlan_CreatedByOwnershipTokenId] ON [edfi].[GraduationPlan] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32259,14 +31923,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Intervention' AND i.name = N'IX_Intervention_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Intervention_CreatedByOwnershipTokenId] ON [edfi].[Intervention] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Intervention' AND i.name = N'IX_Intervention_DeliveryMethodDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Intervention_DeliveryMethodDescriptor_DescriptorId] ON [edfi].[Intervention] ([DeliveryMethodDescriptor_DescriptorId]);
@@ -32339,14 +31995,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'InterventionPrescription' AND i.name = N'IX_InterventionPrescription_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_InterventionPrescription_CreatedByOwnershipTokenId] ON [edfi].[InterventionPrescription] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'InterventionPrescription' AND i.name = N'IX_InterventionPrescription_DeliveryMethodDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_InterventionPrescription_DeliveryMethodDescriptor_DescriptorId] ON [edfi].[InterventionPrescription] ([DeliveryMethodDescriptor_DescriptorId]);
@@ -32414,14 +32062,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'InterventionStudy' AND i.name = N'IX_InterventionStudy_ContentVersion'
 )
 CREATE INDEX [IX_InterventionStudy_ContentVersion] ON [edfi].[InterventionStudy] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'InterventionStudy' AND i.name = N'IX_InterventionStudy_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_InterventionStudy_CreatedByOwnershipTokenId] ON [edfi].[InterventionStudy] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32539,14 +32179,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LearningStandard' AND i.name = N'IX_LearningStandard_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LearningStandard_CreatedByOwnershipTokenId] ON [edfi].[LearningStandard] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'LearningStandard' AND i.name = N'IX_LearningStandard_LearningStandardCategoryDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_LearningStandard_LearningStandardCategoryDescriptor_DescriptorId] ON [edfi].[LearningStandard] ([LearningStandardCategoryDescriptor_DescriptorId]);
@@ -32603,14 +32235,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LearningStandardEquivalenceAssociation' AND i.name = N'IX_LearningStandardEquivalenceAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LearningStandardEquivalenceAssociation_CreatedByOwnershipTokenId] ON [edfi].[LearningStandardEquivalenceAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'LearningStandardEquivalenceAssociation' AND i.name = N'IX_LearningStandardEquivalenceAssociation_LearningStandardEquivalenceStrengthDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_LearningStandardEquivalenceAssociation_LearningStandardEquivalenceStrengthDescriptor_DescriptorId] ON [edfi].[LearningStandardEquivalenceAssociation] ([LearningStandardEquivalenceStrengthDescriptor_DescriptorId]);
@@ -32659,14 +32283,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LocalAccount_CreatedByOwnershipTokenId] ON [edfi].[LocalAccount] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'LocalAccount' AND i.name = N'IX_LocalAccount_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_LocalAccount_EducationOrganization_DocumentId] ON [edfi].[LocalAccount] ([EducationOrganization_DocumentId]);
@@ -32694,14 +32310,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'LocalActual' AND i.name = N'IX_LocalActual_ContentVersion'
 )
 CREATE INDEX [IX_LocalActual_ContentVersion] ON [edfi].[LocalActual] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalActual' AND i.name = N'IX_LocalActual_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LocalActual_CreatedByOwnershipTokenId] ON [edfi].[LocalActual] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32739,14 +32347,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalBudget' AND i.name = N'IX_LocalBudget_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LocalBudget_CreatedByOwnershipTokenId] ON [edfi].[LocalBudget] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'LocalBudget' AND i.name = N'IX_LocalBudget_FinancialCollectionDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_LocalBudget_FinancialCollectionDescriptor_DescriptorId] ON [edfi].[LocalBudget] ([FinancialCollectionDescriptor_DescriptorId]);
@@ -32774,14 +32374,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'LocalContractedStaff' AND i.name = N'IX_LocalContractedStaff_ContentVersion'
 )
 CREATE INDEX [IX_LocalContractedStaff_ContentVersion] ON [edfi].[LocalContractedStaff] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalContractedStaff' AND i.name = N'IX_LocalContractedStaff_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LocalContractedStaff_CreatedByOwnershipTokenId] ON [edfi].[LocalContractedStaff] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32838,14 +32430,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'LocalEducationAgency' AND i.name = N'IX_LocalEducationAgency_ContentVersion'
 )
 CREATE INDEX [IX_LocalEducationAgency_ContentVersion] ON [edfi].[LocalEducationAgency] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalEducationAgency' AND i.name = N'IX_LocalEducationAgency_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LocalEducationAgency_CreatedByOwnershipTokenId] ON [edfi].[LocalEducationAgency] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33027,14 +32611,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalEncumbrance' AND i.name = N'IX_LocalEncumbrance_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LocalEncumbrance_CreatedByOwnershipTokenId] ON [edfi].[LocalEncumbrance] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'LocalEncumbrance' AND i.name = N'IX_LocalEncumbrance_FinancialCollectionDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_LocalEncumbrance_FinancialCollectionDescriptor_DescriptorId] ON [edfi].[LocalEncumbrance] ([FinancialCollectionDescriptor_DescriptorId]);
@@ -33062,14 +32638,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'LocalPayroll' AND i.name = N'IX_LocalPayroll_ContentVersion'
 )
 CREATE INDEX [IX_LocalPayroll_ContentVersion] ON [edfi].[LocalPayroll] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'LocalPayroll' AND i.name = N'IX_LocalPayroll_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_LocalPayroll_CreatedByOwnershipTokenId] ON [edfi].[LocalPayroll] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33123,14 +32691,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Location' AND i.name = N'IX_Location_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Location_CreatedByOwnershipTokenId] ON [edfi].[Location] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Location' AND i.name = N'IX_Location_School_SchoolId_Auth'
 )
 CREATE INDEX [IX_Location_School_SchoolId_Auth] ON [edfi].[Location] ([School_SchoolId]);
@@ -33150,14 +32710,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ObjectDimension' AND i.name = N'IX_ObjectDimension_ContentVersion'
 )
 CREATE INDEX [IX_ObjectDimension_ContentVersion] ON [edfi].[ObjectDimension] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ObjectDimension' AND i.name = N'IX_ObjectDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ObjectDimension_CreatedByOwnershipTokenId] ON [edfi].[ObjectDimension] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33198,14 +32750,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ObjectiveAssessment' AND i.name = N'IX_ObjectiveAssessment_ContentVersion'
 )
 CREATE INDEX [IX_ObjectiveAssessment_ContentVersion] ON [edfi].[ObjectiveAssessment] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ObjectiveAssessment' AND i.name = N'IX_ObjectiveAssessment_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ObjectiveAssessment_CreatedByOwnershipTokenId] ON [edfi].[ObjectiveAssessment] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33291,14 +32835,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'OpenStaffPosition' AND i.name = N'IX_OpenStaffPosition_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_OpenStaffPosition_CreatedByOwnershipTokenId] ON [edfi].[OpenStaffPosition] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'OpenStaffPosition' AND i.name = N'IX_OpenStaffPosition_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_OpenStaffPosition_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[OpenStaffPosition] ([EducationOrganization_EducationOrganizationId]);
@@ -33363,14 +32899,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'OperationalUnitDimension' AND i.name = N'IX_OperationalUnitDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_OperationalUnitDimension_CreatedByOwnershipTokenId] ON [edfi].[OperationalUnitDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'OperationalUnitDimensionReportingTag' AND i.name = N'IX_OperationalUnitDimensionReportingTag_ReportingTagDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_OperationalUnitDimensionReportingTag_ReportingTagDescriptor_DescriptorId] ON [edfi].[OperationalUnitDimensionReportingTag] ([ReportingTagDescriptor_DescriptorId]);
@@ -33390,14 +32918,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'OrganizationDepartment' AND i.name = N'IX_OrganizationDepartment_ContentVersion'
 )
 CREATE INDEX [IX_OrganizationDepartment_ContentVersion] ON [edfi].[OrganizationDepartment] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'OrganizationDepartment' AND i.name = N'IX_OrganizationDepartment_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_OrganizationDepartment_CreatedByOwnershipTokenId] ON [edfi].[OrganizationDepartment] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33539,14 +33059,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Person' AND i.name = N'IX_Person_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Person_CreatedByOwnershipTokenId] ON [edfi].[Person] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Person' AND i.name = N'IX_Person_SourceSystemDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Person_SourceSystemDescriptor_DescriptorId] ON [edfi].[Person] ([SourceSystemDescriptor_DescriptorId]);
@@ -33558,14 +33070,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'PostSecondaryEvent' AND i.name = N'IX_PostSecondaryEvent_ContentVersion'
 )
 CREATE INDEX [IX_PostSecondaryEvent_ContentVersion] ON [edfi].[PostSecondaryEvent] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'PostSecondaryEvent' AND i.name = N'IX_PostSecondaryEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_PostSecondaryEvent_CreatedByOwnershipTokenId] ON [edfi].[PostSecondaryEvent] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33614,14 +33118,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'PostSecondaryInstitution' AND i.name = N'IX_PostSecondaryInstitution_ContentVersion'
 )
 CREATE INDEX [IX_PostSecondaryInstitution_ContentVersion] ON [edfi].[PostSecondaryInstitution] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'PostSecondaryInstitution' AND i.name = N'IX_PostSecondaryInstitution_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_PostSecondaryInstitution_CreatedByOwnershipTokenId] ON [edfi].[PostSecondaryInstitution] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33763,14 +33259,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Program' AND i.name = N'IX_Program_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Program_CreatedByOwnershipTokenId] ON [edfi].[Program] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Program' AND i.name = N'IX_Program_ProgramTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Program_ProgramTypeDescriptor_DescriptorId] ON [edfi].[Program] ([ProgramTypeDescriptor_DescriptorId]);
@@ -33795,14 +33283,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramDimension' AND i.name = N'IX_ProgramDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ProgramDimension_CreatedByOwnershipTokenId] ON [edfi].[ProgramDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ProgramDimensionReportingTag' AND i.name = N'IX_ProgramDimensionReportingTag_ReportingTagDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_ProgramDimensionReportingTag_ReportingTagDescriptor_DescriptorId] ON [edfi].[ProgramDimensionReportingTag] ([ReportingTagDescriptor_DescriptorId]);
@@ -33814,14 +33294,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluation' AND i.name = N'IX_ProgramEvaluation_ContentVersion'
 )
 CREATE INDEX [IX_ProgramEvaluation_ContentVersion] ON [edfi].[ProgramEvaluation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluation' AND i.name = N'IX_ProgramEvaluation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ProgramEvaluation_CreatedByOwnershipTokenId] ON [edfi].[ProgramEvaluation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33862,14 +33334,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_ContentVersion'
 )
 CREATE INDEX [IX_ProgramEvaluationElement_ContentVersion] ON [edfi].[ProgramEvaluationElement] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationElement' AND i.name = N'IX_ProgramEvaluationElement_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ProgramEvaluationElement_CreatedByOwnershipTokenId] ON [edfi].[ProgramEvaluationElement] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -33947,14 +33411,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationObjective' AND i.name = N'IX_ProgramEvaluationObjective_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ProgramEvaluationObjective_CreatedByOwnershipTokenId] ON [edfi].[ProgramEvaluationObjective] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ProgramEvaluationObjective' AND i.name = N'IX_ProgramEvaluationObjective_ProgramEvaluation_DocumentId'
 )
 CREATE INDEX [IX_ProgramEvaluationObjective_ProgramEvaluation_DocumentId] ON [edfi].[ProgramEvaluationObjective] ([ProgramEvaluation_DocumentId]);
@@ -34027,14 +33483,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProjectDimension' AND i.name = N'IX_ProjectDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ProjectDimension_CreatedByOwnershipTokenId] ON [edfi].[ProjectDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ProjectDimensionReportingTag' AND i.name = N'IX_ProjectDimensionReportingTag_ReportingTagDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_ProjectDimensionReportingTag_ReportingTagDescriptor_DescriptorId] ON [edfi].[ProjectDimensionReportingTag] ([ReportingTagDescriptor_DescriptorId]);
@@ -34046,14 +33494,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ReportCard' AND i.name = N'IX_ReportCard_ContentVersion'
 )
 CREATE INDEX [IX_ReportCard_ContentVersion] ON [edfi].[ReportCard] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ReportCard' AND i.name = N'IX_ReportCard_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ReportCard_CreatedByOwnershipTokenId] ON [edfi].[ReportCard] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34142,14 +33582,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'RestraintEvent' AND i.name = N'IX_RestraintEvent_ContentVersion'
 )
 CREATE INDEX [IX_RestraintEvent_ContentVersion] ON [edfi].[RestraintEvent] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'RestraintEvent' AND i.name = N'IX_RestraintEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_RestraintEvent_CreatedByOwnershipTokenId] ON [edfi].[RestraintEvent] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34262,14 +33694,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_ContentVersion'
 )
 CREATE INDEX [IX_School_ContentVersion] ON [edfi].[School] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_School_CreatedByOwnershipTokenId] ON [edfi].[School] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34451,14 +33875,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SchoolYearType' AND i.name = N'IX_SchoolYearType_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SchoolYearType_CreatedByOwnershipTokenId] ON [edfi].[SchoolYearType] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Section' AND i.name = N'IX_Section_AvailableCreditTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_Section_AvailableCreditTypeDescriptor_DescriptorId] ON [edfi].[Section] ([AvailableCreditTypeDescriptor_DescriptorId]);
@@ -34470,14 +33886,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'Section' AND i.name = N'IX_Section_ContentVersion'
 )
 CREATE INDEX [IX_Section_ContentVersion] ON [edfi].[Section] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Section' AND i.name = N'IX_Section_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Section_CreatedByOwnershipTokenId] ON [edfi].[Section] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34563,14 +33971,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SectionAttendanceTakenEvent' AND i.name = N'IX_SectionAttendanceTakenEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SectionAttendanceTakenEvent_CreatedByOwnershipTokenId] ON [edfi].[SectionAttendanceTakenEvent] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SectionAttendanceTakenEvent' AND i.name = N'IX_SectionAttendanceTakenEvent_SchoolId_Unified_Auth'
 )
 CREATE INDEX [IX_SectionAttendanceTakenEvent_SchoolId_Unified_Auth] ON [edfi].[SectionAttendanceTakenEvent] ([SchoolId_Unified]);
@@ -34651,14 +34051,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Session' AND i.name = N'IX_Session_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Session_CreatedByOwnershipTokenId] ON [edfi].[Session] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Session' AND i.name = N'IX_Session_SchoolYear_SchoolYear_SchoolYear_DocumentId'
 )
 CREATE INDEX [IX_Session_SchoolYear_SchoolYear_SchoolYear_DocumentId] ON [edfi].[Session] ([SchoolYear_SchoolYear], [SchoolYear_DocumentId]);
@@ -34707,14 +34099,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SourceDimension' AND i.name = N'IX_SourceDimension_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SourceDimension_CreatedByOwnershipTokenId] ON [edfi].[SourceDimension] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SourceDimensionReportingTag' AND i.name = N'IX_SourceDimensionReportingTag_ReportingTagDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_SourceDimensionReportingTag_ReportingTagDescriptor_DescriptorId] ON [edfi].[SourceDimensionReportingTag] ([ReportingTagDescriptor_DescriptorId]);
@@ -34734,14 +34118,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'Staff' AND i.name = N'IX_Staff_ContentVersion'
 )
 CREATE INDEX [IX_Staff_ContentVersion] ON [edfi].[Staff] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Staff' AND i.name = N'IX_Staff_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Staff_CreatedByOwnershipTokenId] ON [edfi].[Staff] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34782,14 +34158,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StaffAbsenceEvent' AND i.name = N'IX_StaffAbsenceEvent_ContentVersion'
 )
 CREATE INDEX [IX_StaffAbsenceEvent_ContentVersion] ON [edfi].[StaffAbsenceEvent] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffAbsenceEvent' AND i.name = N'IX_StaffAbsenceEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffAbsenceEvent_CreatedByOwnershipTokenId] ON [edfi].[StaffAbsenceEvent] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34875,14 +34243,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffCohortAssociation' AND i.name = N'IX_StaffCohortAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffCohortAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffCohortAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StaffCohortAssociation' AND i.name = N'IX_StaffCohortAssociation_Staff_DocumentId_Auth'
 )
 CREATE INDEX [IX_StaffCohortAssociation_Staff_DocumentId_Auth] ON [edfi].[StaffCohortAssociation] ([Staff_DocumentId]) INCLUDE ([DocumentId]);
@@ -34918,14 +34278,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StaffDisciplineIncidentAssociation' AND i.name = N'IX_StaffDisciplineIncidentAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StaffDisciplineIncidentAssociation_ContentVersion] ON [edfi].[StaffDisciplineIncidentAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffDisciplineIncidentAssociation' AND i.name = N'IX_StaffDisciplineIncidentAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffDisciplineIncidentAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffDisciplineIncidentAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -34974,14 +34326,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationAssignmentAssociation' AND i.name = N'IX_StaffEducationOrganizationAssignmentAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StaffEducationOrganizationAssignmentAssociation_ContentVersion] ON [edfi].[StaffEducationOrganizationAssignmentAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationAssignmentAssociation' AND i.name = N'IX_StaffEducationOrganizationAssignmentAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffEducationOrganizationAssignmentAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffEducationOrganizationAssignmentAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35099,14 +34443,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationContactAssociation' AND i.name = N'IX_StaffEducationOrganizationContactAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffEducationOrganizationContactAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffEducationOrganizationContactAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationContactAssociation' AND i.name = N'IX_StaffEducationOrganizationContactAssociation_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StaffEducationOrganizationContactAssociation_EducationOrganization_DocumentId] ON [edfi].[StaffEducationOrganizationContactAssociation] ([EducationOrganization_DocumentId]);
@@ -35150,14 +34486,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationEmploymentAssociation' AND i.name = N'IX_StaffEducationOrganizationEmploymentAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StaffEducationOrganizationEmploymentAssociation_ContentVersion] ON [edfi].[StaffEducationOrganizationEmploymentAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffEducationOrganizationEmploymentAssociation' AND i.name = N'IX_StaffEducationOrganizationEmploymentAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffEducationOrganizationEmploymentAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffEducationOrganizationEmploymentAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35315,14 +34643,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffLeave' AND i.name = N'IX_StaffLeave_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffLeave_CreatedByOwnershipTokenId] ON [edfi].[StaffLeave] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StaffLeave' AND i.name = N'IX_StaffLeave_StaffLeaveEventCategoryDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StaffLeave_StaffLeaveEventCategoryDescriptor_DescriptorId] ON [edfi].[StaffLeave] ([StaffLeaveEventCategoryDescriptor_DescriptorId]);
@@ -35382,14 +34702,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StaffProgramAssociation' AND i.name = N'IX_StaffProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StaffProgramAssociation_ContentVersion] ON [edfi].[StaffProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffProgramAssociation' AND i.name = N'IX_StaffProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35467,14 +34779,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffSchoolAssociation' AND i.name = N'IX_StaffSchoolAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffSchoolAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffSchoolAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StaffSchoolAssociation' AND i.name = N'IX_StaffSchoolAssociation_SchoolId_Unified_Auth'
 )
 CREATE INDEX [IX_StaffSchoolAssociation_SchoolId_Unified_Auth] ON [edfi].[StaffSchoolAssociation] ([SchoolId_Unified]);
@@ -35547,14 +34851,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StaffSectionAssociation' AND i.name = N'IX_StaffSectionAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StaffSectionAssociation_CreatedByOwnershipTokenId] ON [edfi].[StaffSectionAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StaffSectionAssociation' AND i.name = N'IX_StaffSectionAssociation_Section_DocumentId'
 )
 CREATE INDEX [IX_StaffSectionAssociation_Section_DocumentId] ON [edfi].[StaffSectionAssociation] ([Section_DocumentId]);
@@ -35614,14 +34910,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StateEducationAgency' AND i.name = N'IX_StateEducationAgency_ContentVersion'
 )
 CREATE INDEX [IX_StateEducationAgency_ContentVersion] ON [edfi].[StateEducationAgency] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StateEducationAgency' AND i.name = N'IX_StateEducationAgency_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StateEducationAgency_CreatedByOwnershipTokenId] ON [edfi].[StateEducationAgency] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -35787,14 +35075,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Student_CreatedByOwnershipTokenId] ON [edfi].[Student] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_Person_PersonId_Person_SourceSystemDescriptor_DescriptorId_Person_DocumentId'
 )
 CREATE INDEX [IX_Student_Person_PersonId_Person_SourceSystemDescriptor_DescriptorId_Person_DocumentId] ON [edfi].[Student] ([Person_PersonId], [Person_SourceSystemDescriptor_DescriptorId], [Person_DocumentId]);
@@ -35814,14 +35094,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentAcademicRecord' AND i.name = N'IX_StudentAcademicRecord_ContentVersion'
 )
 CREATE INDEX [IX_StudentAcademicRecord_ContentVersion] ON [edfi].[StudentAcademicRecord] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAcademicRecord' AND i.name = N'IX_StudentAcademicRecord_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentAcademicRecord_CreatedByOwnershipTokenId] ON [edfi].[StudentAcademicRecord] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36011,14 +35283,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessment' AND i.name = N'IX_StudentAssessment_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentAssessment_CreatedByOwnershipTokenId] ON [edfi].[StudentAssessment] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentAssessment' AND i.name = N'IX_StudentAssessment_EventCircumstanceDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentAssessment_EventCircumstanceDescriptor_DescriptorId] ON [edfi].[StudentAssessment] ([EventCircumstanceDescriptor_DescriptorId]);
@@ -36118,14 +35382,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentEducationOrganizationAssociation' AND i.name = N'IX_StudentAssessmentEducationOrganizationAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentAssessmentEducationOrganizationAssociation_ContentVersion] ON [edfi].[StudentAssessmentEducationOrganizationAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentEducationOrganizationAssociation' AND i.name = N'IX_StudentAssessmentEducationOrganizationAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentAssessmentEducationOrganizationAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentAssessmentEducationOrganizationAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36251,14 +35507,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentAssessmentRegistration_CreatedByOwnershipTokenId] ON [edfi].[StudentAssessmentRegistration] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistration' AND i.name = N'IX_StudentAssessmentRegistration_PlatformTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentAssessmentRegistration_PlatformTypeDescriptor_DescriptorId] ON [edfi].[StudentAssessmentRegistration] ([PlatformTypeDescriptor_DescriptorId]);
@@ -36342,14 +35590,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistrationBatteryPartAssociation' AND i.name = N'IX_StudentAssessmentRegistrationBatteryPartAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentAssessmentRegistrationBatteryPartAssociation_ContentVersion] ON [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentRegistrationBatteryPartAssociation' AND i.name = N'IX_StudentAssessmentRegistrationBatteryPartAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentAssessmentRegistrationBatteryPartAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36483,14 +35723,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCTEProgramAssociation' AND i.name = N'IX_StudentCTEProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentCTEProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentCTEProgramAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentCTEProgramAssociation' AND i.name = N'IX_StudentCTEProgramAssociation_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StudentCTEProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentCTEProgramAssociation] ([EducationOrganization_DocumentId]);
@@ -36595,14 +35827,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCohortAssociation' AND i.name = N'IX_StudentCohortAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentCohortAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentCohortAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentCohortAssociation' AND i.name = N'IX_StudentCohortAssociation_Student_DocumentId_Auth'
 )
 CREATE INDEX [IX_StudentCohortAssociation_Student_DocumentId_Auth] ON [edfi].[StudentCohortAssociation] ([Student_DocumentId]) INCLUDE ([DocumentId]);
@@ -36638,14 +35862,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjective' AND i.name = N'IX_StudentCompetencyObjective_ContentVersion'
 )
 CREATE INDEX [IX_StudentCompetencyObjective_ContentVersion] ON [edfi].[StudentCompetencyObjective] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentCompetencyObjective' AND i.name = N'IX_StudentCompetencyObjective_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentCompetencyObjective_CreatedByOwnershipTokenId] ON [edfi].[StudentCompetencyObjective] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36739,14 +35955,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentContactAssociation' AND i.name = N'IX_StudentContactAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentContactAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentContactAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentContactAssociation' AND i.name = N'IX_StudentContactAssociation_RelationDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentContactAssociation_RelationDescriptor_DescriptorId] ON [edfi].[StudentContactAssociation] ([RelationDescriptor_DescriptorId]);
@@ -36774,14 +35982,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentDisciplineIncidentBehaviorAssociation' AND i.name = N'IX_StudentDisciplineIncidentBehaviorAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentDisciplineIncidentBehaviorAssociation_ContentVersion] ON [edfi].[StudentDisciplineIncidentBehaviorAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentDisciplineIncidentBehaviorAssociation' AND i.name = N'IX_StudentDisciplineIncidentBehaviorAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentDisciplineIncidentBehaviorAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentDisciplineIncidentBehaviorAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36843,14 +36043,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentDisciplineIncidentNonOffenderAssociation' AND i.name = N'IX_StudentDisciplineIncidentNonOffenderAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentDisciplineIncidentNonOffenderAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentDisciplineIncidentNonOffenderAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentDisciplineIncidentNonOffenderAssociation' AND i.name = N'IX_StudentDisciplineIncidentNonOffenderAssociation_DisciplineIncident_IncidentIdentifier_DisciplineIncident_SchoolId__3ac01dab79'
 )
 CREATE INDEX [IX_StudentDisciplineIncidentNonOffenderAssociation_DisciplineIncident_IncidentIdentifier_DisciplineIncident_SchoolId__3ac01dab79] ON [edfi].[StudentDisciplineIncidentNonOffenderAssociation] ([DisciplineIncident_IncidentIdentifier], [DisciplineIncident_SchoolId], [DisciplineIncident_DocumentId]);
@@ -36899,14 +36091,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssessmentAccommodation' AND i.name = N'IX_StudentEducationOrganizationAssessmentAccommodation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentEducationOrganizationAssessmentAccommodation_CreatedByOwnershipTokenId] ON [edfi].[StudentEducationOrganizationAssessmentAccommodation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssessmentAccommodation' AND i.name = N'IX_StudentEducationOrganizationAssessmentAccommodation_Student_DocumentId_Auth'
 )
 CREATE INDEX [IX_StudentEducationOrganizationAssessmentAccommodation_Student_DocumentId_Auth] ON [edfi].[StudentEducationOrganizationAssessmentAccommodation] ([Student_DocumentId]) INCLUDE ([DocumentId]);
@@ -36942,14 +36126,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssociation' AND i.name = N'IX_StudentEducationOrganizationAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentEducationOrganizationAssociation_ContentVersion] ON [edfi].[StudentEducationOrganizationAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationAssociation' AND i.name = N'IX_StudentEducationOrganizationAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentEducationOrganizationAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentEducationOrganizationAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -37259,14 +36435,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationResponsibilityAssociation' AND i.name = N'IX_StudentEducationOrganizationResponsibilityAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentEducationOrganizationResponsibilityAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentEducationOrganizationResponsibilityAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentEducationOrganizationResponsibilityAssociation' AND i.name = N'IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentEducationOrganizationResponsibilityAssociation] ([EducationOrganization_DocumentId]);
@@ -37331,14 +36499,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentGradebookEntry' AND i.name = N'IX_StudentGradebookEntry_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentGradebookEntry_CreatedByOwnershipTokenId] ON [edfi].[StudentGradebookEntry] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentGradebookEntry' AND i.name = N'IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth'
 )
 CREATE INDEX [IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth] ON [edfi].[StudentGradebookEntry] ([GradebookEntry_Namespace]);
@@ -37374,14 +36534,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentHealth' AND i.name = N'IX_StudentHealth_ContentVersion'
 )
 CREATE INDEX [IX_StudentHealth_ContentVersion] ON [edfi].[StudentHealth] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentHealth' AND i.name = N'IX_StudentHealth_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentHealth_CreatedByOwnershipTokenId] ON [edfi].[StudentHealth] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -37446,14 +36598,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentHomelessProgramAssociation_ContentVersion] ON [edfi].[StudentHomelessProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentHomelessProgramAssociation' AND i.name = N'IX_StudentHomelessProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentHomelessProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentHomelessProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -37579,14 +36723,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAssociation' AND i.name = N'IX_StudentInterventionAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentInterventionAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentInterventionAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAssociation' AND i.name = N'IX_StudentInterventionAssociation_Intervention_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_StudentInterventionAssociation_Intervention_EducationOrganizationId_Auth] ON [edfi].[StudentInterventionAssociation] ([Intervention_EducationOrganizationId]);
@@ -37651,14 +36787,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAttendanceEvent' AND i.name = N'IX_StudentInterventionAttendanceEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentInterventionAttendanceEvent_CreatedByOwnershipTokenId] ON [edfi].[StudentInterventionAttendanceEvent] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentInterventionAttendanceEvent' AND i.name = N'IX_StudentInterventionAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentInterventionAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId] ON [edfi].[StudentInterventionAttendanceEvent] ([EducationalEnvironmentDescriptor_DescriptorId]);
@@ -37702,14 +36830,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentLanguageInstructionProgramAssociation' AND i.name = N'IX_StudentLanguageInstructionProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentLanguageInstructionProgramAssociation_ContentVersion] ON [edfi].[StudentLanguageInstructionProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentLanguageInstructionProgramAssociation' AND i.name = N'IX_StudentLanguageInstructionProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentLanguageInstructionProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentLanguageInstructionProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -37843,14 +36963,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentMigrantEducationProgramAssociation' AND i.name = N'IX_StudentMigrantEducationProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentMigrantEducationProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentMigrantEducationProgramAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentMigrantEducationProgramAssociation' AND i.name = N'IX_StudentMigrantEducationProgramAssociation_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StudentMigrantEducationProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentMigrantEducationProgramAssociation] ([EducationOrganization_DocumentId]);
@@ -37926,14 +37038,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_ContentVersion] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentNeglectedOrDelinquentProgramAssociation' AND i.name = N'IX_StudentNeglectedOrDelinquentProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentNeglectedOrDelinquentProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -38075,14 +37179,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAssociation' AND i.name = N'IX_StudentProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentProgramAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentProgramAssociation' AND i.name = N'IX_StudentProgramAssociation_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StudentProgramAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentProgramAssociation] ([EducationOrganization_DocumentId]);
@@ -38163,14 +37259,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentProgramAttendanceEvent_CreatedByOwnershipTokenId] ON [edfi].[StudentProgramAttendanceEvent] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentProgramAttendanceEvent' AND i.name = N'IX_StudentProgramAttendanceEvent_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StudentProgramAttendanceEvent_EducationOrganization_DocumentId] ON [edfi].[StudentProgramAttendanceEvent] ([EducationOrganization_DocumentId]);
@@ -38230,14 +37318,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluation' AND i.name = N'IX_StudentProgramEvaluation_ContentVersion'
 )
 CREATE INDEX [IX_StudentProgramEvaluation_ContentVersion] ON [edfi].[StudentProgramEvaluation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentProgramEvaluation' AND i.name = N'IX_StudentProgramEvaluation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentProgramEvaluation_CreatedByOwnershipTokenId] ON [edfi].[StudentProgramEvaluation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -38419,14 +37499,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSchoolAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentSchoolAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_EnrollmentTypeDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentSchoolAssociation_EnrollmentTypeDescriptor_DescriptorId] ON [edfi].[StudentSchoolAssociation] ([EnrollmentTypeDescriptor_DescriptorId]);
@@ -38587,14 +37659,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAttendanceEvent' AND i.name = N'IX_StudentSchoolAttendanceEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSchoolAttendanceEvent_CreatedByOwnershipTokenId] ON [edfi].[StudentSchoolAttendanceEvent] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAttendanceEvent' AND i.name = N'IX_StudentSchoolAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentSchoolAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId] ON [edfi].[StudentSchoolAttendanceEvent] ([EducationalEnvironmentDescriptor_DescriptorId]);
@@ -38646,14 +37710,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentSchoolFoodServiceProgramAssociation' AND i.name = N'IX_StudentSchoolFoodServiceProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentSchoolFoodServiceProgramAssociation_ContentVersion] ON [edfi].[StudentSchoolFoodServiceProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolFoodServiceProgramAssociation' AND i.name = N'IX_StudentSchoolFoodServiceProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSchoolFoodServiceProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentSchoolFoodServiceProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -38734,14 +37790,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentSection504ProgramAssociation' AND i.name = N'IX_StudentSection504ProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentSection504ProgramAssociation_ContentVersion] ON [edfi].[StudentSection504ProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSection504ProgramAssociation' AND i.name = N'IX_StudentSection504ProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSection504ProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentSection504ProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -38835,14 +37883,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociation' AND i.name = N'IX_StudentSectionAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSectionAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentSectionAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSectionAssociation' AND i.name = N'IX_StudentSectionAssociation_DualCreditEducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StudentSectionAssociation_DualCreditEducationOrganization_DocumentId] ON [edfi].[StudentSectionAssociation] ([DualCreditEducationOrganization_DocumentId]);
@@ -38931,14 +37971,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSectionAttendanceEvent' AND i.name = N'IX_StudentSectionAttendanceEvent_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSectionAttendanceEvent_CreatedByOwnershipTokenId] ON [edfi].[StudentSectionAttendanceEvent] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSectionAttendanceEvent' AND i.name = N'IX_StudentSectionAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentSectionAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId] ON [edfi].[StudentSectionAttendanceEvent] ([EducationalEnvironmentDescriptor_DescriptorId]);
@@ -38990,14 +38022,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramAssociation' AND i.name = N'IX_StudentSpecialEducationProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentSpecialEducationProgramAssociation_ContentVersion] ON [edfi].[StudentSpecialEducationProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramAssociation' AND i.name = N'IX_StudentSpecialEducationProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSpecialEducationProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentSpecialEducationProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39155,14 +38179,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSpecialEducationProgramEligibilityAssociation' AND i.name = N'IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_DocumentId] ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation] ([EducationOrganization_DocumentId]);
@@ -39246,14 +38262,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentTitleIPartAProgramAssociation' AND i.name = N'IX_StudentTitleIPartAProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentTitleIPartAProgramAssociation_ContentVersion] ON [edfi].[StudentTitleIPartAProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentTitleIPartAProgramAssociation' AND i.name = N'IX_StudentTitleIPartAProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentTitleIPartAProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentTitleIPartAProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39347,14 +38355,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentTransportation' AND i.name = N'IX_StudentTransportation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentTransportation_CreatedByOwnershipTokenId] ON [edfi].[StudentTransportation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentTransportation' AND i.name = N'IX_StudentTransportation_StudentBusDetailsBusRouteDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentTransportation_StudentBusDetailsBusRouteDescriptor_DescriptorId] ON [edfi].[StudentTransportation] ([StudentBusDetailsBusRouteDescriptor_DescriptorId]);
@@ -39435,14 +38435,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Survey' AND i.name = N'IX_Survey_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Survey_CreatedByOwnershipTokenId] ON [edfi].[Survey] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Survey' AND i.name = N'IX_Survey_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_Survey_EducationOrganization_DocumentId] ON [edfi].[Survey] ([EducationOrganization_DocumentId]);
@@ -39491,14 +38483,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveyCourseAssociation' AND i.name = N'IX_SurveyCourseAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveyCourseAssociation_CreatedByOwnershipTokenId] ON [edfi].[SurveyCourseAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveyCourseAssociation' AND i.name = N'IX_SurveyCourseAssociation_Survey_Namespace_Auth'
 )
 CREATE INDEX [IX_SurveyCourseAssociation_Survey_Namespace_Auth] ON [edfi].[SurveyCourseAssociation] ([Survey_Namespace]);
@@ -39518,14 +38502,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveyProgramAssociation' AND i.name = N'IX_SurveyProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_SurveyProgramAssociation_ContentVersion] ON [edfi].[SurveyProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveyProgramAssociation' AND i.name = N'IX_SurveyProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveyProgramAssociation_CreatedByOwnershipTokenId] ON [edfi].[SurveyProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39571,14 +38547,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveyQuestion' AND i.name = N'IX_SurveyQuestion_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveyQuestion_CreatedByOwnershipTokenId] ON [edfi].[SurveyQuestion] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveyQuestion' AND i.name = N'IX_SurveyQuestion_Namespace_Unified_Auth'
 )
 CREATE INDEX [IX_SurveyQuestion_Namespace_Unified_Auth] ON [edfi].[SurveyQuestion] ([Namespace_Unified]);
@@ -39619,14 +38587,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveyQuestionResponse' AND i.name = N'IX_SurveyQuestionResponse_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveyQuestionResponse_CreatedByOwnershipTokenId] ON [edfi].[SurveyQuestionResponse] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveyQuestionResponse' AND i.name = N'IX_SurveyQuestionResponse_Namespace_Unified_Auth'
 )
 CREATE INDEX [IX_SurveyQuestionResponse_Namespace_Unified_Auth] ON [edfi].[SurveyQuestionResponse] ([Namespace_Unified]);
@@ -39654,14 +38614,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveyResponse' AND i.name = N'IX_SurveyResponse_ContentVersion'
 )
 CREATE INDEX [IX_SurveyResponse_ContentVersion] ON [edfi].[SurveyResponse] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveyResponse' AND i.name = N'IX_SurveyResponse_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveyResponse_CreatedByOwnershipTokenId] ON [edfi].[SurveyResponse] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39707,14 +38659,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveyResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveyResponseEducationOrganizationTargetAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveyResponseEducationOrganizationTargetAssociation_CreatedByOwnershipTokenId] ON [edfi].[SurveyResponseEducationOrganizationTargetAssociation] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveyResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Auth'
 )
 CREATE INDEX [IX_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Auth] ON [edfi].[SurveyResponseEducationOrganizationTargetAssociation] ([EducationOrganization_EducationOrganizationId]);
@@ -39742,14 +38686,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveyResponseStaffTargetAssociation' AND i.name = N'IX_SurveyResponseStaffTargetAssociation_ContentVersion'
 )
 CREATE INDEX [IX_SurveyResponseStaffTargetAssociation_ContentVersion] ON [edfi].[SurveyResponseStaffTargetAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveyResponseStaffTargetAssociation' AND i.name = N'IX_SurveyResponseStaffTargetAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveyResponseStaffTargetAssociation_CreatedByOwnershipTokenId] ON [edfi].[SurveyResponseStaffTargetAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39803,14 +38739,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveySection' AND i.name = N'IX_SurveySection_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveySection_CreatedByOwnershipTokenId] ON [edfi].[SurveySection] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveySection' AND i.name = N'IX_SurveySection_Survey_Namespace_Survey_SurveyIdentifier_Survey_DocumentId'
 )
 CREATE INDEX [IX_SurveySection_Survey_Namespace_Survey_SurveyIdentifier_Survey_DocumentId] ON [edfi].[SurveySection] ([Survey_Namespace], [Survey_SurveyIdentifier], [Survey_DocumentId]);
@@ -39822,14 +38750,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveySectionAssociation' AND i.name = N'IX_SurveySectionAssociation_ContentVersion'
 )
 CREATE INDEX [IX_SurveySectionAssociation_ContentVersion] ON [edfi].[SurveySectionAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveySectionAssociation' AND i.name = N'IX_SurveySectionAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveySectionAssociation_CreatedByOwnershipTokenId] ON [edfi].[SurveySectionAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39867,14 +38787,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponse' AND i.name = N'IX_SurveySectionResponse_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveySectionResponse_CreatedByOwnershipTokenId] ON [edfi].[SurveySectionResponse] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponse' AND i.name = N'IX_SurveySectionResponse_Namespace_Unified_SurveyIdentifier_Unified_SurveyResponse_SurveyResponseIdentifier_SurveyRes_c78c4f20e6'
 )
 CREATE INDEX [IX_SurveySectionResponse_Namespace_Unified_SurveyIdentifier_Unified_SurveyResponse_SurveyResponseIdentifier_SurveyRes_c78c4f20e6] ON [edfi].[SurveySectionResponse] ([Namespace_Unified], [SurveyIdentifier_Unified], [SurveyResponse_SurveyResponseIdentifier], [SurveyResponse_DocumentId]);
@@ -39894,14 +38806,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveySectionResponseEducationOrganizationTargetAssociation_ContentVersion'
 )
 CREATE INDEX [IX_SurveySectionResponseEducationOrganizationTargetAssociation_ContentVersion] ON [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponseEducationOrganizationTargetAssociation' AND i.name = N'IX_SurveySectionResponseEducationOrganizationTargetAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveySectionResponseEducationOrganizationTargetAssociation_CreatedByOwnershipTokenId] ON [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39934,14 +38838,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponseStaffTargetAssociation' AND i.name = N'IX_SurveySectionResponseStaffTargetAssociation_ContentVersion'
 )
 CREATE INDEX [IX_SurveySectionResponseStaffTargetAssociation_ContentVersion] ON [edfi].[SurveySectionResponseStaffTargetAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SurveySectionResponseStaffTargetAssociation' AND i.name = N'IX_SurveySectionResponseStaffTargetAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_SurveySectionResponseStaffTargetAssociation_CreatedByOwnershipTokenId] ON [edfi].[SurveySectionResponseStaffTargetAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -39987,14 +38883,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'sample' AND t.name = N'Bus' AND i.name = N'IX_Bus_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Bus_CreatedByOwnershipTokenId] ON [sample].[Bus] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'sample' AND t.name = N'BusRoute' AND i.name = N'IX_BusRoute_Bus_BusId_Bus_DocumentId'
 )
 CREATE INDEX [IX_BusRoute_Bus_BusId_Bus_DocumentId] ON [sample].[BusRoute] ([Bus_BusId], [Bus_DocumentId]);
@@ -40006,14 +38894,6 @@ IF NOT EXISTS (
     WHERE s.name = N'sample' AND t.name = N'BusRoute' AND i.name = N'IX_BusRoute_ContentVersion'
 )
 CREATE INDEX [IX_BusRoute_ContentVersion] ON [sample].[BusRoute] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'sample' AND t.name = N'BusRoute' AND i.name = N'IX_BusRoute_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_BusRoute_CreatedByOwnershipTokenId] ON [sample].[BusRoute] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -40150,14 +39030,6 @@ IF NOT EXISTS (
     WHERE s.name = N'sample' AND t.name = N'StudentArtProgramAssociation' AND i.name = N'IX_StudentArtProgramAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentArtProgramAssociation_ContentVersion] ON [sample].[StudentArtProgramAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'sample' AND t.name = N'StudentArtProgramAssociation' AND i.name = N'IX_StudentArtProgramAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentArtProgramAssociation_CreatedByOwnershipTokenId] ON [sample].[StudentArtProgramAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -40374,14 +39246,6 @@ IF NOT EXISTS (
     WHERE s.name = N'sample' AND t.name = N'StudentGraduationPlanAssociation' AND i.name = N'IX_StudentGraduationPlanAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentGraduationPlanAssociation_ContentVersion] ON [sample].[StudentGraduationPlanAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'sample' AND t.name = N'StudentGraduationPlanAssociation' AND i.name = N'IX_StudentGraduationPlanAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentGraduationPlanAssociation_CreatedByOwnershipTokenId] ON [sample].[StudentGraduationPlanAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

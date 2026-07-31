@@ -623,14 +623,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ProfileRootOnlyMergeItem_CreatedByOwnershipTokenId] ON [edfi].[ProfileRootOnlyMergeItem] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified_DescriptorId'
 )
 CREATE INDEX [IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified_DescriptorId] ON [edfi].[ProfileRootOnlyMergeItem] ([PrimarySchoolTypeDescriptor_Unified_DescriptorId]);
@@ -650,14 +642,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_ContentVersion'
 )
 CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Student_CreatedByOwnershipTokenId] ON [edfi].[Student] ([CreatedByOwnershipTokenId]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_ProfileRootOnlyMergeItem_ReferentialIdentity]

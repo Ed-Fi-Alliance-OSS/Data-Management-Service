@@ -508,14 +508,6 @@ IF NOT EXISTS (
 )
 CREATE INDEX [IX_NamingStressItem_ContentVersion] ON [edfi].[NamingStressItem] ([ContentVersion]);
 
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'NamingStressItem' AND i.name = N'IX_NamingStressItem_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_NamingStressItem_CreatedByOwnershipTokenId] ON [edfi].[NamingStressItem] ([CreatedByOwnershipTokenId]);
-
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_NamingStressItem_ReferentialIdentity]
 ON [edfi].[NamingStressItem]

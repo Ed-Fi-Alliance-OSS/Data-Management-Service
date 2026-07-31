@@ -774,11 +774,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Program_CreatedByOwnershipTokenId" ON "edfi"."Program" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPeriod_ParentCollectionItemId_School_DocumentId" ON "edfi"."SchoolAddressPeriod" ("ParentCollectionItemId", "School_DocumentId");
 

@@ -515,8 +515,6 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Person_ContentVersion" ON "edfi"."Person" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Person_CreatedByOwnershipTokenId" ON "edfi"."Person" ("CreatedByOwnershipTokenId");
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN

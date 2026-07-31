@@ -722,25 +722,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Program' AND i.name = N'IX_Program_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Program_CreatedByOwnershipTokenId] ON [edfi].[Program] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_ContentVersion'
 )
 CREATE INDEX [IX_School_ContentVersion] ON [edfi].[School] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_School_CreatedByOwnershipTokenId] ON [edfi].[School] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

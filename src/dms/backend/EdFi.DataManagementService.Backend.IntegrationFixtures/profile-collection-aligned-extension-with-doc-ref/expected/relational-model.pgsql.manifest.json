@@ -86,18 +86,6 @@
       ]
     },
     {
-      "name": "IX_ParentResource_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ParentResource"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_ParentResource",
       "table": {
         "schema": "edfi",
@@ -194,18 +182,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_Sponsor_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Sponsor"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {

@@ -601,8 +601,6 @@ CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPhoneNumber_ParentCollectionItemId_S_9002c7691c" ON "edfi"."SchoolAddressPhoneNumber" ("ParentCollectionItemId", "School_DocumentId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()

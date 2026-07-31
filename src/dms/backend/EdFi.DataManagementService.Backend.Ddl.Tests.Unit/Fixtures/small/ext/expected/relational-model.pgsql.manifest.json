@@ -42,18 +42,6 @@
       ]
     },
     {
-      "name": "IX_School_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_School",
       "table": {
         "schema": "edfi",

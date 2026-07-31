@@ -35,18 +35,6 @@
       ]
     },
     {
-      "name": "IX_NamingStressItem_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "NamingStressItem"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_NamingStressItem",
       "table": {
         "schema": "edfi",

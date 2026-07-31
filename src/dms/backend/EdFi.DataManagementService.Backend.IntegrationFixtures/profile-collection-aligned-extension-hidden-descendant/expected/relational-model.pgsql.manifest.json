@@ -67,18 +67,6 @@
       ]
     },
     {
-      "name": "IX_ParentResource_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ParentResource"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_ParentResource",
       "table": {
         "schema": "edfi",

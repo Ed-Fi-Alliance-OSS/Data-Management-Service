@@ -1083,14 +1083,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'DateTimeKeyResource' AND i.name = N'IX_DateTimeKeyResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_DateTimeKeyResource_CreatedByOwnershipTokenId] ON [edfi].[DateTimeKeyResource] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'DecimalKeyResource' AND i.name = N'IX_DecimalKeyResource_ContentVersion'
 )
 CREATE INDEX [IX_DecimalKeyResource_ContentVersion] ON [edfi].[DecimalKeyResource] ([ContentVersion]);
@@ -1099,25 +1091,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'DecimalKeyResource' AND i.name = N'IX_DecimalKeyResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_DecimalKeyResource_CreatedByOwnershipTokenId] ON [edfi].[DecimalKeyResource] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'DecimalRefResource' AND i.name = N'IX_DecimalRefResource_ContentVersion'
 )
 CREATE INDEX [IX_DecimalRefResource_ContentVersion] ON [edfi].[DecimalRefResource] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'DecimalRefResource' AND i.name = N'IX_DecimalRefResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_DecimalRefResource_CreatedByOwnershipTokenId] ON [edfi].[DecimalRefResource] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1139,14 +1115,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentChildResource' AND i.name = N'IX_EdOrgDependentChildResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EdOrgDependentChildResource_CreatedByOwnershipTokenId] ON [edfi].[EdOrgDependentChildResource] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentChildResource' AND i.name = N'IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_DocumentId'
 )
 CREATE INDEX [IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_DocumentId] ON [edfi].[EdOrgDependentChildResource] ([EdOrgDependentResourceReference_DocumentId]);
@@ -1163,14 +1131,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentResource' AND i.name = N'IX_EdOrgDependentResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_EdOrgDependentResource_CreatedByOwnershipTokenId] ON [edfi].[EdOrgDependentResource] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentResource' AND i.name = N'IX_EdOrgDependentResource_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_EdOrgDependentResource_EducationOrganization_DocumentId] ON [edfi].[EdOrgDependentResource] ([EducationOrganization_DocumentId]);
@@ -1182,14 +1142,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ContentVersion'
 )
 CREATE INDEX [IX_KeyUnifiedResource_ContentVersion] ON [edfi].[KeyUnifiedResource] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_KeyUnifiedResource_CreatedByOwnershipTokenId] ON [edfi].[KeyUnifiedResource] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1219,14 +1171,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ResourceA' AND i.name = N'IX_ResourceA_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ResourceA_CreatedByOwnershipTokenId] ON [edfi].[ResourceA] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ResourceA' AND i.name = N'IX_ResourceA_StudentReference_DocumentId'
 )
 CREATE INDEX [IX_ResourceA_StudentReference_DocumentId] ON [edfi].[ResourceA] ([StudentReference_DocumentId]);
@@ -1238,14 +1182,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ResourceB' AND i.name = N'IX_ResourceB_ContentVersion'
 )
 CREATE INDEX [IX_ResourceB_ContentVersion] ON [edfi].[ResourceB] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ResourceB' AND i.name = N'IX_ResourceB_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_ResourceB_CreatedByOwnershipTokenId] ON [edfi].[ResourceB] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -1267,14 +1203,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_School_CreatedByOwnershipTokenId] ON [edfi].[School] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_ContentVersion'
 )
 CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
@@ -1283,25 +1211,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_Student_CreatedByOwnershipTokenId] ON [edfi].[Student] ([CreatedByOwnershipTokenId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_ContentVersion'
 )
 CREATE INDEX [IX_StudentSchoolAssociation_ContentVersion] ON [edfi].[StudentSchoolAssociation] ([ContentVersion]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_CreatedByOwnershipTokenId'
-)
-CREATE INDEX [IX_StudentSchoolAssociation_CreatedByOwnershipTokenId] ON [edfi].[StudentSchoolAssociation] ([CreatedByOwnershipTokenId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

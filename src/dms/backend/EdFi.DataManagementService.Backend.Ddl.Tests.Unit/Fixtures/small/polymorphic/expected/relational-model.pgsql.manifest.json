@@ -289,18 +289,6 @@
       ]
     },
     {
-      "name": "IX_LocalEducationAgency_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalEducationAgency"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_LocalEducationAgency",
       "table": {
         "schema": "edfi",
@@ -346,18 +334,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_School_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {

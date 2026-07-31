@@ -630,8 +630,6 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ParentResource_CreatedByOwnershipTokenId" ON "edfi"."ParentResource" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_ParentResourceParentChildren_ParentCollectionItem_17de056157" ON "edfi"."ParentResourceParentChildren" ("ParentCollectionItemId", "ParentResource_DocumentId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResource_ReferentialIdentity"()

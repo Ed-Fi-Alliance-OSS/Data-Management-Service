@@ -1176,33 +1176,21 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_
 
 CREATE INDEX IF NOT EXISTS "IX_DateTimeKeyResource_ContentVersion" ON "edfi"."DateTimeKeyResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_DateTimeKeyResource_CreatedByOwnershipTokenId" ON "edfi"."DateTimeKeyResource" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_DecimalKeyResource_ContentVersion" ON "edfi"."DecimalKeyResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_DecimalKeyResource_CreatedByOwnershipTokenId" ON "edfi"."DecimalKeyResource" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_ContentVersion" ON "edfi"."DecimalRefResource" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_CreatedByOwnershipTokenId" ON "edfi"."DecimalRefResource" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_DecimalKeyReference_DecimalKey_d031852f35" ON "edfi"."DecimalRefResource" ("DecimalKeyReference_DecimalKey", "DecimalKeyReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_ContentVersion" ON "edfi"."EdOrgDependentChildResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_CreatedByOwnershipTokenId" ON "edfi"."EdOrgDependentChildResource" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_EdOrgDependentResourc_3459d40e7c" ON "edfi"."EdOrgDependentChildResource" ("EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId", "EdOrgDependentResourceReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_ContentVersion" ON "edfi"."EdOrgDependentResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_CreatedByOwnershipTokenId" ON "edfi"."EdOrgDependentResource" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_EducationOrganization_Educ_18a40a602a" ON "edfi"."EdOrgDependentResource" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ContentVersion" ON "edfi"."KeyUnifiedResource" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_CreatedByOwnershipTokenId" ON "edfi"."KeyUnifiedResource" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceAReference_ResourceAId_858ee7fc27" ON "edfi"."KeyUnifiedResource" ("ResourceAReference_ResourceAId", "StudentUniqueId_Unified", "ResourceAReference_DocumentId");
 
@@ -1210,27 +1198,17 @@ CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceBReference_ResourceBId
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceA_ContentVersion" ON "edfi"."ResourceA" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ResourceA_CreatedByOwnershipTokenId" ON "edfi"."ResourceA" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_ResourceA_StudentReference_StudentUniqueId_Studen_01f592da4e" ON "edfi"."ResourceA" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceB_ContentVersion" ON "edfi"."ResourceB" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_ResourceB_CreatedByOwnershipTokenId" ON "edfi"."ResourceB" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceB_StudentReference_StudentUniqueId_Studen_a5dd41ea49" ON "edfi"."ResourceB" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Student_CreatedByOwnershipTokenId" ON "edfi"."Student" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ContentVersion" ON "edfi"."StudentSchoolAssociation" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_CreatedByOwnershipTokenId" ON "edfi"."StudentSchoolAssociation" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolReference_SchoolId_d4059e9cc0" ON "edfi"."StudentSchoolAssociation" ("SchoolReference_SchoolId", "SchoolReference_DocumentId");
 

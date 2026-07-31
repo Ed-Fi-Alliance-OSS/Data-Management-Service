@@ -35,18 +35,6 @@
       ]
     },
     {
-      "name": "IX_Person_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Person"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_Person",
       "table": {
         "schema": "edfi",

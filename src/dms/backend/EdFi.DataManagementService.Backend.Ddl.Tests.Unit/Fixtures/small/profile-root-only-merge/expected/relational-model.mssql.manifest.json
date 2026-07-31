@@ -60,18 +60,6 @@
       ]
     },
     {
-      "name": "IX_ProfileRootOnlyMergeItem_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ProfileRootOnlyMergeItem"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -142,18 +130,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_Student_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Student"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {

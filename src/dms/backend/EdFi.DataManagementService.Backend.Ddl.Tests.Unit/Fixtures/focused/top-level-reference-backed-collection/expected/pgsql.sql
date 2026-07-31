@@ -612,11 +612,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Program_CreatedByOwnershipTokenId" ON "edfi"."Program" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolProgram_ProgramReference_ProgramId_ProgramR_b374fb5c0b" ON "edfi"."SchoolProgram" ("ProgramReference_ProgramId", "ProgramReference_ProgramName", "ProgramReference_DocumentId");
 

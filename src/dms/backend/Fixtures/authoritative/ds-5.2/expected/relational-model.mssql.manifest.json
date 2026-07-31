@@ -3231,18 +3231,6 @@
       ]
     },
     {
-      "name": "IX_AcademicWeek_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "AcademicWeek"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_AcademicWeek_School_SchoolId_School_DocumentId",
       "table": {
         "schema": "edfi",
@@ -3316,18 +3304,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_AccountabilityRating_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "AccountabilityRating"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -3427,18 +3403,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_Assessment_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Assessment"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -3629,18 +3593,6 @@
       ]
     },
     {
-      "name": "IX_AssessmentAdministration_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentAdministration"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_AssessmentAdministration",
       "table": {
         "schema": "edfi",
@@ -3781,18 +3733,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_AssessmentAdministrationParticipation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentAdministrationParticipation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -4060,18 +4000,6 @@
       ]
     },
     {
-      "name": "IX_AssessmentBatteryPart_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentBatteryPart"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_AssessmentBatteryPart",
       "table": {
         "schema": "edfi",
@@ -4286,18 +4214,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_AssessmentItem_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentItem"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -4844,18 +4760,6 @@
       ]
     },
     {
-      "name": "IX_AssessmentScoreRangeLearningStandard_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentScoreRangeLearningStandard"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth",
       "table": {
         "schema": "edfi",
@@ -5018,18 +4922,6 @@
       ]
     },
     {
-      "name": "IX_BalanceSheetDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "BalanceSheetDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_BalanceSheetDimension",
       "table": {
         "schema": "edfi",
@@ -5140,18 +5032,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_BellSchedule_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "BellSchedule"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -5379,18 +5259,6 @@
       ]
     },
     {
-      "name": "IX_Calendar_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Calendar"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Calendar_SchoolYear_SchoolYear_SchoolYear_DocumentId",
       "table": {
         "schema": "edfi",
@@ -5518,18 +5386,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_CalendarDate_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CalendarDate"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -5721,18 +5577,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_ChartOfAccount_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ChartOfAccount"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -5973,18 +5817,6 @@
       ]
     },
     {
-      "name": "IX_ClassPeriod_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ClassPeriod"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_ClassPeriod_School_SchoolId_Auth",
       "table": {
         "schema": "edfi",
@@ -6148,18 +5980,6 @@
       ]
     },
     {
-      "name": "IX_Cohort_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Cohort"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Cohort_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -6306,18 +6126,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_CommunityOrganization_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CommunityOrganization"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -6896,18 +6704,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_CommunityProvider_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CommunityProvider"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -7537,18 +7333,6 @@
       ]
     },
     {
-      "name": "IX_CommunityProviderLicense_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CommunityProviderLicense"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_CommunityProviderLicense_LicenseStatusDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -7620,18 +7404,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_CompetencyObjective_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CompetencyObjective"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -7709,18 +7481,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_Contact_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Contact"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -8428,18 +8188,6 @@
       ]
     },
     {
-      "name": "IX_Course_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Course"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Course_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -8864,18 +8612,6 @@
       ]
     },
     {
-      "name": "IX_CourseOffering_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CourseOffering"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_CourseOffering_SchoolId_Unified_Auth",
       "table": {
         "schema": "edfi",
@@ -9162,18 +8898,6 @@
       "is_unique": false,
       "key_columns": [
         "CourseRepeatCodeDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_CourseTranscript_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CourseTranscript"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -9701,18 +9425,6 @@
       ]
     },
     {
-      "name": "IX_Credential_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Credential"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Credential_CredentialFieldDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -9986,18 +9698,6 @@
       ]
     },
     {
-      "name": "IX_CrisisEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "CrisisEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_CrisisEvent_CrisisTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -10068,18 +9768,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_DescriptorMapping_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "DescriptorMapping"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -10206,18 +9894,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_DisciplineAction_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "DisciplineAction"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -10488,18 +10164,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_DisciplineIncident_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "DisciplineIncident"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -10788,18 +10452,6 @@
       "is_unique": false,
       "key_columns": [
         "CostRateDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_EducationContent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationContent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -11253,18 +10905,6 @@
       ]
     },
     {
-      "name": "IX_EducationOrganizationInterventionPrescriptionAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationOrganizationInterventionPrescriptionAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_EducationOrganizationInterventionPrescriptionAssociation_EducationOrganization_EducationOrganizationId_Auth",
       "table": {
         "schema": "edfi",
@@ -11335,18 +10975,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_EducationOrganizationNetwork_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationOrganizationNetwork"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -11574,18 +11202,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_EducationOrganizationNetworkAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationOrganizationNetworkAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -12025,18 +11641,6 @@
       ]
     },
     {
-      "name": "IX_EducationOrganizationPeerAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationOrganizationPeerAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_EducationOrganizationPeerAssociation_EducationOrganization_EducationOrganizationId_Auth",
       "table": {
         "schema": "edfi",
@@ -12107,18 +11711,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_EducationServiceCenter_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationServiceCenter"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -12700,18 +12292,6 @@
       ]
     },
     {
-      "name": "IX_EvaluationRubricDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "EvaluationRubricDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_EvaluationRubricDimension_EvaluationRubricRatingLevelDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -12833,18 +12413,6 @@
       ]
     },
     {
-      "name": "IX_FeederSchoolAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "FeederSchoolAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_FeederSchoolAssociation_FeederSchool_SchoolId_FeederSchool_DocumentId",
       "table": {
         "schema": "edfi",
@@ -12930,18 +12498,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_FunctionDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "FunctionDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -13055,18 +12611,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_FundDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "FundDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -13227,18 +12771,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_Grade_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Grade"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -13444,18 +12976,6 @@
       ]
     },
     {
-      "name": "IX_GradebookEntry_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "GradebookEntry"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_GradebookEntry_GradebookEntryTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -13622,18 +13142,6 @@
       ]
     },
     {
-      "name": "IX_GradingPeriod_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "GradingPeriod"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_GradingPeriod_SchoolYear_SchoolYear_SchoolYear_DocumentId",
       "table": {
         "schema": "edfi",
@@ -13736,18 +13244,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_GraduationPlan_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "GraduationPlan"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -14303,18 +13799,6 @@
       ]
     },
     {
-      "name": "IX_Intervention_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Intervention"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Intervention_DeliveryMethodDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -14780,18 +14264,6 @@
       ]
     },
     {
-      "name": "IX_InterventionPrescription_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "InterventionPrescription"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_InterventionPrescription_DeliveryMethodDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -15254,18 +14726,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_InterventionStudy_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "InterventionStudy"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -15831,18 +15291,6 @@
       ]
     },
     {
-      "name": "IX_LearningStandard_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LearningStandard"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_LearningStandard_LearningStandardCategoryDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -16053,18 +15501,6 @@
       ]
     },
     {
-      "name": "IX_LearningStandardEquivalenceAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LearningStandardEquivalenceAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_LearningStandardEquivalenceAssociation_LearningStandardEquivalenceStrengthDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -16254,18 +15690,6 @@
       ]
     },
     {
-      "name": "IX_LocalAccount_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalAccount"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_LocalAccount_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -16405,18 +15829,6 @@
       ]
     },
     {
-      "name": "IX_LocalActual_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalActual"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_LocalActual_FinancialCollectionDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -16502,18 +15914,6 @@
       ]
     },
     {
-      "name": "IX_LocalBudget_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalBudget"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_LocalBudget_FinancialCollectionDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -16596,18 +15996,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_LocalContractedStaff_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalContractedStaff"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -16734,18 +16122,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_LocalEducationAgency_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalEducationAgency"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -17478,18 +16854,6 @@
       ]
     },
     {
-      "name": "IX_LocalEncumbrance_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalEncumbrance"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_LocalEncumbrance_FinancialCollectionDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -17572,18 +16936,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_LocalPayroll_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "LocalPayroll"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -17701,18 +17053,6 @@
       ]
     },
     {
-      "name": "IX_Location_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Location"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Location_School_SchoolId_Auth",
       "table": {
         "schema": "edfi",
@@ -17798,18 +17138,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_ObjectDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ObjectDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -17964,18 +17292,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_ObjectiveAssessment_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ObjectiveAssessment"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -18308,18 +17624,6 @@
       ]
     },
     {
-      "name": "IX_OpenStaffPosition_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "OpenStaffPosition"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_OpenStaffPosition_EducationOrganization_EducationOrganizationId_Auth",
       "table": {
         "schema": "edfi",
@@ -18529,18 +17833,6 @@
       ]
     },
     {
-      "name": "IX_OperationalUnitDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "OperationalUnitDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_OperationalUnitDimension",
       "table": {
         "schema": "edfi",
@@ -18663,18 +17955,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_OrganizationDepartment_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "OrganizationDepartment"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -19254,18 +18534,6 @@
       ]
     },
     {
-      "name": "IX_Person_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Person"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Person_SourceSystemDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -19338,18 +18606,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_PostSecondaryEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "PostSecondaryEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -19465,18 +18721,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_PostSecondaryInstitution_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "PostSecondaryInstitution"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -20107,18 +19351,6 @@
       ]
     },
     {
-      "name": "IX_Program_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Program"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Program_ProgramTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -20246,18 +19478,6 @@
       ]
     },
     {
-      "name": "IX_ProgramDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_ProgramDimension",
       "table": {
         "schema": "edfi",
@@ -20368,18 +19588,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -20497,18 +19705,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluationElement_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluationElement"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -20749,18 +19945,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluationObjective_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluationObjective"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -21043,18 +20227,6 @@
       ]
     },
     {
-      "name": "IX_ProjectDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ProjectDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_ProjectDimension",
       "table": {
         "schema": "edfi",
@@ -21165,18 +20337,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_ReportCard_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "ReportCard"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -21490,18 +20650,6 @@
       ]
     },
     {
-      "name": "IX_RestraintEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "RestraintEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_RestraintEvent_DisciplineIncident_IncidentIdentifier_SchoolId_Unified_DisciplineIncident_DocumentId",
       "table": {
         "schema": "edfi",
@@ -21789,18 +20937,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_School_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -22530,18 +21666,6 @@
       ]
     },
     {
-      "name": "IX_SchoolYearType_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SchoolYearType"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_SchoolYearType",
       "table": {
         "schema": "edfi",
@@ -22612,18 +21736,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_Section_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Section"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -22803,18 +21915,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SectionAttendanceTakenEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SectionAttendanceTakenEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -23166,18 +22266,6 @@
       ]
     },
     {
-      "name": "IX_Session_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Session"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Session_SchoolYear_SchoolYear_SchoolYear_DocumentId",
       "table": {
         "schema": "edfi",
@@ -23387,18 +22475,6 @@
       ]
     },
     {
-      "name": "IX_SourceDimension_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SourceDimension"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "PK_SourceDimension",
       "table": {
         "schema": "edfi",
@@ -23524,18 +22600,6 @@
       ]
     },
     {
-      "name": "IX_Staff_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Staff"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Staff_HighestCompletedLevelOfEducationDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -23644,18 +22708,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StaffAbsenceEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffAbsenceEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -23953,18 +23005,6 @@
       ]
     },
     {
-      "name": "IX_StaffCohortAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffCohortAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StaffCohortAssociation_Staff_DocumentId_Auth",
       "table": {
         "schema": "edfi",
@@ -24104,18 +23144,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StaffDisciplineIncidentAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffDisciplineIncidentAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -24269,18 +23297,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StaffEducationOrganizationAssignmentAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffEducationOrganizationAssignmentAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -24500,18 +23516,6 @@
       ]
     },
     {
-      "name": "IX_StaffEducationOrganizationContactAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffEducationOrganizationContactAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StaffEducationOrganizationContactAssociation_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -24700,18 +23704,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StaffEducationOrganizationEmploymentAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffEducationOrganizationEmploymentAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -25251,18 +24243,6 @@
       ]
     },
     {
-      "name": "IX_StaffLeave_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffLeave"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StaffLeave_StaffLeaveEventCategoryDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -25475,18 +24455,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StaffProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -25719,18 +24687,6 @@
       ]
     },
     {
-      "name": "IX_StaffSchoolAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffSchoolAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StaffSchoolAssociation_SchoolId_Unified_Auth",
       "table": {
         "schema": "edfi",
@@ -25956,18 +24912,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StaffSectionAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffSectionAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -26221,18 +25165,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StateEducationAgency_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StateEducationAgency"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -26938,18 +25870,6 @@
       ]
     },
     {
-      "name": "IX_Student_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Student"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Student_Person_PersonId_Person_SourceSystemDescriptor_DescriptorId_Person_DocumentId",
       "table": {
         "schema": "edfi",
@@ -27034,18 +25954,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentAcademicRecord_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAcademicRecord"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -27579,18 +26487,6 @@
       ]
     },
     {
-      "name": "IX_StudentAssessment_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAssessment"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentAssessment_EventCircumstanceDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -27842,18 +26738,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentAssessmentEducationOrganizationAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAssessmentEducationOrganizationAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -28163,18 +27047,6 @@
       ]
     },
     {
-      "name": "IX_StudentAssessmentRegistration_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAssessmentRegistration"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentAssessmentRegistration_PlatformTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -28441,18 +27313,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentAssessmentRegistrationBatteryPartAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAssessmentRegistrationBatteryPartAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -28897,18 +27757,6 @@
       ]
     },
     {
-      "name": "IX_StudentCTEProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentCTEProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentCTEProgramAssociation_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -29185,18 +28033,6 @@
       ]
     },
     {
-      "name": "IX_StudentCohortAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentCohortAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentCohortAssociation_Student_DocumentId_Auth",
       "table": {
         "schema": "edfi",
@@ -29334,18 +28170,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentCompetencyObjective_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentCompetencyObjective"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -29627,18 +28451,6 @@
       ]
     },
     {
-      "name": "IX_StudentContactAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentContactAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentContactAssociation_RelationDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -29726,18 +28538,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentDisciplineIncidentBehaviorAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentDisciplineIncidentBehaviorAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -29961,18 +28761,6 @@
       ]
     },
     {
-      "name": "IX_StudentDisciplineIncidentNonOffenderAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentDisciplineIncidentNonOffenderAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentDisciplineIncidentNonOffenderAssociation_DisciplineIncident_IncidentIdentifier_DisciplineIncident_SchoolId__3ac01dab79",
       "table": {
         "schema": "edfi",
@@ -30126,18 +28914,6 @@
       ]
     },
     {
-      "name": "IX_StudentEducationOrganizationAssessmentAccommodation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentEducationOrganizationAssessmentAccommodation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentEducationOrganizationAssessmentAccommodation_Student_DocumentId_Auth",
       "table": {
         "schema": "edfi",
@@ -30288,18 +29064,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentEducationOrganizationAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentEducationOrganizationAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -31616,18 +30380,6 @@
       ]
     },
     {
-      "name": "IX_StudentEducationOrganizationResponsibilityAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentEducationOrganizationResponsibilityAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentEducationOrganizationResponsibilityAssociation_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -31770,18 +30522,6 @@
       ]
     },
     {
-      "name": "IX_StudentGradebookEntry_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentGradebookEntry"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth",
       "table": {
         "schema": "edfi",
@@ -31880,18 +30620,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentHealth_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentHealth"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -32209,18 +30937,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentHomelessProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentHomelessProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -32563,18 +31279,6 @@
       ]
     },
     {
-      "name": "IX_StudentInterventionAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentInterventionAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentInterventionAssociation_Intervention_EducationOrganizationId_Auth",
       "table": {
         "schema": "edfi",
@@ -32752,18 +31456,6 @@
       ]
     },
     {
-      "name": "IX_StudentInterventionAttendanceEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentInterventionAttendanceEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentInterventionAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -32876,18 +31568,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentLanguageInstructionProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentLanguageInstructionProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -33242,18 +31922,6 @@
       ]
     },
     {
-      "name": "IX_StudentMigrantEducationProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentMigrantEducationProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentMigrantEducationProgramAssociation_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -33491,18 +32159,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentNeglectedOrDelinquentProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentNeglectedOrDelinquentProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -33907,18 +32563,6 @@
       ]
     },
     {
-      "name": "IX_StudentProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentProgramAssociation_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -34159,18 +32803,6 @@
       ]
     },
     {
-      "name": "IX_StudentProgramAttendanceEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentProgramAttendanceEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentProgramAttendanceEvent_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -34308,18 +32940,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentProgramEvaluation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentProgramEvaluation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -34748,18 +33368,6 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSchoolAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentSchoolAssociation_EnrollmentTypeDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -35139,18 +33747,6 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAttendanceEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSchoolAttendanceEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentSchoolAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -35277,18 +33873,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentSchoolFoodServiceProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSchoolFoodServiceProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -35532,18 +34116,6 @@
       ]
     },
     {
-      "name": "IX_StudentSection504ProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSection504ProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentSection504ProgramAssociation_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -35755,18 +34327,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentSectionAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSectionAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -36001,18 +34561,6 @@
       ]
     },
     {
-      "name": "IX_StudentSectionAttendanceEvent_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSectionAttendanceEvent"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentSectionAttendanceEvent_EducationalEnvironmentDescriptor_DescriptorId",
       "table": {
         "schema": "edfi",
@@ -36175,18 +34723,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentSpecialEducationProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSpecialEducationProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -36720,18 +35256,6 @@
       ]
     },
     {
-      "name": "IX_StudentSpecialEducationProgramEligibilityAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSpecialEducationProgramEligibilityAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_StudentSpecialEducationProgramEligibilityAssociation_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -36904,18 +35428,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentTitleIPartAProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentTitleIPartAProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -37168,18 +35680,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_StudentTransportation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentTransportation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -37458,18 +35958,6 @@
       ]
     },
     {
-      "name": "IX_Survey_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "Survey"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_Survey_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
@@ -37594,18 +36082,6 @@
       ]
     },
     {
-      "name": "IX_SurveyCourseAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveyCourseAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_SurveyCourseAssociation_Survey_Namespace_Auth",
       "table": {
         "schema": "edfi",
@@ -37678,18 +36154,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SurveyProgramAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveyProgramAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -37789,18 +36253,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SurveyQuestion_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveyQuestion"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -37956,18 +36408,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SurveyQuestionResponse_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveyQuestionResponse"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -38176,18 +36616,6 @@
       ]
     },
     {
-      "name": "IX_SurveyResponse_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveyResponse"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_SurveyResponse_SurveyResponderChoiceContact_ContactUniqueId_SurveyResponderChoiceContact_DocumentId",
       "table": {
         "schema": "edfi",
@@ -38305,18 +36733,6 @@
       ]
     },
     {
-      "name": "IX_SurveyResponseEducationOrganizationTargetAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveyResponseEducationOrganizationTargetAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_SurveyResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Auth",
       "table": {
         "schema": "edfi",
@@ -38402,18 +36818,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SurveyResponseStaffTargetAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveyResponseStaffTargetAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -38571,18 +36975,6 @@
       ]
     },
     {
-      "name": "IX_SurveySection_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveySection"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_SurveySection_Survey_Namespace_Survey_SurveyIdentifier_Survey_DocumentId",
       "table": {
         "schema": "edfi",
@@ -38658,18 +37050,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SurveySectionAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveySectionAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -38757,18 +37137,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SurveySectionResponse_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveySectionResponse"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {
@@ -38867,18 +37235,6 @@
       ]
     },
     {
-      "name": "IX_SurveySectionResponseEducationOrganizationTargetAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveySectionResponseEducationOrganizationTargetAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
-      ]
-    },
-    {
       "name": "IX_SurveySectionResponseEducationOrganizationTargetAssociation_EducationOrganization_EducationOrganizationId_Auth",
       "table": {
         "schema": "edfi",
@@ -38965,18 +37321,6 @@
       "is_unique": false,
       "key_columns": [
         "ContentVersion"
-      ]
-    },
-    {
-      "name": "IX_SurveySectionResponseStaffTargetAssociation_CreatedByOwnershipTokenId",
-      "table": {
-        "schema": "edfi",
-        "name": "SurveySectionResponseStaffTargetAssociation"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "CreatedByOwnershipTokenId"
       ]
     },
     {

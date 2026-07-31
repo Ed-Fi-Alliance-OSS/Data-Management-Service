@@ -520,8 +520,6 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_NamingStressItem_ContentVersion" ON "edfi"."NamingStressItem" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_NamingStressItem_CreatedByOwnershipTokenId" ON "edfi"."NamingStressItem" ("CreatedByOwnershipTokenId");
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_NamingStressItem_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN

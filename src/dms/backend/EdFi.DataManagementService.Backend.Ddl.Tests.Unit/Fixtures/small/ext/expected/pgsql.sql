@@ -593,8 +593,6 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_SchoolExtensionAddress_BaseCollectionItemId_Schoo_8db7cde2b1" ON "sample"."SchoolExtensionAddress" ("BaseCollectionItemId", "School_DocumentId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()

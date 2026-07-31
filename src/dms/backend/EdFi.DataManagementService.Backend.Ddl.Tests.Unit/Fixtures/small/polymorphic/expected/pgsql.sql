@@ -598,11 +598,7 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ContentVersion" ON "edfi"."LocalEducationAgency" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_CreatedByOwnershipTokenId" ON "edfi"."LocalEducationAgency" ("CreatedByOwnershipTokenId");
-
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_School_CreatedByOwnershipTokenId" ON "edfi"."School" ("CreatedByOwnershipTokenId");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
 SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
