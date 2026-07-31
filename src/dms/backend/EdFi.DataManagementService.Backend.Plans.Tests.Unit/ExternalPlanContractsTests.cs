@@ -813,7 +813,7 @@ public class Given_ExternalPlanContracts
             ResultShape: new ExternalPlans.DocumentReferenceLookupResultShape(
                 DocumentIdOrdinal: 0,
                 DocumentUuidOrdinal: 1,
-                ResourceKeyIdOrdinal: 2
+                DiscriminatorOrdinal: 2
             ),
             SourcesInOrder: []
         );
@@ -822,7 +822,7 @@ public class Given_ExternalPlanContracts
             ResultShape: new ExternalPlans.DocumentReferenceLookupResultShape(
                 DocumentIdOrdinal: 0,
                 DocumentUuidOrdinal: 1,
-                ResourceKeyIdOrdinal: 2
+                DiscriminatorOrdinal: 2
             ),
             SourcesInOrder:
             [

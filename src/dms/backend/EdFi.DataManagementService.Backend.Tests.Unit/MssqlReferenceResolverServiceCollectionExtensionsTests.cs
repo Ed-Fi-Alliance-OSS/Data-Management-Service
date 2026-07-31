@@ -135,7 +135,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
     private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
             throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
     }
 

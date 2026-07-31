@@ -27,16 +27,18 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 // DMS-1145 task 30 — FK non-null but auxiliary-lookup miss. The plan frames this as
 // "concurrent delete inside the same command/transaction", but the read-time observation
-// is identical to any orphan FK: hydration table holds a non-null FK whose target row no
-// longer exists in dms.Document, so the auxiliary lookup's INNER JOIN dms.Document drops
-// it. Reconstitution must surface the reference's identity fields and silently suppress
-// link emission — no exception.
+// is identical to any orphan FK: the hydration table holds a non-null FK whose TARGET ROOT
+// row (edfi.School) does not exist, so the auxiliary lookup's INNER JOIN against the target
+// root table drops it. Reconstitution must surface the reference's identity fields and
+// silently suppress link emission — no exception.
 //
-// To produce the orphan deterministically without DDL surgery on dms.Document (which
-// edfi.School itself FK-references), this test drops the local
-// FK_AcademicWeek_School_RefKey constraint and updates the academic-week row's
-// School_DocumentId column to a phantom value. The CHECK constraint
-// CK_AcademicWeek_School_AllNone stays satisfied (School_SchoolId is also non-null).
+// The orphan is manufactured target-side: a dms.Document row is created for a School that
+// has NO edfi.School root row, the local FK_AcademicWeek_School_RefKey constraint is
+// dropped, and the academic-week row's School_DocumentId is pointed at that DocumentId. The
+// CHECK constraint CK_AcademicWeek_School_AllNone stays satisfied (School_SchoolId is also
+// non-null). This shape is deliberately sharper than a phantom id: the referenced document
+// IS resolvable in dms.Document, so only a lookup that joins the target root table can
+// suppress the link.
 
 [TestFixture]
 [NonParallelizable]
@@ -49,14 +51,15 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
     private const int SchoolId = 255901;
     private const string WeekIdentifier = "Week-2025-08-15";
 
-    // Far-from-realistic DocumentId for the orphan target. Picked to be (a) non-null so
-    // hydration emits the schoolReference identity, and (b) effectively impossible to
-    // collide with a real DocumentId for the lifetime of the test database.
-    private const long PhantomSchoolDocumentId = 9_223_372_036_854_775_806L;
-
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("aaaaaaaa-3000-0000-0000-000000000001")
+    );
+
+    // A School document that exists ONLY in dms.Document — no edfi.School root row. The
+    // auxiliary lookup joins the target root table, so this document is unreachable from it.
+    private static readonly DocumentUuid OrphanedSchoolDocumentUuid = new(
+        Guid.Parse("aaaaaaaa-3000-0000-0000-00000000000f")
     );
     private static readonly DocumentUuid AcademicWeekDocumentUuid = new(
         Guid.Parse("bbbbbbbb-3000-0000-0000-000000000002")
@@ -160,10 +163,9 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
-        short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
-        Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
+        Dictionary<string, DocumentLinkSlugTriple> slugByDiscriminator = new(StringComparer.Ordinal)
         {
-            [schoolResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{SchoolResource.ProjectName}:{SchoolResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
                 EndpointName: "schools",
                 ResourceName: "School"
@@ -171,7 +173,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(
-                new DeterministicLinkSlugResolver(slugByResourceKeyId)
+                new DeterministicLinkSlugResolver(slugByDiscriminator)
             )
         );
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);
@@ -354,12 +356,19 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             .QueryDocuments(request);
     }
 
-    // Orphan-FK fabricator. Drops the AcademicWeek -> School FK constraint, then updates the
-    // School_DocumentId column to a phantom value. Reconstitution at read time will see a
-    // non-null FK whose target is missing from dms.Document — the exact "auxiliary lookup
-    // miss" condition the test asserts behavior for.
+    // Orphan-FK fabricator. Creates a School document that exists only in dms.Document (no
+    // edfi.School root row), drops the AcademicWeek -> School FK constraint, then points the
+    // academic week's School_DocumentId at it. Reconstitution at read time sees a non-null FK
+    // whose target root row is missing — the exact "auxiliary lookup miss" condition the test
+    // asserts behavior for.
     private async Task OrphanAcademicWeekSchoolReferenceAsync()
     {
+        short schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        long orphanedSchoolDocumentId = await InsertDocumentAsync(
+            OrphanedSchoolDocumentUuid.Value,
+            schoolResourceKeyId
+        );
+
         await _database.ExecuteNonQueryAsync(
             """
             ALTER TABLE "edfi"."AcademicWeek" DROP CONSTRAINT IF EXISTS "FK_AcademicWeek_School_RefKey";
@@ -368,12 +377,12 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE "edfi"."AcademicWeek"
-            SET "School_DocumentId" = @phantomDocumentId
+            SET "School_DocumentId" = @orphanedSchoolDocumentId
             WHERE "DocumentId" IN (
                 SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @academicWeekUuid
             );
             """,
-            new NpgsqlParameter("phantomDocumentId", PhantomSchoolDocumentId),
+            new NpgsqlParameter("orphanedSchoolDocumentId", orphanedSchoolDocumentId),
             new NpgsqlParameter("academicWeekUuid", AcademicWeekDocumentUuid.Value)
         );
     }

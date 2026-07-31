@@ -878,14 +878,14 @@ internal static class ReadPlanProjectionContractValidator
 
         var resultShape = lookup.ResultShape;
 
-        if (resultShape is not { DocumentIdOrdinal: 0, DocumentUuidOrdinal: 1, ResourceKeyIdOrdinal: 2 })
+        if (resultShape is not { DocumentIdOrdinal: 0, DocumentUuidOrdinal: 1, DiscriminatorOrdinal: 2 })
         {
             throw createException(
                 "document-reference lookup plan result shape must expose DocumentId at ordinal '0', "
-                    + "DocumentUuid at ordinal '1', and ResourceKeyId at ordinal '2', but was "
+                    + "DocumentUuid at ordinal '1', and Discriminator at ordinal '2', but was "
                     + $"DocumentId='{resultShape.DocumentIdOrdinal}', "
                     + $"DocumentUuid='{resultShape.DocumentUuidOrdinal}', "
-                    + $"ResourceKeyId='{resultShape.ResourceKeyIdOrdinal}'"
+                    + $"Discriminator='{resultShape.DiscriminatorOrdinal}'"
             );
         }
 

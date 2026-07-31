@@ -26,9 +26,9 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 // DMS-1145 task 29b (MSSQL side) — abstract reference link emission. Course's
 // educationOrganizationReference is the abstract EducationOrganization binding; the
-// concrete target is School. The deterministic resolver registers ONLY School's
-// ResourceKeyId, so a miss (wrong resolution) would throw with a clear message rather
-// than producing a misleading link.
+// concrete target is School. The deterministic resolver registers ONLY the concrete
+// "Ed-Fi:School" discriminator, so a miss (wrong resolution) would throw with a clear
+// message rather than producing a misleading link.
 
 [TestFixture]
 [NonParallelizable]
@@ -160,10 +160,9 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
 
-        short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
-        Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
+        Dictionary<string, DocumentLinkSlugTriple> slugByDiscriminator = new(StringComparer.Ordinal)
         {
-            [schoolResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{SchoolResource.ProjectName}:{SchoolResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
                 EndpointName: "schools",
                 ResourceName: "School"
@@ -171,7 +170,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(
-                new DeterministicLinkSlugResolver(slugByResourceKeyId)
+                new DeterministicLinkSlugResolver(slugByDiscriminator)
             )
         );
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);

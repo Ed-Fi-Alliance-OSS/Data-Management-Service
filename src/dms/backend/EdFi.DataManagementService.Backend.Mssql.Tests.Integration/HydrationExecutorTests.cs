@@ -743,6 +743,19 @@ public class Given_A_Reference_Bearing_Resource_Mssql
                 Calendar_DocumentId bigint NULL,
                 Calendar_CalendarCode varchar(60) NULL
             );
+
+            -- Reference-target root tables. The document-reference auxiliary lookup resolves
+            -- each reference through its TARGET resource's root table (never dms.Document), so
+            -- the referenced School/Calendar roots must exist in this test schema.
+            CREATE TABLE hydref.School (
+                DocumentId bigint PRIMARY KEY,
+                DocumentUuid uniqueidentifier NOT NULL
+            );
+
+            CREATE TABLE hydref.Calendar (
+                DocumentId bigint PRIMARY KEY,
+                DocumentUuid uniqueidentifier NOT NULL
+            );
             """
         );
 
@@ -754,6 +767,16 @@ public class Given_A_Reference_Bearing_Resource_Mssql
                 (401, 'aaaa0001-0001-0001-0001-aaaa00000001'),
                 (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
                 (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
+
+            INSERT INTO hydref.School (DocumentId, DocumentUuid)
+            VALUES
+                (10, 'cccc0010-0010-0010-0010-cccc00000010'),
+                (20, 'cccc0020-0020-0020-0020-cccc00000020');
+
+            INSERT INTO hydref.Calendar (DocumentId, DocumentUuid)
+            VALUES
+                (50, 'dddd0050-0050-0050-0050-dddd00000050'),
+                (60, 'dddd0060-0060-0060-0060-dddd00000060');
 
             INSERT INTO hydref.StudentSchoolAssociation (DocumentId, School_DocumentId, School_SchoolId, Calendar_DocumentId, Calendar_CalendarCode)
             VALUES

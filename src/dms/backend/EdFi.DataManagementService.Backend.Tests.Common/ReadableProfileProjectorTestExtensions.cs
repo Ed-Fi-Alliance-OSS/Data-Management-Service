@@ -70,7 +70,7 @@ public static class ReadableProfileProjectorTestExtensions
 
     private sealed class NoOpDocumentLinkSlugResolver : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
             new("ed-fi", "noop", "NoOp");
     }
 }

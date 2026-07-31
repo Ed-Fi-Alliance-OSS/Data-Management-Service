@@ -351,7 +351,7 @@ public class Given_RowNode_With_An_Already_Attached_Child_Row
 public class Given_PageReconstitutionContext_With_Duplicate_Document_Link_Lookup_Rows
 {
     private const long LookupDocumentId = 901L;
-    private const short ResourceKeyId = 7;
+    private const string Discriminator = "Ed-Fi:School";
     private static readonly Guid _documentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
 
     private PageReconstitutionContext _context = null!;
@@ -360,8 +360,8 @@ public class Given_PageReconstitutionContext_With_Duplicate_Document_Link_Lookup
     public void SetUp()
     {
         var pageData = PageReconstitutionContextTestData.CreatePageWithDocumentLinkLookup([
-            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
-            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, Discriminator),
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, Discriminator),
         ]);
 
         _context = PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage);
@@ -374,7 +374,7 @@ public class Given_PageReconstitutionContext_With_Duplicate_Document_Link_Lookup
         _context
             .DocumentLinkLookupById[LookupDocumentId]
             .Should()
-            .Be(new DocumentLinkLookupEntry(_documentUuid, ResourceKeyId));
+            .Be(new DocumentLinkLookupEntry(_documentUuid, Discriminator));
     }
 }
 
@@ -382,25 +382,26 @@ public class Given_PageReconstitutionContext_With_Duplicate_Document_Link_Lookup
 public class Given_PageReconstitutionContext_With_Conflicting_Document_Link_Lookup_Rows
 {
     private const long LookupDocumentId = 901L;
-    private const short ResourceKeyId = 7;
+    private const string Discriminator = "Ed-Fi:School";
+    private const string ConflictingDiscriminator = "Ed-Fi:LocalEducationAgency";
     private static readonly Guid _documentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
     private static readonly Guid _conflictingDocumentUuid = Guid.Parse(
         "99998888-7777-6666-5555-444433332222"
     );
 
     [TestCase(true, false, TestName = "different_DocumentUuid")]
-    [TestCase(false, true, TestName = "different_ResourceKeyId")]
+    [TestCase(false, true, TestName = "different_Discriminator")]
     public void It_should_fail_fast_when_duplicate_DocumentId_resolves_to_different_link_target(
         bool changeDocumentUuid,
-        bool changeResourceKeyId
+        bool changeDiscriminator
     )
     {
         var pageData = PageReconstitutionContextTestData.CreatePageWithDocumentLinkLookup([
-            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, Discriminator),
             new DocumentReferenceLookupRow(
                 LookupDocumentId,
                 changeDocumentUuid ? _conflictingDocumentUuid : _documentUuid,
-                changeResourceKeyId ? (short)(ResourceKeyId + 1) : ResourceKeyId
+                changeDiscriminator ? ConflictingDiscriminator : Discriminator
             ),
         ]);
 

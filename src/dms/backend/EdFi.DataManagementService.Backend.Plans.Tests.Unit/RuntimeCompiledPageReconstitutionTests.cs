@@ -33,7 +33,10 @@ public class Given_DocumentReconstituter_With_A_Runtime_Compiled_Page_For_Canoni
         var schoolModel = modelSet.ConcreteResourcesInNameOrder.Single(resource =>
             resource.ResourceKey.Resource == _schoolResource
         );
-        var readPlan = new ReadPlanCompiler(dialect).Compile(schoolModel.RelationalModel);
+        var readPlan = new ReadPlanCompiler(
+            dialect,
+            MappingSetCompiler.BuildDocumentReferenceLookupTargets(modelSet)
+        ).Compile(schoolModel.RelationalModel);
         var hydratedPage = RuntimeCompiledPageReconstitutionTestData.CreateHydratedPage(readPlan);
 
         _pageResult = DocumentReconstituter.ReconstitutePage(readPlan, hydratedPage);

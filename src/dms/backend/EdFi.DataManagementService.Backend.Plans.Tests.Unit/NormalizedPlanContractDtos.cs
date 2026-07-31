@@ -625,7 +625,7 @@ internal sealed record DocumentReferenceLookupPlanDto
 internal sealed record DocumentReferenceLookupResultShapeDto(
     int DocumentIdOrdinal,
     int DocumentUuidOrdinal,
-    int ResourceKeyIdOrdinal
+    int DiscriminatorOrdinal
 );
 
 internal sealed record DocumentReferenceLookupSourceDto(DbTableNameDto Table, string FkColumn);

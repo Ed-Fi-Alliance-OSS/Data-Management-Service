@@ -156,10 +156,11 @@ internal sealed class RowNode
 internal sealed record LinkEmissionContext(MappingSet MappingSet, IDocumentLinkSlugResolver SlugResolver);
 
 /// <summary>
-/// One entry in the page-scoped <c>DocumentId → (DocumentUuid, ResourceKeyId)</c> map sourced
-/// from <see cref="HydratedDocumentReferenceLookup"/>.
+/// One entry in the page-scoped <c>DocumentId → (DocumentUuid, Discriminator)</c> map sourced
+/// from <see cref="HydratedDocumentReferenceLookup"/>. <c>Discriminator</c> is the referenced
+/// document's <c>"{ProjectName}:{ResourceName}"</c> concrete resource discriminator.
 /// </summary>
-internal readonly record struct DocumentLinkLookupEntry(Guid DocumentUuid, short ResourceKeyId);
+internal readonly record struct DocumentLinkLookupEntry(Guid DocumentUuid, string Discriminator);
 
 internal sealed class PageReconstitutionContext
 {
@@ -199,7 +200,7 @@ internal sealed class PageReconstitutionContext
     public IReadOnlyDictionary<long, string> DescriptorUrisById { get; }
 
     /// <summary>
-    /// Page-scoped <c>DocumentId → (DocumentUuid, ResourceKeyId)</c> map sourced from
+    /// Page-scoped <c>DocumentId → (DocumentUuid, Discriminator)</c> map sourced from
     /// <see cref="HydratedDocumentReferenceLookup"/>. Empty when the read plan had no
     /// document-reference auxiliary lookup.
     /// </summary>
@@ -481,13 +482,13 @@ internal sealed class PageReconstitutionContext
 
         foreach (var row in documentReferenceLookup.Rows)
         {
-            var entry = new DocumentLinkLookupEntry(row.DocumentUuid, row.ResourceKeyId);
+            var entry = new DocumentLinkLookupEntry(row.DocumentUuid, row.Discriminator);
 
             if (lookup.TryGetValue(row.DocumentId, out var existing))
             {
                 if (
                     existing.DocumentUuid != entry.DocumentUuid
-                    || existing.ResourceKeyId != entry.ResourceKeyId
+                    || !string.Equals(existing.Discriminator, entry.Discriminator, StringComparison.Ordinal)
                 )
                 {
                     throw new InvalidOperationException(

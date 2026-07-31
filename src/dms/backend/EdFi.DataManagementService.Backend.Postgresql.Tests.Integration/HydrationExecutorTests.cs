@@ -596,6 +596,18 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 "Program_ProgramName" varchar(100) NULL,
                 "ProgramTypeDescriptor_DescriptorId" bigint NULL
             );
+
+            -- Reference-target root tables: the document-reference auxiliary lookup resolves
+            -- each reference through its TARGET resource's root table, not dms."Document".
+            CREATE TABLE hydfastpath."School" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL
+            );
+
+            CREATE TABLE hydfastpath."Program" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL
+            );
             """
         );
 
@@ -621,6 +633,15 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 (12001, 'uri://ed-fi.org/GradeLevelDescriptor', 'Ninth grade', 'Ninth grade', 'edfi.GradeLevelDescriptor', 'uri://ed-fi.org/GradeLevelDescriptor#Ninth grade'),
                 (12002, 'uri://ed-fi.org/ProgramTypeDescriptor', 'Gifted', 'Gifted', 'edfi.ProgramTypeDescriptor', 'uri://ed-fi.org/ProgramTypeDescriptor#Gifted'),
                 (12003, 'uri://ed-fi.org/GradeLevelDescriptor', 'Tenth grade', 'Tenth grade', 'edfi.GradeLevelDescriptor', 'uri://ed-fi.org/GradeLevelDescriptor#Tenth grade');
+
+            INSERT INTO hydfastpath."School" ("DocumentId", "DocumentUuid")
+            VALUES
+                (11001, '00000000-0000-0000-0000-000000011001'),
+                (11003, '00000000-0000-0000-0000-000000011003');
+
+            INSERT INTO hydfastpath."Program" ("DocumentId", "DocumentUuid")
+            VALUES
+                (11002, '00000000-0000-0000-0000-000000011002');
 
             INSERT INTO hydfastpath."StudentSchoolAssociation"
                 ("DocumentId", "School_DocumentId", "School_SchoolId", "EntryGradeLevelDescriptor_DescriptorId")
@@ -722,9 +743,9 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
     [Test]
     public void It_reads_root_sourced_single_document_metadata_from_the_root_table()
     {
-        // The metadata SELECT is the first statement and is the only one aliased "d"; the
-        // document-reference lookup still joins dms."Document" (alias "doc") for referenced
-        // documents, which this task does not change.
+        // The metadata SELECT is the first statement and is the only one aliased "d". The
+        // document-reference lookup no longer joins dms."Document" at all — it resolves each
+        // reference through the target resource's own root table.
         _rootSourcedFastPathBatchSql
             .Should()
             .StartWith(
@@ -1011,7 +1032,21 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             ]
         );
 
-        return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        // The auxiliary lookup resolves each reference target through the target resource's own
+        // root table; this isolated fixture declares those targets explicitly.
+        var targetsByResource = new Dictionary<QualifiedResourceName, DocumentReferenceLookupTarget>
+        {
+            [schoolResource] = new(
+                LookupTable: new DbTableName(schema, "School"),
+                DiscriminatorLiteral: "Ed-Fi:School"
+            ),
+            [programResource] = new(
+                LookupTable: new DbTableName(schema, "Program"),
+                DiscriminatorLiteral: "Ed-Fi:Program"
+            ),
+        };
+
+        return new ReadPlanCompiler(SqlDialect.Pgsql, targetsByResource).Compile(model);
     }
 
     private static DbColumnModel CreateColumn(
@@ -1254,6 +1289,19 @@ public class Given_A_Reference_Bearing_Resource
                 "Calendar_DocumentId" bigint NULL,
                 "Calendar_CalendarCode" varchar(60) NULL
             );
+
+            -- Reference-target root tables. The document-reference auxiliary lookup resolves
+            -- each reference through its TARGET resource's root table (never dms."Document"),
+            -- so the referenced School/Calendar roots must exist in this test schema.
+            CREATE TABLE hydref."School" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL
+            );
+
+            CREATE TABLE hydref."Calendar" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL
+            );
             """
         );
 
@@ -1267,6 +1315,16 @@ public class Given_A_Reference_Bearing_Resource
                 (401, 'aaaa0001-0001-0001-0001-aaaa00000001'),
                 (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
                 (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
+
+            INSERT INTO hydref."School" ("DocumentId", "DocumentUuid")
+            VALUES
+                (10, 'cccc0010-0010-0010-0010-cccc00000010'),
+                (20, 'cccc0020-0020-0020-0020-cccc00000020');
+
+            INSERT INTO hydref."Calendar" ("DocumentId", "DocumentUuid")
+            VALUES
+                (50, 'dddd0050-0050-0050-0050-dddd00000050'),
+                (60, 'dddd0060-0060-0060-0060-dddd00000060');
 
             INSERT INTO hydref."StudentSchoolAssociation" ("DocumentId", "School_DocumentId", "School_SchoolId", "Calendar_DocumentId", "Calendar_CalendarCode")
             VALUES

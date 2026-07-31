@@ -30,7 +30,10 @@ public class Given_MappingSetCompiler
         var relationalResources = fixture
             .RelationalResourceModels.Select(static model => model.Resource)
             .ToArray();
-        var readPlanCompiler = new ReadPlanCompiler(fixture.ModelSet.Dialect);
+        var readPlanCompiler = new ReadPlanCompiler(
+            fixture.ModelSet.Dialect,
+            MappingSetCompiler.BuildDocumentReferenceLookupTargets(fixture.ModelSet)
+        );
 
         mappingSet.ReadPlansByResource.Keys.Should().BeEquivalentTo(relationalResources);
         mappingSet.WritePlansByResource.Keys.Should().BeEquivalentTo(relationalResources);
@@ -1151,7 +1154,11 @@ public class Given_MappingSetCompiler
                         "$.schoolReference",
                         [new JsonPathSegment.Property("schoolReference")]
                     ),
-                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                    // The document-reference auxiliary lookup resolves each target through the
+                    // TARGET resource's own root table, so the target has to be a resource this
+                    // fixture actually models. Program is the fixture's other relational-tables
+                    // resource; the School-flavored column and path names are historical.
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Program")
                 ),
                 new DbColumnModel(
                     ColumnName: new DbColumnName("School_RefSchoolId"),
@@ -1177,7 +1184,7 @@ public class Given_MappingSetCompiler
             ),
             Table: rootTable.Table,
             FkColumn: new DbColumnName("School_DocumentId"),
-            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "Program"),
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(

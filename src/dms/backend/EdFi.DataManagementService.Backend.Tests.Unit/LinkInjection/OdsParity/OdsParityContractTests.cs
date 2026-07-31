@@ -49,7 +49,7 @@ public class OdsParityContractTests
             ReferenceJsonPath: "$.educationOrganizationReference",
             // V1 contract: abstract reference's link.rel is the concrete subclass name
             // (School), NOT the abstract type (EducationOrganization). Same wire value
-            // ODS would emit; same value DMS emits via ResourceKeyId-based resolution.
+            // ODS would emit; same value DMS emits via discriminator-based resolution.
             ExpectedRel: "School",
             ExpectedProjectEndpointName: "ed-fi",
             ExpectedEndpointName: "schools",
@@ -193,7 +193,7 @@ public class OdsParityContractTests
 
     private const long DocumentRowId = 1L;
     private const long ReferencedDocumentId = 901L;
-    private const short ReferencedResourceKeyId = 7;
+    private const string ReferencedDiscriminator = "Ed-Fi:School";
 
     /// <summary>
     /// Extracts the property name from a single-segment-root reference path
@@ -366,7 +366,7 @@ public class OdsParityContractTests
                 new DocumentReferenceLookupRow(
                     ReferencedDocumentId,
                     referencedDocumentUuid,
-                    ReferencedResourceKeyId
+                    ReferencedDiscriminator
                 ),
             ]),
         };
@@ -413,7 +413,7 @@ public class OdsParityContractTests
 
     private sealed class StubSlugResolver(DocumentLinkSlugTriple slug) : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) => slug;
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) => slug;
     }
 
     private static JsonNode LoadFixture(string fileName)

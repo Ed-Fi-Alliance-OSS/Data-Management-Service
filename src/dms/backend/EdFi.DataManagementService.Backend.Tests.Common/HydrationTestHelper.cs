@@ -359,6 +359,21 @@ public static class HydrationTestHelper
             DescriptorEdgeSources: []
         );
 
-        return new ReadPlanCompiler(dialect).Compile(model);
+        // The auxiliary lookup resolves each reference target through the target resource's own
+        // root table, so this isolated fixture must declare where School/Calendar live. Callers
+        // that execute the compiled SQL create those tables in the same test schema.
+        var targetsByResource = new Dictionary<QualifiedResourceName, DocumentReferenceLookupTarget>
+        {
+            [new QualifiedResourceName("Ed-Fi", "School")] = new(
+                LookupTable: new DbTableName(new DbSchemaName(schemaName), "School"),
+                DiscriminatorLiteral: "Ed-Fi:School"
+            ),
+            [new QualifiedResourceName("Ed-Fi", "Calendar")] = new(
+                LookupTable: new DbTableName(new DbSchemaName(schemaName), "Calendar"),
+                DiscriminatorLiteral: "Ed-Fi:Calendar"
+            ),
+        };
+
+        return new ReadPlanCompiler(dialect, targetsByResource).Compile(model);
     }
 }

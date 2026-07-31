@@ -14,14 +14,14 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core;
 
 /// <summary>
-/// Core-side implementation of <see cref="IDocumentLinkSlugResolver"/>. Walks
-/// <see cref="MappingSet.ResourceKeyById"/> to the <see cref="ResourceKeyEntry"/>, then
+/// Core-side implementation of <see cref="IDocumentLinkSlugResolver"/>. Splits the auxiliary
+/// lookup's <c>"{ProjectName}:{ResourceName}"</c> discriminator into its two parts, then
 /// resolves the concrete <see cref="ProjectSchema"/> through
 /// <see cref="IApiSchemaProvider"/> to produce the <c>(projectEndpointName,
 /// endpointName, resourceName)</c> slug triple used by reference-link emission.
 /// </summary>
 /// <remarks>
-/// The per-resource-key cache is held in a <see cref="ConditionalWeakTable{TKey,TValue}"/>
+/// The per-discriminator cache is held in a <see cref="ConditionalWeakTable{TKey,TValue}"/>
 /// keyed by <see cref="MappingSet"/> instance, mirroring
 /// <c>RelationalDeleteConstraintResolver</c>. Cache entries are reused for the lifetime of
 /// the mapping set and released when the mapping set is collected, so a schema swap (which
@@ -37,49 +37,59 @@ public sealed class DocumentLinkSlugResolver(
     private readonly ILogger<DocumentLinkSlugResolver> _logger = logger;
     private readonly ConditionalWeakTable<
         MappingSet,
-        ConcurrentDictionary<short, DocumentLinkSlugTriple>
+        ConcurrentDictionary<string, DocumentLinkSlugTriple>
     > _cacheByMappingSet = new();
 
-    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId)
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator)
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(discriminator);
 
         var cache = _cacheByMappingSet.GetValue(
             mappingSet,
-            static _ => new ConcurrentDictionary<short, DocumentLinkSlugTriple>()
+            static _ => new ConcurrentDictionary<string, DocumentLinkSlugTriple>(StringComparer.Ordinal)
         );
-        return cache.GetOrAdd(resourceKeyId, key => ResolveCore(mappingSet, key));
+        return cache.GetOrAdd(discriminator, key => ResolveCore(mappingSet, key));
     }
 
-    private DocumentLinkSlugTriple ResolveCore(MappingSet mappingSet, short resourceKeyId)
+    private DocumentLinkSlugTriple ResolveCore(MappingSet mappingSet, string discriminator)
     {
-        if (!mappingSet.ResourceKeyById.TryGetValue(resourceKeyId, out ResourceKeyEntry? entry))
+        // The discriminator is "{ProjectName}:{ResourceName}" — the same literal the abstract
+        // identity maintenance triggers store and the auxiliary lookup's concrete branches embed.
+        // Split on the FIRST ':' so a resource name containing a colon stays intact.
+        int separatorIndex = discriminator.IndexOf(':', StringComparison.Ordinal);
+
+        if (separatorIndex <= 0 || separatorIndex == discriminator.Length - 1)
         {
             throw new InvalidOperationException(
-                $"ResourceKeyId {resourceKeyId} is not present in mapping set "
-                    + $"'{mappingSet.Key.EffectiveSchemaHash}' (deployment invariant)."
+                $"Document-reference discriminator '{discriminator}' is not in the expected "
+                    + $"'{{ProjectName}}:{{ResourceName}}' form (mapping set "
+                    + $"'{mappingSet.Key.EffectiveSchemaHash}', deployment invariant)."
             );
         }
 
+        string projectNameValue = discriminator[..separatorIndex];
+        string resourceNameValue = discriminator[(separatorIndex + 1)..];
+
         ApiSchemaDocuments apiSchemaDocuments = new(_apiSchemaProvider.GetApiSchemaNodes(), _logger);
 
-        ProjectName projectName = new(entry.Resource.ProjectName);
+        ProjectName projectName = new(projectNameValue);
         ProjectSchema? projectSchema = apiSchemaDocuments.FindProjectSchemaForProjectName(projectName);
         if (projectSchema is null)
         {
             throw new InvalidOperationException(
                 $"ProjectSchema for ProjectName '{projectName.Value}' was not found while resolving "
-                    + $"ResourceKeyId {resourceKeyId} (deployment invariant)."
+                    + $"document-reference discriminator '{discriminator}' (deployment invariant)."
             );
         }
 
-        ResourceName resourceName = new(entry.Resource.ResourceName);
+        ResourceName resourceName = new(resourceNameValue);
         EndpointName endpointName = projectSchema.GetEndpointNameFromResourceName(resourceName);
 
         return new DocumentLinkSlugTriple(
             ProjectEndpointName: projectSchema.ProjectEndpointName.Value,
             EndpointName: endpointName.Value,
-            ResourceName: entry.Resource.ResourceName
+            ResourceName: resourceNameValue
         );
     }
 }

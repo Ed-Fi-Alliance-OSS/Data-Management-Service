@@ -146,7 +146,7 @@ public sealed record KeysetTableContract(SqlRelationRef.TempTable Table, DbColum
 
 /// <summary>
 /// Page-batched document-reference auxiliary lookup plan. Emits a single result set of
-/// <c>(DocumentId, DocumentUuid, ResourceKeyId)</c> rows, one per distinct
+/// <c>(DocumentId, DocumentUuid, Discriminator)</c> rows, one per distinct
 /// <c>..._DocumentId</c> value reachable from the page's source tables.
 /// </summary>
 public sealed record DocumentReferenceLookupPlan
@@ -209,11 +209,15 @@ public sealed record DocumentReferenceLookupPlan
 /// </summary>
 /// <param name="DocumentIdOrdinal">Zero-based <c>DocumentId</c> ordinal.</param>
 /// <param name="DocumentUuidOrdinal">Zero-based <c>DocumentUuid</c> ordinal.</param>
-/// <param name="ResourceKeyIdOrdinal">Zero-based <c>ResourceKeyId</c> ordinal.</param>
+/// <param name="DiscriminatorOrdinal">
+/// Zero-based <c>Discriminator</c> ordinal. Carries <c>"{ProjectName}:{ResourceName}"</c> for the
+/// concrete target resource — a compile-time literal on concrete branches, the
+/// <c>{Abstract}Identity</c> table's stored value on abstract branches.
+/// </param>
 public sealed record DocumentReferenceLookupResultShape(
     int DocumentIdOrdinal,
     int DocumentUuidOrdinal,
-    int ResourceKeyIdOrdinal
+    int DiscriminatorOrdinal
 );
 
 /// <summary>

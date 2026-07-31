@@ -183,7 +183,7 @@ public static class HydrationReader
     /// <remarks>
     /// Expected columns at fixed ordinals aligned to
     /// <see cref="DocumentReferenceLookupResultShape"/>:
-    /// 0=DocumentId (bigint), 1=DocumentUuid (uuid), 2=ResourceKeyId (smallint).
+    /// 0=DocumentId (bigint), 1=DocumentUuid (uuid), 2=Discriminator (text).
     /// </remarks>
     /// <param name="reader">The data reader positioned at the lookup result set.</param>
     /// <param name="lookupPlan">The lookup plan describing the expected ordinals.</param>
@@ -202,7 +202,7 @@ public static class HydrationReader
         var expectedColumnCount =
             Math.Max(
                 Math.Max(resultShape.DocumentIdOrdinal, resultShape.DocumentUuidOrdinal),
-                resultShape.ResourceKeyIdOrdinal
+                resultShape.DiscriminatorOrdinal
             ) + 1;
 
         if (reader.FieldCount != expectedColumnCount)
@@ -221,7 +221,7 @@ public static class HydrationReader
                 new DocumentReferenceLookupRow(
                     DocumentId: reader.GetInt64(resultShape.DocumentIdOrdinal),
                     DocumentUuid: reader.GetGuid(resultShape.DocumentUuidOrdinal),
-                    ResourceKeyId: reader.GetInt16(resultShape.ResourceKeyIdOrdinal)
+                    Discriminator: reader.GetString(resultShape.DiscriminatorOrdinal)
                 )
             );
         }

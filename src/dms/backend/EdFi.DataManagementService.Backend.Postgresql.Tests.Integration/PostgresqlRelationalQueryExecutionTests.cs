@@ -138,7 +138,7 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
 
 internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
 {
-    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
         new(ProjectEndpointName: "test", EndpointName: "tests", ResourceName: "Test");
 }
 

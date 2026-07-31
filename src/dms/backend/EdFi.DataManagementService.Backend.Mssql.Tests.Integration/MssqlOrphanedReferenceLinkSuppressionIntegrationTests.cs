@@ -24,10 +24,12 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-// DMS-1145 task 30 (MSSQL side) — FK non-null but auxiliary-lookup miss. Orphan is
-// produced by dropping FK_AcademicWeek_School_RefKey and updating the
-// AcademicWeek.School_DocumentId column to a phantom value. CK_AcademicWeek_School_AllNone
-// stays satisfied because School_SchoolId remains non-null.
+// DMS-1145 task 30 (MSSQL side) — FK non-null but auxiliary-lookup miss. The orphan is
+// manufactured target-side: a dms.Document row is created for a School with NO edfi.School
+// root row, FK_AcademicWeek_School_RefKey is dropped, and AcademicWeek.School_DocumentId is
+// pointed at it. The auxiliary lookup joins the TARGET ROOT table, so the reference resolves
+// to nothing and the link is suppressed. CK_AcademicWeek_School_AllNone stays satisfied
+// because School_SchoolId remains non-null.
 
 [TestFixture]
 [NonParallelizable]
@@ -40,11 +42,15 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
     private const int MaximumPageSize = 500;
     private const int SchoolId = 255901;
     private const string WeekIdentifier = "Week-2025-08-15";
-    private const long PhantomSchoolDocumentId = 9_223_372_036_854_775_806L;
-
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("aaaaaaaa-3000-0000-0000-000000000001")
+    );
+
+    // A School document that exists ONLY in dms.Document — no edfi.School root row. The
+    // auxiliary lookup joins the target root table, so this document is unreachable from it.
+    private static readonly DocumentUuid OrphanedSchoolDocumentUuid = new(
+        Guid.Parse("aaaaaaaa-3000-0000-0000-00000000000f")
     );
     private static readonly DocumentUuid AcademicWeekDocumentUuid = new(
         Guid.Parse("bbbbbbbb-3000-0000-0000-000000000002")
@@ -155,10 +161,9 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
 
-        short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
-        Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
+        Dictionary<string, DocumentLinkSlugTriple> slugByDiscriminator = new(StringComparer.Ordinal)
         {
-            [schoolResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{SchoolResource.ProjectName}:{SchoolResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
                 EndpointName: "schools",
                 ResourceName: "School"
@@ -166,7 +171,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(
-                new DeterministicLinkSlugResolver(slugByResourceKeyId)
+                new DeterministicLinkSlugResolver(slugByDiscriminator)
             )
         );
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);
@@ -351,6 +356,12 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
 
     private async Task OrphanAcademicWeekSchoolReferenceAsync()
     {
+        short schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        long orphanedSchoolDocumentId = await InsertDocumentAsync(
+            OrphanedSchoolDocumentUuid.Value,
+            schoolResourceKeyId
+        );
+
         await _database.ExecuteNonQueryAsync(
             """
             IF EXISTS (
@@ -364,12 +375,12 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE [edfi].[AcademicWeek]
-            SET [School_DocumentId] = @phantomDocumentId
+            SET [School_DocumentId] = @orphanedSchoolDocumentId
             WHERE [DocumentId] IN (
                 SELECT [DocumentId] FROM [dms].[Document] WHERE [DocumentUuid] = @academicWeekUuid
             );
             """,
-            new SqlParameter("@phantomDocumentId", PhantomSchoolDocumentId),
+            new SqlParameter("@orphanedSchoolDocumentId", orphanedSchoolDocumentId),
             new SqlParameter("@academicWeekUuid", AcademicWeekDocumentUuid.Value)
         );
     }

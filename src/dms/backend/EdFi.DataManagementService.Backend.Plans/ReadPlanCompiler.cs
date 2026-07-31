@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
@@ -13,13 +14,51 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <summary>
 /// Compiles hydration read plans for all relational-table resource tables in dependency order.
 /// </summary>
-public sealed class ReadPlanCompiler(SqlDialect dialect)
+public sealed class ReadPlanCompiler
 {
-    private readonly SqlDialect _dialect = dialect;
-    private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
-    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
-    private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler = new(dialect);
-    private readonly DocumentReferenceLookupPlanCompiler _documentReferenceLookupPlanCompiler = new(dialect);
+    private static readonly FrozenDictionary<
+        QualifiedResourceName,
+        DocumentReferenceLookupTarget
+    > _noDocumentReferenceLookupTargets = FrozenDictionary<
+        QualifiedResourceName,
+        DocumentReferenceLookupTarget
+    >.Empty;
+
+    private readonly SqlDialect _dialect;
+    private readonly ISqlDialect _sqlDialect;
+    private readonly IPlanSqlDialect _planSqlDialect;
+    private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler;
+    private readonly DocumentReferenceLookupPlanCompiler _documentReferenceLookupPlanCompiler;
+    private readonly IReadOnlyDictionary<
+        QualifiedResourceName,
+        DocumentReferenceLookupTarget
+    > _documentReferenceLookupTargets;
+
+    /// <summary>
+    /// Creates a compiler with no document-reference lookup targets. Valid only for resources
+    /// whose model carries no <c>DocumentReferenceBindings</c> — the auxiliary lookup compiler
+    /// throws for any binding whose target resource is absent from the map. Whole-schema
+    /// compilation goes through <see cref="MappingSetCompiler"/>, which supplies the
+    /// authoritative cross-resource target map.
+    /// </summary>
+    /// <param name="dialect">Target SQL dialect.</param>
+    public ReadPlanCompiler(SqlDialect dialect)
+        : this(dialect, _noDocumentReferenceLookupTargets) { }
+
+    internal ReadPlanCompiler(
+        SqlDialect dialect,
+        IReadOnlyDictionary<QualifiedResourceName, DocumentReferenceLookupTarget> documentReferenceLookupTargets
+    )
+    {
+        ArgumentNullException.ThrowIfNull(documentReferenceLookupTargets);
+
+        _dialect = dialect;
+        _sqlDialect = SqlDialectFactory.Create(dialect);
+        _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
+        _descriptorProjectionPlanCompiler = new DescriptorProjectionPlanCompiler(dialect);
+        _documentReferenceLookupPlanCompiler = new DocumentReferenceLookupPlanCompiler(dialect);
+        _documentReferenceLookupTargets = documentReferenceLookupTargets;
+    }
 
     /// <summary>
     /// Returns <see langword="true" /> when the resource uses relational-table storage.
@@ -126,7 +165,8 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         var documentReferenceLookupPlan = _documentReferenceLookupPlanCompiler.Compile(
             hydrationModel,
             keysetTable,
-            hydrationPlanMetadata.TablesByName
+            hydrationPlanMetadata.TablesByName,
+            _documentReferenceLookupTargets
         );
 
         var readPlan = new ResourceReadPlan(

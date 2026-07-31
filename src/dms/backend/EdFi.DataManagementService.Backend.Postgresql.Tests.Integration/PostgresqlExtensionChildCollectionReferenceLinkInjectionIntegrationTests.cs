@@ -163,10 +163,9 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
-        short busResourceKeyId = _mappingSet.ResourceKeyIdByResource[BusResource];
-        Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
+        Dictionary<string, DocumentLinkSlugTriple> slugByDiscriminator = new(StringComparer.Ordinal)
         {
-            [busResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{BusResource.ProjectName}:{BusResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "sample",
                 EndpointName: "buses",
                 ResourceName: "Bus"
@@ -174,7 +173,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(
-                new DeterministicLinkSlugResolver(slugByResourceKeyId)
+                new DeterministicLinkSlugResolver(slugByDiscriminator)
             )
         );
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);

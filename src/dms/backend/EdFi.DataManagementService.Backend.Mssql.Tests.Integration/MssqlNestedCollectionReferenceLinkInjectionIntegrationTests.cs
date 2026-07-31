@@ -204,16 +204,14 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
 
-        short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
-        short classPeriodResourceKeyId = _mappingSet.ResourceKeyIdByResource[ClassPeriodResource];
-        Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
+        Dictionary<string, DocumentLinkSlugTriple> slugByDiscriminator = new(StringComparer.Ordinal)
         {
-            [schoolResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{SchoolResource.ProjectName}:{SchoolResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
                 EndpointName: "schools",
                 ResourceName: "School"
             ),
-            [classPeriodResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{ClassPeriodResource.ProjectName}:{ClassPeriodResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
                 EndpointName: "classPeriods",
                 ResourceName: "ClassPeriod"
@@ -221,7 +219,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(
-                new DeterministicLinkSlugResolver(slugByResourceKeyId)
+                new DeterministicLinkSlugResolver(slugByDiscriminator)
             )
         );
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);

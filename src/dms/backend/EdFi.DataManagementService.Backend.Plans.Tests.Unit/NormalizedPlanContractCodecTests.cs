@@ -518,7 +518,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_roundtrip_multiple_reference_projection_table_plans_without_collapsing_dependency_order()
     {
         var multiTableModel = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, multiTableModel);
         var encoded = NormalizedPlanContractCodec.Encode(readPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, multiTableModel);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
@@ -556,7 +556,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_roundtrip_grouped_reference_projection_fields_through_normalized_dto_without_losing_logical_field_order_or_ordinals()
     {
         var groupedModel = CreateGroupedReferenceProjectionResourceModel();
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(groupedModel);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, groupedModel);
         var encoded = NormalizedPlanContractCodec.Encode(readPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, groupedModel);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
@@ -592,7 +592,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_roundtrip_multi_table_resource_read_plan_through_normalized_dto_without_collapsing_story_05_shape()
     {
         var multiTableModel = CreateSupportedMultiTableModel();
-        var multiTableReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
+        var multiTableReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, multiTableModel);
         var encoded = NormalizedPlanContractCodec.Encode(multiTableReadPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, multiTableModel);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
@@ -1398,7 +1398,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_reference_identity_projection_table_is_duplicated()
     {
         var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, model);
         var encoded = NormalizedPlanContractCodec.Encode(readPlan);
         var projectionTablePlans = encoded.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
         var mutated = encoded with
@@ -1687,7 +1687,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_projection_table_plan_order_is_reordered()
     {
         var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, model);
         var mutatedReadPlan = CreateReadPlanWithSwappedReferenceProjectionTablePlans(readPlan);
         var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
 
@@ -1713,7 +1713,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_an_extra_reference_projection_table_plan_is_appended()
     {
         var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, model);
         var mutatedReadPlan = CreateReadPlanWithAppendedReferenceProjectionTablePlan(
             readPlan,
             sourceIndex: 1
@@ -1864,7 +1864,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_grouped_reference_projection_field_is_duplicated()
     {
         var model = CreateGroupedReferenceProjectionResourceModel();
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, model);
         var mutatedReadPlan = CreateReadPlanWithDuplicatedReferenceProjectionField(
             readPlan,
             sourceIndex: 0,
@@ -1890,7 +1890,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_grouped_reference_projection_field_is_omitted()
     {
         var model = CreateGroupedReferenceProjectionResourceModel();
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, model);
         var mutatedReadPlan = CreateReadPlanWithOmittedReferenceProjectionField(
             readPlan,
             omittedFieldIndex: 1
@@ -1911,7 +1911,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_grouped_reference_projection_field_order_is_reordered()
     {
         var model = CreateGroupedReferenceProjectionResourceModel();
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, model);
         var mutatedReadPlan = CreateReadPlanWithSwappedReferenceProjectionFields(readPlan);
         var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
         var mutated = CreateEncodedReadPlanWithMutatedSingleReferenceProjectionFields(
@@ -2514,7 +2514,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                 ResultShape: new DocumentReferenceLookupResultShape(
                     DocumentIdOrdinal: 0,
                     DocumentUuidOrdinal: 1,
-                    ResourceKeyIdOrdinal: 2
+                    DiscriminatorOrdinal: 2
                 ),
                 SourcesInOrder:
                 [

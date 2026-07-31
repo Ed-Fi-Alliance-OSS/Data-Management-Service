@@ -17,7 +17,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit;
 public class DocumentLinkSlugResolverTests
 {
     private const short SchoolResourceKeyId = 1;
-    private const short UnknownResourceKeyId = 99;
+    private const string SchoolDiscriminator = "Ed-Fi:School";
+    private const string UnknownResourceDiscriminator = "Ed-Fi:NotARealResource";
+    private const string MissingProjectDiscriminator = "MissingProject:School";
 
     private static ApiSchemaDocumentNodes BuildEdFiSchoolApiSchema() =>
         new ApiSchemaBuilder()
@@ -88,12 +90,12 @@ public class DocumentLinkSlugResolverTests
         );
 
     [Test]
-    public void It_resolves_valid_resource_key_to_expected_triple()
+    public void It_resolves_a_valid_discriminator_to_the_expected_triple()
     {
         var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
         var mappingSet = BuildMappingSetWith(SchoolEntry());
 
-        var triple = resolver.Resolve(mappingSet, SchoolResourceKeyId);
+        var triple = resolver.Resolve(mappingSet, SchoolDiscriminator);
 
         triple
             .Should()
@@ -107,31 +109,54 @@ public class DocumentLinkSlugResolverTests
     }
 
     [Test]
-    public void It_throws_when_resource_key_id_is_not_in_mapping_set()
+    public void It_throws_when_the_discriminator_resource_is_not_in_the_project_schema()
     {
         var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
         var mappingSet = BuildMappingSetWith(SchoolEntry());
 
-        Action act = () => resolver.Resolve(mappingSet, UnknownResourceKeyId);
+        Action act = () => resolver.Resolve(mappingSet, UnknownResourceDiscriminator);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [TestCase("", TestName = "empty")]
+    [TestCase("Ed-Fi", TestName = "no_separator")]
+    [TestCase(":School", TestName = "empty_project_name")]
+    [TestCase("Ed-Fi:", TestName = "empty_resource_name")]
+    public void It_throws_when_the_discriminator_is_not_well_formed(string discriminator)
+    {
+        var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
+        var mappingSet = BuildMappingSetWith(SchoolEntry());
+
+        Action act = () => resolver.Resolve(mappingSet, discriminator);
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage($"*ResourceKeyId {UnknownResourceKeyId}*not present*");
+            .WithMessage("*is not in the expected*ProjectName*ResourceName*form*");
+    }
+
+    [Test]
+    public void It_splits_the_discriminator_on_the_first_colon_only()
+    {
+        // A resource name containing a colon must survive the split intact — the project name
+        // is everything before the FIRST ':'.
+        var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
+        var mappingSet = BuildMappingSetWith(SchoolEntry());
+
+        Action act = () => resolver.Resolve(mappingSet, "MissingProject:School:Extra");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*ProjectSchema for ProjectName 'MissingProject'*");
     }
 
     [Test]
     public void It_throws_when_project_schema_is_absent_for_the_resolved_project_name()
     {
         var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
-        var orphanedEntry = new ResourceKeyEntry(
-            ResourceKeyId: SchoolResourceKeyId,
-            Resource: new QualifiedResourceName("MissingProject", "School"),
-            ResourceVersion: "5.0.0",
-            IsAbstractResource: false
-        );
-        var mappingSet = BuildMappingSetWith(orphanedEntry);
+        var mappingSet = BuildMappingSetWith(SchoolEntry());
 
-        Action act = () => resolver.Resolve(mappingSet, SchoolResourceKeyId);
+        Action act = () => resolver.Resolve(mappingSet, MissingProjectDiscriminator);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -139,13 +164,13 @@ public class DocumentLinkSlugResolverTests
     }
 
     [Test]
-    public void It_returns_the_cached_triple_on_repeat_call_for_the_same_key()
+    public void It_returns_the_cached_triple_on_repeat_call_for_the_same_discriminator()
     {
         var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
         var mappingSet = BuildMappingSetWith(SchoolEntry());
 
-        var first = resolver.Resolve(mappingSet, SchoolResourceKeyId);
-        var second = resolver.Resolve(mappingSet, SchoolResourceKeyId);
+        var first = resolver.Resolve(mappingSet, SchoolDiscriminator);
+        var second = resolver.Resolve(mappingSet, SchoolDiscriminator);
 
         second.Should().BeSameAs(first);
     }
@@ -154,14 +179,14 @@ public class DocumentLinkSlugResolverTests
     public void It_isolates_cache_entries_per_mapping_set_instance()
     {
         // The ConditionalWeakTable key is the MappingSet instance, so two different mapping
-        // sets — even with the same resource-key id — get separate cache entries. This is
+        // sets — even with the same discriminator — get separate cache entries. This is
         // what enables old entries to be GC'd when their MappingSet is released.
         var resolver = CreateResolver(BuildEdFiSchoolApiSchema());
         var firstMappingSet = BuildMappingSetWith(SchoolEntry());
         var secondMappingSet = BuildMappingSetWith(SchoolEntry());
 
-        var first = resolver.Resolve(firstMappingSet, SchoolResourceKeyId);
-        var second = resolver.Resolve(secondMappingSet, SchoolResourceKeyId);
+        var first = resolver.Resolve(firstMappingSet, SchoolDiscriminator);
+        var second = resolver.Resolve(secondMappingSet, SchoolDiscriminator);
 
         // Equal values (same resolution rules), but the cache produced separate instances
         // — one per mapping-set entry — confirming the per-instance partitioning.

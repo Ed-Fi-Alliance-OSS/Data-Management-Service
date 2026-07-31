@@ -456,7 +456,7 @@ public class Given_MappingSetLookupExtensions
             .WithMessage(
                 $"Read plan lookup failed for resource '{FormatResource(_projectionMetadataResource)}' in mapping set "
                     + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
-                    + "reference identity projection binding '$.schoolReference' on table 'edfi.StudentProjection' FK column 'School_DocumentId' targets 'Ed-Fi.Calendar', but FK column DbColumnModel.TargetResource is 'Ed-Fi.School'. This indicates an internal compilation/selection bug."
+                    + "reference identity projection binding '$.schoolReference' on table 'edfi.StudentProjection' FK column 'School_DocumentId' targets 'Ed-Fi.Calendar', but FK column DbColumnModel.TargetResource is 'Ed-Fi.Program'. This indicates an internal compilation/selection bug."
             );
     }
 
@@ -838,7 +838,7 @@ public class Given_MappingSetLookupExtensions
 
     private static ResourceReadPlan CreateReadPlan(RelationalResourceModel model)
     {
-        return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        return DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, model);
     }
 
     private static IReadOnlyDictionary<
@@ -1247,7 +1247,11 @@ public class Given_MappingSetLookupExtensions
                         "$.schoolReference",
                         [new JsonPathSegment.Property("schoolReference")]
                     ),
-                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                    // The document-reference auxiliary lookup resolves each target through the
+                    // TARGET resource's own root table, so the target has to be a resource this
+                    // fixture actually models. Program is the fixture's other relational-tables
+                    // resource; the School-flavored column and path names are historical.
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Program")
                 ),
                 new DbColumnModel(
                     ColumnName: new DbColumnName("School_RefSchoolId"),
@@ -1273,7 +1277,7 @@ public class Given_MappingSetLookupExtensions
             ),
             Table: rootTable.Table,
             FkColumn: new DbColumnName("School_DocumentId"),
-            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "Program"),
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(

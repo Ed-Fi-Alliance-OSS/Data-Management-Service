@@ -343,7 +343,7 @@ public class Given_RelationalReadMaterializer
     /// </summary>
     private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
             throw new InvalidOperationException(
                 "NoLinkSlugResolver should not be invoked for legacy (no-MappingSet) materializer requests."
             );
@@ -582,7 +582,7 @@ public class Given_RelationalReadMaterializer
 [Parallelizable]
 public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_Response
 {
-    private const short SchoolResourceKeyId = 7;
+    private const string SchoolDiscriminator = "Ed-Fi:School";
     private const long SchoolDocumentId = 901L;
 
     private static readonly Guid AcademicWeekDocumentUuid = Guid.Parse(
@@ -789,7 +789,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         )
         {
             DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
-                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator),
             ]),
         };
 
@@ -850,7 +850,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         )
         {
             DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
-                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator),
             ]),
         };
 
@@ -921,7 +921,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
         );
         var lookup = new HydratedDocumentReferenceLookup([
-            new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator),
         ]);
 
         var result = sut.Materialize(
@@ -1034,7 +1034,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         )
         {
             DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
-                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator),
             ]),
         };
 
@@ -1076,7 +1076,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         )
         {
             DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
-                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator),
             ]),
         };
 
@@ -1265,15 +1265,15 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
 
     private sealed class StubSlugResolver(DocumentLinkSlugTriple slug) : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) => slug;
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) => slug;
     }
 
     private sealed class ThrowingSlugResolver : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
             throw new InvalidOperationException(
                 "ThrowingSlugResolver was invoked; the no-link reconstitution overload should have been "
-                    + $"selected because the request omitted MappingSet. ResourceKeyId was {resourceKeyId}."
+                    + $"selected because the request omitted MappingSet. Discriminator was {discriminator}."
             );
     }
 }

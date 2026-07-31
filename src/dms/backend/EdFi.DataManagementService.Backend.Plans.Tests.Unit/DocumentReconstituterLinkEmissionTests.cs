@@ -19,13 +19,17 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
 {
-    private const short SchoolResourceKeyId = 7;
+    private const string SchoolDiscriminator = "Ed-Fi:School";
     private const long SchoolDocumentId = 901L;
 
     private static readonly Guid SchoolDocumentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
 
     private static readonly QualifiedResourceName _resource = new("Ed-Fi", "StudentSchoolAssociation");
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _educationOrganizationResource = new(
+        "Ed-Fi",
+        "EducationOrganization"
+    );
     private static readonly DbTableName _rootTableName = new(
         new DbSchemaName("edfi"),
         "StudentSchoolAssociation"
@@ -53,7 +57,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var resolver = new StubSlugResolver(_expectedSlug);
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
-            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator)],
             resolver: resolver
         );
 
@@ -61,7 +65,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         link["rel"]!.GetValue<string>().Should().Be("School");
         link["href"]!.GetValue<string>().Should().Be($"/ed-fi/schools/{SchoolDocumentUuid.ToString("D")}");
         resolver.Calls.Should().ContainSingle();
-        resolver.Calls[0].Should().Be((SchoolResourceKeyId));
+        resolver.Calls[0].Should().Be(SchoolDiscriminator);
     }
 
     [Test]
@@ -70,7 +74,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var resolver = new StubSlugResolver(_expectedSlug);
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
-            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator)],
             resolver: resolver
         );
 
@@ -91,7 +95,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var resolver = new StubSlugResolver(_expectedSlug);
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: null,
-            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)],
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator)],
             resolver: resolver
         );
 
@@ -136,7 +140,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         var readPlan = BuildReadPlan();
         var hydratedPage = BuildHydratedPage(
             schoolDocumentIdFk: SchoolDocumentId,
-            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)]
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator)]
         );
 
         var results = DocumentReconstituter.ReconstitutePage(readPlan, hydratedPage);
@@ -148,11 +152,13 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
     [Test]
     public void It_propagates_exceptions_from_the_resolver_unchanged()
     {
-        var resolver = new ThrowingSlugResolver(new InvalidOperationException("boom: unknown ResourceKeyId"));
+        var resolver = new ThrowingSlugResolver(
+            new InvalidOperationException("boom: unknown discriminator")
+        );
         var readPlan = BuildReadPlan();
         var hydratedPage = BuildHydratedPage(
             schoolDocumentIdFk: SchoolDocumentId,
-            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId)]
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator)]
         );
 
         Action act = () =>
@@ -162,25 +168,22 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
     }
 
     [Test]
-    public void It_resolves_concrete_subclass_for_abstract_reference_via_ResourceKeyId()
+    public void It_resolves_concrete_subclass_for_abstract_reference_via_the_lookup_discriminator()
     {
-        // The lookup row pins ResourceKeyId to the concrete subclass; the resolver must
-        // see that exact id even though the binding's TargetResource is the abstract type.
-        const short concreteSubclassResourceKeyId = 42;
-        var concreteSlug = new DocumentLinkSlugTriple(
-            ProjectEndpointName: "ed-fi",
-            EndpointName: "schools",
-            ResourceName: "School"
-        );
-        var resolver = new StubSlugResolver(concreteSlug);
+        // The {Abstract}Identity row pins the discriminator to the concrete subclass, so the
+        // resolver must see "Ed-Fi:School" even though the binding's TargetResource is the
+        // abstract EducationOrganization. Only the concrete discriminator is registered — an
+        // abstract one would throw.
+        var resolver = new StubSlugResolver(_expectedSlug, SchoolDiscriminator);
 
         var result = ReconstituteSingleDocument(
             schoolDocumentIdFk: SchoolDocumentId,
-            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, concreteSubclassResourceKeyId)],
-            resolver: resolver
+            lookupRows: [(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator)],
+            resolver: resolver,
+            targetResource: _educationOrganizationResource
         );
 
-        resolver.Calls.Should().ContainSingle().Which.Should().Be(concreteSubclassResourceKeyId);
+        resolver.Calls.Should().ContainSingle().Which.Should().Be(SchoolDiscriminator);
         result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
     }
 
@@ -210,10 +213,10 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
             link["href"]!.GetValue<string>().Should().Be(expectedHref);
         }
 
-        // Resolver is called per emission site (2 sites, 1 ResourceKeyId), proving the page-
+        // Resolver is called per emission site (2 sites, 1 discriminator), proving the page-
         // scoped lookup map serves both reference sites from the same single row.
         resolver.Calls.Should().HaveCount(2);
-        resolver.Calls.Should().AllBeEquivalentTo(SchoolResourceKeyId);
+        resolver.Calls.Should().AllBeEquivalentTo(SchoolDiscriminator);
     }
 
     private static HydratedPage BuildHydratedPageWithTwoDocumentsSharingSchool()
@@ -243,7 +246,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
         };
 
         var lookup = new HydratedDocumentReferenceLookup([
-            new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolDiscriminator),
         ]);
 
         return new HydratedPage(
@@ -259,7 +262,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
 
     private static JsonNode ReconstituteSingleDocument(
         long? schoolDocumentIdFk,
-        IReadOnlyList<(long DocumentId, Guid DocumentUuid, short ResourceKeyId)> lookupRows,
+        IReadOnlyList<(long DocumentId, Guid DocumentUuid, string Discriminator)> lookupRows,
         IDocumentLinkSlugResolver resolver,
         QualifiedResourceName? targetResource = null
     )
@@ -405,7 +408,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
 
     private static HydratedPage BuildHydratedPage(
         long? schoolDocumentIdFk,
-        IReadOnlyList<(long DocumentId, Guid DocumentUuid, short ResourceKeyId)> lookupRows
+        IReadOnlyList<(long DocumentId, Guid DocumentUuid, string Discriminator)> lookupRows
     )
     {
         var rootTableModel = BuildRootTableModel();
@@ -424,7 +427,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
             .. lookupRows.Select(r => new DocumentReferenceLookupRow(
                 r.DocumentId,
                 r.DocumentUuid,
-                r.ResourceKeyId
+                r.Discriminator
             )),
         ]);
 
@@ -481,23 +484,37 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
     private sealed class StubSlugResolver : IDocumentLinkSlugResolver
     {
         private readonly DocumentLinkSlugTriple _slug;
+        private readonly IReadOnlySet<string>? _registeredDiscriminators;
 
-        public StubSlugResolver(DocumentLinkSlugTriple slug)
+        public StubSlugResolver(DocumentLinkSlugTriple slug, params string[] registeredDiscriminators)
         {
             _slug = slug;
+            _registeredDiscriminators =
+                registeredDiscriminators.Length == 0
+                    ? null
+                    : new HashSet<string>(registeredDiscriminators, StringComparer.Ordinal);
         }
 
-        public List<short> Calls { get; } = [];
+        public List<string> Calls { get; } = [];
 
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId)
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator)
         {
-            Calls.Add(resourceKeyId);
+            Calls.Add(discriminator);
+
+            if (_registeredDiscriminators is not null && !_registeredDiscriminators.Contains(discriminator))
+            {
+                throw new InvalidOperationException(
+                    $"StubSlugResolver has no triple registered for discriminator '{discriminator}'."
+                );
+            }
+
             return _slug;
         }
     }
 
     private sealed class ThrowingSlugResolver(Exception exception) : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) => throw exception;
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
+            throw exception;
     }
 }

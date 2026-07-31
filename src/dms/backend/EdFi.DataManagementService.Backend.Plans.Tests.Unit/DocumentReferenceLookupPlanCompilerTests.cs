@@ -27,6 +27,10 @@ public class Given_DocumentReferenceLookupPlanCompiler
     private static readonly DbSchemaName _edfiSchema = new("edfi");
     private static readonly QualifiedResourceName _studentResource = new("Ed-Fi", "Student");
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _educationOrganizationResource = new(
+        "Ed-Fi",
+        "EducationOrganization"
+    );
 
     private static readonly JsonPathExpression _rootScope = new("$", []);
     private static readonly JsonPathExpression _addressesScope = new(
@@ -71,6 +75,119 @@ public class Given_DocumentReferenceLookupPlanCompiler
         lookup.SourcesInOrder.Should().ContainSingle();
         lookup.SourcesInOrder[0].Table.Name.Should().Be("StudentAddress");
         lookup.SourcesInOrder[0].FkColumn.Value.Should().Be("School_DocumentId");
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"", "\"", "'")]
+    [TestCase(SqlDialect.Mssql, "[", "]", "N'")]
+    public void It_should_resolve_a_concrete_target_through_the_target_root_table_and_a_literal_discriminator(
+        SqlDialect dialect,
+        string openQuote,
+        string closeQuote,
+        string literalPrefix
+    )
+    {
+        var model = BuildModelWithCollectionTableBinding();
+        var lookup = CompileLookup(model, dialect);
+
+        lookup.Should().NotBeNull();
+
+        foreach (
+            var sql in new[] { lookup!.SelectByKeysetSql, lookup.SelectBySingleDocumentSql }.Where(
+                static candidate => candidate is not null
+            )
+        )
+        {
+            sql!
+                .Should()
+                .Contain(
+                    $"INNER JOIN {openQuote}edfi{closeQuote}.{openQuote}School{closeQuote} tgt0 ON "
+                        + $"tgt0.{openQuote}DocumentId{closeQuote} = t0.{openQuote}School_DocumentId{closeQuote}",
+                    "a concrete document-reference target resolves through the target resource's root table"
+                );
+            sql.Should()
+                .Contain(
+                    $"tgt0.{openQuote}DocumentUuid{closeQuote} AS {openQuote}DocumentUuid{closeQuote}",
+                    "the public uuid now comes from the target root row"
+                );
+            sql.Should()
+                .Contain(
+                    $"{literalPrefix}Ed-Fi:School' AS {openQuote}Discriminator{closeQuote}",
+                    "a concrete branch embeds its discriminator as a compile-time literal"
+                );
+            sql.Should()
+                .NotContain(
+                    $"{openQuote}dms{closeQuote}.{openQuote}Document{closeQuote}",
+                    "the auxiliary lookup no longer joins dms.Document"
+                );
+            sql.Should().NotContain($"{openQuote}ResourceKeyId{closeQuote}");
+        }
+
+        lookup
+            .ResultShape.Should()
+            .Be(
+                new DocumentReferenceLookupResultShape(
+                    DocumentIdOrdinal: 0,
+                    DocumentUuidOrdinal: 1,
+                    DiscriminatorOrdinal: 2
+                )
+            );
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"", "\"")]
+    [TestCase(SqlDialect.Mssql, "[", "]")]
+    public void It_should_resolve_an_abstract_target_through_the_abstract_identity_table_discriminator(
+        SqlDialect dialect,
+        string openQuote,
+        string closeQuote
+    )
+    {
+        var model = BuildModelWithAbstractTargetBinding();
+        var lookup = CompileLookup(
+            model,
+            dialect,
+            targetsByResource: new Dictionary<QualifiedResourceName, DocumentReferenceLookupTarget>
+            {
+                [_educationOrganizationResource] = new(
+                    LookupTable: new DbTableName(_edfiSchema, "EducationOrganizationIdentity"),
+                    DiscriminatorLiteral: null
+                ),
+            }
+        );
+
+        lookup.Should().NotBeNull();
+        var sql = lookup!.SelectByKeysetSql;
+
+        sql.Should()
+            .Contain(
+                $"INNER JOIN {openQuote}edfi{closeQuote}.{openQuote}EducationOrganizationIdentity{closeQuote} tgt0 ON "
+                    + $"tgt0.{openQuote}DocumentId{closeQuote} = t0.{openQuote}EducationOrganization_DocumentId{closeQuote}",
+                "an abstract document-reference target resolves through the {Abstract}Identity table"
+            );
+        sql.Should()
+            .Contain(
+                $"tgt0.{openQuote}Discriminator{closeQuote} AS {openQuote}Discriminator{closeQuote}",
+                "an abstract branch selects the stored discriminator so the concrete subclass wins"
+            );
+        sql.Should().NotContain($"{openQuote}dms{closeQuote}.{openQuote}Document{closeQuote}");
+    }
+
+    [Test]
+    public void It_should_report_when_a_binding_target_resource_is_absent_from_the_target_map()
+    {
+        var model = BuildModelWithCollectionTableBinding();
+
+        Action act = () =>
+            CompileLookup(
+                model,
+                SqlDialect.Pgsql,
+                targetsByResource: new Dictionary<QualifiedResourceName, DocumentReferenceLookupTarget>()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile document-reference lookup plan for 'edfi.StudentAddress': document-reference binding '$.addresses[*].schoolReference' target resource 'Ed-Fi.School' is not present in the document-reference lookup target map."
+            );
     }
 
     [TestCase(SqlDialect.Pgsql, "\"", "\"")]
@@ -175,27 +292,88 @@ public class Given_DocumentReferenceLookupPlanCompiler
     /// </summary>
     private static DocumentReferenceLookupPlan? CompileLookup(
         RelationalResourceModel model,
-        SqlDialect dialect
-    )
-    {
-        var tablesByName = model.TablesInDependencyOrder.ToDictionary(
-            static table => table.Table,
-            static table => table
-        );
-
-        return CompileLookup(model, dialect, tablesByName);
-    }
-
-    private static DocumentReferenceLookupPlan? CompileLookup(
-        RelationalResourceModel model,
         SqlDialect dialect,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+        IReadOnlyDictionary<DbTableName, DbTableModel>? tablesByName = null,
+        IReadOnlyDictionary<QualifiedResourceName, DocumentReferenceLookupTarget>? targetsByResource = null
     )
     {
         var compiler = new DocumentReferenceLookupPlanCompiler(dialect);
         var keysetTable = KeysetTableConventions.GetKeysetTableContract(dialect);
 
-        return compiler.Compile(model, keysetTable, tablesByName);
+        return compiler.Compile(
+            model,
+            keysetTable,
+            tablesByName
+                ?? model.TablesInDependencyOrder.ToDictionary(
+                    static table => table.Table,
+                    static table => table
+                ),
+            targetsByResource ?? DefaultTargetsByResource
+        );
+    }
+
+    /// <summary>
+    /// Concrete-target map covering the School target used by the shared fixture models. The
+    /// lookup compiler resolves targets by literal name from this map — never against the
+    /// hydration-projected <c>tablesByName</c>, which carries only the OWNING tables.
+    /// </summary>
+    private static IReadOnlyDictionary<
+        QualifiedResourceName,
+        DocumentReferenceLookupTarget
+    > DefaultTargetsByResource
+    { get; } =
+        new Dictionary<QualifiedResourceName, DocumentReferenceLookupTarget>
+        {
+            [_schoolResource] = new(
+                LookupTable: new DbTableName(_edfiSchema, "School"),
+                DiscriminatorLiteral: "Ed-Fi:School"
+            ),
+        };
+
+    private static RelationalResourceModel BuildModelWithAbstractTargetBinding()
+    {
+        var educationOrganizationReferencePath = new JsonPathExpression(
+            "$.addresses[*].educationOrganizationReference",
+            [
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("educationOrganizationReference"),
+            ]
+        );
+        var rootTable = BuildStudentRootTable();
+        var addressTable = BuildStudentAddressTable(
+            extraDocumentFkColumns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("EducationOrganization_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: educationOrganizationReferencePath,
+                    TargetResource: _educationOrganizationResource
+                ),
+            ]
+        );
+
+        return new RelationalResourceModel(
+            Resource: _studentResource,
+            PhysicalSchema: _edfiSchema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, addressTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: educationOrganizationReferencePath,
+                    Table: addressTable.Table,
+                    FkColumn: new DbColumnName("EducationOrganization_DocumentId"),
+                    TargetResource: _educationOrganizationResource,
+                    IdentityBindings: []
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
     }
 
     private static RelationalResourceModel BuildModelWithCollectionTableBinding()

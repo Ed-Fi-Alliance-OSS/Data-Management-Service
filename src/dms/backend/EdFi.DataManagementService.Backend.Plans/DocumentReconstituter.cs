@@ -565,7 +565,7 @@ public static class DocumentReconstituter
             return;
         }
 
-        var slug = linkEmission.SlugResolver.Resolve(linkEmission.MappingSet, lookup.ResourceKeyId);
+        var slug = linkEmission.SlugResolver.Resolve(linkEmission.MappingSet, lookup.Discriminator);
         var href = $"/{slug.ProjectEndpointName}/{slug.EndpointName}/" + lookup.DocumentUuid.ToString("D");
 
         referenceObject["link"] = new JsonObject

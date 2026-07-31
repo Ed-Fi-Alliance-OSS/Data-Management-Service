@@ -6,28 +6,32 @@
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
-/// Resolves the project-endpoint slug, endpoint slug, and concrete resource name for a
-/// <see cref="ResourceKeyEntry"/> identified by its <c>ResourceKeyId</c>. Used by the
+/// Resolves the project-endpoint slug, endpoint slug, and concrete resource name for a resource
+/// identified by its <c>"{ProjectName}:{ResourceName}"</c> discriminator. Used by the
 /// reconstitution reference-writer to render <c>link.rel</c> / <c>link.href</c> values
 /// without taking a dependency on the API schema layer from <c>Backend.Plans</c>.
 /// </summary>
 public interface IDocumentLinkSlugResolver
 {
     /// <summary>
-    /// Resolves the slug triple for a resource key.
+    /// Resolves the slug triple for a resource discriminator.
     /// </summary>
     /// <param name="mappingSet">
-    /// The mapping set whose <see cref="MappingSet.ResourceKeyById"/> contains the key.
-    /// Passed per call rather than captured globally — the request contracts already
-    /// carry the mapping set, and the design specifies it as the resolution input.
+    /// The mapping set the resolution is scoped to. Passed per call rather than captured
+    /// globally — the request contracts already carry the mapping set, and it keys the
+    /// implementation's per-schema resolution cache.
     /// </param>
-    /// <param name="resourceKeyId">The resource key identifier.</param>
+    /// <param name="discriminator">
+    /// The referenced document's <c>"{ProjectName}:{ResourceName}"</c> discriminator (e.g.,
+    /// <c>Ed-Fi:School</c>) as returned by the document-reference auxiliary lookup. Always the
+    /// concrete resource, including for abstract references.
+    /// </param>
     /// <returns>The resolved slug triple.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="resourceKeyId"/> is not present in the mapping set,
-    /// or when the resolved project schema cannot be located (deployment invariants).
+    /// Thrown when <paramref name="discriminator"/> is not well-formed, or when the resolved
+    /// project schema / resource cannot be located (deployment invariants).
     /// </exception>
-    DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId);
+    DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator);
 }
 
 /// <summary>
@@ -41,8 +45,8 @@ public interface IDocumentLinkSlugResolver
 /// </param>
 /// <param name="ResourceName">
 /// The concrete resource name (e.g., <c>School</c>) used as <c>link.rel</c>. Always the
-/// concrete subclass for abstract references — resolved through
-/// <see cref="MappingSet.ResourceKeyById"/>, no discriminator parsing.
+/// concrete subclass for abstract references — the auxiliary lookup's discriminator already
+/// names the concrete resource, so no subclass inference happens here.
 /// </param>
 public sealed record DocumentLinkSlugTriple(
     string ProjectEndpointName,

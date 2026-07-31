@@ -22,8 +22,8 @@ public class Given_HydrationReader_With_Document_Reference_Lookup_Result_Sets
 
         using var reader = HydrationDescriptorResultTestHelper.CreateReader(
             CreateDocumentReferenceLookupTable(
-                (101L, Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"), (short)7),
-                (202L, Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"), (short)11)
+                (101L, Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"), "Ed-Fi:School"),
+                (202L, Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"), "Ed-Fi:Program")
             )
         );
 
@@ -39,12 +39,12 @@ public class Given_HydrationReader_With_Document_Reference_Lookup_Result_Sets
                 new DocumentReferenceLookupRow(
                     DocumentId: 101L,
                     DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
-                    ResourceKeyId: 7
+                    Discriminator: "Ed-Fi:School"
                 ),
                 new DocumentReferenceLookupRow(
                     DocumentId: 202L,
                     DocumentUuid: Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"),
-                    ResourceKeyId: 11
+                    Discriminator: "Ed-Fi:Program"
                 )
             );
     }
@@ -75,7 +75,7 @@ public class Given_HydrationReader_With_Document_Reference_Lookup_Result_Sets
             ResultShape: new DocumentReferenceLookupResultShape(
                 DocumentIdOrdinal: 0,
                 DocumentUuidOrdinal: 1,
-                ResourceKeyIdOrdinal: 2
+                DiscriminatorOrdinal: 2
             ),
             SourcesInOrder:
             [
@@ -87,17 +87,17 @@ public class Given_HydrationReader_With_Document_Reference_Lookup_Result_Sets
         );
 
     internal static DataTable CreateDocumentReferenceLookupTable(
-        params (long DocumentId, Guid DocumentUuid, short ResourceKeyId)[] rows
+        params (long DocumentId, Guid DocumentUuid, string Discriminator)[] rows
     )
     {
         var table = new DataTable();
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("DocumentUuid", typeof(Guid));
-        table.Columns.Add("ResourceKeyId", typeof(short));
+        table.Columns.Add("Discriminator", typeof(string));
 
         foreach (var row in rows)
         {
-            table.Rows.Add(row.DocumentId, row.DocumentUuid, row.ResourceKeyId);
+            table.Rows.Add(row.DocumentId, row.DocumentUuid, row.Discriminator);
         }
 
         return table;
@@ -216,8 +216,8 @@ public class Given_HydrationExecutor_With_Document_Reference_Lookup
                 CreateRootTableRows((42L, 255901)),
                 CreateChildTableRows((100L, 42L, 0, "Springfield")),
                 Given_HydrationReader_With_Document_Reference_Lookup_Result_Sets.CreateDocumentReferenceLookupTable(
-                    (101L, Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"), (short)7),
-                    (202L, Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"), (short)11)
+                    (101L, Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"), "Ed-Fi:School"),
+                    (202L, Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"), "Ed-Fi:Program")
                 )
             )
         );
@@ -239,12 +239,12 @@ public class Given_HydrationExecutor_With_Document_Reference_Lookup
                 new DocumentReferenceLookupRow(
                     DocumentId: 101L,
                     DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
-                    ResourceKeyId: 7
+                    Discriminator: "Ed-Fi:School"
                 ),
                 new DocumentReferenceLookupRow(
                     DocumentId: 202L,
                     DocumentUuid: Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"),
-                    ResourceKeyId: 11
+                    Discriminator: "Ed-Fi:Program"
                 )
             );
     }

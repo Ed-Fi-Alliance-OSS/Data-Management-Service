@@ -317,7 +317,7 @@ internal static class NormalizedPlanDtoJson
         writer.WriteStartObject();
         writer.WriteNumber("document_id_ordinal", plan.ResultShape.DocumentIdOrdinal);
         writer.WriteNumber("document_uuid_ordinal", plan.ResultShape.DocumentUuidOrdinal);
-        writer.WriteNumber("resource_key_id_ordinal", plan.ResultShape.ResourceKeyIdOrdinal);
+        writer.WriteNumber("discriminator_ordinal", plan.ResultShape.DiscriminatorOrdinal);
         writer.WriteEndObject();
 
         writer.WritePropertyName("sources_in_order");

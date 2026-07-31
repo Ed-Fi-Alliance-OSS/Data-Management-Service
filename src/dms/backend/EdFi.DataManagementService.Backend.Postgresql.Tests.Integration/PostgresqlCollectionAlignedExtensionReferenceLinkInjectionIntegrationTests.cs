@@ -157,10 +157,9 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
-        short sponsorResourceKeyId = _mappingSet.ResourceKeyIdByResource[SponsorResource];
-        Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
+        Dictionary<string, DocumentLinkSlugTriple> slugByDiscriminator = new(StringComparer.Ordinal)
         {
-            [sponsorResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{SponsorResource.ProjectName}:{SponsorResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
                 EndpointName: "sponsors",
                 ResourceName: "Sponsor"
@@ -168,7 +167,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(
-                new DeterministicLinkSlugResolver(slugByResourceKeyId)
+                new DeterministicLinkSlugResolver(slugByDiscriminator)
             )
         );
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);

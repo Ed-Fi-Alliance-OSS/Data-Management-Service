@@ -31,7 +31,10 @@ public class Given_PageReconstitutionTopology_With_Focused_Stable_Key_Extension_
             resource.ResourceKey.Resource == _schoolResource
         );
 
-        _readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(schoolModel.RelationalModel);
+        _readPlan = new ReadPlanCompiler(
+            SqlDialect.Pgsql,
+            MappingSetCompiler.BuildDocumentReferenceLookupTargets(modelSet)
+        ).Compile(schoolModel.RelationalModel);
 
         var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(_readPlan);
 

@@ -27,11 +27,11 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 // DMS-1145 task 29b — abstract reference (Course.educationOrganizationReference -> School)
 // link emission integration test. Proves that link.rel resolves to the concrete subclass
-// (School) via the lookup row's ResourceKeyId, NOT to the static binding's TargetResource
+// (School) via the lookup row's Discriminator, NOT to the static binding's TargetResource
 // (EducationOrganization). The deterministic resolver intentionally registers ONLY
-// School's ResourceKeyId — if reconstitution were wrongly using the abstract
-// EducationOrganization ResourceKeyId, the resolver would throw on miss and fail the test
-// with a clear message.
+// the concrete "Ed-Fi:School" discriminator — if reconstitution were wrongly using the
+// abstract EducationOrganization discriminator, the resolver would throw on miss and fail
+// the test with a clear message.
 
 [TestFixture]
 [NonParallelizable]
@@ -131,9 +131,10 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         edOrgReference["educationOrganizationId"]!.GetValue<long>().Should().Be(SchoolId);
 
         // The static binding's TargetResource is the abstract EducationOrganization, but the
-        // lookup row carries School's ResourceKeyId. link.rel must reflect the concrete
-        // subclass, NOT the abstract type — that's what proves reconstitution resolves
-        // through ResourceKeyId, not through binding.TargetResource.
+        // lookup row carries School's Discriminator (written by the EducationOrganizationIdentity
+        // maintenance trigger). link.rel must reflect the concrete subclass, NOT the abstract
+        // type — that's what proves reconstitution resolves through the row's discriminator,
+        // not through binding.TargetResource.
         LinkInjectionAssertions.AssertLink(
             edOrgReference,
             expectedRel: "School",
@@ -156,14 +157,13 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
-        // Register ONLY the concrete School ResourceKeyId. If reconstitution were wrongly
-        // resolving through EducationOrganization's ResourceKeyId, the resolver would throw
-        // on the unknown key and surface a clear test failure rather than producing a
+        // Register ONLY the concrete "Ed-Fi:School" discriminator. If reconstitution were
+        // wrongly resolving through EducationOrganization's discriminator, the resolver would
+        // throw on the unknown key and surface a clear test failure rather than producing a
         // misleading link.
-        short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
-        Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()
+        Dictionary<string, DocumentLinkSlugTriple> slugByDiscriminator = new(StringComparer.Ordinal)
         {
-            [schoolResourceKeyId] = new DocumentLinkSlugTriple(
+            [$"{SchoolResource.ProjectName}:{SchoolResource.ResourceName}"] = new DocumentLinkSlugTriple(
                 ProjectEndpointName: "ed-fi",
                 EndpointName: "schools",
                 ResourceName: "School"
@@ -171,7 +171,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(
-                new DeterministicLinkSlugResolver(slugByResourceKeyId)
+                new DeterministicLinkSlugResolver(slugByDiscriminator)
             )
         );
         services.Configure<ResourceLinksOptions>(static options => options.Enabled = true);

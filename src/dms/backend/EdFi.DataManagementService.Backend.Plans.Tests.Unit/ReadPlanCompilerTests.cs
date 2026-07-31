@@ -41,12 +41,12 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         _projectionResourceModel = CreateProjectionMetadataResourceModel();
         _rootOnlyResourceModel = CreateRootOnlyResourceModel();
         _resourceModel = CreateMultiTableResourceModel();
-        _pgsqlProjectionReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_projectionResourceModel);
-        _pgsqlRootOnlyReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_rootOnlyResourceModel);
-        _pgsqlReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_resourceModel);
-        _mssqlProjectionReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_projectionResourceModel);
-        _mssqlRootOnlyReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_rootOnlyResourceModel);
-        _mssqlReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_resourceModel);
+        _pgsqlProjectionReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, _projectionResourceModel);
+        _pgsqlRootOnlyReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, _rootOnlyResourceModel);
+        _pgsqlReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, _resourceModel);
+        _mssqlProjectionReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Mssql, _projectionResourceModel);
+        _mssqlRootOnlyReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Mssql, _rootOnlyResourceModel);
+        _mssqlReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Mssql, _resourceModel);
     }
 
     [Test]
@@ -61,7 +61,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_retain_content_version_mirror_columns_on_the_read_plan_model()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             WithContentVersionMirrorColumns(_projectionResourceModel)
         );
 
@@ -75,7 +75,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_exclude_content_version_mirror_columns_from_the_hydration_projection()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             WithContentVersionMirrorColumns(_projectionResourceModel)
         );
         var rootPlan = readPlan.TablePlansInDependencyOrder.Single();
@@ -99,7 +99,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         // The mirror columns are inserted ahead of the FK and descriptor columns (mimicking canonical
         // ordering). Without hydration exclusion their presence would shift every read-plan ordinal; the
         // exclusion keeps the ordinals identical to the model compiled without mirror columns.
-        var withMirrors = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var withMirrors = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             WithContentVersionMirrorColumns(_projectionResourceModel)
         );
 
@@ -151,7 +151,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_retain_document_metadata_columns_on_the_read_plan_model()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             WithDocumentMetadataColumns(_projectionResourceModel)
         );
 
@@ -168,7 +168,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_exclude_document_metadata_columns_from_the_hydration_projection()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             WithDocumentMetadataColumns(_projectionResourceModel)
         );
         var rootPlan = readPlan.TablePlansInDependencyOrder.Single();
@@ -201,7 +201,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         // canonical ordering, which places stored columns without a source JSONPath before the FK and
         // descriptor groups. Without hydration exclusion their presence would shift every read-plan ordinal
         // by five. The exclusion keeps the ordinals identical to the model compiled without them.
-        var withMetadata = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var withMetadata = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             WithDocumentMetadataColumns(_projectionResourceModel)
         );
 
@@ -318,7 +318,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_compile_root_table_reference_identity_projection_bindings_in_model_order()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
 
@@ -350,7 +350,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_accept_valid_reference_identity_projection_binding_coverage_for_multi_binding_tables()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
 
@@ -607,7 +607,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_reference_identity_projection_binding_duplicates_that_omit_another_modeled_binding()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
         var duplicatedReadPlan = CreateReadPlanWithDuplicatedReferenceProjectionBinding(
@@ -631,7 +631,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_reference_identity_projection_binding_order_that_differs_from_document_reference_bindings()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
         var reorderedReadPlan = CreateReadPlanWithSwappedReferenceProjectionBindings(readPlan);
@@ -651,7 +651,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_extra_reference_identity_projection_table_plans_with_a_deterministic_validator_error()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateInterleavedReferenceProjectionResourceModel(rootBindingFirst: false)
         );
         var mutatedReadPlan = CreateReadPlanWithAppendedReferenceProjectionTablePlan(
@@ -678,7 +678,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_group_reference_identity_projection_bindings_by_dependency_order_subset_when_bindings_are_interleaved()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateInterleavedReferenceProjectionResourceModel(rootBindingFirst: false)
         );
 
@@ -726,7 +726,10 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_compile_identical_multi_table_reference_projection_plans_across_repeated_compilation_and_cross_table_binding_interleavings()
     {
-        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+        var compiler = DocumentReferenceLookupTargetTestMap.CreateCompiler(
+            SqlDialect.Pgsql,
+            CreateInterleavedReferenceProjectionResourceModel(false)
+        );
 
         var first = compiler.Compile(CreateInterleavedReferenceProjectionResourceModel(false));
         var second = compiler.Compile(CreateInterleavedReferenceProjectionResourceModel(false));
@@ -743,7 +746,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_compile_key_unified_reference_identity_projection_bindings_against_unified_alias_column_ordinals()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedReferenceProjectionResourceModel()
         );
 
@@ -796,7 +799,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_reject_single_member_key_unified_reference_identity_projection_fields_when_alias_presence_gate_does_not_match_the_reference_fk()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateKeyUnifiedReferenceProjectionResourceModelWithNonFkPresenceGate()
             );
 
@@ -811,7 +814,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_reject_grouped_reference_identity_projection_fields_when_unified_alias_resolution_is_transitive()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateGroupedReferenceProjectionResourceModelWithTransitiveUnifiedAlias()
             );
 
@@ -825,7 +828,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_compile_grouped_reference_identity_projection_fields_once_per_logical_reference_path()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateGroupedReferenceProjectionResourceModel()
         );
 
@@ -850,7 +853,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_document_reference_binding_has_no_identity_bindings()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateProjectionMetadataResourceModelWithNoIdentityBindings()
             );
 
@@ -865,7 +868,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_reject_grouped_reference_identity_projection_fields_when_duplicate_members_use_conflicting_presence_gates()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateGroupedReferenceProjectionResourceModelWithConflictingPresenceGates()
             );
 
@@ -880,7 +883,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_reject_grouped_reference_identity_projection_fields_when_alias_presence_gate_does_not_match_the_reference_fk()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateGroupedReferenceProjectionResourceModelWithNonFkPresenceGate()
             );
 
@@ -894,7 +897,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_reference_identity_projection_bindings_that_duplicate_a_grouped_logical_field()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateGroupedReferenceProjectionResourceModel()
         );
         var mutatedReadPlan = CreateReadPlanWithDuplicatedReferenceProjectionField(
@@ -919,7 +922,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_reference_identity_projection_bindings_that_omit_a_grouped_logical_field()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateGroupedReferenceProjectionResourceModel()
         );
         var mutatedReadPlan = CreateReadPlanWithOmittedReferenceProjectionField(
@@ -943,7 +946,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_reference_identity_projection_bindings_that_reorder_grouped_logical_fields()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateGroupedReferenceProjectionResourceModel()
         );
         var mutatedReadPlan = CreateReadPlanWithSwappedReferenceProjectionFields(readPlan);
@@ -992,7 +995,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_a_projected_reference_identity_column_lacks_a_scalar_type()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateModelWithNullReferenceIdentityColumnScalarType(_projectionResourceModel)
             );
 
@@ -1041,7 +1044,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 new DocumentReferenceLookupResultShape(
                     DocumentIdOrdinal: 0,
                     DocumentUuidOrdinal: 1,
-                    ResourceKeyIdOrdinal: 2
+                    DiscriminatorOrdinal: 2
                 )
             );
     }
@@ -1057,19 +1060,19 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(
                 """
                 SELECT
-                    doc."DocumentId",
-                    doc."DocumentUuid",
-                    doc."ResourceKeyId"
+                    p."DocumentId",
+                    p."DocumentUuid",
+                    p."Discriminator"
                 FROM
                     (
-                        SELECT DISTINCT t0."School_DocumentId" AS "DocumentId"
+                        SELECT DISTINCT t0."School_DocumentId" AS "DocumentId", tgt0."DocumentUuid" AS "DocumentUuid", 'Ed-Fi:School' AS "Discriminator"
                         FROM "edfi"."StudentProjection" t0
+                        INNER JOIN "edfi"."School" tgt0 ON tgt0."DocumentId" = t0."School_DocumentId"
                         INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
                         WHERE t0."School_DocumentId" IS NOT NULL
                     ) p
-                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
                 ORDER BY
-                    doc."DocumentId" ASC
+                    p."DocumentId" ASC
                 ;
 
                 """
@@ -1092,19 +1095,19 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(
                 """
                 SELECT
-                    doc."DocumentId",
-                    doc."DocumentUuid",
-                    doc."ResourceKeyId"
+                    p."DocumentId",
+                    p."DocumentUuid",
+                    p."Discriminator"
                 FROM
                     (
-                        SELECT DISTINCT t0."School_DocumentId" AS "DocumentId"
+                        SELECT DISTINCT t0."School_DocumentId" AS "DocumentId", tgt0."DocumentUuid" AS "DocumentUuid", 'Ed-Fi:School' AS "Discriminator"
                         FROM "edfi"."StudentProjection" t0
+                        INNER JOIN "edfi"."School" tgt0 ON tgt0."DocumentId" = t0."School_DocumentId"
                         WHERE t0."DocumentId" = @DocumentId
                         AND t0."School_DocumentId" IS NOT NULL
                     ) p
-                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
                 ORDER BY
-                    doc."DocumentId" ASC
+                    p."DocumentId" ASC
                 ;
 
                 """
@@ -1123,19 +1126,19 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(
                 """
                 SELECT
-                    doc.[DocumentId],
-                    doc.[DocumentUuid],
-                    doc.[ResourceKeyId]
+                    p.[DocumentId],
+                    p.[DocumentUuid],
+                    p.[Discriminator]
                 FROM
                     (
-                        SELECT DISTINCT t0.[School_DocumentId] AS [DocumentId]
+                        SELECT DISTINCT t0.[School_DocumentId] AS [DocumentId], tgt0.[DocumentUuid] AS [DocumentUuid], N'Ed-Fi:School' AS [Discriminator]
                         FROM [edfi].[StudentProjection] t0
+                        INNER JOIN [edfi].[School] tgt0 ON tgt0.[DocumentId] = t0.[School_DocumentId]
                         INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
                         WHERE t0.[School_DocumentId] IS NOT NULL
                     ) p
-                INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = p.[DocumentId]
                 ORDER BY
-                    doc.[DocumentId] ASC
+                    p.[DocumentId] ASC
                 ;
 
                 """
@@ -1152,7 +1155,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_emit_exact_pgsql_DocumentReferenceLookup_sql_for_multiple_bindings_joined_with_UNION()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
         var lookup = readPlan.DocumentReferenceLookup;
@@ -1163,24 +1166,25 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(
                 """
                 SELECT
-                    doc."DocumentId",
-                    doc."DocumentUuid",
-                    doc."ResourceKeyId"
+                    p."DocumentId",
+                    p."DocumentUuid",
+                    p."Discriminator"
                 FROM
                     (
-                        SELECT t0."School_DocumentId" AS "DocumentId"
+                        SELECT t0."School_DocumentId" AS "DocumentId", tgt0."DocumentUuid" AS "DocumentUuid", 'Ed-Fi:School' AS "Discriminator"
                         FROM "edfi"."StudentReferenceProjection" t0
+                        INNER JOIN "edfi"."School" tgt0 ON tgt0."DocumentId" = t0."School_DocumentId"
                         INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
                         WHERE t0."School_DocumentId" IS NOT NULL
                         UNION
-                        SELECT t1."Calendar_DocumentId" AS "DocumentId"
+                        SELECT t1."Calendar_DocumentId" AS "DocumentId", tgt1."DocumentUuid" AS "DocumentUuid", 'Ed-Fi:Calendar' AS "Discriminator"
                         FROM "edfi"."StudentReferenceProjection" t1
+                        INNER JOIN "edfi"."Calendar" tgt1 ON tgt1."DocumentId" = t1."Calendar_DocumentId"
                         INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
                         WHERE t1."Calendar_DocumentId" IS NOT NULL
                     ) p
-                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
                 ORDER BY
-                    doc."DocumentId" ASC
+                    p."DocumentId" ASC
                 ;
 
                 """
@@ -1199,7 +1203,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_emit_exact_pgsql_DocumentReferenceLookup_single_document_sql_for_multiple_bindings_joined_with_UNION()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
         var lookup = readPlan.DocumentReferenceLookup;
@@ -1210,24 +1214,25 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(
                 """
                 SELECT
-                    doc."DocumentId",
-                    doc."DocumentUuid",
-                    doc."ResourceKeyId"
+                    p."DocumentId",
+                    p."DocumentUuid",
+                    p."Discriminator"
                 FROM
                     (
-                        SELECT t0."School_DocumentId" AS "DocumentId"
+                        SELECT t0."School_DocumentId" AS "DocumentId", tgt0."DocumentUuid" AS "DocumentUuid", 'Ed-Fi:School' AS "Discriminator"
                         FROM "edfi"."StudentReferenceProjection" t0
+                        INNER JOIN "edfi"."School" tgt0 ON tgt0."DocumentId" = t0."School_DocumentId"
                         WHERE t0."DocumentId" = @DocumentId
                         AND t0."School_DocumentId" IS NOT NULL
                         UNION
-                        SELECT t1."Calendar_DocumentId" AS "DocumentId"
+                        SELECT t1."Calendar_DocumentId" AS "DocumentId", tgt1."DocumentUuid" AS "DocumentUuid", 'Ed-Fi:Calendar' AS "Discriminator"
                         FROM "edfi"."StudentReferenceProjection" t1
+                        INNER JOIN "edfi"."Calendar" tgt1 ON tgt1."DocumentId" = t1."Calendar_DocumentId"
                         WHERE t1."DocumentId" = @DocumentId
                         AND t1."Calendar_DocumentId" IS NOT NULL
                     ) p
-                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
                 ORDER BY
-                    doc."DocumentId" ASC
+                    p."DocumentId" ASC
                 ;
 
                 """
@@ -1242,7 +1247,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     )
     {
         var model = CreateStableKeyDocumentReferenceLookupResourceModel(dialect);
-        var readPlan = new ReadPlanCompiler(dialect).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(dialect, model);
         var lookup = readPlan.DocumentReferenceLookup;
         var rootTable = readPlan.Model.Root;
         var collectionTable = readPlan.Model.TablesInDependencyOrder.Single(table =>
@@ -1314,7 +1319,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         // DocumentFk (School_DocumentId). Upstream reference-projection validation still
         // passes because the model's DocumentReferenceBinding is left untouched, so the
         // mismatch only surfaces in the new lookup-plan validation path.
-        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var validReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateProjectionMetadataResourceModel()
         );
         var mutatedReadPlan = validReadPlan with
@@ -1351,7 +1356,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         // source from SourcesInOrder while leaving the model's DocumentReferenceBindings
         // untouched. Per-source validation still passes for the surviving School entry,
         // so the gap surfaces only via the coverage check.
-        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var validReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
         var schoolSource = validReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single(source =>
@@ -1387,7 +1392,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         // source kind validation passes; the bindings-coverage check is the only path
         // that flags it.
         var unboundFkModel = CreateProjectionMetadataResourceModelWithUnboundDocumentFkColumn();
-        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unboundFkModel);
+        var validReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, unboundFkModel);
         var schoolSource = validReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
         var mutatedReadPlan = validReadPlan with
         {
@@ -1425,7 +1430,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         // entries. Each entry still corresponds to an authoritative binding and per-
         // source validation passes, so the order mismatch surfaces only via the
         // ordering check against the bindings-derived expected sequence.
-        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var validReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateRootMultiBindingReferenceProjectionResourceModel()
         );
         var orderedSources = validReadPlan.DocumentReferenceLookup!.SourcesInOrder;
@@ -1496,7 +1501,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 ResultShape = new DocumentReferenceLookupResultShape(
                     DocumentIdOrdinal: 0,
                     DocumentUuidOrdinal: 2,
-                    ResourceKeyIdOrdinal: 1
+                    DiscriminatorOrdinal: 1
                 ),
             },
         };
@@ -1510,7 +1515,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "document-reference lookup plan result shape must expose DocumentId at ordinal '0', DocumentUuid at ordinal '1', and ResourceKeyId at ordinal '2', but was DocumentId='0', DocumentUuid='2', ResourceKeyId='1'"
+                "document-reference lookup plan result shape must expose DocumentId at ordinal '0', DocumentUuid at ordinal '1', and Discriminator at ordinal '2', but was DocumentId='0', DocumentUuid='2', Discriminator='1'"
             );
     }
 
@@ -1708,7 +1713,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_preserve_all_logical_DescriptorProjection_sources_in_order_while_deduplicating_pgsql_sql_inputs_by_storage_column()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
 
@@ -1737,7 +1742,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_preserve_all_logical_DescriptorProjection_sources_in_order_while_deduplicating_mssql_sql_inputs_by_storage_column()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Mssql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
 
@@ -1766,10 +1771,10 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_accept_key_unified_projection_path_columns_while_descriptor_sql_still_deduplicates_by_storage_column()
     {
-        var referenceReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var referenceReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedReferenceProjectionResourceModel()
         );
-        var descriptorReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var descriptorReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
 
@@ -1911,7 +1916,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     )
     {
         var model = CreateStableKeyDescriptorProjectionResourceModel(dialect);
-        var readPlan = new ReadPlanCompiler(dialect).Compile(model);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(dialect, model);
         var descriptorProjectionPlan = readPlan
             .DescriptorProjectionPlansInOrder.Should()
             .ContainSingle()
@@ -1984,7 +1989,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_accept_valid_descriptor_projection_source_coverage_for_key_unified_models()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
 
@@ -2000,7 +2005,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_accept_valid_split_descriptor_projection_plan_slices()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var splitReadPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(readPlan);
@@ -2017,7 +2022,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_source_duplicates_that_omit_another_modeled_source()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var duplicatedReadPlan = CreateReadPlanWithDuplicatedDescriptorProjectionSource(
@@ -2043,7 +2048,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_source_order_that_differs_from_descriptor_edge_sources()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var reorderedReadPlan = CreateReadPlanWithSwappedDescriptorProjectionSources(readPlan);
@@ -2064,7 +2069,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_plan_lists_that_include_empty_trailing_result_sets()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
@@ -2097,7 +2102,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_sources_that_reference_missing_hydration_tables()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceTable(
@@ -2121,7 +2126,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_sources_with_out_of_range_hydration_ordinals()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var outOfRangeOrdinal = readPlan.TablePlansInDependencyOrder.Single().TableModel.Columns.Count;
@@ -2146,7 +2151,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_sources_that_exceed_authoritative_source_count()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var mutatedReadPlan = CreateReadPlanWithAppendedDescriptorProjectionSource(readPlan, sourceIndex: 0);
@@ -2167,7 +2172,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_sources_that_omit_an_authoritative_source()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource()
         );
         var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceCount(readPlan, sourceCount: 1);
@@ -2188,7 +2193,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_reject_descriptor_projection_plans_that_have_empty_source_slices()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
             CreateKeyUnifiedDescriptorProjectionResourceModel()
         );
         var splitReadPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(readPlan);
@@ -2233,7 +2238,10 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_compile_identical_root_only_read_plans_across_repeated_compilation_and_fixture_resource_order_permutations()
     {
-        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+        var compiler = DocumentReferenceLookupTargetTestMap.CreateCompiler(
+            SqlDialect.Pgsql,
+            BuildFixtureResourceModel(_rootOnlyFixtureResource, SqlDialect.Pgsql, false)
+        );
 
         var first = compiler.Compile(
             BuildFixtureResourceModel(_rootOnlyFixtureResource, SqlDialect.Pgsql, false)
@@ -2256,7 +2264,10 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_compile_identical_projection_read_plans_across_repeated_compilation_and_fixture_resource_order_permutations()
     {
-        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+        var compiler = DocumentReferenceLookupTargetTestMap.CreateCompiler(
+            SqlDialect.Pgsql,
+            BuildFixtureResourceModel(_projectionFixtureResource, SqlDialect.Pgsql, false)
+        );
 
         var first = compiler.Compile(
             BuildFixtureResourceModel(_projectionFixtureResource, SqlDialect.Pgsql, false)
@@ -2279,7 +2290,10 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_compile_identical_multi_table_read_plans_across_repeated_compilation_and_fixture_resource_order_permutations()
     {
-        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+        var compiler = DocumentReferenceLookupTargetTestMap.CreateCompiler(
+            SqlDialect.Pgsql,
+            BuildFixtureResourceModel(_multiTableFixtureResource, SqlDialect.Pgsql, false)
+        );
 
         var first = compiler.Compile(
             BuildFixtureResourceModel(_multiTableFixtureResource, SqlDialect.Pgsql, false)
@@ -2305,7 +2319,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         SqlDialect dialect
     )
     {
-        var readPlan = new ReadPlanCompiler(dialect).Compile(
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(dialect,
             BuildFixtureResourceModel(
                 CollectionsNestedExtensionFixturePath,
                 _rootOnlyFixtureResource,
@@ -2643,7 +2657,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_tables_in_dependency_order_is_empty()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNoTablesInDependencyOrder());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithNoTablesInDependencyOrder());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2656,7 +2670,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_resource_model_root_is_not_root_scope()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNonRootResourceModelRoot());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithNonRootResourceModelRoot());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2669,7 +2683,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_tables_in_dependency_order_has_no_root_scope_table()
     {
         var unsupportedModel = CreateSupportedMultiTableModelWithoutRootScopeTable();
-        var act = () => new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2682,7 +2696,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_tables_in_dependency_order_has_multiple_root_scope_tables()
     {
         var unsupportedModel = CreateSupportedMultiTableModelWithMultipleRootScopeTables();
-        var act = () => new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2695,7 +2709,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_root_scope_table_does_not_match_resource_model_root_table()
     {
         var unsupportedModel = CreateSupportedMultiTableModelWithMismatchedRootScopeTable();
-        var act = () => new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2713,7 +2727,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         string expectedMessage
     )
     {
-        var act = () => new ReadPlanCompiler(SqlDialect.Pgsql).Compile(createModel());
+        var act = () => DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, createModel());
 
         act.Should().Throw<InvalidOperationException>().WithMessage(expectedMessage);
     }
@@ -2722,7 +2736,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_key_column_kind_is_not_parent_key_part_or_ordinal()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithUnsupportedKeyColumnKind());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithUnsupportedKeyColumnKind());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2735,7 +2749,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_document_reference_fk_column_does_not_resolve_to_a_hydration_select_list_ordinal()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMissingDocumentReferenceFkColumn());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithMissingDocumentReferenceFkColumn());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2748,7 +2762,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_reference_identity_binding_column_does_not_resolve_to_a_hydration_select_list_ordinal()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateModelWithMissingReferenceIdentityBindingColumn()
             );
 
@@ -2763,7 +2777,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_document_reference_binding_table_is_not_present_in_tables_in_dependency_order()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateModelWithMissingDocumentReferenceBindingTable()
             );
 
@@ -2778,7 +2792,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_document_reference_fk_column_source_json_path_does_not_match_reference_object_path()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateModelWithMismatchedDocumentReferenceFkSourcePath()
             );
 
@@ -2793,7 +2807,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_document_reference_fk_column_is_not_a_document_fk()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNonDocumentReferenceFkKind());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithNonDocumentReferenceFkKind());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2806,7 +2820,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_document_reference_fk_column_is_not_stored()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateModelWithNonStoredDocumentReferenceFkColumn()
             );
 
@@ -2821,7 +2835,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_document_reference_binding_target_resource_does_not_match_fk_column_target_resource()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateProjectionMetadataResourceModelWithMismatchedDocumentReferenceTargetResource()
             );
 
@@ -2836,7 +2850,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_key_unified_reference_identity_binding_points_at_canonical_storage_column()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateKeyUnifiedModelWithCanonicalReferenceIdentityBindingColumn()
             );
 
@@ -2851,7 +2865,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_descriptor_edge_source_fk_column_does_not_resolve_to_a_hydration_select_list_ordinal()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMissingDescriptorEdgeFkColumn());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithMissingDescriptorEdgeFkColumn());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2864,7 +2878,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_descriptor_edge_source_table_is_not_present_in_tables_in_dependency_order()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMissingDescriptorEdgeTable());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithMissingDescriptorEdgeTable());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -2877,7 +2891,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_key_unified_descriptor_edge_source_points_at_canonical_storage_column()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateKeyUnifiedModelWithCanonicalDescriptorEdgeBindingColumn()
             );
 
@@ -2892,7 +2906,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_descriptor_edge_source_descriptor_resource_does_not_match_fk_column_target_resource()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateModelWithDescriptorEdgeSourceDescriptorResource(
                     CreateProjectionMetadataResourceModel(),
                     new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
@@ -2910,7 +2924,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_key_unified_descriptor_edge_source_descriptor_resource_does_not_match_fk_column_target_resource()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql,
                 CreateModelWithDescriptorEdgeSourceDescriptorResource(
                     CreateKeyUnifiedDescriptorProjectionResourceModel(),
                     new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
@@ -2928,7 +2942,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     public void It_should_fail_fast_when_descriptor_edge_source_fk_column_is_not_a_descriptor_fk()
     {
         var act = () =>
-            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNonDescriptorEdgeFkKind());
+            DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateModelWithNonDescriptorEdgeFkKind());
 
         act.Should()
             .Throw<InvalidOperationException>()

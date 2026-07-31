@@ -17,19 +17,19 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 // fixture.
 
 internal sealed class DeterministicLinkSlugResolver(
-    IReadOnlyDictionary<short, DocumentLinkSlugTriple> slugsByResourceKeyId
+    IReadOnlyDictionary<string, DocumentLinkSlugTriple> slugsByDiscriminator
 ) : IDocumentLinkSlugResolver
 {
-    private readonly IReadOnlyDictionary<short, DocumentLinkSlugTriple> _slugsByResourceKeyId =
-        slugsByResourceKeyId ?? throw new ArgumentNullException(nameof(slugsByResourceKeyId));
+    private readonly IReadOnlyDictionary<string, DocumentLinkSlugTriple> _slugsByDiscriminator =
+        slugsByDiscriminator ?? throw new ArgumentNullException(nameof(slugsByDiscriminator));
 
-    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId)
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator)
     {
-        if (!_slugsByResourceKeyId.TryGetValue(resourceKeyId, out DocumentLinkSlugTriple? triple))
+        if (!_slugsByDiscriminator.TryGetValue(discriminator, out DocumentLinkSlugTriple? triple))
         {
             throw new InvalidOperationException(
-                $"DeterministicLinkSlugResolver has no triple registered for ResourceKeyId {resourceKeyId.ToString(CultureInfo.InvariantCulture)}. "
-                    + "Register every ResourceKeyId the test expects to encounter."
+                $"DeterministicLinkSlugResolver has no triple registered for discriminator '{discriminator}'. "
+                    + "Register every '{ProjectName}:{ResourceName}' discriminator the test expects to encounter."
             );
         }
 

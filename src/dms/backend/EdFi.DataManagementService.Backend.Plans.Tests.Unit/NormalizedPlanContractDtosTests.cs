@@ -175,17 +175,17 @@ public class Given_NormalizedPlanContractDtos
                 ),
             ],
             DocumentReferenceLookup: new DocumentReferenceLookupPlanDto(
-                SelectByKeysetSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\r\nFROM [dms].[Document] d;",
+                SelectByKeysetSql: "SELECT p.[DocumentId], p.[DocumentUuid], p.[Discriminator]\r\nFROM [edfi].[StudentSchoolAssociation] p;",
                 ResultShape: new DocumentReferenceLookupResultShapeDto(
                     DocumentIdOrdinal: 0,
                     DocumentUuidOrdinal: 1,
-                    ResourceKeyIdOrdinal: 2
+                    DiscriminatorOrdinal: 2
                 ),
                 SourcesInOrder:
                 [
                     new DocumentReferenceLookupSourceDto(Table: table, FkColumn: "School_DocumentId"),
                 ],
-                SelectBySingleDocumentSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\r\nFROM [dms].[Document] d\r\nWHERE d.[DocumentId] = @DocumentId;"
+                SelectBySingleDocumentSql: "SELECT p.[DocumentId], p.[DocumentUuid], p.[Discriminator]\r\nFROM [edfi].[StudentSchoolAssociation] p\r\nWHERE p.[DocumentId] = @DocumentId;"
             )
         );
 

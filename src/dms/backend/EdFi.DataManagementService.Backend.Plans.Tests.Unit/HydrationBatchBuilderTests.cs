@@ -553,7 +553,7 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
             ResultShape: new DocumentReferenceLookupResultShape(
                 DocumentIdOrdinal: 0,
                 DocumentUuidOrdinal: 1,
-                ResourceKeyIdOrdinal: 2
+                DiscriminatorOrdinal: 2
             ),
             SourcesInOrder:
             [
@@ -1419,7 +1419,7 @@ public class Given_HydrationBatchBuilder_With_Document_Reference_Lookup_Plan
             ResultShape: new DocumentReferenceLookupResultShape(
                 DocumentIdOrdinal: 0,
                 DocumentUuidOrdinal: 1,
-                ResourceKeyIdOrdinal: 2
+                DiscriminatorOrdinal: 2
             ),
             SourcesInOrder:
             [

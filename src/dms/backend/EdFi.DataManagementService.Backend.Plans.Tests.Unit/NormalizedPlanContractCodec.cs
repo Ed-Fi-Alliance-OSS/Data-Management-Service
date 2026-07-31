@@ -123,7 +123,7 @@ internal static class NormalizedPlanContractCodec
                     ResultShape: new DocumentReferenceLookupResultShapeDto(
                         plan.DocumentReferenceLookup.ResultShape.DocumentIdOrdinal,
                         plan.DocumentReferenceLookup.ResultShape.DocumentUuidOrdinal,
-                        plan.DocumentReferenceLookup.ResultShape.ResourceKeyIdOrdinal
+                        plan.DocumentReferenceLookup.ResultShape.DiscriminatorOrdinal
                     ),
                     SourcesInOrder: plan.DocumentReferenceLookup.SourcesInOrder.Select(
                         source => new DocumentReferenceLookupSourceDto(
@@ -763,10 +763,10 @@ internal static class NormalizedPlanContractCodec
                 $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.ResultShape)}.{nameof(DocumentReferenceLookupResultShapeDto.DocumentUuidOrdinal)}",
                 "document-reference lookup DocumentUuid ordinal"
             ),
-            ResourceKeyIdOrdinal: ValidateNonNegative(
-                resultShapeDto.ResourceKeyIdOrdinal,
-                $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.ResultShape)}.{nameof(DocumentReferenceLookupResultShapeDto.ResourceKeyIdOrdinal)}",
-                "document-reference lookup ResourceKeyId ordinal"
+            DiscriminatorOrdinal: ValidateNonNegative(
+                resultShapeDto.DiscriminatorOrdinal,
+                $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.ResultShape)}.{nameof(DocumentReferenceLookupResultShapeDto.DiscriminatorOrdinal)}",
+                "document-reference lookup Discriminator ordinal"
             )
         );
 
