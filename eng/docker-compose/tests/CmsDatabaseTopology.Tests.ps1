@@ -1469,6 +1469,183 @@ Describe "ConvertTo-DotenvSafeEnvValue" {
     }
 }
 
+Describe "reserved-CMS-database collision authorities (one per physical creation path)" {
+    # No ambient snapshot/clear/restore inventory here, deliberately and not by omission: both
+    # predicates are pure functions of their two arguments and read no environment variable, no file,
+    # and no Docker. The env-consuming call sites are covered under Confirm-CmsDatabaseTopologyAgreement
+    # and the start-script wiring Describe, each of which carries its own presence-aware inventory.
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    Context "the API cannot be called without naming a creation path and an engine" {
+        It "<_> requires -DatabaseEngine" -ForEach @(
+            'Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase',
+            'Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase'
+        ) {
+            $parameter = (Get-Command $_).Parameters['DatabaseEngine']
+            $parameter | Should -Not -BeNullOrEmpty
+            @($parameter.Attributes |
+                Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } |
+                ForEach-Object { $_.Mandatory }) | Should -Contain $true -Because "an omitted engine would silently pick one creation mechanism's answer for the other"
+            @($parameter.Attributes |
+                Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } |
+                ForEach-Object { $_.ValidValues }) | Should -Be @('postgresql', 'mssql')
+        }
+
+        It "leaves no engine-neutral collision predicate for a call site to pick up again" {
+            # The engine-neutral helper is what let one call site answer for a creation mechanism it
+            # could not see. Any future sibling has to declare the engine too.
+            $predicates = @(Get-Command -Module env-utility -Name 'Test-*CollidesWithReservedCmsDatabase')
+            $predicates.Count | Should -BeGreaterThan 0 -Because "the sweep must actually be looking at something"
+            foreach ($predicate in $predicates) {
+                $predicate.Parameters.ContainsKey('DatabaseEngine') |
+                    Should -BeTrue -Because "$($predicate.Name) would otherwise answer for a creation path it cannot know"
+            }
+        }
+    }
+
+    Context "initialized path: the database the local initialization path creates from the datastore-name key" {
+        It "postgresql treats <Label> as the reserved CMS database" -ForEach @(
+            @{ Label = 'the reserved name itself'; Name = 'edfi_configurationservice' }
+            @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
+            @{ Label = 'a trailing space'; Name = 'EDFI_ConfigurationService ' }
+            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
+            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
+            @{ Label = 'a trailing line feed'; Name = "edfi_configurationservice`n" }
+            @{ Label = 'a trailing carriage return'; Name = "edfi_configurationservice`r" }
+            @{ Label = 'a trailing form feed'; Name = "edfi_configurationservice$([char]0x0C)" }
+            @{ Label = 'padding on both ends'; Name = "  EDFI_ConfigurationService`t" }
+        ) {
+            # Measured against postgres:16 by running postgresql-init.sh's own statement form,
+            # `CREATE DATABASE ${POSTGRES_DB_NAME};`: every one of these lands in pg_database as
+            # edfi_configurationservice, because the lexer discards the surrounding whitespace and
+            # folds the unquoted identifier.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
+                Should -BeTrue
+        }
+
+        It "postgresql does NOT treat <Label> as the reserved CMS database" -ForEach @(
+            @{ Label = 'a trailing vertical tab (0x0B), which makes the CREATE fail outright'; Name = "edfi_configurationservice$([char]0x0B)" }
+            @{ Label = 'a trailing no-break space (0xA0), which creates a genuinely different database'; Name = "edfi_configurationservice$([char]0x00A0)" }
+            @{ Label = 'an unrelated datastore name'; Name = 'edfi_datamanagementservice' }
+            @{ Label = 'a blank name, which callers report as absence instead'; Name = '' }
+        ) {
+            # The first two are exactly why the trim set is passed to Trim explicitly: .NET counts both
+            # 0x0B and 0xA0 as whitespace, so String.Trim() with no argument would report a collision
+            # PostgreSQL itself does not produce - a false positive traded for the fixed false negative.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
+                Should -BeFalse
+        }
+
+        It "mssql treats <Label> as the reserved CMS database, under its default collation" -ForEach @(
+            @{ Label = 'the reserved name itself'; Name = 'edfi_configurationservice' }
+            @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
+        ) {
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
+                Should -BeTrue
+        }
+
+        It "mssql accepts an unrelated datastore name" {
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName 'edfi_datamanagementservice' |
+                Should -BeFalse
+        }
+    }
+
+    Context "registered path: the name -DataStoreDatabaseName registers and SchemaTools creates quoted" {
+        It "postgresql treats the reserved name itself as a collision" {
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'edfi_configurationservice' |
+                Should -BeTrue
+        }
+
+        It "postgresql accepts <Label>, a physically distinct database once the identifier is quoted" -ForEach @(
+            @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
+            @{ Label = 'an upper-cased name'; Name = 'EDFI_CONFIGURATIONSERVICE' }
+            @{ Label = 'a trailing space'; Name = 'edfi_configurationservice ' }
+            @{ Label = 'an unrelated name'; Name = 'edfi_datamanagementservice' }
+            @{ Label = 'a blank name, meaning the datastore name was not overridden'; Name = '' }
+        ) {
+            # Measured: with edfi_configurationservice already present, SchemaTools' own form
+            # `CREATE DATABASE "EDFI_ConfigurationService"` succeeds and both rows coexist in
+            # pg_database. Borrowing the unquoted path's case-insensitivity here refused a working
+            # configuration.
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
+                Should -BeFalse
+        }
+
+        It "mssql treats <Label> as a collision" -ForEach @(
+            @{ Label = 'the reserved name itself'; Name = 'edfi_configurationservice' }
+            @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
+        ) {
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
+                Should -BeTrue
+        }
+
+        It "mssql accepts an unrelated name" {
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName 'edfi_datamanagementservice' |
+                Should -BeFalse
+        }
+    }
+
+    Context "the two authorities differ exactly where the creation mechanisms differ" {
+        It "a PostgreSQL case variant collides on the initialized path and not on the registered path" {
+            # One predicate could not express this, and that is the whole defect it produced: it
+            # accepted a colliding POSTGRES_DB_NAME and rejected a distinct -DataStoreDatabaseName.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'EDFI_ConfigurationService' |
+                Should -BeTrue
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'EDFI_ConfigurationService' |
+                Should -BeFalse
+        }
+
+        It "on MSSQL the two paths agree, because one collation rule governs both" {
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName 'EDFI_ConfigurationService' |
+                Should -BeTrue
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName 'EDFI_ConfigurationService' |
+                Should -BeTrue
+        }
+    }
+}
+
+Describe "the registered datastore connection string carries its database name verbatim" {
+    # Also ambient-free: Add-DataStore takes every value as a parameter, and the one outbound call is
+    # mocked, so nothing here reads the environment, touches Docker, or reaches the network. The
+    # Should -Invoke count is what proves the mock actually intercepted rather than a real request
+    # escaping to localhost. Dms-Management shares no function name with env-utility, so importing it
+    # here cannot shadow anything the later Describes in this file rely on.
+    BeforeAll {
+        $script:engRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+        Import-Module (Join-Path $script:engRoot "Dms-Management.psm1") -Force
+    }
+
+    It "postgresql: Add-DataStore registers the mixed-case name unfolded, which is why the registered path is ordinal" {
+        # This is the reason -DataStoreDatabaseName must NOT borrow the unquoted path's
+        # case-insensitivity: the name CMS stores is the name the datastore connects with, and nothing
+        # between the parameter and the registered connection string lower-cases it. Proving the value
+        # arrives verbatim is stronger than asserting that one error message was absent - a path that
+        # quietly folded the name would satisfy the latter and still re-share the CMS database.
+        Mock -ModuleName Dms-Management Invoke-Api { return [pscustomobject]@{ id = 7 } }
+
+        # Empty SecureString rather than ConvertTo-SecureString -AsPlainText: the password is not part
+        # of what this test asserts, and the plaintext form is a PSScriptAnalyzer error.
+        $credential = [System.Management.Automation.PSCredential]::new(
+            "postgres",
+            [System.Security.SecureString]::new())
+
+        Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken "token" `
+            -PostgresCredential $credential -PostgresDbName 'EDFI_ConfigurationService' | Out-Null
+
+        # -clike, not -like: a case-insensitive match would be satisfied by the folded name this test
+        # exists to rule out.
+        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 1 -Exactly -ParameterFilter {
+            (ConvertFrom-Json $Body).connectionString -clike '*database=EDFI_ConfigurationService;*'
+        }
+        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 0 -Exactly -ParameterFilter {
+            (ConvertFrom-Json $Body).connectionString -clike '*database=edfi_configurationservice;*'
+        }
+    }
+}
+
 Describe "Confirm-CmsDatabaseTopologyAgreement" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -1648,6 +1825,65 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             # BeLikeExactly, not BeLike: -like is case-insensitive, so the case-insensitive form would
             # match the reserved literal the message legitimately names and assert nothing.
             $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "the diagnostic names the key, never the resolved database-name value"
+        }
+
+        It "rejects a file-authored POSTGRES_DB_NAME whose only difference is a trailing space" {
+            # The dotenv quoting preserves the space (measured: the resolved value's last byte is 0x20),
+            # the shell interpolates it into postgresql-init.sh's UNQUOTED
+            # `CREATE DATABASE ${POSTGRES_DB_NAME};`, and PostgreSQL's lexer discards it - so this
+            # datastore is physically created as edfi_configurationservice. Comparing without trimming
+            # accepted exactly this configuration while promising two distinct databases.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                "POSTGRES_DB_NAME='EDFI_ConfigurationService '",
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+            ) -join "`n") -NoNewline
+
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw "*physically distinct*" -PassThru
+
+            $thrown.Exception.Message | Should -BeLike "*POSTGRES_DB_NAME*" -Because "the key is what the operator has to change"
+            # BeLikeExactly, not BeLike: -like is case-insensitive, so the case-insensitive form would
+            # match the reserved literal the message legitimately names and assert nothing.
+            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "the diagnostic names the key, never the resolved database-name value"
+        }
+
+        It "rejects the same trailing-space collision when ambient precedence supplies POSTGRES_DB_NAME" {
+            # Compose ignores the file's declaration entirely once the name is set ambiently, so the
+            # ambient value is the one that moves the running datastore container and it has to reach
+            # the same authority.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "EDFI_ConfigurationService ")
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw "*physically distinct*" -PassThru
+
+            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "an ambient value is caller-authored too and must not be echoed"
+        }
+
+        It "keeps the connection-string comparison separate from the collision authority on PostgreSQL" {
+            # The collision authority normalizes for an unquoted CREATE DATABASE; this comparison must
+            # not, because a connection string's database name is passed to the provider verbatim and
+            # EDFI_ConfigurationService really is a different database. Widening this rule to match the
+            # collision rule would silently accept CMS pointed at a database that does not exist.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=EDFI_ConfigurationService;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw "*EDFI_ConfigurationService*"
         }
 
         It "rejects an ambient POSTGRES_DB_NAME case variant of the dedicated CMS database name" {
@@ -3214,6 +3450,48 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "SQL Server matches database names case-insensitively"
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+        }
+
+        It "rejects the exact reserved -DataStoreDatabaseName on MSSQL as well as PostgreSQL" {
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+        }
+
+        It "accepts -DataStoreDatabaseName EDFI_ConfigurationService on PostgreSQL and proceeds to the docker boundary" {
+            # SchemaTools creates the registered datastore with a QUOTED identifier and CMS stores the
+            # name verbatim, so this is a physically distinct database from the dedicated CMS one -
+            # measured, both coexisting in pg_database. The guard must not fire. Requiring the run to
+            # reach the recording docker boundary, and the derived file to still declare separate mode,
+            # proves the guard was live on this shape and simply had nothing to reject - which the
+            # absence of one error message alone would not show.
+            $envFile = New-WiringEnvFile
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile $envFile *>$null
+            }
+
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the compose invocation instead of stopping at the guard"
+            $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "this is a real separate-mode run, so the guard was on the executed path"
+
+            $values = ReadDerivedTopologyFile -Name $run.TopologyFile
+            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
+        }
+
+        It "names the parameter and the reserved literal in the rejection, but never the caller's own value" {
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName*"
+            # BeLikeExactly, because -like would match the lower-cased reserved literal the message
+            # legitimately names and assert nothing.
+            $run.ErrorMessage | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "the diagnostic must not echo a caller-authored value"
         }
 
         It "does not reject a colliding -DataStoreDatabaseName in a shape that never consumes it" {
