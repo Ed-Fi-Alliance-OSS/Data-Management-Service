@@ -29,7 +29,7 @@ public class ProfileRepository(
         {
             string sql =
                 @"INSERT INTO ""dmscs"".""Profile"" (""ProfileName"", ""Definition"", ""CreatedBy"") VALUES (@Name, @Definition, @CreatedBy) RETURNING ""Id"";";
-            var id = await connection.ExecuteScalarAsync<long>(
+            var id = await connection.ExecuteScalarAsync<int>(
                 sql,
                 new
                 {
@@ -111,7 +111,7 @@ public class ProfileRepository(
         }
     }
 
-    public async Task<ProfileGetResult> GetProfile(long id)
+    public async Task<ProfileGetResult> GetProfile(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -225,7 +225,7 @@ public class ProfileRepository(
         return results;
     }
 
-    public async Task<ProfileDeleteResult> DeleteProfile(long id)
+    public async Task<ProfileDeleteResult> DeleteProfile(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();

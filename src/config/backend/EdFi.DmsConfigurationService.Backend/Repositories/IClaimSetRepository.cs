@@ -15,10 +15,10 @@ public interface IClaimSetRepository
     Task<AuthorizationStrategyGetResult> GetAuthorizationStrategies();
     Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command);
     Task<ClaimSetQueryResult> QueryClaimSet(ClaimSetQuery query);
-    Task<ClaimSetGetResult> GetClaimSet(long id);
+    Task<ClaimSetGetResult> GetClaimSet(int id);
     Task<ClaimSetUpdateResult> UpdateClaimSet(ClaimSetUpdateCommand command);
-    Task<ClaimSetDeleteResult> DeleteClaimSet(long id);
-    Task<ClaimSetExportResult> Export(long id);
+    Task<ClaimSetDeleteResult> DeleteClaimSet(int id);
+    Task<ClaimSetExportResult> Export(int id);
     Task<ClaimSetImportResult> Import(ClaimSetImportCommand command);
     Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command);
 }
@@ -29,7 +29,7 @@ public record ClaimSetInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : ClaimSetInsertResult();
+    public record Success(int Id) : ClaimSetInsertResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -164,7 +164,7 @@ public record ClaimSetCopyResult
     /// <summary>
     /// Successfully updated ClaimSet
     /// </summary>
-    public record Success(long Id) : ClaimSetCopyResult();
+    public record Success(int Id) : ClaimSetCopyResult();
 
     /// <summary>
     /// ClaimSet id not found
@@ -198,7 +198,7 @@ public record ClaimSetImportResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id, IEnumerable<string>? Warnings = null) : ClaimSetImportResult();
+    public record Success(int Id, IEnumerable<string>? Warnings = null) : ClaimSetImportResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

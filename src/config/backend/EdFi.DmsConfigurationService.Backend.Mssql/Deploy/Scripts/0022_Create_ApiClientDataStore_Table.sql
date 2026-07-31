@@ -6,8 +6,8 @@
 IF OBJECT_ID('dmscs.ApiClientDataStore', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ApiClientDataStore (
-        ApiClientId BIGINT NOT NULL,
-        DataStoreId BIGINT NOT NULL,
+        ApiClientId INT NOT NULL,
+        DataStoreId INT NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,

@@ -13,7 +13,7 @@ public class ProfileListResponse
     /// <summary>
     /// Gets or sets the unique identifier for the profile.
     /// </summary>
-    public long Id { get; set; }
+    public int Id { get; set; }
 
     /// <summary>
     /// Gets or sets the name of the profile.

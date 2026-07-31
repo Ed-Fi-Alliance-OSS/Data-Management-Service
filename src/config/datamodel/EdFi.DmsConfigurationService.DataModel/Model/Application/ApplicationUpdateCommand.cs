@@ -11,13 +11,13 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
 public class ApplicationUpdateCommand
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public required string ApplicationName { get; set; }
-    public long VendorId { get; set; }
+    public int VendorId { get; set; }
     public required string ClaimSetName { get; set; }
     public long[] EducationOrganizationIds { get; set; } = [];
-    public long[] DataStoreIds { get; set; } = [];
-    public long[] ProfileIds { get; set; } = [];
+    public int[] DataStoreIds { get; set; } = [];
+    public int[] ProfileIds { get; set; } = [];
 
     public class Validator : AbstractValidator<ApplicationUpdateCommand>
     {

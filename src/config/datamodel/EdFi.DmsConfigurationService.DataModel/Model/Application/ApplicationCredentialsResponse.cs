@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
 public class ApplicationCredentialsResponse
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public required string Key { get; set; }
     public required string Secret { get; set; }
 }

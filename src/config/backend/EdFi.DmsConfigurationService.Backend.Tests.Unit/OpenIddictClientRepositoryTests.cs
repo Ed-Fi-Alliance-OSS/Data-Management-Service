@@ -57,7 +57,7 @@ public class OpenIddictClientRepositoryTests
         public async Task It_should_include_dataStoreIds_claim_when_provided()
         {
             // Arrange
-            var dataStoreIds = new long[] { 3, 1, 2 }; // Unsorted to test sorting
+            var dataStoreIds = new int[] { 3, 1, 2 }; // Unsorted to test sorting
 
             A.CallTo(() =>
                     _dataRepository.FindRoleIdByNameAsync(
@@ -176,7 +176,7 @@ public class OpenIddictClientRepositoryTests
         public async Task It_should_handle_empty_dataStoreIds_array()
         {
             // Arrange
-            var dataStoreIds = Array.Empty<long>();
+            var dataStoreIds = Array.Empty<int>();
 
             A.CallTo(() =>
                     _dataRepository.FindRoleIdByNameAsync(
@@ -242,7 +242,7 @@ public class OpenIddictClientRepositoryTests
         {
             // Arrange
             var clientUuid = Guid.NewGuid().ToString();
-            var dataStoreIds = new long[] { 5, 3, 4 };
+            var dataStoreIds = new int[] { 5, 3, 4 };
 
             var existingProtocolMappers = JsonSerializer.Serialize(
                 new List<Dictionary<string, string>>
@@ -314,7 +314,7 @@ public class OpenIddictClientRepositoryTests
         {
             // Arrange
             var clientUuid = Guid.NewGuid().ToString();
-            var newDataStoreIds = new long[] { 10, 20 };
+            var newDataStoreIds = new int[] { 10, 20 };
 
             var existingProtocolMappers = JsonSerializer.Serialize(
                 new List<Dictionary<string, string>>

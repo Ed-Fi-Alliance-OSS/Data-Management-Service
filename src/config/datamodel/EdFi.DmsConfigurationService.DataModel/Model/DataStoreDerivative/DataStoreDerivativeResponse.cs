@@ -13,12 +13,12 @@ public class DataStoreDerivativeResponse
     /// <summary>
     /// The unique identifier for the derivative instance
     /// </summary>
-    public long Id { get; set; }
+    public int Id { get; set; }
 
     /// <summary>
     /// The parent data store ID
     /// </summary>
-    public long DataStoreId { get; set; }
+    public int DataStoreId { get; set; }
 
     /// <summary>
     /// The type of derivative: "ReadReplica" or "Snapshot"

@@ -21,7 +21,7 @@ public interface IApplicationLockManager
     /// during acquisition propagates as <see cref="OperationCanceledException"/>; it is never
     /// converted to a timeout or failure result.
     /// </summary>
-    Task<ApplicationLockResult> AcquireAsync(long applicationId, CancellationToken cancellationToken);
+    Task<ApplicationLockResult> AcquireAsync(int applicationId, CancellationToken cancellationToken);
 }
 
 public record ApplicationLockResult

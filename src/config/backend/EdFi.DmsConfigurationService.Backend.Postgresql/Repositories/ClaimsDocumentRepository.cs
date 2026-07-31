@@ -208,7 +208,7 @@ public class ClaimsDocumentRepository(
             RETURNING "Id"
             """;
 
-        IEnumerable<long> deletedIds = await connection.QueryAsync<long>(Sql, transaction: transaction);
+        IEnumerable<int> deletedIds = await connection.QueryAsync<int>(Sql, transaction: transaction);
         int deletedCount = deletedIds.Count();
 
         logger.LogDebug("Deleted {Count} non-system-reserved claim sets", deletedCount);
@@ -259,7 +259,7 @@ public class ClaimsDocumentRepository(
                 continue;
             }
 
-            long? insertedId = await connection.QuerySingleOrDefaultAsync<long?>(
+            int? insertedId = await connection.QuerySingleOrDefaultAsync<int?>(
                 InsertSql,
                 new { ClaimSetName = claimSetName, IsSystemReserved = isSystemReserved },
                 transaction: transaction

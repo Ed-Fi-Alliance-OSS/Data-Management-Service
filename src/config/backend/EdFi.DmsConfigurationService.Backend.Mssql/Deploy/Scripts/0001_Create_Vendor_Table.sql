@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.Vendor', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.Vendor (
-        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_Vendor PRIMARY KEY,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_Vendor PRIMARY KEY,
         Company NVARCHAR(256) NOT NULL,
         ContactName NVARCHAR(128),
         ContactEmailAddress NVARCHAR(320),
@@ -23,7 +23,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'UX_Vendor_Company' AND pa
 IF OBJECT_ID('dmscs.VendorNamespacePrefix', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.VendorNamespacePrefix (
-        VendorId BIGINT NOT NULL,
+        VendorId INT NOT NULL,
         NamespacePrefix NVARCHAR(128) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),

@@ -10,6 +10,63 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
 public class DeployTests : DatabaseTestBase
 {
+    /// <summary>
+    /// The only dmscs columns that may remain bigint after DMS-1337 narrowed the 11 spec-named
+    /// resource identifiers to int. Asserted as an exact set, so both a regression of an in-scope
+    /// column back to BIGINT and an unintended new BIGINT column fail the test.
+    /// EducationOrganizationId is an Ed-Fi education organization id, not a CMS resource id, and the
+    /// draft Management API v3 spec declares it int64. Tenant.Id has no Admin API counterpart and
+    /// ClaimsHierarchy.Id is an internal concurrency token; both are out of scope, as are the
+    /// TenantId foreign keys that reference Tenant.Id.
+    /// </summary>
+    private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
+    [
+        ("ApplicationEducationOrganization", "EducationOrganizationId"),
+        ("AuthorizationStrategy", "TenantId"),
+        ("ClaimSet", "TenantId"),
+        ("ClaimsHierarchy", "Id"),
+        ("DataStore", "TenantId"),
+        ("ResourceClaim", "TenantId"),
+        ("Tenant", "Id"),
+        ("Vendor", "TenantId"),
+    ];
+
+    /// <summary>
+    /// The 10 persisted in-scope tables whose identity/primary-key column must report int.
+    /// Of the 11 spec-named resources only 10 are persisted: actions has no table, because
+    /// ClaimSetRepository.GetActions() returns a hard-coded Action[] - see It_creates_all_dmscs_tables,
+    /// which lists no Action table. Action.Id is already int and is covered by the model identifier
+    /// contract test instead, since it reaches neither the database nor OpenAPI.
+    /// </summary>
+    private static readonly string[] InScopeIdentityTables =
+    [
+        "ApiClient",
+        "Application",
+        "AuthorizationStrategy",
+        "ClaimSet",
+        "DataStore",
+        "DataStoreContext",
+        "DataStoreDerivative",
+        "Profile",
+        "ResourceClaim",
+        "Vendor",
+    ];
+
+    private const string ColumnsSql = """
+        SELECT table_info.name AS TableName,
+               column_info.name AS ColumnName,
+               type_info.name AS DataType
+        FROM sys.columns column_info
+        JOIN sys.tables table_info
+            ON table_info.object_id = column_info.object_id
+        JOIN sys.schemas schema_info
+            ON schema_info.schema_id = table_info.schema_id
+        JOIN sys.types type_info
+            ON type_info.user_type_id = column_info.user_type_id
+        WHERE schema_info.name = 'dmscs'
+        ORDER BY table_info.name, column_info.column_id;
+        """;
+
     [Test]
     public async Task It_creates_all_dmscs_tables()
     {
@@ -73,4 +130,51 @@ public class DeployTests : DatabaseTestBase
         var result = new Deploy.DatabaseDeploy().DeployDatabase(ConnectionString);
         result.Should().BeOfType<Backend.Deploy.DatabaseDeployResult.DatabaseDeploySuccess>();
     }
+
+    [Test]
+    public async Task It_declares_only_the_allowlisted_bigint_columns()
+    {
+        ColumnShape[] columns = await QueryDmscsColumnsAsync();
+
+        (string TableName, string ColumnName)[] actualBigintColumns = columns
+            .Where(column => column.DataType == "bigint")
+            .Select(column => (column.TableName, column.ColumnName))
+            .OrderBy(column => column.TableName, StringComparer.Ordinal)
+            .ThenBy(column => column.ColumnName, StringComparer.Ordinal)
+            .ToArray();
+
+        actualBigintColumns
+            .Should()
+            .BeEquivalentTo(
+                ExpectedBigintColumns,
+                "the 11 spec-named resource identifiers are int32 and only education-organization, "
+                    + "tenant and claims-hierarchy columns may remain bigint"
+            );
+    }
+
+    [Test]
+    public async Task It_declares_in_scope_identity_columns_as_int()
+    {
+        ColumnShape[] columns = await QueryDmscsColumnsAsync();
+
+        foreach (string tableName in InScopeIdentityTables)
+        {
+            ColumnShape idColumn = columns
+                .Should()
+                .ContainSingle(column => column.TableName == tableName && column.ColumnName == "Id")
+                .Which;
+
+            idColumn
+                .DataType.Should()
+                .Be("int", $"{tableName}.Id is a spec-named resource identifier declared as int32");
+        }
+    }
+
+    private static async Task<ColumnShape[]> QueryDmscsColumnsAsync()
+    {
+        await using var connection = await OpenConnectionAsync();
+        return (await connection.QueryAsync<ColumnShape>(ColumnsSql)).ToArray();
+    }
+
+    private sealed record ColumnShape(string TableName, string ColumnName, string DataType);
 }

@@ -4,7 +4,7 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS "dmscs"."ResourceClaim" (
-    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "Id" INT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
     "ResourceName" VARCHAR(255) NOT NULL,
     "ClaimName" VARCHAR(255) NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),

@@ -4,9 +4,9 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS "dmscs"."Application" (
-    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "Id" INT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
     "ApplicationName" VARCHAR(256) NOT NULL,
-    "VendorId" BIGINT NOT NULL,
+    "VendorId" INT NOT NULL,
     "ClaimSetName" VARCHAR(256) NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
     "CreatedBy" VARCHAR(256),
@@ -54,7 +54,7 @@ COMMENT ON COLUMN "dmscs"."Application"."LastModifiedAt" IS 'Timestamp when the 
 COMMENT ON COLUMN "dmscs"."Application"."ModifiedBy" IS 'User or client ID who last modified the record';
 
 CREATE TABLE IF NOT EXISTS "dmscs"."ApplicationEducationOrganization" (
-    "ApplicationId" BIGINT NOT NULL,
+    "ApplicationId" INT NOT NULL,
     "EducationOrganizationId" BIGINT NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
     "CreatedBy" VARCHAR(256),

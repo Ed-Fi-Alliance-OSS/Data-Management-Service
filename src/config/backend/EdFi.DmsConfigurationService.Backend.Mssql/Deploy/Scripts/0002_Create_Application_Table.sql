@@ -6,9 +6,9 @@
 IF OBJECT_ID('dmscs.Application', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.Application (
-        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_Application PRIMARY KEY,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_Application PRIMARY KEY,
         ApplicationName NVARCHAR(256) NOT NULL,
-        VendorId BIGINT NOT NULL,
+        VendorId INT NOT NULL,
         ClaimSetName NVARCHAR(256) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),
@@ -24,7 +24,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'UX_Application_VendorId_A
 IF OBJECT_ID('dmscs.ApplicationEducationOrganization', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ApplicationEducationOrganization (
-        ApplicationId BIGINT NOT NULL,
+        ApplicationId INT NOT NULL,
         EducationOrganizationId BIGINT NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),

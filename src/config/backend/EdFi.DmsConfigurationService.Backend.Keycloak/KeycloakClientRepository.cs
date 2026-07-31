@@ -39,7 +39,7 @@ public class KeycloakClientRepository(
         string scope,
         string namespacePrefixes,
         string educationOrganizationIds,
-        long[]? dataStoreIds = null,
+        int[]? dataStoreIds = null,
         bool isApproved = true
     )
     {
@@ -306,7 +306,7 @@ public class KeycloakClientRepository(
         string displayName,
         string scope,
         string educationOrganizationIds,
-        long[]? dataStoreIds = null,
+        int[]? dataStoreIds = null,
         bool isApproved = true,
         // Intentionally unused for Keycloak. The update preserves the client's identity, so its
         // service account and realm role mappings survive without any reassignment; the parameter
@@ -515,7 +515,7 @@ public class KeycloakClientRepository(
             protocolMappers.Add(EducationOrganizationProtocolMapper(educationOrganizationIds));
         }
 
-        void ReplaceDataStoreIdsClaim(List<ClientProtocolMapper> protocolMappers, long[]? dataStoreIds)
+        void ReplaceDataStoreIdsClaim(List<ClientProtocolMapper> protocolMappers, int[]? dataStoreIds)
         {
             protocolMappers.RemoveAll(mapper => HasClaimName(mapper, "dataStoreIds"));
 

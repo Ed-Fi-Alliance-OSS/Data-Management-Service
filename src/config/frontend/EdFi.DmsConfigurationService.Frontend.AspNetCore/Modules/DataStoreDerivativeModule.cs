@@ -78,7 +78,7 @@ public class DataStoreDerivativeModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreDerivativeRepository repository
     )
@@ -99,7 +99,7 @@ public class DataStoreDerivativeModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         DataStoreDerivativeUpdateCommand command,
         DataStoreDerivativeUpdateCommand.Validator validator,
         HttpContext httpContext,
@@ -139,7 +139,7 @@ public class DataStoreDerivativeModule : IEndpointModule
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreDerivativeRepository repository
     )

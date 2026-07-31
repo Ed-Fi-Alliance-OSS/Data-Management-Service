@@ -4,8 +4,8 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS "dmscs"."ApiClientDataStore" (
-    "ApiClientId" BIGINT NOT NULL,
-    "DataStoreId" BIGINT NOT NULL,
+    "ApiClientId" INT NOT NULL,
+    "DataStoreId" INT NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
     "CreatedBy" VARCHAR(256),
     "LastModifiedAt" TIMESTAMP,

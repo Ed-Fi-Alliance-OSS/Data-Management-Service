@@ -15,13 +15,13 @@ public interface IApplicationRepository
         ApiClientCommand clientCommand
     );
     Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query);
-    Task<ApplicationGetResult> GetApplication(long id);
+    Task<ApplicationGetResult> GetApplication(int id);
     Task<ApplicationUpdateResult> UpdateApplication(
         ApplicationUpdateCommand command,
         ApiClientCommand clientCommand
     );
-    Task<ApplicationDeleteResult> DeleteApplication(long id);
-    Task<ApplicationApiClientsResult> GetApplicationApiClients(long id);
+    Task<ApplicationDeleteResult> DeleteApplication(int id);
+    Task<ApplicationApiClientsResult> GetApplicationApiClients(int id);
 
     /// <summary>
     /// Reads the complete update-relevant state of an Application and one of its clients inside
@@ -29,7 +29,7 @@ public interface IApplicationRepository
     /// transaction, so the returned snapshot reflects that transaction's final outcome; it also
     /// carries the selected client's exact data store set, which aggregate reads cannot supply.
     /// </summary>
-    Task<ApplicationUpdateStateResult> GetApplicationUpdateState(long applicationId, string clientId);
+    Task<ApplicationUpdateStateResult> GetApplicationUpdateState(int applicationId, string clientId);
 
     /// <summary>
     /// Atomically sets the stored identity-provider client UUID, guarded by its expected current
@@ -38,7 +38,7 @@ public interface IApplicationRepository
     /// whether deleting the recreated provider client is safe.
     /// </summary>
     Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
-        long applicationId,
+        int applicationId,
         string clientId,
         Guid expectedClientUuid,
         Guid newClientUuid
@@ -51,14 +51,16 @@ public interface IApplicationRepository
 /// </summary>
 public record ApplicationUpdateState(
     string ApplicationName,
-    long VendorId,
+    int VendorId,
     string ClaimSetName,
+    // Education organization ids stay 64-bit: the Management API v3 draft declares them int64,
+    // deliberately widening relative to Admin API's int. Only CMS resource ids narrow.
     long[] EducationOrganizationIds,
-    long[] ProfileIds,
+    int[] ProfileIds,
     string ClientId,
     Guid ClientUuid,
     bool IsApproved,
-    long[] ClientDataStoreIds
+    int[] ClientDataStoreIds
 );
 
 public record ApplicationUpdateStateResult
@@ -82,7 +84,7 @@ public record ApplicationInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : ApplicationInsertResult();
+    public record Success(int Id) : ApplicationInsertResult();
 
     /// <summary>
     /// Referenced vendor not found exception thrown and caught

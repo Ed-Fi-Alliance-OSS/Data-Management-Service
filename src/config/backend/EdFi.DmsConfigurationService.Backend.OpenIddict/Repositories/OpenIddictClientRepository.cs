@@ -99,7 +99,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <param name="existingProtocolMappersJson">Existing protocol mappers JSON string.</param>
         /// <param name="dataStoreIds">Array of data store IDs.</param>
         /// <returns>Updated protocol mappers JSON string.</returns>
-        private static string MergeDataStoreIdsClaim(string existingProtocolMappersJson, long[] dataStoreIds)
+        private static string MergeDataStoreIdsClaim(string existingProtocolMappersJson, int[] dataStoreIds)
         {
             List<Dictionary<string, string>> protocolMappers = new();
             if (!string.IsNullOrWhiteSpace(existingProtocolMappersJson))
@@ -132,7 +132,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string scope,
             string namespacePrefixes,
             string educationOrganizationIds,
-            long[]? dataStoreIds = null,
+            int[]? dataStoreIds = null,
             // isApproved is intentionally unused here: for the OpenIddict backend the approval gate is
             // enforced in OpenIddictTokenManager which reads BOOL_AND(ApiClient.IsApproved) from the
             // database; this repository only manages the OpenIddictApplication record. For the Keycloak
@@ -251,7 +251,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string displayName,
             string scope,
             string educationOrganizationIds,
-            long[]? dataStoreIds = null,
+            int[]? dataStoreIds = null,
             // isApproved is intentionally unused here: for the OpenIddict backend the approval gate is
             // enforced in OpenIddictTokenManager which reads BOOL_AND(ApiClient.IsApproved) from the
             // database; this repository only manages the OpenIddictApplication record. For the Keycloak

@@ -50,7 +50,7 @@ public class DataStoreRepository(
                 TenantId,
             };
 
-            var id = await connection.ExecuteScalarAsync<long>(sql, parameters);
+            var id = await connection.ExecuteScalarAsync<int>(sql, parameters);
             return new DataStoreInsertResult.Success(id);
         }
         catch (Exception ex)
@@ -113,7 +113,7 @@ public class DataStoreRepository(
                 """;
 
             var results = await connection.QueryAsync<(
-                long Id,
+                int Id,
                 string DataStoreType,
                 string Name,
                 byte[]? ConnectionString,
@@ -155,7 +155,7 @@ public class DataStoreRepository(
                                 ))
                                 .ToList()
                     ),
-                _ => new Dictionary<long, List<DataStoreContextItem>>(),
+                _ => new Dictionary<int, List<DataStoreContextItem>>(),
             };
 
             var derivativesResult = await derivativeRepository.GetDataStoreDerivativesByDataStoreIds(
@@ -176,7 +176,7 @@ public class DataStoreRepository(
                                 ))
                                 .ToList()
                     ),
-                _ => new Dictionary<long, List<DataStoreDerivativeItem>>(),
+                _ => new Dictionary<int, List<DataStoreDerivativeItem>>(),
             };
 
             var dataStores = dataStoreList.Select(row => new DataStoreResponse
@@ -200,7 +200,7 @@ public class DataStoreRepository(
         }
     }
 
-    public async Task<DataStoreGetResult> GetDataStore(long id)
+    public async Task<DataStoreGetResult> GetDataStore(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -212,7 +212,7 @@ public class DataStoreRepository(
                 """;
 
             var result = await connection.QuerySingleOrDefaultAsync<(
-                long Id,
+                int Id,
                 string DataStoreType,
                 string Name,
                 byte[]? ConnectionString,
@@ -307,7 +307,7 @@ public class DataStoreRepository(
         }
     }
 
-    public async Task<DataStoreDeleteResult> DeleteDataStore(long id)
+    public async Task<DataStoreDeleteResult> DeleteDataStore(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -329,7 +329,7 @@ public class DataStoreRepository(
         }
     }
 
-    public async Task<DataStoreIdsExistResult> GetExistingDataStoreIds(long[] ids)
+    public async Task<DataStoreIdsExistResult> GetExistingDataStoreIds(int[] ids)
     {
         if (ids.Length == 0)
         {
@@ -345,7 +345,7 @@ public class DataStoreRepository(
                 WHERE "Id" = ANY(@Ids) AND {TenantContext.TenantWhereClause()};
                 """;
 
-            var existingIds = await connection.QueryAsync<long>(sql, new { Ids = ids, TenantId });
+            var existingIds = await connection.QueryAsync<int>(sql, new { Ids = ids, TenantId });
             return new DataStoreIdsExistResult.Success([.. existingIds]);
         }
         catch (Exception ex)
@@ -356,7 +356,7 @@ public class DataStoreRepository(
     }
 
     public async Task<ApplicationByDataStoreQueryResult> QueryApplicationByDataStore(
-        long dataStoreId,
+        int dataStoreId,
         PagingQuery query
     )
     {
@@ -397,13 +397,13 @@ public class DataStoreRepository(
             };
 
             var rows = await connection.QueryAsync<(
-                long Id,
+                int Id,
                 string ApplicationName,
                 string ClaimSetName,
-                long VendorId,
+                int VendorId,
                 bool Enabled,
                 long? EducationOrganizationId,
-                long DataStoreId
+                int DataStoreId
             )>(sql, parameters);
 
             var applications = rows.GroupBy(row => row.Id)
@@ -438,7 +438,7 @@ public class DataStoreRepository(
                         WHERE ap."ApplicationId" = ANY(@ApplicationIds);
                     """;
 
-                var profileRows = await connection.QueryAsync<(long ApplicationId, long ProfileId)>(
+                var profileRows = await connection.QueryAsync<(int ApplicationId, int ProfileId)>(
                     sqlProfiles,
                     new { ApplicationIds = applicationIds }
                 );

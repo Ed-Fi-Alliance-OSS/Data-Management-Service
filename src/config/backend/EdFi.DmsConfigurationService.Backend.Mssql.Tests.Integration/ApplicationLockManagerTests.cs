@@ -36,7 +36,7 @@ public abstract class ApplicationLockManagerTestBase : DatabaseTestBase
 
     private protected static async Task<IAsyncDisposable> AcquireOrFailAsync(
         MssqlApplicationLockManager manager,
-        long applicationId
+        int applicationId
     )
     {
         ApplicationLockResult result = await manager.AcquireAsync(applicationId, CancellationToken.None);

@@ -10,11 +10,11 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 
 public class ApiClientUpdateCommand
 {
-    public required long Id { get; set; }
-    public required long ApplicationId { get; set; }
+    public required int Id { get; set; }
+    public required int ApplicationId { get; set; }
     public required string Name { get; set; } = "";
     public required bool IsApproved { get; set; }
-    public long[] DataStoreIds { get; set; } = [];
+    public int[] DataStoreIds { get; set; } = [];
 
     /// <summary>
     /// Set server-side after the identity provider issues a new UUID on update.

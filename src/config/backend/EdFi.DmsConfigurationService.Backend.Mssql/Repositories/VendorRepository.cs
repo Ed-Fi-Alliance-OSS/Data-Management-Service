@@ -34,13 +34,13 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             await using var transaction = await connection.BeginTransactionAsync();
             try
             {
-                long id = 0;
+                int id = 0;
                 bool isNewVendor = false;
                 // Check for existing vendor by Company (and TenantId if multi-tenancy is enabled)
                 var sql =
                     $"SELECT Id FROM dmscs.Vendor WHERE Company = @Company AND {TenantContext.TenantWhereClause()}";
 
-                var existingVendorId = await connection.ExecuteScalarAsync<long?>(
+                var existingVendorId = await connection.ExecuteScalarAsync<int?>(
                     sql,
                     new { command.Company, TenantId },
                     transaction
@@ -85,7 +85,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                         VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy, @TenantId);
                         """;
 
-                    id = await connection.ExecuteScalarAsync<long>(
+                    id = await connection.ExecuteScalarAsync<int>(
                         sql,
                         new
                         {
@@ -242,7 +242,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             }
         }
 
-        public async Task<VendorGetResult> GetVendor(long id)
+        public async Task<VendorGetResult> GetVendor(int id)
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
             try
@@ -366,7 +366,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             }
         }
 
-        public async Task<VendorDeleteResult> DeleteVendor(long id)
+        public async Task<VendorDeleteResult> DeleteVendor(int id)
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
             try
@@ -390,7 +390,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             }
         }
 
-        public async Task<VendorApplicationsResult> GetVendorApplications(long vendorId)
+        public async Task<VendorApplicationsResult> GetVendorApplications(int vendorId)
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
             try
@@ -409,7 +409,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                     """;
 
                 bool vendorExists = false;
-                Dictionary<long, ApplicationResponse> response = [];
+                Dictionary<int, ApplicationResponse> response = [];
 
                 await connection.QueryAsync<ApplicationResponse, long?, ApplicationResponse>(
                     sqlEdOrgs,
@@ -457,7 +457,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                             WHERE a.VendorId = @VendorId;
                         """;
 
-                    await connection.QueryAsync<long, long, long>(
+                    await connection.QueryAsync<int, int, int>(
                         sqlDataStores,
                         (applicationId, dataStoreId) =>
                         {
@@ -484,7 +484,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                             WHERE a.VendorId = @VendorId;
                         """;
 
-                    await connection.QueryAsync<long, long, long>(
+                    await connection.QueryAsync<int, int, int>(
                         sqlProfiles,
                         (applicationId, profileId) =>
                         {

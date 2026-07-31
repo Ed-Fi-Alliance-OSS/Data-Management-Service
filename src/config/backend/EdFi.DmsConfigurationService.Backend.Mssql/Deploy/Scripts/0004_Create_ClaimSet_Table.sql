@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.ClaimSet', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ClaimSet (
-        Id BIGINT IDENTITY(1,1) NOT NULL,
+        Id INT IDENTITY(1,1) NOT NULL,
         ClaimSetName NVARCHAR(256) NOT NULL,
         IsSystemReserved BIT NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),

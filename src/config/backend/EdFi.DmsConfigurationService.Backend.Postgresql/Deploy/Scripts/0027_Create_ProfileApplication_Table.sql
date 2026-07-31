@@ -12,8 +12,8 @@ BEGIN
 END$$;
 
 CREATE TABLE IF NOT EXISTS "dmscs"."ApplicationProfile" (
-	"ApplicationId" BIGINT NOT NULL,
-	"ProfileId" BIGINT NOT NULL,
+	"ApplicationId" INT NOT NULL,
+	"ProfileId" INT NOT NULL,
 	"CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
 	"CreatedBy" VARCHAR(256)
 );
