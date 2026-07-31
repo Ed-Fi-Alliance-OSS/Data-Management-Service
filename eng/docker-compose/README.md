@@ -323,6 +323,16 @@ database. In separate mode the datastore database must also be genuinely distinc
 `edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that collides with it
 is rejected rather than quietly re-sharing the database the switch exists to split.
 
+What counts as a collision follows the mechanism that actually creates the database, so the two
+inputs are not checked identically. `POSTGRES_DB_NAME` reaches `postgresql-init.sh`, which runs an
+unquoted `CREATE DATABASE`: PostgreSQL folds the identifier to lower case and discards the whitespace
+around it, so `EDFI_ConfigurationService` and `'EDFI_ConfigurationService '` both name the reserved
+database and both are rejected. `-DataStoreDatabaseName` is stored verbatim in the data-store record
+and created by SchemaTools with a *quoted* identifier, so on PostgreSQL only `edfi_configurationservice`
+itself is rejected and a mixed-case name is a genuinely separate database you may use. On SQL Server
+database names match case-insensitively under the default collation, so a case variant of the reserved
+name is rejected for either input.
+
 Shared-mode environment files on non-CMS shapes keep today's shared-database check unchanged. That
 check asserts a shared-mode invariant, so it does not apply to a configuration that has declared
 itself separate — by the internal marker, by an explicit `-SeparateConfigDatabase`, or by a CMS
