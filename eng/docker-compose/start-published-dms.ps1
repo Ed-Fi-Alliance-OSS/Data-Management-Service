@@ -292,8 +292,8 @@ if (-not $d) {
     # postgresql-init.sh's unquoted CREATE DATABASE. It is serialized into the datastore connection
     # string registered in CMS below, parsed back by the provider, and SchemaTools creates the database
     # with a QUOTED identifier - so on PostgreSQL nothing folds: only a name the provider parses back AS
-    # the reserved name collides (the exact name, or one whose bare trailing line feed the transport
-    # removes), and a mixed-case name is a genuinely distinct database. Sharing one engine-neutral
+    # the reserved name collides (the exact name, or - the measured exception - one whose bare trailing
+    # line feed the transport removes), and a mixed-case name is a genuinely distinct database. Sharing one engine-neutral
     # predicate across both call sites is what made this script reject that distinct PostgreSQL database
     # while the validator accepted a colliding one.
     $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly -or $NoDataStore)
@@ -305,7 +305,7 @@ if (-not $d) {
                 "SQL Server matches database names under its default collation, which ignores letter case and trailing spaces, so those variants of that name are the same database."
             }
             else {
-                "On PostgreSQL the name is compared as the provider parses it - SchemaTools creates it with a quoted identifier, so nothing folds; only a name that parses back to that reserved name collides, and the one non-exact such shape is a trailing line feed, which connection-string parsing removes."
+                "On PostgreSQL the name is compared as the provider parses it - SchemaTools creates it with a quoted identifier, so nothing folds; only a name that parses back to that reserved name collides, and the measured non-exact case is a trailing line feed, which connection-string parsing removes."
             }
         throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. $collisionRule"
     }

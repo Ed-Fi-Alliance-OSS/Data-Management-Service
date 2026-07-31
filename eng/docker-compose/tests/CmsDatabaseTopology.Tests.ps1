@@ -2362,9 +2362,9 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
         It "keeps the connection-string comparison separate from the collision authority on PostgreSQL" {
             # The collision authority normalizes for an unquoted CREATE DATABASE; this comparison must
-            # not, because a connection string's database name is passed to the provider verbatim and
-            # EDFI_ConfigurationService really is a different database. Widening this rule to match the
-            # collision rule would silently accept CMS pointed at a database that does not exist.
+            # not, because this mixed-case database name survives provider parsing unchanged (measured)
+            # and EDFI_ConfigurationService really is a different database. Widening this rule to match
+            # the collision rule would silently accept CMS pointed at a database that does not exist.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
