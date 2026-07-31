@@ -33,6 +33,12 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
     {
         result = null;
 
+        if (_writeExceptionClassifier.IsTransientFailure(exception))
+        {
+            result = BuildTransientWriteConflictResult(request);
+            return true;
+        }
+
         if (!_writeExceptionClassifier.TryClassify(exception, out var classification))
         {
             return false;
@@ -54,6 +60,20 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
         return true;
     }
+
+    private static RelationalWriteExecutorResult BuildTransientWriteConflictResult(
+        RelationalWriteExecutorRequest request
+    ) =>
+        request.OperationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureWriteConflict()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
+        };
 
     private RelationalWriteExecutorResult BuildConstraintViolationFailureResult(
         RelationalWriteExecutorRequest request,

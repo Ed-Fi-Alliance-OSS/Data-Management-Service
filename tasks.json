@@ -285,5 +285,91 @@
       "dotnet csharpier format src/dms/backend src/dms/core"
     ],
     "completed": true
+  },
+  {
+    "category": "provider-sqlserver",
+    "description": "Medium: Exclude SQL Server CHECK constraint error 547 failures from the DocumentCache writer delete-race retry path. SQL Server uses error 547 for foreign key, reference, and CHECK constraint failures, so the writer should only convert true FK/reference violations and the DocumentCache UUID trigger failure into retryable delete races.",
+    "acceptance-criteria": [
+      "MssqlDocumentCacheWriter treats true SQL Server FK/reference 547 failures and the DocumentCache UUID trigger error as retryable delete races.",
+      "MssqlDocumentCacheWriter does not treat SQL Server CHECK constraint 547 failures as retryable delete races or return DeleteRaceRetryExhausted for deterministic CHECK failures.",
+      "The writer reuses or mirrors the CHECK-excluding logic already used by MssqlRelationalWriteExceptionClassifier.IsForeignKeyViolation.",
+      "Focused tests cover both a retryable SQL Server FK/reference 547 path and a non-retryable CHECK constraint 547 path for the writer delete-race classifier behavior."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlDocumentCacheWriter.cs to confirm IsRetryableDeleteRace excludes CHECK constraint 547 messages.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlRelationalWriteExceptionClassifier.cs and its unit tests to confirm the writer stays consistent with existing 547 classification semantics.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter MssqlRelationalWriteExceptionClassifier.",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
+    ],
+    "completed": false
+  },
+  {
+    "category": "canonical-write-integration",
+    "description": "High: Make canonical POST and PUT enqueue-related transient database failures flow into the existing full repository-call retry policy instead of escaping as provider exceptions. Provider classifiers already identify PostgreSQL deadlock, serialization, and lock-timeout errors and SQL Server deadlock, lock-timeout, snapshot/update-conflict, and dependency failures as transient, but the write executor currently rethrows classifier-unclaimed DbException values before the API retry pipeline can handle a retryable result.",
+    "acceptance-criteria": [
+      "Non-descriptor POST and PUT repository calls that hit provider transient DbException values during the canonical write transaction roll back and return the existing retryable write-conflict result for the operation kind.",
+      "The existing backendResiliencePipeline retries the complete repository call for these canonical write/enqueue conflicts; no code retries only the projection enqueue trigger, only the work-table upsert, or a post-commit fragment.",
+      "Unclassified non-transient DbException values keep their existing fail-fast or unknown-failure behavior and are not broadened into retryable write conflicts.",
+      "PostgreSQL and SQL Server evidence exercises the production repository or handler retry boundary for enqueue-related lock-timeout/deadlock/serialization behavior, not only direct SQL and provider classifier checks.",
+      "Existing tests that assert unclaimed DbException values are rethrown are narrowed so provider-transient failures recognized by IsTransientFailure are not covered by that rethrow expectation."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs and src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteDatabaseFailureResultMapper.cs to confirm IsTransientFailure is converted to the operation-kind retryable result after rollback.",
+      "Review src/dms/core/EdFi.DataManagementService.Core/DmsCoreServiceExtensions.cs to confirm retries still wrap the full repository call through Utility.IsRetryableResult.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalWriteDatabaseFailureResultMapper.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DefaultRelationalWriteExecutor.",
+      "Run provider integration tests for CanonicalWriteEnqueueRetry after updating them to pass through the repository or handler retry boundary."
+    ],
+    "completed": true
+  },
+  {
+    "category": "target-resolution",
+    "description": "Medium: Validate DocumentCache targets against the selected EffectiveSchema and ResourceKey seed before exposing an eligible execution or materialization context. The materializer contract says target contexts are created only after EffectiveSchema and ResourceKey validation, but the target context builder currently bases eligibility on DataStoreIdentity, lifecycle, cache inventory, and provider prerequisites without comparing the target database's EffectiveSchema or ResourceKey rows to the selected mapping set.",
+    "acceptance-criteria": [
+      "DocumentCache target resolution reads and compares the target dms.EffectiveSchema fingerprint, resource-key count, and resource-key hash against the selected runtime mapping set or effective schema for that target.",
+      "The target inventory or an equivalent validation path covers the dms.ResourceKey table and the dms.Document ResourceKeyId relationship required by the materializer and writer SQL.",
+      "An eligible DocumentCacheTargetExecutionContext is created only when EffectiveSchema and ResourceKey compatibility is proven for the resolved target data store; mismatches produce sanitized target diagnostics and no execution context.",
+      "Validation for configured non-default or non-current DocumentCache targets does not rely on the request/startup validation already performed for the process-selected data store.",
+      "Provider writer/materializer code continues to assume the resolved target context contract instead of adding per-document ResourceKey revalidation."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/DocumentCache/DocumentCacheTargetContextBuilder.cs to confirm eligibility includes EffectiveSchema and ResourceKey compatibility.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheInventoryValidatorSupport.cs to confirm ResourceKey and Document.ResourceKeyId shape are validated by inventory or by an explicitly separate target validation component.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DocumentCacheTargetContextBuilder.",
+      "Run provider integration tests that make an isolated DocumentCache target missing or drifting dms.ResourceKey or dms.EffectiveSchema and confirm the target is ineligible and the writer is not invoked."
+    ],
+    "completed": false
+  },
+  {
+    "category": "cache-ahead",
+    "description": "Medium: Guard cache-ahead latch updates with the current source/cache relationship. The incident recheck can observe C greater than S, then a concurrent canonical write can advance or repair the document before the latch UPDATE, but the provider latch UPDATE currently only checks lifecycle and latch state.",
+    "acceptance-criteria": [
+      "PostgreSQL and SQL Server latch mutation statements set CacheAheadRecoveryRequired only when the same statement observes the requested DocumentId with current DocumentCache.ContentVersion greater than current Document.ContentVersion.",
+      "If C greater than S disappears between incident recheck and latch mutation, the writer returns CacheAheadDisappeared and leaves CacheAheadRecoveryRequired false.",
+      "If lifecycle or an already-set latch wins the race, the writer returns LifecycleOrLatchFenced rather than CacheAheadDisappeared.",
+      "Provider tests cover a race where source advances to the cache version or higher after incident recheck and before latch mutation for both PostgreSQL and SQL Server."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDocumentCacheWriter.cs and src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlDocumentCacheWriter.cs to confirm SetCacheAheadLatchAsync or its replacement repeats the Document/DocumentCache C greater than S predicate.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DocumentCacheWriter.",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
+    ],
+    "completed": false
+  },
+  {
+    "category": "lifecycle-fencing",
+    "description": "Medium: Return a typed lifecycle/latch fence for non-transient locked lifecycle-read failures in the DocumentCache writer. The shared lifecycle reader maps missing or unreadable DocumentCacheState to Missing or Unreadable, but the provider writers use separate locked reads that let those failures escape before classification can return StateMissing or StateUnreadable.",
+    "acceptance-criteria": [
+      "PostgreSQL and SQL Server locked lifecycle reads convert missing or non-transient unreadable dms.DocumentCacheState failures into DocumentCacheWriterResult.LifecycleOrLatchFenced with StateMissing or StateUnreadable before any S/C/W classification, cache DML, or acknowledgement.",
+      "Configured transient provider failures during the locked lifecycle read still flow to the cache-writer retry adapter and replay the complete writer attempt.",
+      "The locked lifecycle-read behavior is consistent between the main writer transaction and cache-ahead incident transaction.",
+      "Focused provider tests cover missing state, unreadable state, and transient lifecycle-read retry behavior for both PostgreSQL and SQL Server."
+    ],
+    "steps-to-verify": [
+      "Review the locked lifecycle read paths in src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDocumentCacheWriter.cs and src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlDocumentCacheWriter.cs.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DocumentCacheWriter.",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
+    ],
+    "completed": false
   }
 ]

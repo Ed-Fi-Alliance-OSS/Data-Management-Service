@@ -143,16 +143,66 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     }
 
     [Test]
-    public void It_leaves_unclassified_database_exceptions_unmapped()
+    public void It_maps_transient_post_database_failures_to_retryable_write_conflicts()
     {
+        var exception = new StubDbException("deadlock");
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var isMapped = _sut.TryBuild(
+            CreateRequest(RelationalWriteOperationKind.Post),
+            exception,
+            out var result
+        );
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
+            );
+        _writeExceptionClassifier.CapturedTransientException.Should().BeSameAs(exception);
+        _writeExceptionClassifier.CapturedException.Should().BeNull();
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_maps_transient_put_database_failures_to_retryable_write_conflicts()
+    {
+        var exception = new StubDbException("lock timeout");
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
         var isMapped = _sut.TryBuild(
             CreateRequest(RelationalWriteOperationKind.Put),
-            new StubDbException("deadlock"),
+            exception,
+            out var result
+        );
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        _writeExceptionClassifier.CapturedTransientException.Should().BeSameAs(exception);
+        _writeExceptionClassifier.CapturedException.Should().BeNull();
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_leaves_unclassified_database_exceptions_unmapped()
+    {
+        var exception = new StubDbException("provider failure");
+
+        var isMapped = _sut.TryBuild(
+            CreateRequest(RelationalWriteOperationKind.Put),
+            exception,
             out var result
         );
 
         isMapped.Should().BeFalse();
         result.Should().BeNull();
+        _writeExceptionClassifier.CapturedTransientException.Should().BeSameAs(exception);
+        _writeExceptionClassifier.CapturedException.Should().BeSameAs(exception);
         _writeConstraintResolver.ResolveCallCount.Should().Be(0);
     }
 
@@ -657,7 +707,11 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     {
         public DbException? CapturedException { get; private set; }
 
+        public DbException? CapturedTransientException { get; private set; }
+
         public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
+
+        public bool IsTransientFailureToReturn { get; set; }
 
         public bool TryClassify(
             DbException exception,
@@ -673,7 +727,11 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
 
         public bool IsUniqueConstraintViolation(DbException exception) => false;
 
-        public bool IsTransientFailure(DbException exception) => false;
+        public bool IsTransientFailure(DbException exception)
+        {
+            CapturedTransientException = exception;
+            return IsTransientFailureToReturn;
+        }
     }
 
     private sealed class RecordingRelationalWriteConstraintResolver : IRelationalWriteConstraintResolver

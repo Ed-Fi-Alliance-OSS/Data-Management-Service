@@ -4,11 +4,22 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Tests.Common.NoProfileUpdateSemanticsScenarios;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
@@ -20,17 +31,14 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard4)]
 public class Given_Mssql_Canonical_Write_Enqueue_Retry
 {
-    private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
-
-    private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
-    private static readonly DateTime LastModifiedAt = new(2026, 7, 31, 12, 0, 0, DateTimeKind.Utc);
+    private const int LockTimeoutMilliseconds = 100;
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private IMssqlGeneratedDdlBaselineDatabase _baseline = null!;
     private IMssqlGeneratedDdlBaselineLease _lease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
-    private MssqlRelationalWriteExceptionClassifier _classifier = null!;
+    private MappingSet _mappingSet = null!;
+    private ServiceProvider _serviceProvider = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -40,6 +48,7 @@ public class Given_Mssql_Canonical_Write_Enqueue_Retry
         );
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = _fixture.MappingSet;
         _baseline = await MssqlGeneratedDdlBaselineDatabaseFactory.CreateAsync(
             $"{nameof(Given_Mssql_Canonical_Write_Enqueue_Retry)}:{_fixture.MappingSet.Key.EffectiveSchemaHash}",
             _fixture.GeneratedDdl
@@ -51,15 +60,23 @@ public class Given_Mssql_Canonical_Write_Enqueue_Retry
     {
         _lease = await _baseline.AcquireRestoredDatabaseAsync();
         _database = _lease.Database;
-        _classifier = new MssqlRelationalWriteExceptionClassifier();
+        _serviceProvider = CreateServiceProvider();
     }
 
     [TearDown]
     public async Task TearDown()
     {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+
         if (_lease is not null)
         {
             await _lease.DisposeAsync();
+            _lease = null!;
+            _database = null!;
         }
     }
 
@@ -69,45 +86,106 @@ public class Given_Mssql_Canonical_Write_Enqueue_Retry
         if (_baseline is not null)
         {
             await _baseline.DisposeAsync();
+            _baseline = null!;
         }
     }
 
-    [Test]
-    public async Task It_classifies_enqueue_work_lock_timeout_as_retryable_and_rolls_back_the_canonical_update()
+    [TestCase(CanonicalRepositoryWriteKind.PostAsUpdate)]
+    [TestCase(CanonicalRepositoryWriteKind.Put)]
+    public async Task It_maps_repository_enqueue_lock_timeout_to_retryable_write_conflict(
+        CanonicalRepositoryWriteKind writeKind
+    )
     {
         await SetTrackingLifecycleAsync();
-        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await ExecuteCreateAsync();
+        ProjectionWorkState before = await ReadProjectionWorkStateAsync();
 
         await using SqlConnection blockerConnection = new(_database.ConnectionString);
         await blockerConnection.OpenAsync();
         await using SqlTransaction blockerTransaction = (SqlTransaction)
             await blockerConnection.BeginTransactionAsync();
-        await LockProjectionWorkRowAsync(blockerConnection, blockerTransaction, source.DocumentId);
+        await LockProjectionWorkRowAsync(blockerConnection, blockerTransaction, before.DocumentId);
 
         try
         {
-            SqlException exception = (
-                await FluentActions
-                    .Awaiting(() =>
-                        AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
-                            source.DocumentId,
-                            contentVersion: 11
-                        )
-                    )
-                    .Should()
-                    .ThrowAsync<SqlException>()
-            ).Which;
+            object result = await ExecuteBlockedCanonicalWriteAsync(writeKind);
 
-            exception.Number.Should().Be(1222);
-            _classifier.IsTransientFailure(exception).Should().BeTrue();
+            switch (writeKind)
+            {
+                case CanonicalRepositoryWriteKind.PostAsUpdate:
+                    result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+                    break;
+                case CanonicalRepositoryWriteKind.Put:
+                    result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(writeKind), writeKind, null);
+            }
         }
         finally
         {
             await blockerTransaction.RollbackAsync();
         }
 
-        (await ReadContentVersionAsync(source.DocumentId)).Should().Be(10);
-        (await ReadRequiredContentVersionAsync(source.DocumentId)).Should().Be(10);
+        ProjectionWorkState after = await ReadProjectionWorkStateAsync();
+        after.ContentVersion.Should().Be(before.ContentVersion);
+        after.RequiredContentVersion.Should().Be(before.RequiredContentVersion);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using AsyncServiceScope scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        UpsertResult createResult = await repository.UpsertDocument(
+            new UpsertRequest(
+                ResourceInfo: SchoolResourceInfo,
+                DocumentInfo: CreateSchoolDocumentInfo(),
+                MappingSet: _mappingSet,
+                EdfiDoc: CreateRequestBody(),
+                Headers: [],
+                TraceId: new TraceId("mssql-canonical-enqueue-retry-create"),
+                DocumentUuid: SchoolDocumentUuid
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<object> ExecuteBlockedCanonicalWriteAsync(CanonicalRepositoryWriteKind writeKind)
+    {
+        await using AsyncServiceScope scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return writeKind switch
+        {
+            CanonicalRepositoryWriteKind.PostAsUpdate => await repository.UpsertDocument(
+                new UpsertRequest(
+                    ResourceInfo: SchoolResourceInfo,
+                    DocumentInfo: CreateSchoolDocumentInfo(),
+                    MappingSet: _mappingSet,
+                    EdfiDoc: UpdateRequestBody(),
+                    Headers: [],
+                    TraceId: new TraceId("mssql-canonical-enqueue-retry-post"),
+                    DocumentUuid: SchoolDocumentUuid
+                )
+            ),
+            CanonicalRepositoryWriteKind.Put => await repository.UpdateDocumentById(
+                new UpdateRequest(
+                    ResourceInfo: SchoolResourceInfo,
+                    DocumentInfo: CreateSchoolDocumentInfo(),
+                    MappingSet: _mappingSet,
+                    EdfiDoc: UpdateRequestBody(),
+                    Headers: [],
+                    TraceId: new TraceId("mssql-canonical-enqueue-retry-put"),
+                    DocumentUuid: SchoolDocumentUuid
+                )
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(writeKind), writeKind, null),
+        };
     }
 
     private async Task SetTrackingLifecycleAsync()
@@ -122,38 +200,28 @@ public class Given_Mssql_Canonical_Write_Enqueue_Retry
         );
     }
 
-    private async Task<SourceDocument> InsertSourceDocumentAsync(long contentVersion)
+    private async Task<ProjectionWorkState> ReadProjectionWorkStateAsync()
     {
-        var documentUuid = Guid.NewGuid();
-        short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
             """
-            DECLARE @insertedDocument TABLE ([DocumentId] bigint NOT NULL);
-
-            INSERT INTO [dms].[Document] (
-                [DocumentUuid],
-                [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
-            )
-            OUTPUT INSERTED.[DocumentId] INTO @insertedDocument
-            VALUES (
-                @documentUuid,
-                @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
-            );
-
-            SELECT [DocumentId]
-            FROM @insertedDocument;
+            SELECT document.[DocumentId],
+                   document.[ContentVersion],
+                   work.[RequiredContentVersion]
+            FROM [dms].[Document] document
+            INNER JOIN [dms].[DocumentProjectionWork] work
+                ON work.[DocumentId] = document.[DocumentId]
+            WHERE document.[DocumentUuid] = @documentUuid;
             """,
-            new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = documentUuid },
-            new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt }
+            new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = SchoolDocumentUuid.Value }
         );
 
-        return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid);
+        rows.Should().ContainSingle();
+
+        return new ProjectionWorkState(
+            Convert.ToInt64(rows[0]["DocumentId"]),
+            Convert.ToInt64(rows[0]["ContentVersion"]),
+            Convert.ToInt64(rows[0]["RequiredContentVersion"])
+        );
     }
 
     private static async Task LockProjectionWorkRowAsync(
@@ -174,67 +242,91 @@ public class Given_Mssql_Canonical_Write_Enqueue_Retry
         int rowsAffected = await command.ExecuteNonQueryAsync();
         rowsAffected
             .Should()
-            .Be(1, "the seed insert should enqueue projection work before the lock is taken");
+            .Be(1, "the seed repository insert should enqueue projection work before the lock is taken");
     }
 
-    private async Task AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
-        long documentId,
-        long contentVersion
-    )
+    private ServiceProvider CreateServiceProvider()
     {
-        await using SqlConnection connection = new(_database.ConnectionString);
-        await connection.OpenAsync();
-        await using SqlTransaction transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+        ServiceCollection services = [];
 
-        try
-        {
-            await using SqlCommand command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                SET LOCK_TIMEOUT 100;
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(new DeadlockRetrySettings());
+        services.AddTestReadableProfileProjector();
+        services.AddScoped<RelationalDocumentStoreRepository>();
+        services.AddMssqlBackendIntegrationTestServices();
+        services.AddScoped<MssqlRelationalWriteSessionFactory>();
+        services.Replace(
+            ServiceDescriptor.Scoped<IRelationalWriteSessionFactory>(
+                serviceProvider => new LockTimeoutWriteSessionFactory(
+                    serviceProvider.GetRequiredService<MssqlRelationalWriteSessionFactory>(),
+                    $"SET LOCK_TIMEOUT {LockTimeoutMilliseconds};"
+                )
+            )
+        );
 
-                UPDATE [dms].[Document]
-                SET [ContentVersion] = @contentVersion,
-                    [ContentLastModifiedAt] = @lastModifiedAt
-                WHERE [DocumentId] = @documentId;
-                """;
-            command.Parameters.Add(
-                new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
+        return services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+    }
+
+    private void SetSelectedInstance(IServiceProvider serviceProvider)
+    {
+        serviceProvider
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
+                    Id: 1,
+                    DataStoreType: "test",
+                    Name: "MssqlCanonicalWriteEnqueueRetry",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
             );
-            command.Parameters.Add(
-                new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt }
-            );
-            command.Parameters.Add(new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId });
+    }
 
-            await command.ExecuteNonQueryAsync();
-            await transaction.CommitAsync();
-        }
-        catch
+    private sealed class LockTimeoutWriteSessionFactory(
+        IRelationalWriteSessionFactory inner,
+        string setLockTimeoutCommandText
+    ) : IRelationalWriteSessionFactory
+    {
+        private readonly IRelationalWriteSessionFactory _inner =
+            inner ?? throw new ArgumentNullException(nameof(inner));
+
+        private readonly string _setLockTimeoutCommandText =
+            setLockTimeoutCommandText ?? throw new ArgumentNullException(nameof(setLockTimeoutCommandText));
+
+        public async Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
         {
-            await transaction.RollbackAsync();
-            throw;
+            IRelationalWriteSession session = await _inner
+                .CreateAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await using DbCommand command = session.Connection.CreateCommand();
+                command.Transaction = session.Transaction;
+                command.CommandText = _setLockTimeoutCommandText;
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                return session;
+            }
+            catch
+            {
+                await session.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
         }
     }
 
-    private Task<long> ReadContentVersionAsync(long documentId) =>
-        _database.ExecuteScalarAsync<long>(
-            """
-            SELECT [ContentVersion]
-            FROM [dms].[Document]
-            WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId }
-        );
+    private sealed record ProjectionWorkState(
+        long DocumentId,
+        long ContentVersion,
+        long RequiredContentVersion
+    );
 
-    private Task<long> ReadRequiredContentVersionAsync(long documentId) =>
-        _database.ExecuteScalarAsync<long>(
-            """
-            SELECT [RequiredContentVersion]
-            FROM [dms].[DocumentProjectionWork]
-            WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId }
-        );
-
-    private sealed record SourceDocument(long DocumentId, Guid DocumentUuid);
+    public enum CanonicalRepositoryWriteKind
+    {
+        PostAsUpdate,
+        Put,
+    }
 }
