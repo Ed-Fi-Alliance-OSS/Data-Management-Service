@@ -280,8 +280,10 @@ row it was already reading, so a wrong served value points at the mirror, not at
   [`DescriptorReadRowReader.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadRowReader.cs)).
 - **Reference link injection** (`link.rel` / `link.href`) — the auxiliary lookup joins each target's
   root table, or its `<AbstractResource>Identity` table for a polymorphic target, for the target's
-  `DocumentUuid`; the owning `'Project:Resource'` discriminator is emitted per branch as a compile-time
-  literal, and the resource slug the href needs is resolved from that discriminator
+  `DocumentUuid`; the target's `'Project:Resource'` discriminator is a compile-time literal for a
+  concrete target, or the `<AbstractResource>Identity` row's stored `Discriminator` (the concrete
+  subclass) for a polymorphic one, and the resource slug the href needs is resolved from that
+  discriminator
   ([`DocumentReferenceLookupPlanCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReferenceLookupPlanCompiler.cs),
   [`DocumentLinkSlugResolver.cs`](../src/dms/core/EdFi.DataManagementService.Core/DocumentLinkSlugResolver.cs)).
 - **Tracked-change trigger bodies** — take old/new values from the root row image (`OLD` / `NEW` in
