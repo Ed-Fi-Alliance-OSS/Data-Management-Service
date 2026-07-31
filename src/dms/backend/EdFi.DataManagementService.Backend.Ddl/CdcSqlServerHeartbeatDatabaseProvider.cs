@@ -1,0 +1,1200 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
+using EdFi.DataManagementService.Backend.External;
+
+namespace EdFi.DataManagementService.Backend.Ddl;
+
+internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupProvider
+{
+    private static readonly ISqlDialect _dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+    private static readonly CdcSafeName _databaseCdcSafeName = new("sqlserver_database_cdc");
+
+    public CdcProvider Provider => CdcProvider.SqlServer;
+
+    public IReadOnlyList<CdcProviderSetupStep> BuildSetupSteps(CdcProviderSetupRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        _ =
+            request.ArtifactNames.SqlServer
+            ?? throw new InvalidOperationException("SQL Server artifact names were not supplied.");
+
+        return
+        [
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.ProviderHistory,
+                _databaseCdcSafeName,
+                canCreateInInitialSetup: true,
+                ExecuteDatabaseCdcAsync
+            ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.HeartbeatTable,
+                SafeName(DmsTableNames.CdcHeartbeat),
+                canCreateInInitialSetup: true,
+                ExecuteHeartbeatTableAsync
+            ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.SourceTable,
+                new CdcSafeName("sqlserver_cdc_source_inventory"),
+                canCreateInInitialSetup: false,
+                ExecuteSourceInventoryAsync
+            ),
+        ];
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteDatabaseCdcAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.ProviderHistory,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        try
+        {
+            var inspection = await InspectDatabaseCdcAsync(executor, cancellationToken).ConfigureAwait(false);
+            var wasEnabledAtStart = inspection.IsCdcEnabled;
+            var state = CdcProviderArtifactState.Matched;
+
+            if (!inspection.IsCdcEnabled)
+            {
+                if (context.Mode == CdcProviderSetupStepMode.ExactMatchOnly)
+                {
+                    return DatabaseCdcResult(
+                        CdcProviderArtifactState.Missing,
+                        inspection,
+                        wasEnabledAtStart: false,
+                        diagnostics: []
+                    );
+                }
+
+                await executor
+                    .ExecuteNonQueryAsync(EnableDatabaseCdcSql, cancellationToken)
+                    .ConfigureAwait(false);
+
+                state = CdcProviderArtifactState.Created;
+                inspection = await InspectDatabaseCdcAsync(executor, cancellationToken).ConfigureAwait(false);
+            }
+
+            var diagnostics = DatabaseCdcDiagnostics(inspection);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error))
+            {
+                state = CdcProviderArtifactState.Mismatched;
+            }
+
+            return DatabaseCdcResult(state, inspection, wasEnabledAtStart, diagnostics);
+        }
+        catch (DbException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.ProviderHistory,
+                _databaseCdcSafeName,
+                exception
+            );
+        }
+        catch (InvalidOperationException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.ProviderHistory,
+                _databaseCdcSafeName,
+                exception
+            );
+        }
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteHeartbeatTableAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.HeartbeatTable,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        try
+        {
+            var heartbeatTableExists = await TableExistsAsync(
+                    executor,
+                    DmsTableNames.CdcHeartbeat,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            var state = CdcProviderArtifactState.Matched;
+
+            if (!heartbeatTableExists)
+            {
+                if (context.Mode == CdcProviderSetupStepMode.ExactMatchOnly)
+                {
+                    return ArtifactOnly(
+                        CdcProviderArtifactKind.HeartbeatTable,
+                        SafeName(DmsTableNames.CdcHeartbeat),
+                        CdcProviderArtifactState.Missing,
+                        new Dictionary<string, string> { ["table"] = "missing" }
+                    );
+                }
+
+                await executor
+                    .ExecuteNonQueryAsync(CreateHeartbeatTableSql(context.Request), cancellationToken)
+                    .ConfigureAwait(false);
+                state = CdcProviderArtifactState.Created;
+            }
+
+            var shape = await InspectHeartbeatTableShapeAsync(executor, cancellationToken)
+                .ConfigureAwait(false);
+            if (!shape.IsExactMatch)
+            {
+                return ArtifactOnly(
+                    CdcProviderArtifactKind.HeartbeatTable,
+                    SafeName(DmsTableNames.CdcHeartbeat),
+                    CdcProviderArtifactState.Mismatched,
+                    shape.ObservedValues
+                );
+            }
+
+            var singleton = await InspectHeartbeatSingletonAsync(executor, cancellationToken)
+                .ConfigureAwait(false);
+            if (
+                singleton.SingletonRowCount == 0
+                && context.Mode == CdcProviderSetupStepMode.CreateOrExactMatch
+            )
+            {
+                await executor
+                    .ExecuteNonQueryAsync(InsertHeartbeatSingletonSql(context.Request), cancellationToken)
+                    .ConfigureAwait(false);
+                state = CdcProviderArtifactState.Created;
+                singleton = await InspectHeartbeatSingletonAsync(executor, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (!singleton.IsExactMatch)
+            {
+                return ArtifactOnly(
+                    CdcProviderArtifactKind.HeartbeatTable,
+                    SafeName(DmsTableNames.CdcHeartbeat),
+                    CdcProviderArtifactState.Mismatched,
+                    shape
+                        .ObservedValues.Concat(singleton.ObservedValues)
+                        .ToDictionary(pair => pair.Key, pair => pair.Value)
+                );
+            }
+
+            return new CdcProviderSetupStepResult(
+                artifactInventory:
+                [
+                    new CdcProviderArtifactObservation(
+                        CdcProviderArtifactKind.HeartbeatTable,
+                        SafeName(DmsTableNames.CdcHeartbeat),
+                        state,
+                        shape
+                            .ObservedValues.Concat(singleton.ObservedValues)
+                            .ToDictionary(pair => pair.Key, pair => pair.Value)
+                    ),
+                ],
+                heartbeatActionQuery: BuildHeartbeatActionQuery(context.Request)
+            );
+        }
+        catch (DbException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.HeartbeatTable,
+                SafeName(DmsTableNames.CdcHeartbeat),
+                exception
+            );
+        }
+        catch (InvalidOperationException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.HeartbeatTable,
+                SafeName(DmsTableNames.CdcHeartbeat),
+                exception
+            );
+        }
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteSourceInventoryAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!TryGetExecutor(context, CdcProviderArtifactKind.SourceTable, out var executor, out var failure))
+        {
+            return failure;
+        }
+
+        try
+        {
+            var liveInventory = await ReadLiveSourceInventoryAsync(
+                    executor,
+                    context.Request.ExpectedSourceInventory,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return new CdcProviderSetupStepResult(
+                sourceTableInventory: liveInventory,
+                expectedMessageKeyColumns: ExpectedMessageKeyColumns()
+            );
+        }
+        catch (DbException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.SourceTable,
+                new CdcSafeName("sqlserver_cdc_source_inventory"),
+                exception
+            );
+        }
+        catch (InvalidOperationException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.SourceTable,
+                new CdcSafeName("sqlserver_cdc_source_inventory"),
+                exception
+            );
+        }
+    }
+
+    internal static CdcHeartbeatActionQuery BuildHeartbeatActionQuery(CdcProviderSetupRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatId = SourceColumn(heartbeat, "HeartbeatId");
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
+        var heartbeatAt = SourceColumn(heartbeat, "HeartbeatAt");
+        var sql =
+            $"UPDATE {heartbeat.EmittedQuotedTableName} SET {heartbeatSequence.EmittedQuotedColumnName} = {heartbeatSequence.EmittedQuotedColumnName} + 1, {heartbeatAt.EmittedQuotedColumnName} = sysutcdatetime() WHERE {heartbeatId.EmittedQuotedColumnName} = 1";
+
+        return new CdcHeartbeatActionQuery(sql, Sha256(sql));
+    }
+
+    private const string EnableDatabaseCdcSql = """
+        /* cdc:sqlserver:enable-database-cdc */
+        EXEC sys.sp_cdc_enable_db;
+        """;
+
+    private static async Task<DatabaseCdcInspection> InspectDatabaseCdcAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CancellationToken cancellationToken
+    )
+    {
+        var stateRows = await executor
+            .QueryAsync(DatabaseCdcStateSql, cancellationToken)
+            .ConfigureAwait(false);
+        if (stateRows.Count == 0)
+        {
+            throw new InvalidOperationException("SQL Server database CDC state was not returned.");
+        }
+
+        var stateRow = stateRows[0];
+        var isCdcEnabled = ReadBool(stateRow, "is_cdc_enabled");
+        var captureInstanceCount = isCdcEnabled
+            ? await ReadCaptureInstanceCountAsync(executor, cancellationToken).ConfigureAwait(false)
+            : 0;
+        var jobHelpRows =
+            isCdcEnabled && captureInstanceCount > 0
+                ? await executor.QueryAsync(CdcHelpJobsSql, cancellationToken).ConfigureAwait(false)
+                : [];
+        var jobRuntimeRows = isCdcEnabled
+            ? await executor.QueryAsync(CdcJobRuntimeSql, cancellationToken).ConfigureAwait(false)
+            : [];
+        var lsnRows = isCdcEnabled
+            ? await executor.QueryAsync(CdcRetainedLsnSql, cancellationToken).ConfigureAwait(false)
+            : [];
+
+        var jobHelp = jobHelpRows
+            .Select(ReadJobHelp)
+            .GroupBy(job => job.JobType, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key.ToLowerInvariant(), group => group.First());
+        var jobRuntime = jobRuntimeRows
+            .Select(ReadJobRuntime)
+            .GroupBy(job => job.JobType, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key.ToLowerInvariant(), group => group.First());
+
+        var retainedLsn =
+            lsnRows.Count == 0
+                ? new RetainedLsnObservation(RowCount: 0, MinLsn: "", MaxLsn: "")
+                : new RetainedLsnObservation(
+                    RowCount: ReadInt64(lsnRows[0], "lsn_row_count"),
+                    MinLsn: ReadRequired(lsnRows[0], "min_lsn"),
+                    MaxLsn: ReadRequired(lsnRows[0], "max_lsn")
+                );
+
+        return new DatabaseCdcInspection(
+            IsCdcEnabled: isCdcEnabled,
+            ReadCommittedSnapshotOn: ReadBool(stateRow, "read_committed_snapshot_on"),
+            NestedTriggersValue: ReadRequired(stateRow, "nested_triggers_value"),
+            CaptureInstanceCount: captureInstanceCount,
+            JobsByType: jobHelp,
+            JobRuntimeByType: jobRuntime,
+            RetainedLsn: retainedLsn
+        );
+    }
+
+    private const string DatabaseCdcStateSql = """
+        /* cdc:sqlserver:database-cdc-state */
+        SELECT
+            CONVERT(nvarchar(5), database_info.is_cdc_enabled) AS is_cdc_enabled,
+            CONVERT(nvarchar(5), database_info.is_read_committed_snapshot_on) AS read_committed_snapshot_on,
+            COALESCE(
+                CONVERT(nvarchar(20), (
+                    SELECT configuration_info.value_in_use
+                    FROM sys.configurations configuration_info
+                    WHERE configuration_info.name = N'nested triggers'
+                )),
+                N'unavailable'
+            ) AS nested_triggers_value
+        FROM sys.databases database_info
+        WHERE database_info.name = DB_NAME();
+        """;
+
+    private static async Task<int> ReadCaptureInstanceCountAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(CdcCaptureInstanceCountSql, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Count == 0)
+        {
+            return 0;
+        }
+
+        return ReadInt32(rows[0], "capture_instance_count");
+    }
+
+    private const string CdcCaptureInstanceCountSql = """
+        /* cdc:sqlserver:capture-instance-count */
+        IF OBJECT_ID(N'cdc.change_tables', N'U') IS NULL
+        BEGIN
+            SELECT CONVERT(nvarchar(20), 0) AS capture_instance_count;
+        END
+        ELSE
+        BEGIN
+            SELECT CONVERT(nvarchar(20), COUNT_BIG(*)) AS capture_instance_count
+            FROM cdc.change_tables;
+        END;
+        """;
+
+    private const string CdcHelpJobsSql = """
+        /* cdc:sqlserver:help-jobs */
+        EXEC sys.sp_cdc_help_jobs;
+        """;
+
+    private const string CdcJobRuntimeSql = """
+        /* cdc:sqlserver:job-runtime */
+        DECLARE @database_name sysname = DB_NAME();
+        DECLARE @capture_job_name sysname = N'cdc.' + @database_name + N'_capture';
+        DECLARE @cleanup_job_name sysname = N'cdc.' + @database_name + N'_cleanup';
+
+        WITH latest_activity AS (
+            SELECT
+                activity.job_id,
+                activity.start_execution_date,
+                activity.stop_execution_date,
+                ROW_NUMBER() OVER (
+                    PARTITION BY activity.job_id
+                    ORDER BY activity.session_id DESC
+                ) AS row_number
+            FROM msdb.dbo.sysjobactivity activity
+        ),
+        latest_history AS (
+            SELECT
+                history.job_id,
+                history.run_status,
+                ROW_NUMBER() OVER (
+                    PARTITION BY history.job_id
+                    ORDER BY history.instance_id DESC
+                ) AS row_number
+            FROM msdb.dbo.sysjobhistory history
+            WHERE history.step_id = 0
+        )
+        SELECT
+            CASE
+                WHEN job.name = @capture_job_name THEN N'capture'
+                WHEN job.name = @cleanup_job_name THEN N'cleanup'
+                ELSE N'unknown'
+            END AS job_type,
+            job.name AS job_name,
+            CONVERT(nvarchar(36), job.job_id) AS job_id,
+            CONVERT(nvarchar(5), job.enabled) AS enabled,
+            CASE
+                WHEN latest_activity.start_execution_date IS NOT NULL
+                    AND latest_activity.stop_execution_date IS NULL
+                    THEN N'true'
+                ELSE N'false'
+            END AS running,
+            COALESCE(CONVERT(nvarchar(10), latest_history.run_status), N'') AS last_run_status
+        FROM msdb.dbo.sysjobs job
+        LEFT JOIN latest_activity
+            ON latest_activity.job_id = job.job_id
+            AND latest_activity.row_number = 1
+        LEFT JOIN latest_history
+            ON latest_history.job_id = job.job_id
+            AND latest_history.row_number = 1
+        WHERE job.name IN (@capture_job_name, @cleanup_job_name)
+        ORDER BY job.name;
+        """;
+
+    private const string CdcRetainedLsnSql = """
+        /* cdc:sqlserver:retained-lsn */
+        IF OBJECT_ID(N'cdc.lsn_time_mapping', N'U') IS NULL
+        BEGIN
+            SELECT
+                CONVERT(nvarchar(20), 0) AS lsn_row_count,
+                N'' AS min_lsn,
+                N'' AS max_lsn;
+        END
+        ELSE
+        BEGIN
+            SELECT
+                CONVERT(nvarchar(20), COUNT_BIG(*)) AS lsn_row_count,
+                COALESCE(sys.fn_varbintohexstr(MIN(start_lsn)), N'') AS min_lsn,
+                COALESCE(sys.fn_varbintohexstr(MAX(start_lsn)), N'') AS max_lsn
+            FROM cdc.lsn_time_mapping;
+        END;
+        """;
+
+    private static string CreateHeartbeatTableSql(CdcProviderSetupRequest request)
+    {
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var columns = heartbeat.Columns.ToDictionary(column => column.ColumnName.Value);
+
+        string ColumnDefinition(string columnName)
+        {
+            var column = columns[columnName];
+            return $"{column.EmittedQuotedColumnName} {column.ProviderDataType} NOT NULL";
+        }
+
+        return $"""
+            /* cdc:sqlserver:create-heartbeat-table */
+            IF OBJECT_ID(N'{ObjectIdName(DmsTableNames.CdcHeartbeat)}', N'U') IS NULL
+            BEGIN
+                CREATE TABLE {heartbeat.EmittedQuotedTableName}
+                (
+                    {ColumnDefinition("HeartbeatId")},
+                    {ColumnDefinition("HeartbeatSequence")},
+                    {ColumnDefinition("HeartbeatAt")},
+                    CONSTRAINT {_dialect.QuoteIdentifier("PK_CdcHeartbeat")} PRIMARY KEY CLUSTERED ({columns[
+                    "HeartbeatId"
+                ].EmittedQuotedColumnName}),
+                    CONSTRAINT {_dialect.QuoteIdentifier("CK_CdcHeartbeat_Singleton")} CHECK ({columns[
+                    "HeartbeatId"
+                ].EmittedQuotedColumnName} = 1),
+                    CONSTRAINT {_dialect.QuoteIdentifier("CK_CdcHeartbeat_Sequence")} CHECK ({columns[
+                    "HeartbeatSequence"
+                ].EmittedQuotedColumnName} >= 0)
+                );
+            END;
+
+            {InsertHeartbeatSingletonSql(request)}
+            """;
+    }
+
+    private static string InsertHeartbeatSingletonSql(CdcProviderSetupRequest request)
+    {
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatId = SourceColumn(heartbeat, "HeartbeatId");
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
+        var heartbeatAt = SourceColumn(heartbeat, "HeartbeatAt");
+
+        return $"""
+            IF NOT EXISTS (SELECT 1 FROM {heartbeat.EmittedQuotedTableName} WHERE {heartbeatId.EmittedQuotedColumnName} = 1)
+            BEGIN
+                INSERT INTO {heartbeat.EmittedQuotedTableName} ({heartbeatId.EmittedQuotedColumnName}, {heartbeatSequence.EmittedQuotedColumnName}, {heartbeatAt.EmittedQuotedColumnName})
+                VALUES (1, 0, sysutcdatetime());
+            END;
+            """;
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        ICdcProviderDatabaseExecutor executor,
+        DbTableName table,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor.QueryAsync(TableExistsSql(table), cancellationToken).ConfigureAwait(false);
+        return rows.Count > 0 && ReadBool(rows[0], "table_exists");
+    }
+
+    private static string TableExistsSql(DbTableName table) =>
+        $"""
+            /* cdc:sqlserver:table-exists */
+            SELECT CONVERT(nvarchar(5), CASE
+                WHEN OBJECT_ID(N'{ObjectIdName(table)}', N'U') IS NULL THEN 0
+                ELSE 1
+            END) AS table_exists;
+            """;
+
+    private static async Task<IReadOnlyList<CdcSourceTableInventory>> ReadLiveSourceInventoryAsync(
+        ICdcProviderDatabaseExecutor executor,
+        IReadOnlyList<CdcSourceTableInventory> expectedSourceInventory,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(SourceInventorySql(expectedSourceInventory), cancellationToken)
+            .ConfigureAwait(false);
+
+        List<CdcSourceTableInventory> inventory = [];
+        foreach (var expectedTable in expectedSourceInventory)
+        {
+            var columnRows = rows.Where(row =>
+                    ReadRequired(row, "table_schema") == expectedTable.TableName.Schema.Value
+                    && ReadRequired(row, "table_name") == expectedTable.TableName.Name
+                )
+                .OrderBy(row => ReadInt32(row, "ordinal"))
+                .ToArray();
+
+            if (columnRows.Length == 0)
+            {
+                continue;
+            }
+
+            inventory.Add(
+                new CdcSourceTableInventory(
+                    expectedTable.TableKind,
+                    expectedTable.TableName,
+                    expectedTable.EmittedQuotedTableName,
+                    columnRows
+                        .Select(row => new CdcSourceColumnInventory(
+                            new DbColumnName(ReadRequired(row, "column_name")),
+                            _dialect.QuoteIdentifier(ReadRequired(row, "column_name")),
+                            ReadInt32(row, "ordinal"),
+                            ReadRequired(row, "provider_data_type"),
+                            ReadBool(row, "is_nullable")
+                        ))
+                        .ToArray()
+                )
+            );
+        }
+
+        return inventory;
+    }
+
+    private static string SourceInventorySql(IReadOnlyList<CdcSourceTableInventory> expectedSourceInventory)
+    {
+        var values = string.Join(
+            ",\n    ",
+            expectedSourceInventory.Select(
+                (table, index) =>
+                    $"({index + 1}, N'{EscapeSqlLiteral(table.TableName.Schema.Value)}', N'{EscapeSqlLiteral(table.TableName.Name)}')"
+            )
+        );
+
+        return $"""
+            /* cdc:sqlserver:source-inventory */
+            WITH expected_tables(table_order, table_schema, table_name) AS (
+                SELECT *
+                FROM (VALUES
+                {values}
+                ) AS expected(table_order, table_schema, table_name)
+            )
+            SELECT
+                schema_info.name AS table_schema,
+                table_info.name AS table_name,
+                column_info.name AS column_name,
+                CONVERT(nvarchar(20), column_info.column_id) AS ordinal,
+                CASE
+                    WHEN column_info.is_identity = 1 AND type_info.name = N'bigint'
+                        THEN N'bigint IDENTITY(1,1)'
+                    WHEN type_info.name IN (N'nvarchar', N'nchar')
+                        THEN type_info.name + N'(' +
+                            CASE
+                                WHEN column_info.max_length = -1 THEN N'max'
+                                ELSE CONVERT(nvarchar(20), column_info.max_length / 2)
+                            END + N')'
+                    WHEN type_info.name IN (N'varchar', N'char', N'varbinary', N'binary')
+                        THEN type_info.name + N'(' +
+                            CASE
+                                WHEN column_info.max_length = -1 THEN N'max'
+                                ELSE CONVERT(nvarchar(20), column_info.max_length)
+                            END + N')'
+                    WHEN type_info.name IN (N'decimal', N'numeric')
+                        THEN type_info.name + N'(' + CONVERT(nvarchar(20), column_info.precision) + N',' + CONVERT(nvarchar(20), column_info.scale) + N')'
+                    WHEN type_info.name IN (N'datetime2', N'datetimeoffset', N'time')
+                        THEN type_info.name + N'(' + CONVERT(nvarchar(20), column_info.scale) + N')'
+                    ELSE type_info.name
+                END AS provider_data_type,
+                CONVERT(nvarchar(5), column_info.is_nullable) AS is_nullable
+            FROM expected_tables
+            INNER JOIN sys.schemas schema_info
+                ON schema_info.name = expected_tables.table_schema
+            INNER JOIN sys.tables table_info
+                ON table_info.schema_id = schema_info.schema_id
+                AND table_info.name = expected_tables.table_name
+            INNER JOIN sys.columns column_info
+                ON column_info.object_id = table_info.object_id
+            INNER JOIN sys.types type_info
+                ON type_info.user_type_id = column_info.user_type_id
+            ORDER BY expected_tables.table_order, column_info.column_id;
+            """;
+    }
+
+    private static async Task<HeartbeatTableShapeInspection> InspectHeartbeatTableShapeAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor.QueryAsync(HeartbeatTableShapeSql, cancellationToken).ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            return new HeartbeatTableShapeInspection(
+                IsExactMatch: false,
+                new Dictionary<string, string> { ["shape"] = "unavailable" }
+            );
+        }
+
+        var row = rows[0];
+        var primaryKeyMatches = ReadBool(row, "primary_key_matches");
+        var singletonCheckMatches = ReadBool(row, "singleton_check_matches");
+        var sequenceCheckMatches = ReadBool(row, "sequence_check_matches");
+
+        return new HeartbeatTableShapeInspection(
+            primaryKeyMatches && singletonCheckMatches && sequenceCheckMatches,
+            new Dictionary<string, string>
+            {
+                ["primary_key"] = primaryKeyMatches ? "matched" : "mismatched",
+                ["singleton_check"] = singletonCheckMatches ? "matched" : "mismatched",
+                ["sequence_check"] = sequenceCheckMatches ? "matched" : "mismatched",
+            }
+        );
+    }
+
+    private const string HeartbeatTableShapeSql = """
+        /* cdc:sqlserver:heartbeat-shape */
+        SELECT
+            CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                SELECT 1
+                FROM sys.key_constraints constraint_info
+                INNER JOIN sys.tables table_info
+                    ON table_info.object_id = constraint_info.parent_object_id
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.schema_id = table_info.schema_id
+                WHERE schema_info.name = N'dms'
+                AND table_info.name = N'CdcHeartbeat'
+                AND constraint_info.name = N'PK_CdcHeartbeat'
+                AND constraint_info.type = N'PK'
+                AND (
+                    SELECT STRING_AGG(column_info.name, N',') WITHIN GROUP (ORDER BY index_column.key_ordinal)
+                    FROM sys.index_columns index_column
+                    INNER JOIN sys.columns column_info
+                        ON column_info.object_id = index_column.object_id
+                        AND column_info.column_id = index_column.column_id
+                    WHERE index_column.object_id = constraint_info.parent_object_id
+                    AND index_column.index_id = constraint_info.unique_index_id
+                ) = N'HeartbeatId'
+            ) THEN 1 ELSE 0 END) AS primary_key_matches,
+            CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                SELECT 1
+                FROM sys.check_constraints constraint_info
+                INNER JOIN sys.tables table_info
+                    ON table_info.object_id = constraint_info.parent_object_id
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.schema_id = table_info.schema_id
+                WHERE schema_info.name = N'dms'
+                AND table_info.name = N'CdcHeartbeat'
+                AND constraint_info.name = N'CK_CdcHeartbeat_Singleton'
+                AND CHARINDEX(N'[HeartbeatId]', constraint_info.definition) > 0
+                AND CHARINDEX(N'(1)', constraint_info.definition) > 0
+            ) THEN 1 ELSE 0 END) AS singleton_check_matches,
+            CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                SELECT 1
+                FROM sys.check_constraints constraint_info
+                INNER JOIN sys.tables table_info
+                    ON table_info.object_id = constraint_info.parent_object_id
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.schema_id = table_info.schema_id
+                WHERE schema_info.name = N'dms'
+                AND table_info.name = N'CdcHeartbeat'
+                AND constraint_info.name = N'CK_CdcHeartbeat_Sequence'
+                AND CHARINDEX(N'[HeartbeatSequence]', constraint_info.definition) > 0
+                AND CHARINDEX(N'(0)', constraint_info.definition) > 0
+            ) THEN 1 ELSE 0 END) AS sequence_check_matches;
+        """;
+
+    private static async Task<HeartbeatSingletonInspection> InspectHeartbeatSingletonAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor.QueryAsync(HeartbeatSingletonSql, cancellationToken).ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            return new HeartbeatSingletonInspection(
+                SingletonRowCount: 0,
+                IsExactMatch: false,
+                new Dictionary<string, string> { ["singleton"] = "unavailable" }
+            );
+        }
+
+        var row = rows[0];
+        var rowCount = ReadInt64(row, "row_count");
+        var singletonRowCount = ReadInt32(row, "singleton_row_count");
+        var extraRowCount = ReadInt64(row, "extra_row_count");
+        var heartbeatSequence = ReadInt64(row, "heartbeat_sequence");
+        var isExactMatch =
+            rowCount == 1 && singletonRowCount == 1 && extraRowCount == 0 && heartbeatSequence >= 0;
+
+        return new HeartbeatSingletonInspection(
+            singletonRowCount,
+            isExactMatch,
+            new Dictionary<string, string>
+            {
+                ["row_count"] = rowCount.ToString(),
+                ["singleton_row_count"] = singletonRowCount.ToString(),
+                ["extra_row_count"] = extraRowCount.ToString(),
+                ["heartbeat_sequence"] = heartbeatSequence.ToString(),
+            }
+        );
+    }
+
+    private const string HeartbeatSingletonSql = """
+        /* cdc:sqlserver:heartbeat-singleton */
+        SELECT
+            CONVERT(nvarchar(20), COUNT_BIG(*)) AS row_count,
+            CONVERT(nvarchar(20), COALESCE(SUM(CASE WHEN [HeartbeatId] = 1 THEN 1 ELSE 0 END), 0)) AS singleton_row_count,
+            CONVERT(nvarchar(20), COALESCE(SUM(CASE WHEN [HeartbeatId] <> 1 THEN 1 ELSE 0 END), 0)) AS extra_row_count,
+            CONVERT(nvarchar(20), COALESCE(MAX(CASE WHEN [HeartbeatId] = 1 THEN [HeartbeatSequence] END), -1)) AS heartbeat_sequence
+        FROM [dms].[CdcHeartbeat];
+        """;
+
+    private static IReadOnlyList<CdcExpectedMessageKeyColumns> ExpectedMessageKeyColumns() =>
+        [
+            new CdcExpectedMessageKeyColumns(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
+            new CdcExpectedMessageKeyColumns(
+                CdcSourceTableKind.DocumentCache,
+                [new DbColumnName("DocumentUuid")]
+            ),
+        ];
+
+    private static CdcProviderSetupStepResult DatabaseCdcResult(
+        CdcProviderArtifactState state,
+        DatabaseCdcInspection inspection,
+        bool wasEnabledAtStart,
+        IReadOnlyList<CdcProviderDiagnostic> diagnostics
+    )
+    {
+        var observedValues = DatabaseCdcObservedValues(inspection, wasEnabledAtStart);
+        var classification =
+            diagnostics
+                .FirstOrDefault(diagnostic =>
+                    diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
+                    && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                )
+                ?.Classification
+            ?? CdcProviderRetryContinuityClassification.None;
+
+        return new CdcProviderSetupStepResult(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _databaseCdcSafeName,
+                    state,
+                    observedValues
+                ),
+            ],
+            providerHistoryObservations:
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _databaseCdcSafeName,
+                    observedValues,
+                    classification
+                ),
+            ],
+            diagnostics: diagnostics
+        );
+    }
+
+    private static IReadOnlyDictionary<string, string> DatabaseCdcObservedValues(
+        DatabaseCdcInspection inspection,
+        bool wasEnabledAtStart
+    )
+    {
+        var captureJob = inspection.JobsByType.GetValueOrDefault("capture");
+        var cleanupJob = inspection.JobsByType.GetValueOrDefault("cleanup");
+        var captureRuntime = inspection.JobRuntimeByType.GetValueOrDefault("capture");
+        var cleanupRuntime = inspection.JobRuntimeByType.GetValueOrDefault("cleanup");
+
+        return new Dictionary<string, string>
+        {
+            ["database_cdc_enabled"] = inspection.IsCdcEnabled.ToString(),
+            ["database_cdc_was_enabled_at_start"] = wasEnabledAtStart.ToString(),
+            ["read_committed_snapshot_on"] = inspection.ReadCommittedSnapshotOn.ToString(),
+            ["nested_triggers_value"] = SafeText(inspection.NestedTriggersValue),
+            ["capture_instance_count"] = inspection.CaptureInstanceCount.ToString(),
+            ["capture_job_present"] = (captureJob is not null || captureRuntime is not null).ToString(),
+            ["capture_job_name"] = SafeText(captureJob?.JobName ?? captureRuntime?.JobName ?? ""),
+            ["capture_job_enabled"] = SafeText(captureRuntime?.Enabled ?? ""),
+            ["capture_job_running"] = SafeText(captureRuntime?.Running ?? ""),
+            ["capture_job_last_run_status"] = SafeText(captureRuntime?.LastRunStatus ?? ""),
+            ["capture_job_maxtrans"] = SafeText(captureJob?.MaxTrans ?? ""),
+            ["capture_job_maxscans"] = SafeText(captureJob?.MaxScans ?? ""),
+            ["capture_job_continuous"] = SafeText(captureJob?.Continuous ?? ""),
+            ["capture_job_pollinginterval"] = SafeText(captureJob?.PollingInterval ?? ""),
+            ["cleanup_job_present"] = (cleanupJob is not null || cleanupRuntime is not null).ToString(),
+            ["cleanup_job_name"] = SafeText(cleanupJob?.JobName ?? cleanupRuntime?.JobName ?? ""),
+            ["cleanup_job_enabled"] = SafeText(cleanupRuntime?.Enabled ?? ""),
+            ["cleanup_job_running"] = SafeText(cleanupRuntime?.Running ?? ""),
+            ["cleanup_job_last_run_status"] = SafeText(cleanupRuntime?.LastRunStatus ?? ""),
+            ["cleanup_job_retention_minutes"] = SafeText(cleanupJob?.Retention ?? ""),
+            ["cleanup_job_threshold"] = SafeText(cleanupJob?.Threshold ?? ""),
+            ["retained_lsn_row_count"] = inspection.RetainedLsn.RowCount.ToString(),
+            ["retained_min_lsn"] = SafeText(inspection.RetainedLsn.MinLsn),
+            ["retained_max_lsn"] = SafeText(inspection.RetainedLsn.MaxLsn),
+            ["retained_lsn_gap_evaluation"] = "not_evaluated_without_committed_offset",
+        };
+    }
+
+    private static IReadOnlyList<CdcProviderDiagnostic> DatabaseCdcDiagnostics(
+        DatabaseCdcInspection inspection
+    )
+    {
+        List<CdcProviderDiagnostic> diagnostics = [];
+
+        if (!inspection.IsCdcEnabled)
+        {
+            return diagnostics;
+        }
+
+        var captureJobMissing =
+            !inspection.JobsByType.ContainsKey("capture")
+            && !inspection.JobRuntimeByType.ContainsKey("capture");
+        var cleanupJobMissing =
+            !inspection.JobsByType.ContainsKey("cleanup")
+            && !inspection.JobRuntimeByType.ContainsKey("cleanup");
+
+        if (inspection.CaptureInstanceCount > 0 && (captureJobMissing || cleanupJobMissing))
+        {
+            diagnostics.Add(
+                ProviderHistoryUnavailable(
+                    "CDC_SQLSERVER_DATABASE_CDC_JOBS_MISSING",
+                    expectedValue: "capture-and-cleanup-jobs-present-after-table-cdc",
+                    observedValue: $"capture={MissingOrPresent(captureJobMissing)};cleanup={MissingOrPresent(cleanupJobMissing)}"
+                )
+            );
+        }
+
+        foreach (var runtime in inspection.JobRuntimeByType.Values.OrderBy(job => job.JobType))
+        {
+            if (runtime.Enabled is "False" or "0")
+            {
+                diagnostics.Add(
+                    ProviderHistoryWarning(
+                        "CDC_SQLSERVER_CDC_JOB_DISABLED",
+                        expectedValue: "cdc-job-enabled",
+                        observedValue: $"{runtime.JobType}:{runtime.JobName}"
+                    )
+                );
+            }
+
+            if (runtime.JobType == "capture" && runtime.Running is "False" or "0")
+            {
+                diagnostics.Add(
+                    ProviderHistoryWarning(
+                        "CDC_SQLSERVER_CAPTURE_JOB_NOT_RUNNING",
+                        expectedValue: "capture-job-running",
+                        observedValue: runtime.JobName
+                    )
+                );
+            }
+
+            if (runtime.LastRunStatus is "0")
+            {
+                diagnostics.Add(
+                    ProviderHistoryWarning(
+                        "CDC_SQLSERVER_CDC_JOB_LAST_RUN_FAILED",
+                        expectedValue: "last-run-succeeded-or-no-history",
+                        observedValue: $"{runtime.JobType}:{runtime.JobName}"
+                    )
+                );
+            }
+        }
+
+        if (!inspection.ReadCommittedSnapshotOn)
+        {
+            diagnostics.Add(
+                ProviderHistoryWarning(
+                    "CDC_SQLSERVER_READ_COMMITTED_SNAPSHOT_OFF",
+                    expectedValue: "read-committed-snapshot-on",
+                    observedValue: "false"
+                )
+            );
+        }
+
+        if (inspection.NestedTriggersValue is not "1")
+        {
+            diagnostics.Add(
+                ProviderHistoryWarning(
+                    "CDC_SQLSERVER_NESTED_TRIGGERS_NOT_ENABLED",
+                    expectedValue: "nested-triggers-enabled",
+                    observedValue: SafeText(inspection.NestedTriggersValue)
+                )
+            );
+        }
+
+        return diagnostics;
+    }
+
+    private static CdcProviderDiagnostic ProviderHistoryUnavailable(
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.SetupPrincipal,
+            ArtifactKind: CdcProviderArtifactKind.ProviderHistory,
+            SafeName: _databaseCdcSafeName,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+        );
+
+    private static CdcProviderDiagnostic ProviderHistoryWarning(
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+            Severity: CdcProviderDiagnosticSeverity.Warning,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: CdcProviderArtifactKind.ProviderHistory,
+            SafeName: _databaseCdcSafeName,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+        );
+
+    private static string MissingOrPresent(bool missing) => missing ? "missing" : "present";
+
+    private static JobHelpObservation ReadJobHelp(IReadOnlyDictionary<string, string?> row) =>
+        new(
+            JobType: ReadRequired(row, "job_type").ToLowerInvariant(),
+            JobName: ReadRequired(row, "job_name"),
+            MaxTrans: ReadOptional(row, "maxtrans"),
+            MaxScans: ReadOptional(row, "maxscans"),
+            Continuous: ReadOptional(row, "continuous"),
+            PollingInterval: ReadOptional(row, "pollinginterval"),
+            Retention: ReadOptional(row, "retention"),
+            Threshold: ReadOptional(row, "threshold")
+        );
+
+    private static JobRuntimeObservation ReadJobRuntime(IReadOnlyDictionary<string, string?> row) =>
+        new(
+            JobType: ReadRequired(row, "job_type").ToLowerInvariant(),
+            JobName: ReadRequired(row, "job_name"),
+            Enabled: ReadRequired(row, "enabled"),
+            Running: ReadRequired(row, "running"),
+            LastRunStatus: ReadOptional(row, "last_run_status")
+        );
+
+    private static CdcProviderSetupStepResult ArtifactOnly(
+        CdcProviderArtifactKind artifactKind,
+        CdcSafeName safeName,
+        CdcProviderArtifactState state,
+        IReadOnlyDictionary<string, string> observedValues
+    ) =>
+        new(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(artifactKind, safeName, state, observedValues),
+            ]
+        );
+
+    private static bool TryGetExecutor(
+        CdcProviderSetupStepContext context,
+        CdcProviderArtifactKind artifactKind,
+        out ICdcProviderDatabaseExecutor executor,
+        out CdcProviderSetupStepResult failure
+    )
+    {
+        if (context.Request.DatabaseExecutor is { } databaseExecutor)
+        {
+            executor = databaseExecutor;
+            failure = new CdcProviderSetupStepResult();
+            return true;
+        }
+
+        executor = null!;
+        failure = new CdcProviderSetupStepResult(
+            diagnostics:
+            [
+                new CdcProviderDiagnostic(
+                    Code: "CDC_PROVIDER_DATABASE_EXECUTOR_MISSING",
+                    Category: CdcProviderDiagnosticCategory.SetupPrincipalFailure,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.SetupPrincipal,
+                    ArtifactKind: artifactKind,
+                    SafeName: new CdcSafeName("sqlserver_setup_connection"),
+                    ExpectedValue: "database-executor",
+                    ObservedValue: "missing",
+                    ProviderErrorClass: null,
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                ),
+            ]
+        );
+        return false;
+    }
+
+    private static CdcProviderSetupStepResult SetupPrincipalFailure(
+        CdcProviderArtifactKind artifactKind,
+        CdcSafeName safeName,
+        Exception exception
+    ) =>
+        new(
+            diagnostics:
+            [
+                new CdcProviderDiagnostic(
+                    Code: "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE",
+                    Category: CdcProviderDiagnosticCategory.SetupPrincipalFailure,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.SetupPrincipal,
+                    ArtifactKind: artifactKind,
+                    SafeName: safeName,
+                    ExpectedValue: "setup-operation-succeeded",
+                    ObservedValue: "provider-error",
+                    ProviderErrorClass: exception.GetType().Name,
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                ),
+            ]
+        );
+
+    private static CdcSourceTableInventory SourceTable(
+        CdcProviderSetupRequest request,
+        CdcSourceTableKind tableKind
+    ) => request.ExpectedSourceInventory.Single(table => table.TableKind == tableKind);
+
+    private static CdcSourceColumnInventory SourceColumn(CdcSourceTableInventory table, string columnName) =>
+        table.Columns.Single(column => column.ColumnName.Value == columnName);
+
+    private static CdcSafeName SafeName(DbTableName table) =>
+        new($"{SafeText(table.Schema.Value)}.{SafeText(table.Name)}");
+
+    private static string SafeText(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        foreach (var character in value)
+        {
+            builder.Append(
+                char.IsLetterOrDigit(character) || character == '_' || character == '.' ? character : '_'
+            );
+        }
+
+        return builder.ToString();
+    }
+
+    private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
+
+    private static string ObjectIdName(DbTableName table) =>
+        $"{EscapeSqlLiteral(table.Schema.Value)}.{EscapeSqlLiteral(table.Name)}";
+
+    private static string Sha256(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static string ReadRequired(IReadOnlyDictionary<string, string?> row, string columnName) =>
+        row.TryGetValue(columnName, out var value) && value is not null
+            ? value
+            : throw new InvalidOperationException($"Expected SQL Server result column '{columnName}'.");
+
+    private static string ReadOptional(IReadOnlyDictionary<string, string?> row, string columnName) =>
+        row.TryGetValue(columnName, out var value) && value is not null ? value : "";
+
+    private static bool ReadBool(IReadOnlyDictionary<string, string?> row, string columnName)
+    {
+        var value = ReadRequired(row, columnName);
+        if (bool.TryParse(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        return value switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => throw new InvalidOperationException(
+                $"Expected SQL Server result column '{columnName}' to contain a boolean value."
+            ),
+        };
+    }
+
+    private static int ReadInt32(IReadOnlyDictionary<string, string?> row, string columnName) =>
+        int.Parse(ReadRequired(row, columnName));
+
+    private static long ReadInt64(IReadOnlyDictionary<string, string?> row, string columnName) =>
+        long.Parse(ReadRequired(row, columnName));
+
+    private sealed record DatabaseCdcInspection(
+        bool IsCdcEnabled,
+        bool ReadCommittedSnapshotOn,
+        string NestedTriggersValue,
+        int CaptureInstanceCount,
+        IReadOnlyDictionary<string, JobHelpObservation> JobsByType,
+        IReadOnlyDictionary<string, JobRuntimeObservation> JobRuntimeByType,
+        RetainedLsnObservation RetainedLsn
+    );
+
+    private sealed record JobHelpObservation(
+        string JobType,
+        string JobName,
+        string MaxTrans,
+        string MaxScans,
+        string Continuous,
+        string PollingInterval,
+        string Retention,
+        string Threshold
+    );
+
+    private sealed record JobRuntimeObservation(
+        string JobType,
+        string JobName,
+        string Enabled,
+        string Running,
+        string LastRunStatus
+    );
+
+    private sealed record RetainedLsnObservation(long RowCount, string MinLsn, string MaxLsn);
+
+    private sealed record HeartbeatTableShapeInspection(
+        bool IsExactMatch,
+        IReadOnlyDictionary<string, string> ObservedValues
+    );
+
+    private sealed record HeartbeatSingletonInspection(
+        int SingletonRowCount,
+        bool IsExactMatch,
+        IReadOnlyDictionary<string, string> ObservedValues
+    );
+}

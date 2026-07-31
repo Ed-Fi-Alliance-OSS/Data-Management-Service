@@ -142,7 +142,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcHeartbeatDatabase",
       "Inspect a provisioned SQL Server test database with sqlcmd or the schema-tools introspector to confirm database CDC state, heartbeat shape, heartbeat row, and CDC job observations."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-capture-instances",

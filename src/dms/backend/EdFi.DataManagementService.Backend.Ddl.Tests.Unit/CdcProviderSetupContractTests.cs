@@ -48,6 +48,39 @@ internal static class CdcProviderSetupContractTestData
             databaseExecutor: databaseExecutor
         );
 
+    internal static CdcProviderSetupRequest BuildSqlServerRequest(
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
+        CdcProviderArtifactOutputRequest? artifactOutput = null,
+        ICdcProviderDatabaseExecutor? databaseExecutor = null,
+        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
+    ) =>
+        new(
+            provider: CdcProvider.SqlServer,
+            mode: mode,
+            boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
+                "dms-source-fingerprint-v1",
+                "source-123"
+            ),
+            setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
+            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),
+            artifactNames: CdcProviderArtifactNames.ForSqlServer(
+                new CdcSafeName("dms_binding_gate"),
+                new Dictionary<CdcSourceTableKind, CdcSafeName>
+                {
+                    [CdcSourceTableKind.Document] = new("dms_binding_document"),
+                    [CdcSourceTableKind.DocumentCache] = new("dms_binding_document_cache"),
+                    [CdcSourceTableKind.CdcHeartbeat] = new("dms_binding_cdc_heartbeat"),
+                }
+            ),
+            artifactOutput: artifactOutput
+                ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
+            expectedSourceInventory: sourceInventory ?? BuildSqlServerRequiredSourceInventory(),
+            connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
+                ?? new TestConnectorPrincipalProbeFactory(),
+            databaseExecutor: databaseExecutor
+        );
+
     internal static CdcProviderSetupResult BuildResult() =>
         new(
             Provider: CdcProvider.Postgresql,
@@ -122,6 +155,9 @@ internal static class CdcProviderSetupContractTestData
 
     internal static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceInventory() =>
         CdcSourceInventoryBuilder.BuildExpectedSourceInventory(SqlDialectFactory.Create(SqlDialect.Pgsql));
+
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildSqlServerRequiredSourceInventory() =>
+        CdcSourceInventoryBuilder.BuildExpectedSourceInventory(SqlDialectFactory.Create(SqlDialect.Mssql));
 }
 
 [TestFixture]
