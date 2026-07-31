@@ -24,6 +24,7 @@ internal static class CdcProviderSetupContractTestData
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
         CdcProviderArtifactOutputRequest? artifactOutput = null,
+        CdcProviderArtifactNames? artifactNames = null,
         ICdcProviderDatabaseExecutor? databaseExecutor = null,
         ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
     ) =>
@@ -36,10 +37,7 @@ internal static class CdcProviderSetupContractTestData
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),
-            artifactNames: CdcProviderArtifactNames.ForPostgresql(
-                new CdcSafeName("dms_binding_publication"),
-                new CdcSafeName("dms_binding_slot")
-            ),
+            artifactNames: artifactNames ?? CdcDms1320ArtifactNameTestAdapter.ForPostgresql(),
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildRequiredSourceInventory(),
@@ -52,6 +50,7 @@ internal static class CdcProviderSetupContractTestData
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
         CdcProviderArtifactOutputRequest? artifactOutput = null,
+        CdcProviderArtifactNames? artifactNames = null,
         ICdcProviderDatabaseExecutor? databaseExecutor = null,
         ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
     ) =>
@@ -64,15 +63,7 @@ internal static class CdcProviderSetupContractTestData
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),
-            artifactNames: CdcProviderArtifactNames.ForSqlServer(
-                new CdcSafeName("dms_binding_gate"),
-                new Dictionary<CdcSourceTableKind, CdcSafeName>
-                {
-                    [CdcSourceTableKind.Document] = new("dms_binding_document"),
-                    [CdcSourceTableKind.DocumentCache] = new("dms_binding_document_cache"),
-                    [CdcSourceTableKind.CdcHeartbeat] = new("dms_binding_cdc_heartbeat"),
-                }
-            ),
+            artifactNames: artifactNames ?? CdcDms1320ArtifactNameTestAdapter.ForSqlServer(),
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildSqlServerRequiredSourceInventory(),
@@ -158,6 +149,27 @@ internal static class CdcProviderSetupContractTestData
 
     internal static IReadOnlyList<CdcSourceTableInventory> BuildSqlServerRequiredSourceInventory() =>
         CdcSourceInventoryBuilder.BuildExpectedSourceInventory(SqlDialectFactory.Create(SqlDialect.Mssql));
+}
+
+internal static class CdcDms1320ArtifactNameTestAdapter
+{
+    // Temporary DMS-1320 test adapter until the DMS-1319/19-00 shared deterministic helper lands.
+    internal static CdcProviderArtifactNames ForPostgresql(string generation = "binding") =>
+        CdcProviderArtifactNames.ForPostgresql(
+            new CdcSafeName($"dms_{generation}_publication"),
+            new CdcSafeName($"dms_{generation}_slot")
+        );
+
+    internal static CdcProviderArtifactNames ForSqlServer(string generation = "binding") =>
+        CdcProviderArtifactNames.ForSqlServer(
+            new CdcSafeName($"dms_{generation}_gate"),
+            new Dictionary<CdcSourceTableKind, CdcSafeName>
+            {
+                [CdcSourceTableKind.Document] = new($"dms_{generation}_document"),
+                [CdcSourceTableKind.DocumentCache] = new($"dms_{generation}_document_cache"),
+                [CdcSourceTableKind.CdcHeartbeat] = new($"dms_{generation}_cdc_heartbeat"),
+            }
+        );
 }
 
 [TestFixture]

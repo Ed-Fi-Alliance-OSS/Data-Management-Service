@@ -104,3 +104,42 @@ public class Given_SchemaTools_CdcProviderRetryContract
     private static EffectiveSchemaSetBuilder CreateSchemaSetBuilder() =>
         new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>());
 }
+
+[TestFixture]
+public class Given_SchemaTools_CdcArtifactNames
+{
+    [Test]
+    public void It_should_not_expose_cdc_artifact_name_generation_on_ordinary_ddl_commands()
+    {
+        var commands = new[]
+        {
+            DdlEmitCommand.Create(
+                A.Fake<ILogger>(),
+                A.Fake<IApiSchemaFileLoader>(),
+                CreateSchemaSetBuilder()
+            ),
+            DdlProvisionCommand.Create(
+                A.Fake<ILogger>(),
+                A.Fake<IApiSchemaFileLoader>(),
+                CreateSchemaSetBuilder()
+            ),
+        };
+
+        var optionNames = commands.SelectMany(command => command.Options).Select(option => option.Name);
+
+        optionNames.Should().NotContain("cdc-artifact-name");
+        optionNames.Should().NotContain("cdc-binding-generation");
+        optionNames.Should().NotContain("cdc-deployment-key");
+        optionNames.Should().NotContain("cdc-instance-key");
+        optionNames.Should().NotContain("tenant-display-name");
+        optionNames.Should().NotContain("connection-string");
+        optionNames.Should().NotContain("database-name");
+        optionNames.Should().NotContain("publication-name");
+        optionNames.Should().NotContain("replication-slot-name");
+        optionNames.Should().NotContain("capture-instance-name");
+        optionNames.Should().NotContain("gating-role-name");
+    }
+
+    private static EffectiveSchemaSetBuilder CreateSchemaSetBuilder() =>
+        new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>());
+}

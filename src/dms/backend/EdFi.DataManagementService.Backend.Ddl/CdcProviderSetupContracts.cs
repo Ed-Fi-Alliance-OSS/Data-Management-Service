@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.External;
 
@@ -123,13 +124,46 @@ internal sealed record CdcProviderArtifactOutputRequest(bool IncludeManifestPayl
 internal sealed record CdcPostgresqlProviderArtifactNames(
     CdcSafeName PublicationName,
     CdcSafeName ReplicationSlotName
-);
+)
+{
+    private const int MaxIdentifierUtf8Bytes = 63;
+
+    public CdcSafeName PublicationName { get; } =
+        ValidatePostgresqlIdentifier(PublicationName, nameof(PublicationName));
+
+    public CdcSafeName ReplicationSlotName { get; } =
+        ValidatePostgresqlIdentifier(ReplicationSlotName, nameof(ReplicationSlotName));
+
+    private static CdcSafeName ValidatePostgresqlIdentifier(CdcSafeName name, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(name.Value))
+        {
+            throw new ArgumentException("PostgreSQL CDC artifact names must be supplied.", parameterName);
+        }
+
+        if (Encoding.UTF8.GetByteCount(name.Value) > MaxIdentifierUtf8Bytes)
+        {
+            throw new ArgumentException(
+                "PostgreSQL CDC artifact names must be at most 63 UTF-8 bytes.",
+                parameterName
+            );
+        }
+
+        return name;
+    }
+}
 
 internal sealed record CdcSqlServerProviderArtifactNames(
     CdcSafeName GatingRoleName,
     IReadOnlyDictionary<CdcSourceTableKind, CdcSafeName> CaptureInstanceNames
 )
 {
+    private const int MaxGatingRoleNameLength = 128;
+    private const int MaxCaptureInstanceNameLength = 100;
+
+    public CdcSafeName GatingRoleName { get; } =
+        ValidateSqlServerIdentifier(GatingRoleName, MaxGatingRoleNameLength, nameof(GatingRoleName));
+
     public IReadOnlyDictionary<CdcSourceTableKind, CdcSafeName> CaptureInstanceNames { get; } =
         ValidateRequiredSourceTableDictionary(CaptureInstanceNames, nameof(CaptureInstanceNames));
 
@@ -149,7 +183,55 @@ internal sealed record CdcSqlServerProviderArtifactNames(
             );
         }
 
-        return names;
+        var validatedNames = names
+            .OrderBy(pair => pair.Key)
+            .ToDictionary(
+                pair => pair.Key,
+                pair =>
+                    ValidateSqlServerIdentifier(
+                        pair.Value,
+                        MaxCaptureInstanceNameLength,
+                        $"{parameterName}[{pair.Key}]"
+                    )
+            );
+
+        var duplicateNames = validatedNames
+            .Values.GroupBy(name => name.Value, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+
+        if (duplicateNames.Length > 0)
+        {
+            throw new ArgumentException(
+                "SQL Server CDC capture instance names must be unique within the database.",
+                parameterName
+            );
+        }
+
+        return validatedNames;
+    }
+
+    private static CdcSafeName ValidateSqlServerIdentifier(
+        CdcSafeName name,
+        int maxLength,
+        string parameterName
+    )
+    {
+        if (string.IsNullOrWhiteSpace(name.Value))
+        {
+            throw new ArgumentException("SQL Server CDC artifact names must be supplied.", parameterName);
+        }
+
+        if (name.Value.Length > maxLength)
+        {
+            throw new ArgumentException(
+                $"SQL Server CDC artifact names must be at most {maxLength} characters.",
+                parameterName
+            );
+        }
+
+        return name;
     }
 }
 
@@ -170,10 +252,10 @@ internal sealed record CdcProviderArtifactNames(
 
     internal void ValidateFor(CdcProvider provider)
     {
-        var hasRequiredArtifacts = provider switch
+        var hasOnlyRequiredArtifacts = provider switch
         {
-            CdcProvider.Postgresql => Postgresql is not null,
-            CdcProvider.SqlServer => SqlServer is not null,
+            CdcProvider.Postgresql => Postgresql is not null && SqlServer is null,
+            CdcProvider.SqlServer => SqlServer is not null && Postgresql is null,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider),
                 provider,
@@ -181,10 +263,10 @@ internal sealed record CdcProviderArtifactNames(
             ),
         };
 
-        if (!hasRequiredArtifacts)
+        if (!hasOnlyRequiredArtifacts)
         {
             throw new ArgumentException(
-                $"Binding-derived artifact names are required for provider {provider}.",
+                $"Binding-derived artifact names must contain only names for provider {provider}.",
                 nameof(provider)
             );
         }

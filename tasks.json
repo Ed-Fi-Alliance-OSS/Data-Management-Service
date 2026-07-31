@@ -271,7 +271,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcArtifactNames",
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcArtifactNames"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "artifact-output",
