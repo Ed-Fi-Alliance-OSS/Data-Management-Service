@@ -1594,6 +1594,17 @@ function Move-EnvFileKeyBeforeAnotherKey {
         # downstream seam consumers, and comparing everything would reject the repair this exists for.
         if ($originalIndex -le $beforeIndex -or $originalIndex -gt $moveIndex) { continue }
 
+        # Ambient precedence makes a declaration inert. When the process environment supplies this
+        # declaration's OWN key, Compose ignores the file's value both for the final environment and for
+        # every later reference to that name, so the value frozen at this line never reaches the container
+        # and a move cannot "change" it. Comparing it anyway rejected safe repairs: measured, with an
+        # ambient FEATURE=ambient-stable the declaration's own value went "disabled" -> "secret" while the
+        # value Compose renders stayed "ambient-stable" in both orderings. This is the same provenance rule
+        # - and the same $null check, so a present-but-empty ambient value also counts as supplied - that
+        # Resolve-DotenvFileSequentially, Get-DotenvDependencyClosure, and Test-DotenvReferenceResolvable
+        # already apply.
+        if ($null -ne [System.Environment]::GetEnvironmentVariable($declaration.Key)) { continue }
+
         $candidateIndex = if ($originalIndex -eq $moveIndex) { $beforeIndex } else { $originalIndex + 1 }
         if (-not $candidateByLineIndex.ContainsKey($candidateIndex)) {
             throw "Move-EnvFileKeyBeforeAnotherKey: the reordered candidate for '$Path' does not carry a declaration at the position line $($originalIndex + 1) maps to, so the move cannot be proven safe and was not applied."
@@ -2443,16 +2454,35 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         $keyOverrides["DMS_CONFIG_DATABASE_CONNECTION_STRING"] = $intendedConnectionString
     }
 
-    # Captured BEFORE the write, so a failure below can tell a file this call created from one that
-    # was already there - including the re-derive shape where $derivedPath IS $BaseEnvironmentFile.
-    $derivedFileExistedBeforeThisCall = Test-Path -LiteralPath $derivedPath -PathType Leaf
-
-    Write-DerivedEnvFile `
-        -BaseEnvironmentFile $BaseEnvironmentFile `
-        -TargetPath $derivedPath `
-        -KeyOverrides $keyOverrides
+    # The target's exact prior BYTES, captured before anything is written, so a failure below can put the
+    # file back precisely as it was found. Bytes rather than text: a decode/encode round trip does not
+    # preserve a BOM or an unusual line ending, and "restored" has to mean byte-for-byte. $null means the
+    # target did not exist, which is the signal to remove it instead of restoring it.
+    #
+    # Snapshotting is what makes the write transactional, and the write has to be INSIDE the protected
+    # region rather than ahead of it. Write-DerivedEnvFile replaces the target outright, so with the write
+    # left outside, a rejected reorder threw only after the previous artifact had already been destroyed:
+    # a prior run's file was clobbered, and in the re-derive shape - where $derivedPath IS
+    # $BaseEnvironmentFile - the caller's own input file was rewritten, leaving a half-migrated artifact
+    # behind and making "the source file is never touched" untrue.
+    $priorTargetBytes = $null
+    if (Test-Path -LiteralPath $derivedPath -PathType Leaf) {
+        try {
+            $priorTargetBytes = [System.IO.File]::ReadAllBytes($derivedPath)
+        }
+        catch {
+            # No snapshot means no way to undo the write below, so do not begin one. Nothing has been
+            # written at this point, which is exactly why this has to fail here rather than later.
+            throw "CMS database topology: the existing derived environment file '$derivedPath' could not be read ($($_.Exception.Message)), so this run cannot guarantee it would be restorable if the topology repair were rejected. Nothing was written. Resolve the file access problem and re-run."
+        }
+    }
 
     try {
+        Write-DerivedEnvFile `
+            -BaseEnvironmentFile $BaseEnvironmentFile `
+            -TargetPath $derivedPath `
+            -KeyOverrides $keyOverrides
+
         # Docker Compose's --env-file interpolation is order-dependent: DMS_CONFIG_DATABASE_NAME must be
         # defined before any line that references it via ${DMS_CONFIG_DATABASE_NAME}, or that reference
         # resolves to empty at real Compose render time. Move-EnvFileKeyBeforeAnotherKey performs the
@@ -2489,15 +2519,34 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         }
     }
     catch {
-        # The artifact on disk carries this run's topology writes without the reordering that makes them
-        # render, so it must not survive for a later run to pick up. Only a file THIS call created is
-        # removed; one that already existed is left as it was found rather than deleted out from under
-        # its owner. The source environment file is never touched either way - every write above targets
-        # the derived path.
-        if (-not $derivedFileExistedBeforeThisCall) {
-            Remove-Item -LiteralPath $derivedPath -Force -ErrorAction SilentlyContinue
+        # Roll the target back. Whatever is on disk now carries this run's topology writes without the
+        # reordering that makes them render, so it must not survive for a later run to pick up: a file this
+        # call created is removed, and one that already existed is restored to the exact bytes it held -
+        # which is also what keeps the caller's input file intact in the re-derive shape.
+        $originalFailure = $_
+        $rollbackFailure = $null
+        try {
+            if ($null -eq $priorTargetBytes) {
+                if (Test-Path -LiteralPath $derivedPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $derivedPath -Force
+                }
+            }
+            else {
+                [System.IO.File]::WriteAllBytes($derivedPath, $priorTargetBytes)
+            }
         }
-        throw
+        catch {
+            $rollbackFailure = $_
+        }
+
+        # A failed rollback is a different and worse situation than a failed repair: a partially-written
+        # environment file is still on disk and no longer means what its owner thinks it means. Report both,
+        # naming the path and the I/O reason only - never a value from either file.
+        if ($null -ne $rollbackFailure) {
+            throw "CMS database topology: the topology write failed AND the derived environment file '$derivedPath' could not be restored to its previous contents ($($rollbackFailure.Exception.Message)). That file is now in an indeterminate state - do not hand it to Docker; delete or re-create it. The underlying failure was: $($originalFailure.Exception.Message)"
+        }
+
+        throw $originalFailure
     }
 
     return $derivedPath

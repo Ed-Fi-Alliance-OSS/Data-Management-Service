@@ -995,11 +995,14 @@ function Assert-E2EDatabaseIsDedicated {
     # connection-string override make the live shared database equal the reset target while this guard
     # sees a different file value and permits a destructive reset/drop.
     #
-    # All comparisons are case-insensitive: SQL Server's default collation treats database identifiers
-    # case-insensitively, so a case-variant of a protected name IS the same database there and would
-    # still be dropped. PostgreSQL names are case-sensitive, so this is stricter than required on that
-    # engine - acceptable for a guard in front of DROP DATABASE, where a false positive costs a rename
-    # and a false negative drops shared state. The guard fails closed: a protected key that is
+    # All comparisons are case-insensitive, and that is required on BOTH engines rather than merely
+    # conservative on one. SQL Server's default collation treats database identifiers case-insensitively,
+    # so a case-variant of a protected name IS the same database there. PostgreSQL folds an UNQUOTED
+    # identifier to lower case, and the reset path drops with an unquoted one
+    # (Template-Management.psm1's `DROP DATABASE IF EXISTS $DatabaseName;`), so a case-variant resolves to
+    # the same physical database there too. An ordinal comparison would let a case-variant of a protected
+    # name past a guard standing in front of DROP DATABASE, where a false positive costs a rename and a
+    # false negative drops shared state. The guard fails closed: a protected key that is
     # configured (in the file or the ambient environment) but cannot be resolved throws rather than
     # silently skipping the collision check.
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
