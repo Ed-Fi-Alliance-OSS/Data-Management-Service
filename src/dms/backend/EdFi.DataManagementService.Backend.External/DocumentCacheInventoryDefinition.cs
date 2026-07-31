@@ -72,6 +72,7 @@ public static class DocumentCacheInventoryDefinition
     {
         public const string PrimaryKey = "PK_DocumentCache";
         public const string ForeignKeyToDocument = "FK_DocumentCache_Document";
+        public const string ComputedAtDefault = "DF_DocumentCache_ComputedAt";
         public const string PgsqlJsonObject = "CK_DocumentCache_JsonObject";
         public const string MssqlJsonObject = "CK_DocumentCache_IsJsonObject";
     }

@@ -517,7 +517,7 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("DocumentJson"), _dialect.JsonColumnType, false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ComputedAt"), DateTimeType, false, "DF_DocumentCache_ComputedAt", _dialect.CurrentTimestampDefaultExpression)},"
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ComputedAt"), DateTimeType, false, DocumentCacheInventoryDefinition.DocumentCacheConstraints.ComputedAtDefault, _dialect.CurrentTimestampDefaultExpression)},"
             );
             writer.AppendLine(
                 _dialect.RenderNamedPrimaryKeyClause(

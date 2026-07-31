@@ -387,6 +387,23 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
     }
 
+    [TestCaseSource(nameof(MssqlComputedAtDefaultMutations))]
+    public async Task It_rejects_invalid_DocumentCache_ComputedAt_defaults(
+        string mutationSql,
+        DocumentCacheInventoryStatus expectedStatus
+    )
+    {
+        await using MssqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutationSql);
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(expectedStatus);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [TestCaseSource(nameof(PermissiveMssqlCriticalCheckConstraintMutations))]
     public async Task It_rejects_permissive_same_named_critical_check_constraints(string mutationSql)
     {
@@ -558,6 +575,41 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         yield return new TestCaseData("AFTER INSERT, UPDATE, DELETE").SetName(
             "It_rejects_sqlserver_trigger_with_delete_event"
         );
+    }
+
+    private static IEnumerable<TestCaseData> MssqlComputedAtDefaultMutations()
+    {
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[DocumentCache]
+            DROP CONSTRAINT [DF_DocumentCache_ComputedAt];
+            """,
+            DocumentCacheInventoryStatus.Missing
+        ).SetName("It_rejects_sqlserver_documentcache_computedat_without_default_constraint");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[DocumentCache]
+            DROP CONSTRAINT [DF_DocumentCache_ComputedAt];
+
+            ALTER TABLE [dms].[DocumentCache]
+            ADD CONSTRAINT [DF_DocumentCache_ComputedAt]
+            DEFAULT (sysdatetime()) FOR [ComputedAt];
+            """,
+            DocumentCacheInventoryStatus.Invalid
+        ).SetName("It_rejects_sqlserver_documentcache_computedat_with_wrong_default_expression");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE [dms].[DocumentCache]
+            DROP CONSTRAINT [DF_DocumentCache_ComputedAt];
+
+            ALTER TABLE [dms].[DocumentCache]
+            ADD CONSTRAINT [DF_DocumentCache_ComputedAt_Renamed]
+            DEFAULT (sysutcdatetime()) FOR [ComputedAt];
+            """,
+            DocumentCacheInventoryStatus.Missing
+        ).SetName("It_rejects_sqlserver_documentcache_computedat_with_renamed_default_constraint");
     }
 
     private static IEnumerable<TestCaseData> PermissiveMssqlCriticalCheckConstraintMutations()

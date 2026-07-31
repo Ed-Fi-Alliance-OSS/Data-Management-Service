@@ -460,6 +460,23 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
     }
 
+    [TestCaseSource(nameof(PostgresqlComputedAtDefaultMutations))]
+    public async Task It_rejects_invalid_DocumentCache_ComputedAt_defaults(
+        string mutationSql,
+        DocumentCacheInventoryStatus expectedStatus
+    )
+    {
+        await using PostgresqlGeneratedDdlTestDatabase database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutationSql);
+
+        DocumentCacheProviderInventoryValidationResult result = await _validator.ValidateInventoryAsync(
+            database.ConnectionString
+        );
+
+        result.Inventory.Status.Should().Be(expectedStatus);
+        result.IsSatisfied.Should().BeFalse();
+    }
+
     [TestCaseSource(nameof(PermissivePostgresqlCriticalCheckConstraintMutations))]
     public async Task It_rejects_permissive_same_named_critical_check_constraints(string mutationSql)
     {
@@ -743,6 +760,25 @@ public class Given_A_Postgresql_DocumentCacheInventory_Validator
             <>
             """
         ).SetName("It_rejects_update_enqueue_function_with_expected_tokens_only_in_comments");
+    }
+
+    private static IEnumerable<TestCaseData> PostgresqlComputedAtDefaultMutations()
+    {
+        yield return new TestCaseData(
+            """
+            ALTER TABLE "dms"."DocumentCache"
+            ALTER COLUMN "ComputedAt" DROP DEFAULT;
+            """,
+            DocumentCacheInventoryStatus.Missing
+        ).SetName("It_rejects_postgresql_documentcache_computedat_without_default");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE "dms"."DocumentCache"
+            ALTER COLUMN "ComputedAt" SET DEFAULT clock_timestamp();
+            """,
+            DocumentCacheInventoryStatus.Invalid
+        ).SetName("It_rejects_postgresql_documentcache_computedat_with_wrong_default_expression");
     }
 
     private static IEnumerable<TestCaseData> PermissivePostgresqlCriticalCheckConstraintMutations()

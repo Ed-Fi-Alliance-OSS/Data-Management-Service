@@ -390,6 +390,17 @@ internal static class DocumentCacheInventoryValidatorSupport
                 cancellationToken
             )
             .ConfigureAwait(false);
+        await RequireDefaultConstraintAsync(
+                connection,
+                dialect,
+                DocumentCacheInventoryDefinition.DocumentCache,
+                DocumentCacheInventoryDefinition.DocumentCacheColumns.ComputedAt.Value,
+                DocumentCacheInventoryDefinition.DocumentCacheConstraints.ComputedAtDefault,
+                definition => HasExpectedDocumentCacheComputedAtDefault(dialect, definition),
+                inventoryIssues,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         await RequirePrimaryKeyAsync(
                 connection,
@@ -953,6 +964,61 @@ internal static class DocumentCacheInventoryValidatorSupport
         }
     }
 
+    private static async Task RequireDefaultConstraintAsync(
+        DbConnection connection,
+        SqlDialect dialect,
+        DbTableName table,
+        string columnName,
+        string mssqlConstraintName,
+        Func<string, bool> hasExpectedDefinition,
+        List<InventoryIssue> inventoryIssues,
+        CancellationToken cancellationToken
+    )
+    {
+        DefaultConstraintSnapshot? defaultConstraint = await ReadDefaultConstraintAsync(
+                connection,
+                dialect,
+                table,
+                columnName,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (defaultConstraint is null)
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Missing,
+                    $"{Display(table)}.{columnName} default constraint is missing."
+                )
+            );
+            return;
+        }
+
+        if (
+            dialect == SqlDialect.Mssql
+            && !string.Equals(defaultConstraint.ConstraintName, mssqlConstraintName, StringComparison.Ordinal)
+        )
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Missing,
+                    $"{mssqlConstraintName} default constraint is missing."
+                )
+            );
+        }
+
+        if (!hasExpectedDefinition(defaultConstraint.Definition))
+        {
+            inventoryIssues.Add(
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Invalid,
+                    $"{Display(table)}.{columnName} default expression is invalid."
+                )
+            );
+        }
+    }
+
     private static async Task RequireForeignKeyAsync(
         DbConnection connection,
         SqlDialect dialect,
@@ -1362,6 +1428,69 @@ internal static class DocumentCacheInventoryValidatorSupport
                 reader => new CheckConstraintSnapshot(
                     reader.GetString(reader.GetOrdinal("Definition")),
                     ReadBooleanLike(reader, "IsEnabled")
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<DefaultConstraintSnapshot?> ReadDefaultConstraintAsync(
+        DbConnection connection,
+        SqlDialect dialect,
+        DbTableName table,
+        string columnName,
+        CancellationToken cancellationToken
+    )
+    {
+        string sql = dialect switch
+        {
+            SqlDialect.Pgsql => """
+                SELECT
+                    CAST(NULL AS text) AS ConstraintName,
+                    pg_catalog.pg_get_expr(defaults.adbin, defaults.adrelid) AS Definition
+                FROM pg_catalog.pg_attrdef defaults
+                INNER JOIN pg_catalog.pg_class tables
+                    ON tables.oid = defaults.adrelid
+                INNER JOIN pg_catalog.pg_namespace schemas
+                    ON schemas.oid = tables.relnamespace
+                INNER JOIN pg_catalog.pg_attribute columns
+                    ON columns.attrelid = tables.oid
+                   AND columns.attnum = defaults.adnum
+                WHERE schemas.nspname = @schema
+                  AND tables.relname = @table
+                  AND columns.attname = @column
+                  AND columns.attisdropped = FALSE
+                """,
+            SqlDialect.Mssql => """
+                SELECT
+                    defaults.name AS ConstraintName,
+                    defaults.definition AS Definition
+                FROM sys.default_constraints defaults
+                INNER JOIN sys.tables tables
+                    ON tables.object_id = defaults.parent_object_id
+                INNER JOIN sys.schemas schemas
+                    ON schemas.schema_id = tables.schema_id
+                INNER JOIN sys.columns columns
+                    ON columns.object_id = tables.object_id
+                   AND columns.column_id = defaults.parent_column_id
+                WHERE schemas.name = @schema
+                  AND tables.name = @table
+                  AND columns.name = @column
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+
+        return await ExecuteSingleOrDefaultAsync(
+                connection,
+                sql,
+                [
+                    Parameter("schema", table.Schema.Value),
+                    Parameter("table", table.Name),
+                    Parameter("column", columnName),
+                ],
+                reader => new DefaultConstraintSnapshot(
+                    ReadNullableString(reader, "ConstraintName"),
+                    reader.GetString(reader.GetOrdinal("Definition"))
                 ),
                 cancellationToken
             )
@@ -2018,8 +2147,7 @@ internal static class DocumentCacheInventoryValidatorSupport
         );
 
     private static bool HasNormalizedTokens(string? definition, params string[] tokens) =>
-        !string.IsNullOrWhiteSpace(definition)
-        && ContainsAll(NormalizeDefinition(StripSqlComments(definition)), tokens);
+        !string.IsNullOrWhiteSpace(definition) && ContainsAll(NormalizeDefinition(definition), tokens);
 
     private static bool ContainsAll(string value, params string[] tokens) =>
         Array.TrueForAll(tokens, token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
@@ -2042,6 +2170,9 @@ internal static class DocumentCacheInventoryValidatorSupport
                 ? PgsqlDocumentCacheStateLifecycleCheckExpression
                 : MssqlDocumentCacheStateLifecycleCheckExpression
         );
+
+    private static bool HasExpectedDocumentCacheComputedAtDefault(SqlDialect dialect, string definition) =>
+        NormalizeDefinition(definition) == (dialect == SqlDialect.Pgsql ? "NOW" : "SYSUTCDATETIME");
 
     private static string NormalizeCheckExpression(string definition)
     {
@@ -2069,7 +2200,7 @@ internal static class DocumentCacheInventoryValidatorSupport
 
     private static string NormalizeDefinition(string definition) =>
         new(
-            definition
+            StripSqlComments(definition)
                 .Where(character =>
                     char.IsLetterOrDigit(character)
                     || character == '='
@@ -2388,6 +2519,8 @@ internal static class DocumentCacheInventoryValidatorSupport
     );
 
     private sealed record CheckConstraintSnapshot(string Definition, bool IsEnabled);
+
+    private sealed record DefaultConstraintSnapshot(string? ConstraintName, string Definition);
 
     private sealed record ForeignKeyRow(
         string Column,
