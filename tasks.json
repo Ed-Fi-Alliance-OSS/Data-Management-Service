@@ -305,7 +305,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderArtifacts",
       "Inspect PostgreSQL docker logs, pg_publication_tables, and pg_replication_slots if setup fails before provider assertions."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql-db-apply-access-retry-tests",

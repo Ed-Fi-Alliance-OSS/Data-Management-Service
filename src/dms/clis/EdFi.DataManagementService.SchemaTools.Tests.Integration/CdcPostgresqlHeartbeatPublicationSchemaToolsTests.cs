@@ -89,6 +89,98 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     }
 
     [Test]
+    [Category("CdcProviderArtifacts")]
+    public async Task It_should_apply_PostgresqlCdcArtifacts_only_after_opt_in_setup()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var manifestOutputDirectory = Directory.CreateTempSubdirectory("postgresql-cdc-artifacts-");
+        var manifestPath = Path.Combine(manifestOutputDirectory.FullName, "cdc-provider.pgsql.manifest.json");
+
+        try
+        {
+            var effectiveSchemaHashBeforeSetup = ReadEffectiveSchemaHash(connection);
+
+            AssertOrdinaryProvisioningOmitsProviderArtifacts(connection, manifestPath);
+
+            var result = await RunSetupAsync(
+                connection,
+                CdcProviderSetupMode.InitialCreateOrExactMatch,
+                artifactOutput: new CdcProviderArtifactOutputRequest(
+                    IncludeManifestPayload: true,
+                    ManifestOutputDirectoryPath: manifestOutputDirectory.FullName
+                )
+            );
+
+            result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+            result.Diagnostics.Should().BeEmpty();
+            ReadEffectiveSchemaHash(connection).Should().Be(effectiveSchemaHashBeforeSetup);
+
+            AssertHeartbeatTable(connection);
+            ExecuteNonQuery(connection, result.HeartbeatActionQuery!.Sql);
+            ReadHeartbeatSnapshot(connection).Should().Be(new HeartbeatSnapshot(1, 1));
+            AssertDocumentReplicaIdentityFull(connection);
+            AssertPublication(connection);
+            AssertDocumentCacheKeepsPrimaryKeyShape(connection);
+
+            ReadReplicationSlotSnapshot(connection)
+                .Should()
+                .Match<ReplicationSlotSnapshot>(slot =>
+                    slot.Plugin == "pgoutput"
+                    && slot.SlotType == "logical"
+                    && slot.Database == _databaseName
+                    && !slot.Temporary
+                    && !slot.Active
+                    && slot.RestartLsn.Length > 0
+                    && slot.ConfirmedFlushLsn.Length > 0
+                    && slot.WalStatus != "lost"
+                );
+
+            result
+                .SourceTableInventory.Select(table =>
+                    $"{table.TableName.Schema.Value}.{table.TableName.Name}"
+                )
+                .Should()
+                .BeEquivalentTo("dms.Document", "dms.DocumentCache", "dms.CdcHeartbeat")
+                .And.NotContain("dms.DocumentProjectionWork");
+            result
+                .ExpectedMessageKeyColumns.Should()
+                .Contain(key =>
+                    key.TableKind == CdcSourceTableKind.Document
+                    && key.KeyColumns.Select(column => column.Value).SequenceEqual(new[] { "DocumentUuid" })
+                )
+                .And.Contain(key =>
+                    key.TableKind == CdcSourceTableKind.DocumentCache
+                    && key.KeyColumns.Select(column => column.Value).SequenceEqual(new[] { "DocumentUuid" })
+                );
+            result
+                .ProviderHistoryObservations.Should()
+                .ContainSingle(observation =>
+                    observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                    && observation.SafeArtifactName.Value == ReplicationSlotName
+                    && observation.SafeObservedValues["plugin"] == "pgoutput"
+                    && observation.SafeObservedValues["retained_position_gap_evaluation"]
+                        == "not_evaluated_without_committed_offset"
+                );
+            result.ManifestPayload.Should().NotBeNull();
+            result.ManifestPayload!.FileName.Value.Should().Be("cdc-provider.pgsql.manifest.json");
+            result.ManifestPayload.Json.Should().Be(await File.ReadAllTextAsync(manifestPath));
+            result.ManifestPayload.Json.Should().Contain("\"provider\": \"postgresql\"");
+            result.ManifestPayload.Json.Should().Contain("\"artifact_name\": \"dms_binding_publication\"");
+            result.ManifestPayload.Json.Should().Contain("\"artifact_name\": \"dms_binding_slot\"");
+            result.ManifestPayload.Json.Should().NotContain(_connectionString);
+            result.ManifestPayload.Json.Should().NotContain("EffectiveSchemaHash");
+            result.ManifestPayload.Json.Should().NotContain("ResourceKeySeedHash");
+            result.ManifestPayload.Json.Should().NotContain("RelationalMappingVersion");
+            result.ManifestPayload.Json.Should().NotContain("DocumentProjectionWork");
+        }
+        finally
+        {
+            Directory.Delete(manifestOutputDirectory.FullName, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task PostgresqlCdcSlotHistory_should_create_validate_and_report_retained_history()
     {
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -300,7 +392,8 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     private CdcProviderSetupRequest BuildRequest(
         ICdcProviderDatabaseExecutor databaseExecutor,
         CdcProviderSetupMode mode,
-        string boundSourceIdentity
+        string boundSourceIdentity,
+        CdcProviderArtifactOutputRequest? artifactOutput = null
     ) =>
         new(
             provider: CdcProvider.Postgresql,
@@ -315,7 +408,8 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
                 new CdcSafeName(PublicationName),
                 new CdcSafeName(ReplicationSlotName)
             ),
-            artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
+            artifactOutput: artifactOutput
+                ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
                 SqlDialectFactory.Create(SqlDialect.Pgsql)
             ),
@@ -325,14 +419,20 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         NpgsqlConnection connection,
         CdcProviderSetupMode mode,
-        string? boundSourceIdentity = null
+        string? boundSourceIdentity = null,
+        CdcProviderArtifactOutputRequest? artifactOutput = null
     )
     {
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
         var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
 
         return await service.SetupAsync(
-            BuildRequest(executor, mode, boundSourceIdentity ?? ReadDataStoreIdentity(connection))
+            BuildRequest(
+                executor,
+                mode,
+                boundSourceIdentity ?? ReadDataStoreIdentity(connection),
+                artifactOutput
+            )
         );
     }
 
@@ -390,6 +490,29 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             """;
         command.Parameters.AddWithValue("table_name", tableName);
         return (bool)command.ExecuteScalar()!;
+    }
+
+    private void AssertOrdinaryProvisioningOmitsProviderArtifacts(
+        NpgsqlConnection connection,
+        string manifestPath
+    )
+    {
+        TableExists(connection, "CdcHeartbeat")
+            .Should()
+            .BeFalse("ordinary provisioning must not create CDC heartbeat");
+        PublicationExists(connection)
+            .Should()
+            .BeFalse("ordinary provisioning must not create CDC publications");
+        ReadReplicationSlotSnapshot(connection)
+            .Should()
+            .BeNull("ordinary provisioning must not create CDC replication slots");
+        File.Exists(manifestPath)
+            .Should()
+            .BeFalse("ordinary provisioning must not emit CDC provider manifests");
+
+        HasTablePrivilege(connection, "\"dms\".\"Document\"", "SELECT").Should().BeFalse();
+        HasTablePrivilege(connection, "\"dms\".\"DocumentCache\"", "SELECT").Should().BeFalse();
+        HasTablePrivilege(connection, "\"dms\".\"DocumentProjectionWork\"", "SELECT").Should().BeFalse();
     }
 
     private static bool PublicationExists(NpgsqlConnection connection)
@@ -505,6 +628,15 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             SELECT "SourceIdentity"::text
             FROM dms."DataStoreIdentity"
             WHERE "DataStoreIdentitySingletonId" = 1;
+            """
+        );
+
+    private static string ReadEffectiveSchemaHash(NpgsqlConnection connection) =>
+        ExecuteScalarText(
+            connection,
+            """
+            SELECT "EffectiveSchemaHash"
+            FROM dms."EffectiveSchema";
             """
         );
 
