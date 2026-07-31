@@ -2206,10 +2206,14 @@ function Get-RegisteredDatastoreDatabaseValue {
         followed here instead of silently diverging.
 
         Measured against NpgsqlConnectionStringBuilder - the exact parser SchemaTools' GetDatabaseName
-        uses - for whitespace (leading, trailing, tab), both quote characters, ';', '=', a newline and
-        '${...}': the read-back is IDENTICAL to the input in every case, and identical to what Npgsql
-        returns. That identity is the property that makes "registered verbatim" a fact rather than a hope,
-        and a test pins it against the real serializer.
+        uses - for whitespace (leading, trailing, tab), trailing CR and CRLF, an embedded newline, both
+        quote characters, ';', '=', and '${...}': the read-back is identical to the input, and identical
+        to what Npgsql returns. The one measured exception is a bare TRAILING LINE FEED: the writer
+        leaves it unquoted and both parsers then discard it, so 'edfi_configurationservice' + LF reaches
+        the provider as the bare reserved name. That exception is exactly why the collision authority
+        must compare THIS value rather than the raw parameter - judged as text the LF-bearing name looks
+        distinct while the provider is handed the reserved database - and tests pin the identity cases
+        and the exception against the real serializer and parser.
 
     .PARAMETER DatastoreDatabaseName
         The datastore database name as the caller supplied it.
@@ -2254,8 +2258,10 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
         with a QUOTED identifier (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), so nothing
         folds. EDFI_ConfigurationService is a genuinely distinct physical database from
         edfi_configurationservice - measured, both coexisting in pg_database - and so is a name whose only
-        difference is surrounding whitespace, now that the whitespace survives serialization. The
-        comparison is therefore ORDINAL and exact against the parsed value.
+        difference is surrounding whitespace, for every measured whitespace shape except one: a bare
+        trailing LINE FEED is removed by serialization+parsing before the provider sees it, so that name
+        correctly collides. The comparison is therefore ORDINAL and exact against the parsed value, and
+        the LF case is caught precisely because it is the PARSED value being compared.
 
         SQL Server: quoting does not decide identity at all; the server matches database names under its
         collation. That rule is owned by Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and

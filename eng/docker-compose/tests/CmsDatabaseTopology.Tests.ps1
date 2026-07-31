@@ -1636,8 +1636,10 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
             @{ Label = 'a blank name, meaning the datastore name was not overridden'; Name = '' }
         ) {
             # Two measured facts back this, and the whitespace rows depend on BOTH. (1) The registered
-            # connection string is serialized with escaping, so surrounding whitespace survives parsing
-            # instead of being discarded - see the transport Describe, which fails if that regresses.
+            # connection string is serialized with escaping, so the surrounding whitespace in these
+            # rows survives parsing instead of being discarded (a bare trailing LF is the one measured
+            # whitespace shape that does not, and it correctly collides - covered by its own tests) -
+            # see the transport Describe, which fails if that regresses.
             # (2) SchemaTools then creates the database with a QUOTED identifier
             # (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), so nothing folds:
             # edfi_configurationservice and EDFI_ConfigurationService were observed coexisting in
@@ -1724,7 +1726,8 @@ Describe "the registered datastore database name survives the transport that car
         # Parses a connection string the way a provider does. DbConnectionStringBuilder is the ADO.NET
         # base class NpgsqlConnectionStringBuilder derives from, so it applies the same quoting rules;
         # measured across whitespace, both quote characters, ';', '=', newline and '${...}', the two
-        # return identical values.
+        # return identical values - including both removing a bare trailing LF - so agreement here is
+        # with the provider parser, never round-trip identity with the input.
         function script:Get-ParsedDatabaseValue {
             param([Parameter(Mandatory)] [string]$ConnectionString)
 
@@ -3927,8 +3930,9 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
         It "rejects a -DataStoreDatabaseName case variant on MSSQL, where the server collation resolves it to the same database" {
             # MSSQL only, and deliberately not "both engines". -DataStoreDatabaseName does NOT reach
-            # postgresql-init.sh's unquoted CREATE DATABASE - it is copied verbatim into the registered
-            # datastore connection string and created by SchemaTools with a QUOTED identifier - so on
+            # postgresql-init.sh's unquoted CREATE DATABASE - it is serialized into the registered
+            # datastore connection string, parsed back by the provider (unchanged for a case variant),
+            # and created by SchemaTools with a QUOTED identifier - so on
             # PostgreSQL nothing folds and a case variant is a genuinely distinct database. Asserting a
             # single answer for both engines here rejected that working PostgreSQL configuration; the
             # PostgreSQL half of this behavior is covered by its own acceptance test.
@@ -3971,8 +3975,9 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         }
 
         It "accepts -DataStoreDatabaseName EDFI_ConfigurationService on PostgreSQL and proceeds to the docker boundary" {
-            # SchemaTools creates the registered datastore with a QUOTED identifier and CMS stores the
-            # name verbatim, so this is a physically distinct database from the dedicated CMS one -
+            # SchemaTools creates the registered datastore with a QUOTED identifier, and this name
+            # survives the transport unchanged (mixed case is not the trailing-LF exception), so this is
+            # a physically distinct database from the dedicated CMS one -
             # measured, both coexisting in pg_database. The guard must not fire. Requiring the run to
             # reach the recording docker boundary, and the derived file to still declare separate mode,
             # proves the guard was live on this shape and simply had nothing to reject - which the

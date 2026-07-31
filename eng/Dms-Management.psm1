@@ -1070,8 +1070,11 @@ function Add-DataStore {
     # 'edfi_configurationservice ' parsed back as 'edfi_configurationservice', so the datastore reached
     # the dedicated Configuration Service database while the registered text said otherwise; and a name
     # containing ';' introduced a whole second Database segment, which won. DbConnectionStringBuilder
-    # quotes exactly those values, and the parsed database is then the name verbatim - which is what the
-    # registered-name collision guard relies on being true.
+    # quotes exactly those values, and the parsed database is then the registered name for every
+    # measured shape except one: a bare trailing LINE FEED stays unquoted and the parser removes it, so
+    # such a name reaches the provider as the bare name. The registered-name collision guard therefore
+    # compares the provider-parsed value, never the parameter text, and follows that exception instead
+    # of missing it.
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         # ConvertTo-PostgresCredential deliberately accepts an empty secret, and the serializer
         # accepts one for PostgreSQL: a passwordless (trust-authenticated) server is a real
