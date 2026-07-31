@@ -135,7 +135,8 @@ public class MssqlDocumentMetadataDualWriteTests
             .Should()
             .Be(
                 3,
-                "the mirror must be per row — the OUTPUT-into-@stamped join binds positionally and a misbind would bleed across rows"
+                "the mirror must be per row — the trigger's mirror UPDATE joins @stamped back to the root "
+                    + "table on DocumentId, so a wrong join key would bleed one document's metadata across rows"
             );
     }
 

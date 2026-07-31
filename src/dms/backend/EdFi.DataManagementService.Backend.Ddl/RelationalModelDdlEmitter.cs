@@ -1237,13 +1237,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("IF TG_OP = 'INSERT' THEN");
             using (writer.Indent())
             {
-                EmitPgsqlExistingDocumentContentStampRead(
-                    writer,
-                    documentTable,
-                    keyColumn,
-                    "NEW",
-                    assignToNewMirrorColumns: true
-                );
+                EmitPgsqlExistingDocumentStampAndMetadataRead(writer, documentTable, keyColumn, "NEW");
             }
             writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
@@ -1348,42 +1342,40 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
     }
 
-    private void EmitPgsqlExistingDocumentContentStampRead(
+    /// <summary>
+    /// Emits the INSERT-path read of the already-stamped <c>dms.Document</c> row and assigns the full
+    /// document metadata set (the content stamp pair plus <c>DocumentUuid</c>, the identity stamp pair, and
+    /// <c>CreatedAt</c>) onto <c>NEW</c>, so the inserted root row is self-sufficient. Only the root
+    /// document-stamping path uses this; child triggers stamp through
+    /// <see cref="EmitPgsqlDocumentContentStampUpdate" />.
+    /// </summary>
+    private void EmitPgsqlExistingDocumentStampAndMetadataRead(
         SqlWriter writer,
         string documentTable,
         DbColumnName keyColumn,
-        string sourceRowAlias,
-        bool assignToNewMirrorColumns
+        string sourceRowAlias
     )
     {
         writer.Append("SELECT ");
         writer.Append(Quote(ContentVersionColumn));
         writer.Append(", ");
         writer.Append(Quote(ContentLastModifiedAtColumn));
-        if (assignToNewMirrorColumns)
-        {
-            // Root rows also mirror the non-stamp metadata so they are self-sufficient. Only the
-            // assigning (root) path reads these, so the projection stays in lockstep with the
-            // INTO list below.
-            writer.Append(", ");
-            writer.Append(Quote(DocumentUuidColumn));
-            writer.Append(", ");
-            writer.Append(Quote(IdentityVersionColumn));
-            writer.Append(", ");
-            writer.Append(Quote(IdentityLastModifiedAtColumn));
-            writer.Append(", ");
-            writer.Append(Quote(CreatedAtColumn));
-        }
+        writer.Append(", ");
+        writer.Append(Quote(DocumentUuidColumn));
+        writer.Append(", ");
+        writer.Append(Quote(IdentityVersionColumn));
+        writer.Append(", ");
+        writer.Append(Quote(IdentityLastModifiedAtColumn));
+        writer.Append(", ");
+        writer.Append(Quote(CreatedAtColumn));
         writer.AppendLine();
         // STRICT: a missing dms.Document row must fail with a clear no-rows error here,
         // not as a misleading not-null violation when the NULL locals reach NEW.
+        // The INTO list stays in lockstep with the projection above.
         writer.Append("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
-        if (assignToNewMirrorColumns)
-        {
-            writer.Append(
-                ", _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt"
-            );
-        }
+        writer.Append(
+            ", _stampedDocumentUuid, _stampedIdentityVersion, _stampedIdentityLastModifiedAt, _stampedCreatedAt"
+        );
         writer.AppendLine();
         writer.Append("FROM ");
         writer.AppendLine(documentTable);
@@ -1395,27 +1387,24 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(keyColumn));
         writer.AppendLine(";");
 
-        if (assignToNewMirrorColumns)
-        {
-            writer.Append("NEW.");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.AppendLine(" := _stampedContentVersion;");
-            writer.Append("NEW.");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" := _stampedContentLastModifiedAt;");
-            writer.Append("NEW.");
-            writer.Append(Quote(DocumentUuidColumn));
-            writer.AppendLine(" := _stampedDocumentUuid;");
-            writer.Append("NEW.");
-            writer.Append(Quote(IdentityVersionColumn));
-            writer.AppendLine(" := _stampedIdentityVersion;");
-            writer.Append("NEW.");
-            writer.Append(Quote(IdentityLastModifiedAtColumn));
-            writer.AppendLine(" := _stampedIdentityLastModifiedAt;");
-            writer.Append("NEW.");
-            writer.Append(Quote(CreatedAtColumn));
-            writer.AppendLine(" := _stampedCreatedAt;");
-        }
+        writer.Append("NEW.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.AppendLine(" := _stampedContentVersion;");
+        writer.Append("NEW.");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.AppendLine(" := _stampedContentLastModifiedAt;");
+        writer.Append("NEW.");
+        writer.Append(Quote(DocumentUuidColumn));
+        writer.AppendLine(" := _stampedDocumentUuid;");
+        writer.Append("NEW.");
+        writer.Append(Quote(IdentityVersionColumn));
+        writer.AppendLine(" := _stampedIdentityVersion;");
+        writer.Append("NEW.");
+        writer.Append(Quote(IdentityLastModifiedAtColumn));
+        writer.AppendLine(" := _stampedIdentityLastModifiedAt;");
+        writer.Append("NEW.");
+        writer.Append(Quote(CreatedAtColumn));
+        writer.AppendLine(" := _stampedCreatedAt;");
     }
 
     private void EmitPgsqlDocumentContentStampUpdate(
@@ -3457,6 +3446,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// triggers, never client content, so they are excluded wherever the emitter reasons about a row's
     /// client-visible representation.
     /// </summary>
+    /// <remarks>
+    /// Dual-write invariant for these columns, which Phase 2 consumers depend on:
+    /// only the generated triggers write them (<c>IsWritable=false</c> keeps them out of write plans, so no
+    /// runtime write plan ever supplies a value). The two dialects differ in tamper repair.
+    /// PostgreSQL's <c>BEFORE</c> trigger assigns <c>DocumentUuid</c> and <c>CreatedAt</c> only on the
+    /// <c>INSERT</c> branch (see <see cref="EmitPgsqlExistingDocumentStampAndMetadataRead" />); a later
+    /// out-of-band <c>UPDATE</c> of those two columns is <em>not</em> self-healed, because the
+    /// <c>UPDATE</c> branch re-asserts only the stamp values it just bumped. SQL Server's <c>AFTER</c>
+    /// trigger re-mirrors all six columns from the post-update <c>dms.Document</c> row image on every stamp,
+    /// so it does overwrite such a change whenever the same statement also touched a stored column.
+    /// Phase 2 must therefore not assume tamper repair on PostgreSQL: <c>dms.Document</c> remains
+    /// authoritative in this phase.
+    /// </remarks>
     private static bool IsDocumentMetadataMirrorColumn(ColumnKind kind)
     {
         return kind

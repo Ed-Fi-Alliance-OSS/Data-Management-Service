@@ -192,9 +192,11 @@ are in the design docs:
 
 ### Stored stamps and tracked-change tables
 
-Each document carries two stamps set together by the same **stamping triggers** on the document
-tables: a `ContentVersion` (the change-version number, from the shared change-version sequence) and
-a `ContentLastModifiedAt` timestamp (the current UTC time, refreshed on every write). Those triggers
+Each document carries two stamp **pairs**, both written by the same **stamping triggers** on the
+document tables. The *content* pair is set together on every write: a `ContentVersion` (the
+change-version number, from the shared change-version sequence) and a `ContentLastModifiedAt`
+timestamp (the current UTC time). The *identity* pair — `IdentityVersion` / `IdentityLastModifiedAt`
+— is bumped by the same triggers only when a stored identity value actually changes. Those triggers
 also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
 old/new identity and securable values plus a `ChangeVersion`. (Descriptors share a single
@@ -229,6 +231,44 @@ endpoints, which are still a placeholder shim (see the note below).
 
 - [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the mirrored `ContentVersion` / `ContentLastModifiedAt` columns on root resource tables (descriptor mirror columns live on the shared `dms.Descriptor` table from the core DDL pass)
 - [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
+
+#### Document-metadata mirror columns (dual-write)
+
+Alongside the two change-version mirrors, every resource **root** table now carries five more
+`dms.Document` metadata columns — `DocumentUuid`, `IdentityVersion`, `IdentityLastModifiedAt`,
+`CreatedAt`, and `CreatedByOwnershipTokenId` — plus a `UX_<Table>_DocumentUuid` unique constraint. The
+shared `dms.Descriptor` table carries the same set, and each `<AbstractResource>Identity` table
+carries `DocumentUuid`. They are **not** client content: nothing in a write plan can set them
+(`IsWritable=false`), and hydration does not read them. The stamping triggers write the root and
+descriptor copies; the `TR_<Root>_AbstractIdentity` triggers write the abstract-identity copy.
+
+- [`DeriveDocumentMetadataColumnsPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveDocumentMetadataColumnsPass.cs) — derives the five metadata columns onto root tables, including their non-writable classification
+
+This is a **dual-write**: `dms.Document` remains authoritative in this phase, and these columns are a
+row-local mirror of it. Two caveats when debugging a mismatch:
+
+- `CreatedByOwnershipTokenId` is a forward-compatible placeholder and is **permanently NULL** — this
+  schema base has no `dms.Document.CreatedByOwnershipTokenId` to copy from, so no trigger writes it.
+  It is deliberately left unindexed until the phase that populates it.
+- Tamper repair differs by dialect: PostgreSQL's `BEFORE` trigger assigns `DocumentUuid` / `CreatedAt`
+  only on `INSERT` and does **not** self-heal a later out-of-band change to them, while SQL Server's
+  `AFTER` trigger re-mirrors all six from the post-update `dms.Document` row image on every stamp.
+
+> [!IMPORTANT]
+> **Re-provision only.** Re-applying the generated DDL over a database provisioned before these
+> columns existed does **not** migrate it. It applies partially: the `CREATE TABLE` statements are
+> skipped (`IF NOT EXISTS`), so the new columns never appear on the existing tables, while the
+> triggers *are* replaced (`CREATE OR REPLACE` / `CREATE OR ALTER`) and the guarded `ALTER TABLE ...
+> ADD CONSTRAINT UX_Descriptor_DocumentUuid` *is* attempted against a column that does not exist — so
+> the run fails loudly partway through, leaving the database half-updated. Provision a fresh database
+> instead, and remember the first-use fingerprint check in
+> [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use) turns any leftover
+> drift into an **HTTP 503**.
+
+These columns are the first phase of the planned removal of `dms.Document` and
+`dms.ReferentialIdentity` as the read/write path's central tables; for the design context on why that
+removal is hard, see
+[`the-problem-with-removing-referentialids.md`](../reference/design/backend-redesign/design-docs/the-problem-with-removing-referentialids.md).
 
 > [!NOTE]
 > **Change-query read endpoints are not wired up yet.** The tracked-change tables and triggers

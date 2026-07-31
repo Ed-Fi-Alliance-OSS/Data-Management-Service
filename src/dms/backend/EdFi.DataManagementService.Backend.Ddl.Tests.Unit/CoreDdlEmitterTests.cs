@@ -761,7 +761,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
 
         foreach (
             var column in columns.Where(c =>
-                c != "DocumentId" && !DescriptorTableColumnExtractor.TriggerMaintainedColumns.Contains(c)
+                c != "DocumentId" && !DescriptorTableColumnExtractor.NonDiffedColumns.Contains(c)
             )
         )
         {
@@ -780,6 +780,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
                     $"OLD.\"{mirrorColumn}\" IS DISTINCT FROM NEW.\"{mirrorColumn}\"",
                     "dms.Document mirror columns are trigger-maintained and must not appear in the "
                         + "no-op diff — that exclusion is what stops the mirror UPDATE from recursing"
+                );
+        }
+
+        foreach (var placeholderColumn in DescriptorTableColumnExtractor.PlaceholderColumns)
+        {
+            _ddl.Should()
+                .NotContain(
+                    $"OLD.\"{placeholderColumn}\" IS DISTINCT FROM NEW.\"{placeholderColumn}\"",
+                    "this column is a permanently-NULL placeholder no writer ever sets, so diffing it "
+                        + "could never detect a change and must not be emitted"
                 );
         }
     }
@@ -1453,8 +1463,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         foreach (
             var (name, type) in columns.Where(c =>
-                c.Name != "DocumentId"
-                && !DescriptorTableColumnExtractor.TriggerMaintainedColumns.Contains(c.Name)
+                c.Name != "DocumentId" && !DescriptorTableColumnExtractor.NonDiffedColumns.Contains(c.Name)
             )
         )
         {
@@ -1477,6 +1486,16 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                     $"i.[{mirrorColumn}] <> del.[{mirrorColumn}]",
                     "dms.Document mirror columns are trigger-maintained and must not appear in the "
                         + "no-op diff — that exclusion is what stops the mirror UPDATE from recursing"
+                );
+        }
+
+        foreach (var placeholderColumn in DescriptorTableColumnExtractor.PlaceholderColumns)
+        {
+            _ddl.Should()
+                .NotContain(
+                    $"i.[{placeholderColumn}] <> del.[{placeholderColumn}]",
+                    "this column is a permanently-NULL placeholder no writer ever sets, so diffing it "
+                        + "could never detect a change and must not be emitted"
                 );
         }
     }
