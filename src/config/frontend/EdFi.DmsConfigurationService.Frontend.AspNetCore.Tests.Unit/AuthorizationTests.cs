@@ -39,6 +39,10 @@ public class AuthorizationTests
         A.Fake<IClaimsHierarchyRepository>();
     private readonly IAuthorizationMetadataResponseFactory _responseFactory =
         A.Fake<IAuthorizationMetadataResponseFactory>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private static void SetScope(string scopeName, HttpClient httpClient)
     {
@@ -81,6 +85,7 @@ public class AuthorizationTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var httpClient = factory.CreateClient();
         SetScope(scopeName, httpClient);
         return httpClient;

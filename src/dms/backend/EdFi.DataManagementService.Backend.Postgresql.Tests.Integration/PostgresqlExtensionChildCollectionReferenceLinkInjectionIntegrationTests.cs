@@ -161,7 +161,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         short busResourceKeyId = _mappingSet.ResourceKeyIdByResource[BusResource];
         Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()

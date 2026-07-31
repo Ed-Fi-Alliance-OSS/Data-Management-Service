@@ -36,6 +36,7 @@ public class ApiClientModuleTests
     private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IIdentityProviderRepository _identityProviderRepository =
         A.Fake<IIdentityProviderRepository>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
 
     public ApiClientModuleTests()
     {
@@ -54,6 +55,9 @@ public class ApiClientModuleTests
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .Returns(new ApiClientUuidReferenceResult.None());
     }
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
     {
@@ -92,6 +96,7 @@ public class ApiClientModuleTests
                     .AddTransient((_) => _identityProviderRepository);
             });
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;

@@ -36,6 +36,7 @@ public class ApplicationModuleTests
     private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
     private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
 
     public ApplicationModuleTests()
     {
@@ -98,6 +99,9 @@ public class ApplicationModuleTests
             );
     }
 
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
+
     private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -139,6 +143,7 @@ public class ApplicationModuleTests
                     .AddTransient((_) => _profileRepository);
             });
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;
@@ -3770,6 +3775,7 @@ public class ApplicationModuleTests
                         .AddTransient((_) => _profileRepository);
                 });
             });
+            _factoryTracker.Track(factory);
             var client = factory.CreateClient();
             client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
             return client;

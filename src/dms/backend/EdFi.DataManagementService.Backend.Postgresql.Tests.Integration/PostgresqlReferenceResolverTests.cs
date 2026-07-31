@@ -538,7 +538,7 @@ public class Given_PostgresqlReferenceResolver
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.AddTestReadableProfileProjector();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

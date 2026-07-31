@@ -1,0 +1,25 @@
+{
+  "documents": [
+    {
+      "documentId": 972101,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000002101",
+      "resourceKeyId": 244,
+      "contentVersion": 444,
+      "contentLastModifiedAt": "2026-08-01T01:02:03Z"
+    }
+  ],
+  "descriptors": [],
+  "concreteRootRows": [],
+  "childRows": [],
+  "extensionRows": [],
+  "referentialIdentityRows": [
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000012101",
+      "documentId": 972101,
+      "resourceKeyId": 244,
+      "values": {
+        "schoolId": 255903
+      }
+    }
+  ]
+}

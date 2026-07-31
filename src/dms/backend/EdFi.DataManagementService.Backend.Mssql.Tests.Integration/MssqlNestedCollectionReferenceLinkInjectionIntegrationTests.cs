@@ -202,7 +202,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
         short classPeriodResourceKeyId = _mappingSet.ResourceKeyIdByResource[ClassPeriodResource];

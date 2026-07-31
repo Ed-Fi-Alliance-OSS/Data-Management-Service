@@ -164,7 +164,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         short busResourceKeyId = _mappingSet.ResourceKeyIdByResource[BusResource];
         Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()

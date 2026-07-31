@@ -187,7 +187,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddScoped<IRelationalWriteSessionFactory, RecordingMssqlRelationalWriteSessionFactory>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

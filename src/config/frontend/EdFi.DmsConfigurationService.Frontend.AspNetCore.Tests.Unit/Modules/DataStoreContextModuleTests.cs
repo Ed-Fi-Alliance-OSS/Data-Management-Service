@@ -27,6 +27,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class DataStoreContextModuleTests
 {
     private readonly IDataStoreContextRepository _repository = A.Fake<IDataStoreContextRepository>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient()
     {
@@ -59,6 +63,7 @@ public class DataStoreContextModuleTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;

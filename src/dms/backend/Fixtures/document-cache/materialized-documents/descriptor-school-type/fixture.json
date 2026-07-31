@@ -1,0 +1,15 @@
+{
+  "fixtureVersion": "materialized-document-fixture-v1",
+  "caseName": "descriptor-school-type",
+  "coverageTags": [
+    "success",
+    "descriptor",
+    "no-link-stream",
+    "public-cdc"
+  ],
+  "sourceSetupPath": "source-setup.json",
+  "expectedCacheRowPath": "expected-cache-row.json",
+  "expectedStreamEtagPath": "expected-stream-etag.json",
+  "expectedPublicCdcDocumentPath": "expected-public-cdc-document.json",
+  "expectedProjectionFailurePath": null
+}

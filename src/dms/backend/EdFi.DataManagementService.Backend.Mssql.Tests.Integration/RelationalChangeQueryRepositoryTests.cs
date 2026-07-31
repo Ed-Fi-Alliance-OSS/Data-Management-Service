@@ -439,7 +439,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
         Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()

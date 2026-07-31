@@ -495,7 +495,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<PostgresqlRelationalQueryExecutionRecorder>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, RecordingPostgresqlDocumentHydrator>());
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()

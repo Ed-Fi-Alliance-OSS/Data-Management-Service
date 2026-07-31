@@ -43,7 +43,7 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }

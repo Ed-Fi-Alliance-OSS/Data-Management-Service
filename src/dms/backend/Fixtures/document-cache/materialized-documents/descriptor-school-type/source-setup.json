@@ -1,0 +1,39 @@
+{
+  "documents": [
+    {
+      "documentId": 970301,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000000301",
+      "resourceKeyId": 13,
+      "contentVersion": 222,
+      "contentLastModifiedAt": "2026-07-30T14:15:16Z"
+    }
+  ],
+  "descriptors": [
+    {
+      "documentId": 970301,
+      "resourceKeyId": 13,
+      "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+      "codeValue": "Alternative",
+      "shortDescription": "Alternative",
+      "values": {
+        "Description": "Alternative school type",
+        "EffectiveBeginDate": "2025-01-15",
+        "EffectiveEndDate": "2025-12-31",
+        "Discriminator": "SchoolTypeDescriptor"
+      }
+    }
+  ],
+  "concreteRootRows": [],
+  "childRows": [],
+  "extensionRows": [],
+  "referentialIdentityRows": [
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000010301",
+      "documentId": 970301,
+      "resourceKeyId": 13,
+      "values": {
+        "uri": "uri://ed-fi.org/SchoolTypeDescriptor#Alternative"
+      }
+    }
+  ]
+}

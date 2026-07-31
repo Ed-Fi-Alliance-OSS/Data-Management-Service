@@ -33,6 +33,10 @@ public class ClaimSetModuleTests
         A.Fake<IClaimsHierarchyRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
     private readonly IClaimSetDataProvider _dataProvider = A.Fake<IClaimSetDataProvider>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient()
     {
@@ -68,6 +72,7 @@ public class ClaimSetModuleTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;

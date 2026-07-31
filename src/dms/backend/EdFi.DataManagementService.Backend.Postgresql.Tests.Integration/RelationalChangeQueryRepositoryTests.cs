@@ -427,7 +427,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
 
         short schoolResourceKeyId = _mappingSet.ResourceKeyIdByResource[SchoolResource];
         Dictionary<short, DocumentLinkSlugTriple> slugByResourceKeyId = new()

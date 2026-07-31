@@ -1,0 +1,15 @@
+{
+  "fixtureVersion": "materialized-document-fixture-v1",
+  "caseName": "ordinary-link-bearing-student-school-association",
+  "coverageTags": [
+    "success",
+    "ordinary-resource",
+    "link-bearing",
+    "public-cdc"
+  ],
+  "sourceSetupPath": "source-setup.json",
+  "expectedCacheRowPath": "expected-cache-row.json",
+  "expectedStreamEtagPath": "expected-stream-etag.json",
+  "expectedPublicCdcDocumentPath": "expected-public-cdc-document.json",
+  "expectedProjectionFailurePath": null
+}

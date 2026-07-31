@@ -29,6 +29,10 @@ public class TenantModuleTests
 {
     private readonly ITenantRepository _tenantRepository = A.Fake<ITenantRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient(bool multiTenancyEnabled = true)
     {
@@ -94,6 +98,7 @@ public class TenantModuleTests
                 }
             );
         });
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         if (multiTenancyEnabled)

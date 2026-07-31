@@ -32,6 +32,12 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlRelationshipAuthorizationProviderFailureExtractor
             >()
         );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IDocumentCacheMaterializationDataStore,
+                PostgresqlDocumentCacheMaterializationDataStore
+            >()
+        );
 
         return services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,

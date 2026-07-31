@@ -1686,7 +1686,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<PostgresqlRelationalQueryExecutionRecorder>();
         services.AddSingleton<PostgresqlRelationalQueryAuthorizationWriteSessionRecorder>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddPostgresqlBackendIntegrationTestServices();
         services.Replace(
             ServiceDescriptor.Scoped<
                 IRelationalWriteSessionFactory,

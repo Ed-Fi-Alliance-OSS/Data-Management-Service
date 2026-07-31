@@ -1,0 +1,17 @@
+{
+  "fixtureVersion": "materialized-document-fixture-v1",
+  "caseName": "extension-student-school-association",
+  "coverageTags": [
+    "success",
+    "ordinary-resource",
+    "link-bearing",
+    "extension",
+    "nested-collection",
+    "public-cdc"
+  ],
+  "sourceSetupPath": "source-setup.json",
+  "expectedCacheRowPath": "expected-cache-row.json",
+  "expectedStreamEtagPath": "expected-stream-etag.json",
+  "expectedPublicCdcDocumentPath": "expected-public-cdc-document.json",
+  "expectedProjectionFailurePath": null
+}

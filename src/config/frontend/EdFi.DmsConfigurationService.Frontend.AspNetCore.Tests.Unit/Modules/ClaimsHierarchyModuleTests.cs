@@ -35,6 +35,10 @@ public class ClaimsHierarchyModuleTests
 
     private readonly IAuthorizationMetadataResponseFactory _responseFactory =
         A.Fake<IAuthorizationMetadataResponseFactory>();
+    private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+
+    [TearDown]
+    public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
     private HttpClient SetUpClient()
     {
@@ -68,6 +72,7 @@ public class ClaimsHierarchyModuleTests
             );
         });
 
+        _factoryTracker.Track(factory);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;

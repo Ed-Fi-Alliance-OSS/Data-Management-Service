@@ -1,0 +1,14 @@
+{
+  "fixtureVersion": "materialized-document-fixture-v1",
+  "caseName": "layout-contract-school",
+  "coverageTags": [
+    "layout-contract",
+    "layout-only",
+    "ordinary-resource"
+  ],
+  "sourceSetupPath": "source-setup.json",
+  "expectedCacheRowPath": "expected-cache-row.json",
+  "expectedStreamEtagPath": "expected-stream-etag.json",
+  "expectedPublicCdcDocumentPath": "expected-public-cdc-document.json",
+  "expectedProjectionFailurePath": null
+}

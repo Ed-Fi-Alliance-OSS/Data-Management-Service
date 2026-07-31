@@ -1853,7 +1853,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddSingleton<MssqlRelationalQueryExecutionRecorder>();
         services.AddSingleton<MssqlRelationalQueryAuthorizationWriteSessionRecorder>();
-        services.AddMssqlReferenceResolver();
+        services.AddMssqlBackendIntegrationTestServices();
         services.Replace(
             ServiceDescriptor.Scoped<
                 IRelationalWriteSessionFactory,

@@ -1,0 +1,14 @@
+{
+  "fixtureVersion": "materialized-document-fixture-v1",
+  "caseName": "invariant-missing-school-body",
+  "coverageTags": [
+    "projection-failure",
+    "invariant-failure",
+    "ordinary-resource"
+  ],
+  "sourceSetupPath": "source-setup.json",
+  "expectedCacheRowPath": null,
+  "expectedStreamEtagPath": null,
+  "expectedPublicCdcDocumentPath": null,
+  "expectedProjectionFailurePath": "expected-projection-failure.json"
+}
