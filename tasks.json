@@ -425,7 +425,7 @@
       "Run provider inventory validation tests that intentionally remove or alter UX_ResourceKey_ProjectName_ResourceName for PostgreSQL and SQL Server.",
       "Run dotnet csharpier format on modified validator and test files."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "provider-sqlserver",
