@@ -1494,6 +1494,428 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
         }
     }
 
+    # The database container is reachable inside the compose network under every identity Compose
+    # gives it: the service key, container_name, and hostname. The validator previously hard-coded
+    # only "dms-<engine>", so a connection string using the service key - which is what the compose
+    # files themselves and the Ed-Fi docs use - was rejected even though it addresses the very same
+    # container. The accepted set is now derived from the compose file, so it cannot drift from it.
+    Context "accepted database hosts are pinned to the composed service's own identities" {
+        BeforeEach {
+            $script:hostCases = @(
+                @{ Engine = 'postgresql'; ServiceAlias = 'db'; ContainerAlias = 'dms-postgresql'
+                   Lines = @('POSTGRES_DB_NAME=edfi_datamanagementservice', 'POSTGRES_PASSWORD=abcdefgh1!')
+                   Template = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host={0};port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;' },
+                @{ Engine = 'mssql'; ServiceAlias = 'db'; ContainerAlias = 'dms-mssql'
+                   Lines = @('MSSQL_DB_NAME=edfi_datamanagementservice', 'MSSQL_SA_PASSWORD=abcdefgh1!')
+                   Template = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server={0},1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' }
+            )
+        }
+
+        It "accepts the compose service key as the database host" {
+            foreach ($case in $script:hostCases) {
+                $path = Join-Path $script:work ".env.service-$($case.Engine)"
+                Set-Content -LiteralPath $path -NoNewline -Value ((
+                    $case.Lines + ($case.Template -f $case.ServiceAlias)) -join "`n")
+
+                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine $case.Engine } |
+                    Should -Not -Throw -Because "'$($case.ServiceAlias)' is the $($case.Engine) service key inside the compose network"
+            }
+        }
+
+        It "still accepts the container name as the database host" {
+            foreach ($case in $script:hostCases) {
+                $path = Join-Path $script:work ".env.container-$($case.Engine)"
+                Set-Content -LiteralPath $path -NoNewline -Value ((
+                    $case.Lines + ($case.Template -f $case.ContainerAlias)) -join "`n")
+
+                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine $case.Engine } |
+                    Should -Not -Throw -Because "widening the set must not drop the identity that already worked"
+            }
+        }
+
+        It "still rejects a host that is not one of the composed service's identities" {
+            foreach ($case in $script:hostCases) {
+                $path = Join-Path $script:work ".env.foreign-$($case.Engine)"
+                Set-Content -LiteralPath $path -NoNewline -Value ((
+                    $case.Lines + ($case.Template -f 'someone-elses-database')) -join "`n")
+
+                { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine $case.Engine } |
+                    Should -Throw "*someone-elses-database*" -Because "an unrelated host is still a topology violation"
+            }
+        }
+
+        It "still rejects a wrong port on an accepted host" {
+            # Widening the host set must not weaken the endpoint check as a whole.
+            $path = Join-Path $script:work ".env.wrongport"
+            Set-Content -LiteralPath $path -NoNewline -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;port=9999;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
+            ) -join "`n")
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
+                Should -Throw "*9999*"
+        }
+
+        It "names every accepted identity when it rejects a host" {
+            # The operator has to be able to act on the diagnostic, so it must list what IS accepted.
+            $path = Join-Path $script:work ".env.diagnostic"
+            Set-Content -LiteralPath $path -NoNewline -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=someone-elses-database;port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
+            ) -join "`n")
+
+            $message = $null
+            try { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" }
+            catch { $message = $_.Exception.Message }
+
+            $message | Should -Not -BeNullOrEmpty
+            foreach ($alias in @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $script:dockerComposeRoot)) {
+                $message | Should -BeLike "*'$alias'*" -Because "the operator needs the alternatives spelled out individually"
+            }
+        }
+    }
+
+    # The accepted-host set decides which endpoint the Configuration Service may talk to, so the read that
+    # produces it is specified as an explicit state machine rather than a set of accept/skip rules: three
+    # successive reviews each found a different input shape that slipped through the rule-based version,
+    # twice returning a WRONG host. Every state transition and every fail-closed outcome has a fixture
+    # here, and every assertion checks the COMPLETE returned set or the exact diagnostic class - asserting
+    # only that an expected value is present is what let the nested-key and wrong-service defects pass.
+    Context "Get-ComposeDatabaseServiceHostAlias state machine" {
+        BeforeAll {
+            # Writes <engine>.yml into its own directory under the test's temp root and returns that
+            # directory, so each fixture is independent of every other.
+            function script:New-ComposeFixtureRoot {
+                param([string]$Engine, [string[]]$Line)
+
+                $dir = Join-Path $script:work ("compose-" + [Guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $dir "$Engine.yml") -NoNewline -Value ($Line -join "`n")
+                return $dir
+            }
+
+            # A conventional second service, used to prove no fixture ever adopts it.
+            $script:siblingService = @(
+                '  other:',
+                '    container_name: NOT-THE-DATABASE',
+                '    hostname: ALSO-NOT-THE-DATABASE'
+            )
+        }
+
+        It "returns the service key then the declared identities for a conventional service" {
+            foreach ($engine in @('postgresql', 'mssql')) {
+                $root = New-ComposeFixtureRoot -Engine $engine -Line @(
+                    'services:',
+                    '  db:',
+                    '    image: some/image:1',
+                    "    container_name: dms-$engine",
+                    "    hostname: dms-$engine"
+                )
+
+                # Equal container_name and hostname collapse to one entry: ordinal de-duplication,
+                # file order, service key first. This is the shape of the checked-in compose files.
+                @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine $engine -DockerComposeRoot $root) |
+                    Should -Be @('db', "dms-$engine")
+            }
+        }
+
+        It "returns both identities when container_name and hostname differ" {
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services:',
+                '  db:',
+                '    container_name: dms-postgresql',
+                '    hostname: dms-postgresql-internal'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql', 'dms-postgresql-internal')
+        }
+
+        It "returns the service key alone when the service declares neither alias key" {
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services:',
+                '  db:',
+                '    image: some/image:1'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db')
+        }
+
+        It "supports a trailing comment on the service header" {
+            # Valid Compose, and the shape that previously made the parser skip the database service and
+            # adopt the NEXT one - so the sibling is present here to prove it is not adopted.
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line (@(
+                'services:',
+                '  db: # primary',
+                '    container_name: dms-postgresql'
+            ) + $script:siblingService)
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql')
+        }
+
+        It "supports a trailing comment on the services header" {
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services: # every service in the stack',
+                '  db:',
+                '    container_name: dms-postgresql'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql')
+        }
+
+        It "ignores blank and comment-only lines without letting them establish state" {
+            # A comment line must not count as "the first entry under services:", and must not establish
+            # the direct-child indent - either would change which lines are read.
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                '# leading comment',
+                '',
+                'services:',
+                '',
+                '  # the database',
+                '  db:',
+                '      # deliberately deeper than the children',
+                '    container_name: dms-postgresql',
+                '',
+                '    hostname: dms-postgresql'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql')
+        }
+
+        It "supports an inline comment on an alias value" {
+            # Valid Compose: `docker compose config` resolves this to dms-postgresql. The pre-stabilization
+            # regex anchored the value at end of line, so it matched nothing and the identity was dropped -
+            # narrowing, but harmful, because the file legitimately declares it.
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services:',
+                '  db:',
+                '    container_name: dms-postgresql # the database container',
+                '    hostname: dms-alt   # and its network name'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql', 'dms-alt')
+        }
+
+        It "supports single- and double-quoted alias values" {
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services:',
+                '  db:',
+                '    container_name: "dms-postgresql"',
+                "    hostname: 'dms-alt'"
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql', 'dms-alt')
+        }
+
+        It "moves the whole set when the service, container_name, and hostname are all renamed" {
+            # Pins the set to the file rather than to a list: a rename in the compose file must move what
+            # endpoint validation accepts, in the same commit, or the two can silently diverge.
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services:',
+                '  datastore:',
+                '    image: postgres:16',
+                '    container_name: renamed-database',
+                '    hostname: renamed-host'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('datastore', 'renamed-database', 'renamed-host')
+        }
+
+        It "ignores alias-like keys nested inside another mapping, including under healthcheck" {
+            # Only DIRECT children of the service are network identities. Under environment: these are
+            # environment variables, under healthcheck: probe arguments, under labels: labels - none of
+            # which the container answers to. The service-level hostname is declared AFTER all three
+            # nested blocks, so the rule must be "at the child indent", not "before the first nested
+            # block", or a legitimate identity would be lost.
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services:',
+                '  db:',
+                '    image: postgres:16',
+                '    container_name: dms-postgresql',
+                '    environment:',
+                '      hostname: env-unrelated-host',
+                '      container_name: env-unrelated-container',
+                '    healthcheck:',
+                '      test: ["CMD", "pg_isready"]',
+                '      hostname: healthcheck-unrelated-host',
+                '      container_name: healthcheck-unrelated-container',
+                '    labels:',
+                '      hostname: label-unrelated-host',
+                '      container_name: label-unrelated-container',
+                '    hostname: dms-alt'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql', 'dms-alt')
+        }
+
+        It "narrows past an interpolated alias value rather than accepting the reference text" {
+            # Compose resolves ${DB_CONTAINER:-dms-mssql} to dms-mssql, but this function has no
+            # environment context and will not acquire one, so it cannot know that. Adding the reference
+            # text would assert a name nothing answers to; skipping narrows the set, the only direction an
+            # unsupported value may move it.
+            $root = New-ComposeFixtureRoot -Engine 'mssql' -Line @(
+                'services:',
+                '  db:',
+                '    container_name: ${DB_CONTAINER:-dms-mssql}',
+                '    hostname: dms-mssql'
+            )
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "mssql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-mssql')
+        }
+
+        It "narrows past values that are not identifier-shaped" {
+            # The identifier check is the authoritative gate, and is deliberately stricter than Compose,
+            # which does not validate container_name content at config time. Each case below would
+            # otherwise need its own branch; one rule covers them all.
+            foreach ($case in @(
+                @{ Label = 'a name containing a space'; Value = '"bad name"' },
+                @{ Label = 'an empty value'; Value = '' },
+                @{ Label = 'a hash inside the token'; Value = '"db#1"' },
+                @{ Label = 'a quoted value the comment strip would mangle'; Value = '"a # b"' },
+                @{ Label = 'a leading hyphen'; Value = '-leading-hyphen' },
+                @{ Label = 'a comment-only value'; Value = '# just a comment' }
+            )) {
+                $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                    'services:',
+                    '  db:',
+                    "    container_name: $($case.Value)"
+                )
+
+                @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                    Should -Be @('db') -Because "$($case.Label) must narrow the set, never enter it"
+            }
+        }
+
+        It "stops at the next service rather than absorbing its identities" {
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line (@(
+                'services:',
+                '  db:',
+                '    container_name: dms-postgresql'
+            ) + $script:siblingService + @(
+                'volumes:',
+                '  dms-postgresql:'
+            ))
+
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root) |
+                Should -Be @('db', 'dms-postgresql')
+        }
+
+        It "fails closed on an unsupported first-service header and never adopts a later sibling" {
+            # These are all valid, working Compose - verified with docker compose config, which resolves
+            # every one of them to service "db". Failing closed therefore refuses a stack that would run:
+            # the deliberate trade, because the pre-stabilization parser skipped these headers, kept
+            # scanning, and handed the accepted-host set to a DIFFERENT container - the database's own
+            # identities absent and a wrong one accepted. Each fixture puts a conventional service second
+            # so the wrong-service outcome is what the assertion rules out.
+            foreach ($case in @(
+                @{ Label = 'anchor'; Header = '  db: &database' },
+                @{ Label = 'alias'; Header = '  db: *database' },
+                @{ Label = 'double-quoted key'; Header = '  "db":' },
+                @{ Label = 'single-quoted key'; Header = "  'db':" },
+                @{ Label = 'inline mapping'; Header = '  db: {image: postgres:16}' },
+                @{ Label = 'sequence entry'; Header = '  - db' },
+                @{ Label = 'scalar value'; Header = '  db: postgres' }
+            )) {
+                $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line (@(
+                    'services:',
+                    $case.Header,
+                    '    container_name: dms-postgresql'
+                ) + $script:siblingService)
+
+                $message = $null
+                try { $null = Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root }
+                catch { $message = $_.Exception.Message }
+
+                $message | Should -Not -BeNullOrEmpty -Because "$($case.Label) is not the supported header form"
+                $message | Should -BeLike "*does not use the supported 'name:' header form*"
+                $message | Should -BeLike "*postgresql.yml*" -Because "the operator needs to know which file"
+                $message | Should -BeLike "*at line 2*" -Because "the operator needs to know where"
+                $message | Should -Not -BeLike "*NOT-THE-DATABASE*" -Because "no later sibling may be adopted"
+                $message | Should -Not -BeLike "*$($case.Header.Trim())*" -Because "diagnostics name the location, never the line content"
+            }
+        }
+
+        It "fails closed when the file declares no top-level services mapping" {
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'volumes:',
+                '  dms-postgresql:',
+                'networks:',
+                '  default:'
+            )
+
+            { Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root } |
+                Should -Throw "*no top-level 'services:' mapping found*"
+        }
+
+        It "fails closed when the services mapping declares no entry" {
+            foreach ($case in @(
+                @{ Label = 'another top-level key follows'; Line = @('services:', 'volumes:', '  dms-postgresql:') },
+                @{ Label = 'services: is the last line'; Line = @('services:') },
+                @{ Label = 'only a comment follows'; Line = @('services:', '  # nothing here yet') }
+            )) {
+                $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line $case.Line
+
+                { Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root } |
+                    Should -Throw "*declares no service entry*" -Because $case.Label
+            }
+        }
+
+        It "fails closed on a tab-indented service block" {
+            # Compose rejects tab indentation outright ("found character that cannot start any token"), so
+            # this is not a runnable stack. Counting only spaces as indentation makes the tab line indent 0,
+            # which routes it deterministically to a fail-closed outcome instead of a guess.
+            $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
+                'services:',
+                "`tdb:",
+                "`t`tcontainer_name: dms-postgresql"
+            )
+
+            { Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $root } |
+                Should -Throw "*declares no service entry*"
+        }
+
+        It "narrows to the canonical container name when the compose file is absent" {
+            # Distinct from an unsupported header on purpose: a missing file means the module was staged
+            # without the compose files, which is how isolated harnesses run, and the historical single
+            # name is correct there. Never a guessed service key - absent input may only narrow.
+            $root = Join-Path $script:work ("compose-empty-" + [Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            foreach ($engine in @('postgresql', 'mssql')) {
+                @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine $engine -DockerComposeRoot $root) |
+                    Should -Be @("dms-$engine")
+            }
+        }
+
+        It "derives exactly the identities the checked-in compose files declare" {
+            # The regression anchor. Both files declare all three keys with hostname equal to
+            # container_name, so de-duplication collapses each set to two. A rename in either file that is
+            # not reflected here fails this test rather than silently diverging from validation.
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "postgresql" -DockerComposeRoot $script:dockerComposeRoot) |
+                Should -Be @('db', 'dms-postgresql')
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine "mssql" -DockerComposeRoot $script:dockerComposeRoot) |
+                Should -Be @('db', 'dms-mssql')
+
+            foreach ($engine in @('postgresql', 'mssql')) {
+                $composeText = [System.IO.File]::ReadAllText((Join-Path $script:dockerComposeRoot "$engine.yml"))
+                foreach ($alias in @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine $engine -DockerComposeRoot $script:dockerComposeRoot)) {
+                    $composeText | Should -BeLike "*$alias*" -Because "every accepted host must appear in $engine.yml"
+                }
+            }
+        }
+    }
+
     Context "multiple agreeing aliases (must not be rejected as ambiguous)" {
         It "accepts a connection string carrying both Database and Initial Catalog when both agree" {
             $path = Join-Path $script:work ".env"
@@ -2313,14 +2735,34 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
         }
 
-        It "rejects a colliding -DataStoreDatabaseName when -SchoolYearRange revives the registration under -NoDataStore" {
-            # -NoDataStore alone skips the data-store registration, but -SchoolYearRange re-enables it,
-            # so the parameter is live again and the collision must be caught.
-            $run = Invoke-StartScript {
+        It "reports the mutually-exclusive diagnostic, not the collision, for -NoDataStore with -SchoolYearRange" {
+            # -NoDataStore and -SchoolYearRange cannot be combined at all, so this caller's actual
+            # mistake is the switch pair. The collision check is new and must not mask an established
+            # diagnostic that describes the shape more accurately: a caller who made this mistake and
+            # happened to also pass the reserved name needs to be told about the mistake they made.
+            # The answer must be the same whether or not -SeparateConfigDatabase is present, because
+            # the parameter shape is invalid independently of the topology choice.
+            $withSwitch = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -NoDataStore -SchoolYearRange '2024' -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
+            $withSwitch.ErrorMessage | Should -BeLike "*-NoDataStore and -SchoolYearRange are mutually exclusive*"
+            $withSwitch.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*" -Because "the collision check must not preempt the established parameter-shape diagnostic"
 
-            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
+            $withoutSwitch = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -NoDataStore -SchoolYearRange '2024' -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+            $withoutSwitch.ErrorMessage | Should -BeLike "*-NoDataStore and -SchoolYearRange are mutually exclusive*" -Because "the pre-existing diagnostic is unchanged by this story"
+        }
+
+        It "reports the -DbOnly diagnostic, not the collision, when both apply" {
+            # Same ordering contract for the other shape that combines an invalid switch pair with the
+            # reserved name: -DbOnly with -NoDataStore has its own established message, and it wins.
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DbOnly -NoDataStore -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*cannot be used with -DbOnly*"
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
         }
 
         It "accepts -DataStoreDatabaseName edfi_configurationservice when the switch is not requested" {
