@@ -2302,6 +2302,24 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 foreach ($name in (Get-ChildItem $derivedDir -Name -Force)) { $before[$name] = $true }
             }
 
+            # The invoked start scripts write these five identity variables into the process environment
+            # and nothing restores them - Get-BootstrapEnvSnapshot covers only the seven claims/schema
+            # names. Measured: without this, running this Describe left DMS_CONFIG_IDENTITY_PROVIDER set
+            # for every later test in the session, which is the order-dependence the ownership harness
+            # below exists to eliminate. Presence is captured separately from value, because "absent" and
+            # "present and empty" are different states.
+            $identityEnvironmentName = @(
+                'DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+                'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY'
+            )
+            $identityEnvironmentState = @{}
+            foreach ($name in $identityEnvironmentName) {
+                $identityEnvironmentState[$name] = @{
+                    Present = (Test-Path -LiteralPath "Env:\$name")
+                    Value   = [System.Environment]::GetEnvironmentVariable($name)
+                }
+            }
+
             # The stand-in has to be global to be visible inside the invoked start script, but the
             # list it records into is captured by closure rather than parked in a global variable,
             # so nothing of this harness leaks into the session beyond the function itself.
@@ -2333,6 +2351,18 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
             finally {
                 Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+
+                foreach ($name in $identityEnvironmentName) {
+                    $saved = $identityEnvironmentState[$name]
+                    if ($saved.Present) {
+                        [System.Environment]::SetEnvironmentVariable($name, $saved.Value)
+                    }
+                    else {
+                        # Remove-Item, never SetEnvironmentVariable($name, $null): the latter leaves a
+                        # present-but-blank variable in this environment instead of removing it.
+                        Remove-Item -LiteralPath "Env:\$name" -Force -ErrorAction SilentlyContinue
+                    }
+                }
             }
 
             # The interception must have been the thing that stopped the run; if a real docker
@@ -2905,6 +2935,12 @@ Describe "CMS database creation ownership (DMS-1270)" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 
+        # Imported here rather than relied on from an earlier Describe: the module-table assertions call
+        # Get-ComposeDatabaseServiceHostAlias, and this Describe must pass when run on its own - which is
+        # how the hostile-session and mutation runs invoke it.
+        Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+
         # Returns every setup-openiddict.ps1 -InitDb invocation in a script together with the
         # conditions of the enclosing if-clauses that actually decide on the identity provider.
         # AST-based, so it follows real block structure instead of guessing with regex distance, and
@@ -2960,51 +2996,317 @@ Describe "CMS database creation ownership (DMS-1270)" {
         # Cells run on PostgreSQL deliberately: engine is not one of the contract's dimensions, and
         # PostgreSQL is the one path that reaches the decision point without Wait-MssqlReady, which is
         # defined INSIDE the start scripts and so cannot be stubbed from a module.
+        # The names whose global definitions the harness must be able to shadow deterministically.
+        $script:ownershipInterceptedCommand = @('docker', 'Start-Sleep')
+
+        # The staged sibling stub, as a single definition so the binding tests exercise the SAME text the
+        # cells run rather than a copy that could drift from it. '__SCRIPT__' is replaced per stub.
+        #
+        # [CmdletBinding()] with an explicit param block and no $args is what makes the observation
+        # authoritative: an unmodelled named argument fails BINDING, and a bound switch reports its real
+        # value. '-InitDb:$false' reaches $args as the text "-InitDb:" plus "False", so a substring test
+        # reports initialization for a switch that is bound false. Non-switch parameters are [string] so
+        # no value can fail type conversion; strictness belongs on the parameter-name set.
+        #
+        # The record carries parameter NAMES and the bound switch value, never values: these calls pass
+        # -NewClientSecret, and observations must not render credential material.
+        $script:ownershipStubBody = @'
+[CmdletBinding()]
+param(
+    [switch]$InitDb,
+    [switch]$InsertData,
+    [string]$EnvironmentFile,
+    [string]$DbName,
+    [string]$DbType,
+    [string]$DbUser,
+    [string]$DbPort,
+    [string]$NewClientId,
+    [string]$NewClientName,
+    [string]$ClientScopeName,
+    [string]$NewClientSecret,
+    [string]$ClientSecretMinimumLength,
+    [string]$ClientSecretMaximumLength
+)
+
+$record = [ordered]@{
+    Script         = '__SCRIPT__'
+    InitDb         = [bool]$InitDb.IsPresent
+    BoundParameter = @($PSBoundParameters.Keys | Sort-Object)
+}
+Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') -Value ($record | ConvertTo-Json -Compress)
+'@
+
+        # Every module a staged start script imports from its own directory. A staged import adds an
+        # instance whose $PSScriptRoot is the staging directory - which the cell then deletes - so
+        # without restoration a later caller resolves module defaults against a path that is gone.
+        # Ordered by dependency: env-utility.psm1 imports database-safety.psm1 internally.
+        $script:ownershipStagedModule = @('database-safety', 'env-utility', 'bootstrap-manifest', 'bootstrap-claims-gate')
+
+        # Environment variables a cell can change. The first five are written by the start scripts and
+        # nothing restores them (Get-BootstrapEnvSnapshot covers only the seven that follow). The seven
+        # are restored by the start script's own finally, and are inventoried anyway so a cell cannot
+        # leak them if that finally is ever skipped.
+        $script:ownershipEnvironmentVariable = @(
+            'DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+            'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY',
+            'DMS_CONFIG_CLAIMS_SOURCE', 'DMS_CONFIG_CLAIMS_DIRECTORY', 'DMS_CONFIG_CLAIMS_MOUNT_SOURCE',
+            'USE_API_SCHEMA_PATH', 'API_SCHEMA_PATH', 'DMS_API_SCHEMA_MOUNT_SOURCE', 'SCHEMA_PACKAGES'
+        )
+
+        # Refuses to run when a name cannot be shadowed deterministically. PowerShell resolves Alias
+        # before Function before Application, so an alias named docker outranks the stand-in and the real
+        # executable could run; a Constant function cannot be replaced at all. Both are preconditions
+        # rather than things to work around: this runs BEFORE any snapshot, staging, or mutation, so an
+        # operator's alias is left exactly as they set it and there is nothing to restore.
+        function script:Assert-OwnershipCellPrecondition {
+            foreach ($name in $script:ownershipInterceptedCommand) {
+                $alias = Get-Command $name -CommandType Alias -ErrorAction SilentlyContinue
+                if ($null -ne $alias) {
+                    throw "Ownership cell precondition failed: an alias named '$name' takes precedence over the recording stand-in, so interception cannot be guaranteed. Remove the alias before running these tests."
+                }
+
+                $existing = Get-Item -LiteralPath "Function:\$name" -ErrorAction SilentlyContinue
+                if ($null -ne $existing -and ($existing.Options -band [System.Management.Automation.ScopedItemOptions]::Constant)) {
+                    throw "Ownership cell precondition failed: the function '$name' is Constant and cannot be shadowed by the recording stand-in."
+                }
+            }
+        }
+
+        # The default location stack as an ordered path list, top first. Uses .ToArray() rather than
+        # piping the PathInfoStack: piping it can yield a PHANTOM element - the stack object itself,
+        # whose .Path is null - which makes an empty stack look like a one-entry stack and sends
+        # restoration down the non-empty branch to index a null. One helper, used by both the snapshot
+        # and the verification, so the two cannot disagree about what the stack is.
+        function script:Get-OwnershipLocationStack {
+            $stack = Get-Location -Stack
+            if ($null -eq $stack) { return @() }
+            return @($stack.ToArray() | ForEach-Object { $_.Path } | Where-Object { -not [string]::IsNullOrEmpty($_) })
+        }
+
+        # Installs a recording stand-in over a global name, preserving any options the pre-existing
+        # function carried. Set-Item -Force is enough to shadow a ReadOnly function but CANNOT shadow an
+        # AllScope one - it fails with "The AllScope option cannot be removed from the function" - so when
+        # options are present the stand-in is created carrying the same ones. Constant never reaches here;
+        # it is refused by the precondition.
+        function script:Set-OwnershipStandIn {
+            param(
+                [Parameter(Mandatory)] [string]$Name,
+                [Parameter(Mandatory)] [scriptblock]$Body,
+                [Parameter(Mandatory)] [hashtable]$State
+            )
+
+            $saved = $State.Function[$Name]
+            if ($null -ne $saved -and $saved.Options -ne [System.Management.Automation.ScopedItemOptions]::None) {
+                $null = New-Item -Path "Function:\global:$Name" -Value $Body -Options $saved.Options -Force
+            }
+            else {
+                Set-Item -Path "Function:\global:$Name" -Force -Value $Body
+            }
+        }
+
+        # Captures every process-global resource a cell can change, presence separately from value.
+        function script:Get-OwnershipCellState {
+            $functionState = @{}
+            foreach ($name in $script:ownershipInterceptedCommand) {
+                $item = Get-Item -LiteralPath "Function:\$name" -ErrorAction SilentlyContinue
+                $functionState[$name] = if ($null -eq $item) { $null }
+                    else { @{ Definition = $item.Definition; Options = $item.Options } }
+            }
+
+            $environmentState = @{}
+            foreach ($name in $script:ownershipEnvironmentVariable) {
+                $environmentState[$name] = @{
+                    Present = (Test-Path -LiteralPath "Env:\$name")
+                    Value   = [System.Environment]::GetEnvironmentVariable($name)
+                }
+            }
+
+            $moduleState = @{}
+            foreach ($name in $script:ownershipStagedModule) {
+                $moduleState[$name] = @{
+                    All = @(Get-Module $name -All | ForEach-Object { $_.Path })
+                    Top = @(Get-Module $name | ForEach-Object { $_.Path })
+                }
+            }
+
+            $exitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+
+            return @{
+                Function    = $functionState
+                Environment = $environmentState
+                Module      = $moduleState
+                Provenance  = (Get-Command Get-ComposeDatabaseServiceHostAlias -ErrorAction SilentlyContinue).Module.Path
+                ExitCode    = @{
+                    Present = ($null -ne $exitCodeVariable)
+                    Value   = if ($null -ne $exitCodeVariable) { $exitCodeVariable.Value } else { $null }
+                }
+                Location    = (Get-Location).Path
+                Stack       = @(Get-OwnershipLocationStack)
+            }
+        }
+
+        # Restores every resource captured by Get-OwnershipCellState. BEST EFFORT PER RESOURCE: a failure
+        # restoring one must not prevent the rest from being repaired, so each step is guarded and the
+        # errors are returned for the caller to assert on after cleanup. Cleanup that abandons the session
+        # on its first problem is how a failing test contaminates the next one.
+        function script:Restore-OwnershipCellState {
+            param([Parameter(Mandatory)] [hashtable]$State, [Parameter(Mandatory)] [string]$StagingPath)
+
+            $failure = [System.Collections.Generic.List[string]]::new()
+            $imbalance = [System.Collections.Generic.List[string]]::new()
+
+            foreach ($name in $script:ownershipInterceptedCommand) {
+                try {
+                    $saved = $State.Function[$name]
+                    if ($null -eq $saved) {
+                        Remove-Item -LiteralPath "Function:\$name" -Force -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        # New-Item with -Options is the only form that reproduces AllScope; a plain
+                        # Set-Item silently downgrades an option-bearing function to a normal one.
+                        Remove-Item -LiteralPath "Function:\$name" -Force -ErrorAction SilentlyContinue
+                        $null = New-Item -Path "Function:\global:$name" `
+                            -Value ([scriptblock]::Create($saved.Definition)) `
+                            -Options $saved.Options -Force
+                    }
+                }
+                catch { $failure.Add("function ${name}: $($_.Exception.Message)") }
+            }
+
+            try {
+                if ($State.ExitCode.Present) { Set-Variable -Name LASTEXITCODE -Scope Global -Value $State.ExitCode.Value }
+                else { Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue }
+            }
+            catch { $failure.Add("LASTEXITCODE: $($_.Exception.Message)") }
+
+            foreach ($name in $script:ownershipEnvironmentVariable) {
+                try {
+                    $saved = $State.Environment[$name]
+                    if ($saved.Present) {
+                        [System.Environment]::SetEnvironmentVariable($name, $saved.Value)
+                    }
+                    else {
+                        # Remove-Item, never SetEnvironmentVariable($name, $null): the latter leaves a
+                        # present-but-blank variable in this environment instead of removing it.
+                        Remove-Item -LiteralPath "Env:\$name" -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                catch { $failure.Add("env ${name}: $($_.Exception.Message)") }
+            }
+
+            try {
+                foreach ($name in $script:ownershipStagedModule) {
+                    # -All also covers a nested instance. Every real cell leaves only top-level staged
+                    # instances (both start scripts import database-safety directly), so this is
+                    # defensive rather than load-bearing today.
+                    foreach ($module in @(Get-Module $name -All | Where-Object { $_.Path -like "$StagingPath*" })) {
+                        Remove-Module -ModuleInfo $module -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                # Removal alone leaves the real module listed but its commands unresolvable, so the
+                # snapshot paths are re-imported in dependency order.
+                #
+                # Only paths that still exist. Other test files in the same session stage and delete their
+                # own copies, so the pre-cell module table can already contain instances whose files are
+                # gone. Those are not this cell's staged instances, the removal loop above left them
+                # loaded, and re-importing them is both impossible and unnecessary - attempting it would
+                # turn another file's residue into this cell's restoration failure.
+                foreach ($name in $script:ownershipStagedModule) {
+                    foreach ($path in $State.Module[$name].Top) {
+                        if (Test-Path -LiteralPath $path -PathType Leaf) { Import-Module $path -Force }
+                    }
+                }
+            }
+            catch { $failure.Add("module table: $($_.Exception.Message)") }
+
+            try {
+                $currentStack = @(Get-OwnershipLocationStack)
+                if (($currentStack -join '|') -ne (($State.Stack) -join '|')) {
+                    $imbalance.Add("location stack changed: expected $($State.Stack.Count) entr$(if ($State.Stack.Count -eq 1) { 'y' } else { 'ies' }), found $($currentStack.Count)")
+                }
+
+                while ((Get-Location -Stack).Count -gt 0) { Pop-Location }
+                if ($State.Stack.Count -eq 0) {
+                    # Ordinary sessions take this branch; there is no bottom entry to index.
+                    Set-Location -LiteralPath $State.Location
+                }
+                else {
+                    Set-Location -LiteralPath $State.Stack[$State.Stack.Count - 1]
+                    for ($index = $State.Stack.Count - 2; $index -ge 0; $index--) {
+                        Push-Location -LiteralPath $State.Stack[$index]
+                    }
+                    Push-Location -LiteralPath $State.Location
+                }
+            }
+            catch { $failure.Add("location: $($_.Exception.Message)") }
+
+            # Last, so nothing that still needs the staged files runs after it, and only this cell's own
+            # GUID-scoped directory.
+            try {
+                if (Test-Path -LiteralPath $StagingPath) {
+                    Remove-Item -LiteralPath $StagingPath -Recurse -Force -ErrorAction Stop
+                }
+            }
+            catch { $failure.Add("staging directory: $($_.Exception.Message)") }
+
+            return @{ RestoreFailure = @($failure); Imbalance = @($imbalance) }
+        }
+
         function script:Invoke-CreationOwnershipCell {
             param(
                 [Parameter(Mandatory)] [string]$StartScript,
                 [Parameter(Mandatory)] [string]$IdentityProvider,
                 [switch]$InfraOnly,
-                [switch]$SeparateConfigDatabase
+                [switch]$SeparateConfigDatabase,
+                # Forces staging to fail part-way, to prove restoration and cleanup still happen.
+                [switch]$FailStaging
             )
 
+            # Preconditions FIRST: before the snapshot, before the staging directory exists, before any
+            # stand-in is installed. Nothing has been mutated yet, so a precondition failure leaves the
+            # session exactly as it was.
+            Assert-OwnershipCellPrecondition
+
+            $state = Get-OwnershipCellState
             $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-ownership-" + [Guid]::NewGuid().ToString('N'))
-            New-Item -ItemType Directory -Path $stage -Force | Out-Null
-
-            # The compose .yml files are deliberately NOT staged: the file set is assembled without
-            # Test-Path and docker is intercepted, so their absence cannot affect the decision. It also
-            # exercises the alias reader's missing-file narrowing, which is why the connection string
-            # below uses the canonical container name.
-            foreach ($name in @(
-                $StartScript, 'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1',
-                'env-utility.psm1', 'database-safety.psm1'
-            )) {
-                Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $name) -Destination (Join-Path $stage $name)
-            }
-            foreach ($stub in @('setup-openiddict.ps1', 'setup-keycloak.ps1')) {
-                Set-Content -LiteralPath (Join-Path $stage $stub) -Value @"
-Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'sibling-invocations.log') -Value ("$stub " + (`$args -join ' '))
-"@
-            }
-
-            $envFile = Join-Path $stage '.env.ownership'
-            Set-Content -LiteralPath $envFile -NoNewline -Value (@(
-                'POSTGRES_PASSWORD=abcdefgh1!',
-                'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                "DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider"
-            ) -join "`n")
 
             $recorded = [System.Collections.Generic.List[string]]::new()
-            $hadRealDocker = $null -ne (Get-Command docker -CommandType Application -ErrorAction SilentlyContinue)
-            $locationBefore = (Get-Location).Path
             $caught = $null
+            $restore = $null
             try {
+                New-Item -ItemType Directory -Path $stage -Force | Out-Null
+
+                # The compose .yml files are deliberately NOT staged: the file set is assembled without
+                # Test-Path and docker is intercepted, so their absence cannot affect the decision. It
+                # also exercises the alias reader's missing-file narrowing, which is why the connection
+                # string below uses the canonical container name.
+                foreach ($name in @(
+                    $StartScript, 'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1',
+                    'env-utility.psm1', 'database-safety.psm1'
+                )) {
+                    Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $name) -Destination (Join-Path $stage $name)
+                    if ($FailStaging) { throw "Forced staging failure after copying '$name'." }
+                }
+
+                foreach ($stub in @('setup-openiddict.ps1', 'setup-keycloak.ps1')) {
+                    Set-Content -LiteralPath (Join-Path $stage $stub) `
+                        -Value $script:ownershipStubBody.Replace('__SCRIPT__', $stub)
+                }
+
+                $envFile = Join-Path $stage '.env.ownership'
+                Set-Content -LiteralPath $envFile -NoNewline -Value (@(
+                    'POSTGRES_PASSWORD=abcdefgh1!',
+                    'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                    "DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider"
+                ) -join "`n")
+
                 # Succeed for the database and Keycloak bring-ups, fail at the next compose up - the
                 # Configuration Service under -InfraOnly, the full stack otherwise. That is a
                 # deterministic stop just past the -InitDb decision under both identity providers, and
                 # the resulting error is asserted per shape so a cell that died EARLIER cannot pass by
                 # reporting zero invocations.
-                Set-Item -Path Function:\global:docker -Value {
+                #
+                Set-OwnershipStandIn -Name 'docker' -State $state -Body {
                     $flattened = @($args | ForEach-Object { $_ })
                     $recorded.Add(($flattened -join ' '))
                     if ($flattened -contains 'up' -and -not ($flattened -contains 'db' -or $flattened -contains 'keycloak')) {
@@ -3015,7 +3317,7 @@ Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'sibling-invocations.log') -V
                     }
                 }.GetNewClosure()
                 # The start scripts sleep 20-30 seconds waiting for containers that do not exist here.
-                Set-Item -Path Function:\global:Start-Sleep -Value { }
+                Set-OwnershipStandIn -Name 'Start-Sleep' -State $state -Body { }
 
                 $scriptArgs = @{
                     EnvironmentFile  = $envFile
@@ -3029,27 +3331,30 @@ Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'sibling-invocations.log') -V
             }
             catch { $caught = $_ }
             finally {
-                Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
-                Remove-Item Function:\Start-Sleep -Force -ErrorAction SilentlyContinue
-                # Both start scripts Pop-Location in their own finally, so this restores rather than
-                # pops - an extra Pop-Location here would corrupt the location for later tests.
-                Set-Location -LiteralPath $locationBefore
+                # Read the observation BEFORE the staging directory is removed.
+                $observationFile = Join-Path $stage 'sibling-observations.jsonl'
+                $script:ownershipObservation = @()
+                if (Test-Path -LiteralPath $observationFile) {
+                    $script:ownershipObservation = @(
+                        Get-Content -LiteralPath $observationFile |
+                            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                            ForEach-Object { $_ | ConvertFrom-Json }
+                    )
+                }
+
+                $restore = Restore-OwnershipCellState -State $state -StagingPath $stage
             }
 
-            if ($hadRealDocker -and (Get-Command docker -CommandType Function -ErrorAction SilentlyContinue)) {
-                throw "The docker stand-in outlived the run; refusing to continue with a live docker on PATH."
-            }
-
-            $log = Join-Path $stage 'sibling-invocations.log'
-            $siblings = if (Test-Path -LiteralPath $log) { @(Get-Content -LiteralPath $log) } else { @() }
-            Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
-
+            $observation = @($script:ownershipObservation)
             return [PSCustomObject]@{
-                InitDbCount   = @($siblings | Where-Object { $_ -like 'setup-openiddict.ps1 *-InitDb*' }).Count
-                KeycloakCount = @($siblings | Where-Object { $_ -like 'setup-keycloak.ps1 *' }).Count
-                Siblings      = $siblings
-                DockerCommand = @($recorded)
-                ErrorMessage  = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
+                InitDbCount    = @($observation | Where-Object { $_.Script -eq 'setup-openiddict.ps1' -and $_.InitDb }).Count
+                KeycloakCount  = @($observation | Where-Object { $_.Script -eq 'setup-keycloak.ps1' }).Count
+                Observation    = $observation
+                DockerCommand  = @($recorded)
+                ErrorMessage   = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
+                RestoreFailure = @($restore.RestoreFailure)
+                Imbalance      = @($restore.Imbalance)
+                StagingPath    = $stage
             }
         }
 
@@ -3151,6 +3456,10 @@ Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'sibling-invocations.log') -V
 
         $cell = Invoke-CreationOwnershipCell @cellArgs
 
+        # The cell is a transaction over process-global state; these two assertions are what make it one.
+        $cell.RestoreFailure | Should -BeNullOrEmpty -Because "every process-global resource must be restored"
+        $cell.Imbalance | Should -BeNullOrEmpty -Because "the location stack must come back balanced"
+
         # Proof the cell actually traversed the decision point. Without this, a cell that failed earlier
         # would report zero -InitDb invocations and a Keycloak expectation would pass for the wrong
         # reason.
@@ -3159,6 +3468,11 @@ Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'sibling-invocations.log') -V
             else { "*Docker environment*" }
         $cell.ErrorMessage | Should -BeLike $expectedStop -Because "the cell must stop at the intercepted bring-up just past the -InitDb decision, not earlier"
 
+        # Positive proof the recording stand-in intercepted the compose boundary rather than a real
+        # docker running or nothing running at all.
+        @($cell.DockerCommand | Where-Object { $_ -like 'compose *' }).Count |
+            Should -BeGreaterThan 0 -Because "the stand-in must have received the compose bring-ups"
+
         if ($Provider -eq 'self-contained') {
             $cell.InitDbCount | Should -Be 1 -Because "self-contained creation belongs to the OpenIddict bootstrap, in $Shape/$Topology"
             $cell.KeycloakCount | Should -Be 0 -Because "no Keycloak client setup runs under self-contained identity"
@@ -3166,6 +3480,417 @@ Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'sibling-invocations.log') -V
         else {
             $cell.InitDbCount | Should -Be 0 -Because "under Keycloak, CMS owns creation through its own startup deploy, in $Shape/$Topology"
             $cell.KeycloakCount | Should -BeGreaterThan 0 -Because "the cell must have reached the Keycloak identity branch, or its zero -InitDb count proves nothing"
+        }
+    }
+
+    # The harness that produces the matrix above is itself a process-global mutation, so its contract is
+    # tested rather than assumed: what "-InitDb was invoked" means, and that a cell is a transaction over
+    # every resource it touches. Two earlier revisions of this harness observed a proxy for the property
+    # (argument text) and mutated shared state without restoring it; these pin both closed.
+    Context "ownership cell harness contract" {
+        BeforeAll {
+            # Writes the real stub into a throwaway directory and returns that directory, so the binding
+            # tests exercise the text the cells run.
+            function script:New-OwnershipStubRoot {
+                $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-stub-" + [Guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $dir 'setup-openiddict.ps1') `
+                    -Value $script:ownershipStubBody.Replace('__SCRIPT__', 'setup-openiddict.ps1')
+                return $dir
+            }
+
+            function script:Get-StubObservation {
+                param([Parameter(Mandatory)] [string]$StubRoot)
+
+                $file = Join-Path $StubRoot 'sibling-observations.jsonl'
+                if (-not (Test-Path -LiteralPath $file)) { return @() }
+                return @(Get-Content -LiteralPath $file |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                    ForEach-Object { $_ | ConvertFrom-Json })
+            }
+        }
+
+        # These tests deliberately seed hostile session state - stand-in functions, sentinel exit codes,
+        # drained or stacked locations - so they must themselves be transactions, or running this Context
+        # inside an already-hostile session destroys the outer sentinels. Measured: without this, the
+        # function tests' own cleanup deleted a caller's pre-existing `docker` (after which the REAL docker
+        # ran), and the stack tests drained a caller's location stack and never rebuilt it.
+        #
+        # The snapshot/restore pair under test is reused deliberately: it is the one definition of "put
+        # this session back", so a test cannot drift from the contract it is asserting. The assertions
+        # still compare against independently captured values, so a broken restore fails the test rather
+        # than hiding in the cleanup.
+        BeforeEach {
+            $script:ownershipSessionSnapshot = Get-OwnershipCellState
+        }
+
+        AfterEach {
+            $null = Restore-OwnershipCellState -State $script:ownershipSessionSnapshot `
+                -StagingPath (Join-Path ([System.IO.Path]::GetTempPath()) ("dms-ownership-none-" + [Guid]::NewGuid().ToString('N')))
+        }
+
+        It "records the bound switch value for every binding form, not the presence of its text" {
+            # The whole point of the binding-aware stub. A production edit from -InitDb to -InitDb:$false
+            # disables initialization while leaving the text intact, so text matching is not authoritative.
+            $stubRoot = New-OwnershipStubRoot
+            try {
+                $stub = Join-Path $stubRoot 'setup-openiddict.ps1'
+                & $stub -EnvironmentFile 'x' -DbName 'ENV:Y'
+                & $stub -InitDb -EnvironmentFile 'x' -DbName 'ENV:Y'
+                & $stub -InitDb:$false -EnvironmentFile 'x' -DbName 'ENV:Y'
+                & $stub -InitDb:$true -EnvironmentFile 'x' -DbName 'ENV:Y'
+
+                $observation = @(Get-StubObservation -StubRoot $stubRoot)
+                @($observation | ForEach-Object { [bool]$_.InitDb }) |
+                    Should -Be @($false, $true, $false, $true) -Because "omitted, bare, :`$false, and :`$true must be observed as their bound values"
+
+                # And the text that a substring test would have matched IS present in the two false cases,
+                # which is exactly why the bound value is what counts.
+                $observation[2].BoundParameter | Should -Contain 'InitDb'
+            }
+            finally { Remove-Item -LiteralPath $stubRoot -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+
+        It "fails parameter binding for a named argument the stub does not model" {
+            # Fail-closed: production passing something unmodelled must break loudly rather than be
+            # swallowed into $args and silently ignored.
+            $stubRoot = New-OwnershipStubRoot
+            try {
+                { & (Join-Path $stubRoot 'setup-openiddict.ps1') -InitDb -NotAParameter 'zzz' } |
+                    Should -Throw "*NotAParameter*"
+            }
+            finally { Remove-Item -LiteralPath $stubRoot -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+
+        It "records parameter names but never secret-bearing values" {
+            $stubRoot = New-OwnershipStubRoot
+            try {
+                & (Join-Path $stubRoot 'setup-openiddict.ps1') -InsertData -NewClientSecret 'sup3r-s3cret-value'
+
+                $raw = Get-Content -LiteralPath (Join-Path $stubRoot 'sibling-observations.jsonl') -Raw
+                $raw | Should -BeLike "*NewClientSecret*" -Because "the parameter name is useful and safe"
+                $raw | Should -Not -BeLike "*sup3r-s3cret-value*" -Because "observations must never render credential material"
+            }
+            finally { Remove-Item -LiteralPath $stubRoot -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+
+        It "restores an ordinary empty location stack" {
+            # The branch every real cell takes. An empty snapshot stack has no bottom entry to index, so
+            # it is a distinct code path from the hostile case below - and the one that breaks first if
+            # the two are collapsed.
+            while ((Get-Location -Stack).Count -gt 0) { Pop-Location }
+            $locationBefore = (Get-Location).Path
+
+            $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained'
+
+            $cell.RestoreFailure | Should -BeNullOrEmpty
+            $cell.Imbalance | Should -BeNullOrEmpty
+            (Get-Location).Path | Should -Be $locationBefore
+            (Get-Location -Stack).Count | Should -Be 0
+        }
+
+        It "restores a hostile non-empty location stack exactly" {
+            $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-stack-" + [Guid]::NewGuid().ToString('N'))
+            $inner = Join-Path $scratch 'inner'
+            New-Item -ItemType Directory -Path $inner -Force | Out-Null
+            $stackBefore = $null
+            try {
+                Push-Location -LiteralPath $scratch
+                Push-Location -LiteralPath $inner
+                $locationBefore = (Get-Location).Path
+                $stackBefore = @(Get-OwnershipLocationStack)
+                $stackBefore.Count | Should -BeGreaterThan 1 -Because "this test needs a genuinely multi-entry stack"
+
+                $cell = Invoke-CreationOwnershipCell -StartScript 'start-local-dms.ps1' -IdentityProvider 'self-contained'
+
+                $cell.RestoreFailure | Should -BeNullOrEmpty
+                $cell.Imbalance | Should -BeNullOrEmpty
+                (Get-Location).Path | Should -Be $locationBefore
+                @(Get-OwnershipLocationStack) | Should -Be $stackBefore -Because "the whole ordered stack must come back, not just its depth"
+            }
+            finally {
+                if ($null -ne $stackBefore) { for ($i = 0; $i -lt $stackBefore.Count; $i++) { Pop-Location -ErrorAction SilentlyContinue } }
+                Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "reports a location imbalance after repairing the stack, not instead of repairing it" {
+            # A production defect or mutation that leaks a Push-Location must fail the cell AND leave the
+            # session correct. Asserting without repairing would make every later cell order-dependent.
+            $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-imbalance-" + [Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $scratch -Force | Out-Null
+            try {
+                while ((Get-Location -Stack).Count -gt 0) { Pop-Location }
+                $locationBefore = (Get-Location).Path
+
+                # A Start-Sleep stand-in that leaks a pushed location, imitating an unbalanced callee.
+                $state = Get-OwnershipCellState
+                Push-Location -LiteralPath $scratch
+                $restore = Restore-OwnershipCellState -State $state -StagingPath (Join-Path $scratch 'absent')
+
+                @($restore.Imbalance).Count | Should -BeGreaterThan 0 -Because "the leaked push must be reported"
+                @($restore.RestoreFailure) | Should -BeNullOrEmpty -Because "reporting is not a substitute for repairing"
+                (Get-Location).Path | Should -Be $locationBefore -Because "the session must be repaired despite the imbalance"
+                (Get-Location -Stack).Count | Should -Be 0
+            }
+            finally {
+                while ((Get-Location -Stack).Count -gt 0) { Pop-Location }
+                Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "restores every inventoried environment variable across present, empty, and absent states" {
+            # Presence is tracked separately from value because "absent" and "present and empty" are
+            # different states, and collapsing them is how a restore silently changes the session.
+            $present = 'DMS_CONFIG_IDENTITY_PROVIDER'
+            $bootstrapManaged = 'DMS_CONFIG_CLAIMS_SOURCE'
+            $absent = 'DMS_JWT_METADATA_ADDRESS'
+            $emptyCandidate = 'OAUTH_TOKEN_ENDPOINT'
+            $saved = @{}
+            foreach ($name in @($present, $bootstrapManaged, $absent, $emptyCandidate)) {
+                $saved[$name] = @{ Present = (Test-Path -LiteralPath "Env:\$name"); Value = [System.Environment]::GetEnvironmentVariable($name) }
+            }
+            try {
+                [System.Environment]::SetEnvironmentVariable($present, 'sentinel-provider')
+                [System.Environment]::SetEnvironmentVariable($bootstrapManaged, 'sentinel-claims-source')
+                Remove-Item -LiteralPath "Env:\$absent" -Force -ErrorAction SilentlyContinue
+
+                # Present-but-empty is not representable on every platform; probe rather than assume, and
+                # skip only this subcase if the platform collapses it to absent.
+                [System.Environment]::SetEnvironmentVariable($emptyCandidate, '')
+                $emptyRepresentable = (Test-Path -LiteralPath "Env:\$emptyCandidate")
+
+                $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'keycloak'
+                $cell.RestoreFailure | Should -BeNullOrEmpty
+
+                [System.Environment]::GetEnvironmentVariable($present) | Should -Be 'sentinel-provider' -Because "the start script overwrites this one"
+                [System.Environment]::GetEnvironmentVariable($bootstrapManaged) | Should -Be 'sentinel-claims-source' -Because "bootstrap-managed names are inventoried too"
+                Test-Path -LiteralPath "Env:\$absent" | Should -BeFalse -Because "an absent variable must come back absent, not blank"
+
+                if ($emptyRepresentable) {
+                    Test-Path -LiteralPath "Env:\$emptyCandidate" | Should -BeTrue -Because "a present-but-empty variable must stay present"
+                    [System.Environment]::GetEnvironmentVariable($emptyCandidate) | Should -Be ''
+                }
+                else {
+                    Set-ItResult -Skipped -Because "this platform cannot represent a present-but-empty environment variable; the other three states are asserted above"
+                }
+            }
+            finally {
+                foreach ($name in $saved.Keys) {
+                    if ($saved[$name].Present) { [System.Environment]::SetEnvironmentVariable($name, $saved[$name].Value) }
+                    else { Remove-Item -LiteralPath "Env:\$name" -Force -ErrorAction SilentlyContinue }
+                }
+            }
+        }
+
+        It "restores `$global:LASTEXITCODE, whose value the docker stand-in changes" {
+            $had = $null -ne (Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue)
+            $saved = if ($had) { $global:LASTEXITCODE } else { $null }
+            try {
+                Set-Variable -Name LASTEXITCODE -Scope Global -Value 99
+
+                $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained'
+
+                $cell.RestoreFailure | Should -BeNullOrEmpty
+                $global:LASTEXITCODE | Should -Be 99 -Because "the stand-in sets exit codes and must not leave them behind"
+            }
+            finally {
+                # AfterEach restores presence and value; these locals only document the expectation.
+                $null = $had; $null = $saved
+            }
+        }
+
+        It "restores pre-existing global docker and Start-Sleep functions, definition and invocation" {
+            # The stand-ins overwrite these names, so a caller's own definitions must survive.
+            # Installed through the harness's own installer so any options the session already had on
+            # these names are preserved - a plain `function global:Start-Sleep` fails outright when the
+            # session's definition is AllScope, which is precisely the hostile state this must survive.
+            Set-OwnershipStandIn -Name 'docker' -State $script:ownershipSessionSnapshot -Body { 'sentinel-docker' }
+            Set-OwnershipStandIn -Name 'Start-Sleep' -State $script:ownershipSessionSnapshot -Body { 'sentinel-sleep' }
+
+            # Snapshot the VALUES, not the FunctionInfo objects: Get-Item returns a live wrapper whose
+            # Definition follows the function as it is replaced, so holding it would compare the stand-in
+            # against itself and pass no matter what restoration did.
+            $dockerDefinition = (Get-Item Function:\docker).Definition
+            $dockerOptions = (Get-Item Function:\docker).Options
+            $sleepDefinition = (Get-Item Function:\Start-Sleep).Definition
+            # AllScope propagates a copy into every new scope, so invoking the name here can resolve a
+            # propagated copy no matter what the global item holds. Assert invocation only when it is not
+            # in play; the item-level comparison is the proof either way.
+            $invocationIsMeaningful = -not (
+                ($dockerOptions -band [System.Management.Automation.ScopedItemOptions]::AllScope) -or
+                ((Get-Item Function:\Start-Sleep).Options -band [System.Management.Automation.ScopedItemOptions]::AllScope)
+            )
+            try {
+                $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained'
+
+                $cell.RestoreFailure | Should -BeNullOrEmpty
+                $cell.InitDbCount | Should -Be 1 -Because "the cell must still work with pre-existing definitions present"
+
+                $dockerAfter = Get-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
+                $dockerAfter | Should -Not -BeNullOrEmpty -Because "a pre-existing function must be restored, not deleted"
+                $dockerAfter.Definition | Should -Be $dockerDefinition
+                $dockerAfter.Options | Should -Be $dockerOptions
+                (Get-Item Function:\Start-Sleep).Definition | Should -Be $sleepDefinition
+
+                if ($invocationIsMeaningful) {
+                    docker | Should -Be 'sentinel-docker' -Because "the restored function must be the caller's, not the stand-in"
+                    Start-Sleep | Should -Be 'sentinel-sleep'
+                }
+            }
+            finally {
+                # AfterEach puts the session's own definitions back, whatever they were; this must not
+                # blindly delete, because in a hostile session these names belong to the caller.
+            }
+        }
+
+        It "restores a non-default function option (AllScope) exactly" {
+            # A naive Set-Item restore silently downgrades an option-bearing function to a normal one, so
+            # options are part of "restored exactly". AllScope is also the reason the stand-in is installed
+            # with New-Item carrying the same options: Set-Item -Force cannot shadow an AllScope function.
+            #
+            # The assertion is on the function ITEM rather than on invoking the name: AllScope propagates a
+            # copy into every new scope, so a call in this scope can resolve a propagated copy regardless of
+            # what the global item holds. That is a language semantic, not a restoration failure.
+            $null = New-Item -Path Function:\global:Start-Sleep -Value { 'sentinel-allscope' } -Options AllScope -Force
+            # Values, not the live FunctionInfo - see the note in the preceding test.
+            $beforeDefinition = (Get-Item Function:\Start-Sleep).Definition
+            $beforeOptions = (Get-Item Function:\Start-Sleep).Options
+            $beforeOptions | Should -Be 'AllScope' -Because "this test needs a genuinely option-bearing function"
+            try {
+                $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained'
+
+                $cell.RestoreFailure | Should -BeNullOrEmpty
+                $cell.InitDbCount | Should -Be 1 -Because "the cell must still run when the name it shadows is AllScope"
+
+                (Get-Item Function:\Start-Sleep).Definition | Should -Be $beforeDefinition
+                (Get-Item Function:\Start-Sleep).Options | Should -Be $beforeOptions -Because "AllScope must survive the cell"
+            }
+            finally {
+                # AfterEach restores whatever this session had, including a caller's own definition.
+            }
+        }
+
+        It "shadows and restores a pre-existing ReadOnly function" {
+            function global:docker { 'sentinel-readonly' }
+            (Get-Item Function:\docker).Options = 'ReadOnly'
+            $before = Get-Item Function:\docker
+            try {
+                $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained'
+
+                $cell.RestoreFailure | Should -BeNullOrEmpty
+                @($cell.DockerCommand | Where-Object { $_ -like 'compose *' }).Count |
+                    Should -BeGreaterThan 0 -Because "the stand-in must have shadowed the ReadOnly function (Set-Item -Force)"
+                (Get-Item Function:\docker).Definition | Should -Be $before.Definition
+                (Get-Item Function:\docker).Options | Should -Be $before.Options
+                docker | Should -Be 'sentinel-readonly'
+            }
+            finally {
+                # AfterEach restores whatever this session had; clearing ReadOnly here so the restore can
+                # replace it is the one thing the snapshot cannot do for a function it did not create.
+                $item = Get-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
+                if ($null -ne $item -and ($item.Options -band [System.Management.Automation.ScopedItemOptions]::ReadOnly)) {
+                    $item.Options = 'None'
+                }
+            }
+        }
+
+        It "refuses to run when an alias outranks the stand-in, and leaves the alias untouched: <_>" -ForEach @(
+            'docker', 'Start-Sleep'
+        ) {
+            # PowerShell resolves Alias before Function, so an alias of either name would bypass the
+            # recording stand-in entirely and a real executable could run. The cell must therefore refuse
+            # BEFORE it snapshots, stages, or mutates anything - and must not silently unbind a caller's
+            # alias to get its way.
+            $aliasName = $_
+            $script:aliasTargetInvoked = $false
+            function global:OwnershipAliasTarget { $script:aliasTargetInvoked = $true }
+            Set-Alias -Name $aliasName -Value OwnershipAliasTarget -Scope Global
+            $stagingBefore = @(Get-ChildItem ([System.IO.Path]::GetTempPath()) -Directory -Filter 'dms-ownership-*' -ErrorAction SilentlyContinue).Count
+            try {
+                { Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained' } |
+                    Should -Throw "*alias named '$aliasName'*"
+
+                $script:aliasTargetInvoked | Should -BeFalse -Because "nothing may run through the alias"
+                (Get-Command $aliasName -CommandType Alias).Definition |
+                    Should -Be 'OwnershipAliasTarget' -Because "the caller's alias must be left exactly as they set it"
+                @(Get-ChildItem ([System.IO.Path]::GetTempPath()) -Directory -Filter 'dms-ownership-*' -ErrorAction SilentlyContinue).Count |
+                    Should -Be $stagingBefore -Because "the precondition runs before any staging directory is created"
+            }
+            finally {
+                Remove-Item -LiteralPath "Alias:\$aliasName" -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath Function:\OwnershipAliasTarget -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "refuses to run when a Constant function cannot be shadowed" {
+            # A Constant function can be neither replaced nor removed, so interception is impossible and
+            # the cell must refuse before mutating anything. It runs in a CHILD PROCESS because a Constant
+            # function cannot be cleaned up afterwards - creating one in this session would poison every
+            # later test. A Constant function must also be created with New-Item -Options Constant;
+            # promoting an existing function fails with "Functions can be made constant only at creation
+            # time."
+            $probeScript = @'
+$null = New-Item -Path Function:\global:docker -Value { "constant-docker" } -Options Constant
+$item = Get-Item -LiteralPath "Function:\docker"
+if (-not ($item.Options -band [System.Management.Automation.ScopedItemOptions]::Constant)) { "NOT-CONSTANT"; exit }
+"CONSTANT-DETECTED"
+try { Set-Item -Path Function:\global:docker -Force -Value { "standin" } -ErrorAction Stop; "SHADOW-SUCCEEDED" }
+catch { "SHADOW-BLOCKED" }
+'@
+            $probe = @(pwsh -NoProfile -Command $probeScript)
+
+            $probe | Should -Contain 'CONSTANT-DETECTED' -Because "the precondition's detection expression must recognize a Constant function"
+            $probe | Should -Contain 'SHADOW-BLOCKED' -Because "the precondition is necessary: a Constant function genuinely cannot be shadowed"
+        }
+
+        It "restores the module table: path multiset, command provenance, and default-root behavior" {
+            # A staged start script imports its modules from the staging directory, which the cell then
+            # deletes. Left alone, a later caller resolves module defaults against a path that is gone -
+            # measured to turn the accepted-host set from 'db, dms-postgresql' into 'dms-postgresql'.
+            $moduleBefore = @{}
+            foreach ($name in $script:ownershipStagedModule) {
+                $moduleBefore[$name] = @{
+                    All = @(Get-Module $name -All | ForEach-Object { $_.Path })
+                    Top = @(Get-Module $name | ForEach-Object { $_.Path })
+                }
+            }
+            $provenanceBefore = (Get-Command Get-ComposeDatabaseServiceHostAlias).Module.Path
+
+            $cell = Invoke-CreationOwnershipCell -StartScript 'start-local-dms.ps1' -IdentityProvider 'self-contained'
+            $cell.RestoreFailure | Should -BeNullOrEmpty
+
+            foreach ($name in $script:ownershipStagedModule) {
+                @(Get-Module $name -All | ForEach-Object { $_.Path }) |
+                    Should -Be $moduleBefore[$name].All -Because "$name's loaded instances must match the snapshot"
+                @(Get-Module $name | ForEach-Object { $_.Path }) |
+                    Should -Be $moduleBefore[$name].Top -Because "$name's top-level instances must match the snapshot"
+            }
+            (Get-Command Get-ComposeDatabaseServiceHostAlias).Module.Path |
+                Should -Be $provenanceBefore -Because "commands must resolve from the same module as before the cell"
+            @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine 'postgresql') |
+                Should -Be @('db', 'dms-postgresql') -Because "the module's default compose root must still be the real one"
+        }
+
+        It "restores everything and cleans up when staging fails part-way" {
+            $locationBefore = (Get-Location).Path
+            $stagingBefore = @(Get-ChildItem ([System.IO.Path]::GetTempPath()) -Directory -Filter 'dms-ownership-*' -ErrorAction SilentlyContinue).Count
+
+            $cell = Invoke-CreationOwnershipCell -StartScript 'start-published-dms.ps1' -IdentityProvider 'self-contained' -FailStaging
+
+            $cell.ErrorMessage | Should -BeLike "*Forced staging failure*"
+            $cell.RestoreFailure | Should -BeNullOrEmpty -Because "restoration must run even when staging failed"
+            $cell.Imbalance | Should -BeNullOrEmpty
+            (Get-Location).Path | Should -Be $locationBefore
+            # The stand-in must be gone - but "gone" means "back to whatever this session had", which in a
+            # hostile session is a caller's own docker function rather than nothing.
+            $dockerNow = Get-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
+            $dockerSnapshot = $script:ownershipSessionSnapshot.Function['docker']
+            if ($null -eq $dockerSnapshot) { $dockerNow | Should -BeNullOrEmpty -Because "no docker function existed before the cell" }
+            else { $dockerNow.Definition | Should -Be $dockerSnapshot.Definition -Because "the caller's docker function must be restored" }
+            Test-Path -LiteralPath $cell.StagingPath | Should -BeFalse -Because "the partial staging directory must be removed"
+            @(Get-ChildItem ([System.IO.Path]::GetTempPath()) -Directory -Filter 'dms-ownership-*' -ErrorAction SilentlyContinue).Count |
+                Should -Be $stagingBefore -Because "only this cell's own GUID-scoped directory may be removed, and none may be left"
         }
     }
 
