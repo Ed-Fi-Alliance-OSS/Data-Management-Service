@@ -381,5 +381,114 @@
       "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProvider"
     ],
     "completed": true
+  },
+  {
+    "category": "postgresql-slot-history",
+    "description": "High: Fail closed when InitialCreateOrExactMatch encounters an existing PostgreSQL pgoutput slot without same-workflow creation-position proof or with evidence that the slot advanced before connector registration. Keep this scoped to DMS-1320 provider setup metadata: the caller supplies any proof it has, and 19-00/19-04 own durable binding state, connector registration, and source-history status decisions.",
+    "acceptance-criteria": [
+      "CdcProviderSetupRequest exposes an optional metadata-safe PostgreSQL initial-slot proof input that can carry the slot name, source fingerprint, database identity, and retained-position values observed when this same InitialCreateOrExactMatch workflow created the slot; DMS-1320 does not persist this proof or read Kafka Connect offsets.",
+      "When InitialCreateOrExactMatch inspects an existing PostgreSQL slot and no matching same-workflow proof is supplied, setup emits a ProviderHistoryUnavailable diagnostic and does not classify the slot as an exact match.",
+      "When matching proof is supplied but the inspected restart_lsn or confirmed_flush_lsn show consumption advancement beyond the proved initial values before connector registration, setup emits a ProviderHistoryLossEvidence diagnostic and fails closed.",
+      "A slot created during the current setup call returns the retained-position proof values needed for a later caller-managed partial retry, without serializing credentials, connection strings, or unsafe identifiers.",
+      "ValidateOnly remains observation-only: it never creates a missing slot, and it reports retained slot positions without requiring initial-workflow proof.",
+      "No Kafka Connect calls, binding-state mutation, lifecycle latching, destructive slot cleanup, or final source-history continuity decision is added in DMS-1320.",
+      "PostgreSQL unit and integration fixtures prove unproved pre-existing slots fail InitialCreateOrExactMatch, proved same-workflow retry slots pass, and proved-but-advanced slots fail closed."
+    ],
+    "steps-to-verify": [
+      "Review CdcProviderSetupRequest and PostgreSQL slot inspection code for the new initial-slot proof path and fail-closed diagnostics.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcSlotHistory",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "High: Validate SQL Server connector-principal access from effective permissions for the DMS objects relevant to CDC, instead of only direct grants to the connector user. Keep this as least-privilege provider validation, not a general SQL Server permission auditor.",
+    "acceptance-criteria": [
+      "SQL Server connector access inspection computes effective permissions for the relevant DMS CDC objects from direct connector grants, public grants, and all database roles reachable through database role membership, honoring explicit DENY before GRANT.",
+      "Connector validation rejects any connector database-role membership outside the exact binding-derived CDC gating role and the built-in public role, including custom roles that grant required or forbidden DMS table access.",
+      "Connector validation fails closed when effective permissions allow any access to dms.DocumentProjectionWork, any write access to dms.Document or dms.DocumentCache, any write access to dms.CdcHeartbeat other than HeartbeatSequence and HeartbeatAt column UPDATE, or SELECT on unexpected DMS tables, even when those privileges come through a custom role or public.",
+      "Connector validation still requires the expected snapshot SELECT permissions and heartbeat column UPDATE permissions to be present through the approved direct-grant path produced by provider setup.",
+      "Diagnostics classify inherited or public forbidden privileges as ConnectorPrincipalPrivilegeFailure, using WorkTableGrantViolation for effective access to dms.DocumentProjectionWork.",
+      "Do not add login/user creation, credential rotation, permission repair, non-DMS schema scanning, or a server-wide permission audit beyond the disallowed memberships already required by the story.",
+      "SQL Server unit and integration fixtures cover custom-role and public-grant overprivilege cases without relying on the optional live connector probe."
+    ],
+    "steps-to-verify": [
+      "Review the SQL Server connector access query to confirm inherited role and public permissions are included in required and forbidden privilege decisions.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-security",
+    "description": "Medium: Reject PostgreSQL connector principals with any CdcHeartbeat write privilege beyond the two allowed column updates. Keep this as a focused heartbeat overgrant fix using the existing privilege-inspection path, not a broader PostgreSQL grant-audit rewrite.",
+    "acceptance-criteria": [
+      "PostgreSQL connector access inspection inventories forbidden dms.CdcHeartbeat privileges, including INSERT, DELETE, TRUNCATE, REFERENCES, TRIGGER, table-wide UPDATE, and UPDATE on any column other than HeartbeatSequence and HeartbeatAt.",
+      "Connector validation fails closed with ConnectorPrincipalPrivilegeFailure when any forbidden heartbeat privilege is present, while still requiring SELECT on dms.CdcHeartbeat and column-level UPDATE on HeartbeatSequence and HeartbeatAt.",
+      "Observed privilege metadata and manifests report only safe privilege names and the safe heartbeat artifact name, without credentials, connection strings, or unsafe identifiers.",
+      "The provider grant path continues to grant only SELECT on dms.CdcHeartbeat and UPDATE on HeartbeatSequence and HeartbeatAt.",
+      "Do not add a new required live probe, permission-source provenance tree, or unrelated PostgreSQL privilege audit in this task.",
+      "PostgreSQL unit and integration fixtures cover extra heartbeat INSERT, DELETE, table-wide UPDATE, and unexpected column UPDATE grants without relying on the optional live connector probe."
+    ],
+    "steps-to-verify": [
+      "Review ConnectorPrincipalAccessSql, ConnectorPrincipalAccessInspection, and hasForbiddenPrivileges for explicit heartbeat forbidden-privilege handling.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcPrincipalAccess",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "source-fingerprint",
+    "description": "High: Compute and return the design-specified opaque physical-source fingerprint instead of treating dms.DataStoreIdentity.SourceIdentity as the fingerprint value. DMS-1320 should not persist a new fingerprint value or create deployment binding state; it only observes SourceIdentity, computes the opaque value, compares it with the caller-supplied binding value, and reports safe metadata.",
+    "acceptance-criteria": [
+      "CDC source-fingerprint inspection computes physicalSourceFingerprint as sha256: plus lowercase hex SHA-256 over UTF-8 bytes for ed-fi-dms-source-v1, NUL, provider token, NUL, and the lowercase D-format source UUID.",
+      "The provider token is exactly postgresql for PostgreSQL setup and sqlserver for SQL Server setup.",
+      "The setup request bound physical-source fingerprint is compared against the computed sha256 value, and mismatches fail closed with source-fingerprint diagnostics.",
+      "Manifests and diagnostics expose only the computed opaque fingerprint and safe provider metadata, not the raw dms.DataStoreIdentity.SourceIdentity value.",
+      "Ordinary DataStoreIdentity seeding remains unchanged, and no new database column, binding record, or bootstrap state store is added by this task.",
+      "Unit tests cover the PostgreSQL and SQL Server conformance vectors from cdc-streaming.md and reject malformed, blank, or zero source identities."
+    ],
+    "steps-to-verify": [
+      "Review CdcSourceFingerprintMetadata, provider call sites, and CdcProviderManifest output for the computed fingerprint path and absence of raw SourceIdentity serialization.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcSourceFingerprint",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest"
+    ],
+    "completed": true
+  },
+  {
+    "category": "sqlserver-capture-instances",
+    "description": "Medium: Tighten SQL Server capture-instance exact-match validation to require no named source index and partition switching disabled. This should remove the current exact-match exceptions only; do not add capture repair, job tuning, or connector behavior.",
+    "acceptance-criteria": [
+      "Existing SQL Server capture-instance inspection treats any non-empty cdc.change_tables.index_name as a mismatch for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat.",
+      "Existing SQL Server capture-instance inspection treats cdc.change_tables.allow_partition_switch enabled as a mismatch for every expected capture instance, regardless of whether the source table is currently partitioned.",
+      "Observed values and diagnostics report expected_source_index as none and expected_partition_switch as disabled, without the current none-or-PK and ignored-for-nonpartitioned-source exceptions.",
+      "The create path continues to call sp_cdc_enable_table with @index_name = NULL, @filegroup_name = NULL, and @allow_partition_switch = 0; this task only tightens exact-match validation of existing capture instances.",
+      "Unit and integration fixtures no longer seed or expect PK source indexes or enabled partition switching for exact-match capture instances."
+    ],
+    "steps-to-verify": [
+      "Review CaptureInstancesSql, ReadExpectedCaptureInstance, and capture-instance observed values for strict index_name and allow_partition_switch checks.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-capture-instances",
+    "description": "Medium: Fail closed when SQL Server CDC metadata contains any extra dms-schema capture instance outside the three fixed CDC source tables. Keep this as provider capture-inventory validation only, not a general relational schema drift validator.",
+    "acceptance-criteria": [
+      "SQL Server capture-instance inspection inventories all CDC capture instances whose source table is in the dms schema, not only expected sources, expected capture names, and dms.DocumentProjectionWork.",
+      "Validation fails closed when any dms-schema source outside dms.DocumentCache, dms.Document, and dms.CdcHeartbeat has a CDC capture instance, including descriptor, resource-key, lifecycle, and future per-resource tables.",
+      "dms.DocumentProjectionWork keeps its WorkTableCaptureViolation diagnostic, while other unexpected dms-schema captures use a provider-artifact mismatch diagnostic with safe source and capture names.",
+      "Provider metadata and manifests include observed unexpected dms-schema capture instances so validate-only output cannot hide a nonconforming source inventory.",
+      "Do not inspect or reject non-dms capture instances, disable capture instances, repair provider state, or classify Kafka/connector source-history continuity in this task.",
+      "SQL Server unit and integration fixtures cover an extra non-work dms-schema capture instance that does not use the expected gating role."
+    ],
+    "steps-to-verify": [
+      "Review CaptureInstancesSql and unexpected capture classification to confirm all dms-schema CDC source tables are inspected.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": false
   }
 ]

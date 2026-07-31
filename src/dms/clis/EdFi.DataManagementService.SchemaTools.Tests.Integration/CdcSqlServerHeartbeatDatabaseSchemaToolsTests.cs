@@ -169,14 +169,16 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         await connection.OpenAsync();
 
         var expectedSourceIdentity = ReadDataStoreIdentity(connection);
+        var expectedSourceFingerprint = CdcSourceFingerprintMetadata.Compute(
+            CdcProvider.SqlServer,
+            expectedSourceIdentity
+        );
         var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
 
         result
             .Outcome.Should()
             .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(result.Diagnostics));
-        result
-            .ObservedSourceFingerprint.Should()
-            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", expectedSourceIdentity));
+        result.ObservedSourceFingerprint.Should().Be(expectedSourceFingerprint);
         result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -201,7 +203,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
                 && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
                 && observation.SafeObservedValues["heartbeat_capture_visible"] == "True"
             );
-        result.ManifestPayload!.Json.Should().Contain(expectedSourceIdentity);
+        result.ManifestPayload!.Json.Should().Contain(expectedSourceFingerprint.Value);
+        result.ManifestPayload.Json.Should().NotContain(expectedSourceIdentity);
         result.ManifestPayload.Json.Should().NotContain(_connectionString);
     }
 
@@ -305,7 +308,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         var result = await RunSetupAsync(
             connection,
             CdcProviderSetupMode.InitialCreateOrExactMatch,
-            boundSourceIdentity: "mismatched-source"
+            boundSourceIdentity: "11111111-1111-1111-1111-111111111111"
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -324,8 +327,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         new(
             provider: CdcProvider.SqlServer,
             mode: mode,
-            boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
+            boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                CdcProvider.SqlServer,
                 boundSourceIdentity
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("sa")),

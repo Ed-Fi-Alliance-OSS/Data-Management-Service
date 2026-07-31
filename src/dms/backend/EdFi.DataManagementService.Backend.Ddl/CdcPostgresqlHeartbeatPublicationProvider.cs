@@ -215,7 +215,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         }
 
         return await CdcSourceFingerprintMetadata
-            .ReadAsync(executor, SourceFingerprintSql, cancellationToken)
+            .ReadAsync(executor, SourceFingerprintSql, CdcProvider.Postgresql, cancellationToken)
             .ConfigureAwait(false);
     }
 

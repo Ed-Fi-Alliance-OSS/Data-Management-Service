@@ -238,11 +238,13 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         await connection.OpenAsync();
 
         var expectedSourceIdentity = ReadDataStoreIdentity(connection);
+        var expectedSourceFingerprint = CdcSourceFingerprintMetadata.Compute(
+            CdcProvider.Postgresql,
+            expectedSourceIdentity
+        );
         var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
 
-        result
-            .ObservedSourceFingerprint.Should()
-            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", expectedSourceIdentity));
+        result.ObservedSourceFingerprint.Should().Be(expectedSourceFingerprint);
         result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -270,7 +272,8 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
                 && observation.SafeObservedValues["retained_position_gap_evaluation"]
                     == "not_evaluated_without_committed_offset"
             );
-        result.ManifestPayload!.Json.Should().Contain(expectedSourceIdentity);
+        result.ManifestPayload!.Json.Should().Contain(expectedSourceFingerprint.Value);
+        result.ManifestPayload.Json.Should().NotContain(expectedSourceIdentity);
         result.ManifestPayload.Json.Should().NotContain(_connectionString);
     }
 
@@ -379,7 +382,7 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         var result = await RunSetupAsync(
             connection,
             CdcProviderSetupMode.InitialCreateOrExactMatch,
-            boundSourceIdentity: "mismatched-source"
+            boundSourceIdentity: "11111111-1111-1111-1111-111111111111"
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -400,8 +403,8 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         new(
             provider: CdcProvider.Postgresql,
             mode: mode,
-            boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
+            boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                CdcProvider.Postgresql,
                 boundSourceIdentity
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("postgres")),

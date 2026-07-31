@@ -4,17 +4,21 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
 internal static class CdcSourceFingerprintMetadata
 {
     internal const string Version = "dms-source-fingerprint-v1";
+    private const string PayloadDomain = "ed-fi-dms-source-v1";
     internal static readonly CdcSafeName SafeArtifactName = new("dms.DataStoreIdentity");
 
     internal static async Task<CdcProviderSetupStepResult> ReadAsync(
         ICdcProviderDatabaseExecutor executor,
         string sql,
+        CdcProvider provider,
         CancellationToken cancellationToken
     )
     {
@@ -24,7 +28,7 @@ internal static class CdcSourceFingerprintMetadata
         try
         {
             var rows = await executor.QueryAsync(sql, cancellationToken).ConfigureAwait(false);
-            return FromRows(rows);
+            return FromRows(rows, provider);
         }
         catch (DbException exception)
         {
@@ -36,8 +40,26 @@ internal static class CdcSourceFingerprintMetadata
         }
     }
 
+    internal static CdcSourceFingerprint Compute(CdcProvider provider, string sourceIdentity)
+    {
+        if (!TryNormalizeSourceIdentity(sourceIdentity, out var normalizedSourceIdentity, out var reason))
+        {
+            throw new ArgumentException(
+                $"CDC source identity must be a non-zero UUID in D format; observed {reason}.",
+                nameof(sourceIdentity)
+            );
+        }
+
+        var providerToken = ProviderToken(provider);
+        var payload = Encoding.UTF8.GetBytes($"{PayloadDomain}\0{providerToken}\0{normalizedSourceIdentity}");
+        var hash = SHA256.HashData(payload);
+
+        return new CdcSourceFingerprint(Version, $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}");
+    }
+
     private static CdcProviderSetupStepResult FromRows(
-        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows,
+        CdcProvider provider
     )
     {
         if (rows.Count != 1)
@@ -46,21 +68,17 @@ internal static class CdcSourceFingerprintMetadata
         }
 
         var sourceIdentity = ReadOptional(rows[0], "source_identity");
-        if (string.IsNullOrWhiteSpace(sourceIdentity))
+        if (!TryNormalizeSourceIdentity(sourceIdentity, out _, out var invalidReason))
         {
-            return Missing("empty");
+            return Invalid(invalidReason);
         }
 
-        if (sourceIdentity == "00000000-0000-0000-0000-000000000000")
-        {
-            return Invalid(sourceIdentity);
-        }
-
-        var fingerprint = new CdcSourceFingerprint(Version, SafeText(sourceIdentity));
+        var fingerprint = Compute(provider, sourceIdentity!);
         var observedValues = new Dictionary<string, string>
         {
             ["source_fingerprint_version"] = fingerprint.Version,
-            ["source_identity"] = fingerprint.Value,
+            ["physical_source_fingerprint"] = fingerprint.Value,
+            ["provider_token"] = ProviderToken(provider),
         };
 
         return new CdcProviderSetupStepResult(
@@ -85,7 +103,7 @@ internal static class CdcSourceFingerprintMetadata
                     CdcProviderArtifactKind.SourceFingerprint,
                     SafeArtifactName,
                     CdcProviderArtifactState.Missing,
-                    new Dictionary<string, string> { ["source_identity"] = "missing" }
+                    new Dictionary<string, string> { ["source_identity_status"] = "missing" }
                 ),
             ],
             diagnostics:
@@ -98,7 +116,7 @@ internal static class CdcSourceFingerprintMetadata
                     ArtifactKind: CdcProviderArtifactKind.SourceFingerprint,
                     SafeName: SafeArtifactName,
                     ExpectedValue: "DataStoreIdentity singleton source identity",
-                    ObservedValue: observedValue,
+                    ObservedValue: $"row_count:{observedValue}",
                     ProviderErrorClass: null,
                     Classification: CdcProviderRetryContinuityClassification.FailClosed
                 ),
@@ -113,7 +131,7 @@ internal static class CdcSourceFingerprintMetadata
                     CdcProviderArtifactKind.SourceFingerprint,
                     SafeArtifactName,
                     CdcProviderArtifactState.Mismatched,
-                    new Dictionary<string, string> { ["source_identity"] = observedValue }
+                    new Dictionary<string, string> { ["source_identity_status"] = observedValue }
                 ),
             ],
             diagnostics:
@@ -125,7 +143,7 @@ internal static class CdcSourceFingerprintMetadata
                     PrincipalKind: CdcPrincipalKind.None,
                     ArtifactKind: CdcProviderArtifactKind.SourceFingerprint,
                     SafeName: SafeArtifactName,
-                    ExpectedValue: "non-zero source identity",
+                    ExpectedValue: "non-zero UUID source identity",
                     ObservedValue: observedValue,
                     ProviderErrorClass: null,
                     Classification: CdcProviderRetryContinuityClassification.FailClosed
@@ -141,7 +159,7 @@ internal static class CdcSourceFingerprintMetadata
                     CdcProviderArtifactKind.SourceFingerprint,
                     SafeArtifactName,
                     CdcProviderArtifactState.Unavailable,
-                    new Dictionary<string, string> { ["source_identity"] = "unavailable" }
+                    new Dictionary<string, string> { ["source_identity_status"] = "unavailable" }
                 ),
             ],
             diagnostics:
@@ -164,13 +182,47 @@ internal static class CdcSourceFingerprintMetadata
     private static string? ReadOptional(IReadOnlyDictionary<string, string?> row, string key) =>
         row.TryGetValue(key, out var value) ? value : null;
 
-    private static string SafeText(string value)
+    private static bool TryNormalizeSourceIdentity(
+        string? sourceIdentity,
+        out string normalizedSourceIdentity,
+        out string invalidReason
+    )
     {
-        if (value.Any(char.IsControl))
+        if (string.IsNullOrWhiteSpace(sourceIdentity))
         {
-            return new string(value.Where(character => !char.IsControl(character)).ToArray());
+            normalizedSourceIdentity = "";
+            invalidReason = "blank_source_identity";
+            return false;
         }
 
-        return value;
+        if (!Guid.TryParse(sourceIdentity, out var sourceGuid))
+        {
+            normalizedSourceIdentity = "";
+            invalidReason = "malformed_source_identity";
+            return false;
+        }
+
+        if (sourceGuid == Guid.Empty)
+        {
+            normalizedSourceIdentity = "";
+            invalidReason = "zero_source_identity";
+            return false;
+        }
+
+        normalizedSourceIdentity = sourceGuid.ToString("D").ToLowerInvariant();
+        invalidReason = "";
+        return true;
     }
+
+    private static string ProviderToken(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => "postgresql",
+            CdcProvider.SqlServer => "sqlserver",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
 }

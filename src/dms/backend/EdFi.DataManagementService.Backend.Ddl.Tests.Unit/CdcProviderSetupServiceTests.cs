@@ -308,10 +308,7 @@ public class Given_CdcBindingAwareValidation
                         CdcProviderArtifactKind.SourceFingerprint,
                         CdcSourceFingerprintMetadata.SafeArtifactName,
                         canCreateInInitialSetup: false,
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "other-source"
-                        )
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.OtherPostgresqlSourceFingerprint
                     ),
                     laterStep.ToSetupStep(
                         CdcProviderArtifactKind.PostgresqlPublication,
@@ -329,8 +326,14 @@ public class Given_CdcBindingAwareValidation
             .ContainSingle(diagnostic => diagnostic.Code == "CDC_BINDING_SOURCE_FINGERPRINT_MISMATCH")
             .Which.Should()
             .Match<CdcProviderDiagnostic>(diagnostic =>
-                diagnostic.ExpectedValue == "dms_source_fingerprint_v1:source_123"
-                && diagnostic.ObservedValue == "dms_source_fingerprint_v1:other_source"
+                diagnostic.ExpectedValue!.Contains(
+                    CdcProviderSetupContractTestData.PostgresqlSourceFingerprint.Value.Replace(':', '_'),
+                    StringComparison.Ordinal
+                )
+                && diagnostic.ObservedValue!.Contains(
+                    CdcProviderSetupContractTestData.OtherPostgresqlSourceFingerprint.Value.Replace(':', '_'),
+                    StringComparison.Ordinal
+                )
                 && diagnostic.Classification == CdcProviderRetryContinuityClassification.FailClosed
             );
         laterStep.ExecutionCount.Should().Be(0);
@@ -347,10 +350,7 @@ public class Given_CdcBindingAwareValidation
                         CdcProviderArtifactKind.SourceFingerprint,
                         CdcSourceFingerprintMetadata.SafeArtifactName,
                         canCreateInInitialSetup: false,
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "source-123"
-                        )
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint
                     ),
                     RecordingStep.Create(
                         CdcProviderArtifactKind.PostgresqlPublication,
@@ -385,10 +385,7 @@ public class Given_CdcBindingAwareValidation
                         CdcProviderArtifactKind.SourceFingerprint,
                         CdcSourceFingerprintMetadata.SafeArtifactName,
                         canCreateInInitialSetup: false,
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "source-123"
-                        )
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint
                     ),
                     RecordingStep.Create(
                         CdcProviderArtifactKind.HeartbeatTable,
@@ -444,10 +441,7 @@ public class Given_CdcBindingAwareValidation
                         CdcProviderArtifactKind.SourceFingerprint,
                         CdcSourceFingerprintMetadata.SafeArtifactName,
                         canCreateInInitialSetup: false,
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "source-123"
-                        ),
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint,
                         grantInventory:
                         [
                             new CdcGrantObservation(

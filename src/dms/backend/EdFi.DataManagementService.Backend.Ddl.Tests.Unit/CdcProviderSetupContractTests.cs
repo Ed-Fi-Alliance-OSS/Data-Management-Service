@@ -20,6 +20,21 @@ internal sealed class TestConnectorPrincipalProbeFactory : ICdcConnectorPrincipa
 
 internal static class CdcProviderSetupContractTestData
 {
+    internal const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
+    internal const string OtherSourceIdentity = "11111111-1111-1111-1111-111111111111";
+
+    internal static CdcSourceFingerprint PostgresqlSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.Postgresql, SourceIdentity);
+
+    internal static CdcSourceFingerprint OtherPostgresqlSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.Postgresql, OtherSourceIdentity);
+
+    internal static CdcSourceFingerprint SqlServerSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.SqlServer, SourceIdentity);
+
+    internal static CdcSourceFingerprint OtherSqlServerSourceFingerprint =>
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.SqlServer, OtherSourceIdentity);
+
     internal static CdcProviderSetupRequest BuildPostgresqlRequest(
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
@@ -31,10 +46,7 @@ internal static class CdcProviderSetupContractTestData
         new(
             provider: CdcProvider.Postgresql,
             mode: mode,
-            boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
-                "source-123"
-            ),
+            boundPhysicalSourceFingerprint: PostgresqlSourceFingerprint,
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),
             artifactNames: artifactNames ?? CdcDms1320ArtifactNameTestAdapter.ForPostgresql(),
@@ -57,10 +69,7 @@ internal static class CdcProviderSetupContractTestData
         new(
             provider: CdcProvider.SqlServer,
             mode: mode,
-            boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
-                "source-123"
-            ),
+            boundPhysicalSourceFingerprint: SqlServerSourceFingerprint,
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),
             artifactNames: artifactNames ?? CdcDms1320ArtifactNameTestAdapter.ForSqlServer(),
@@ -77,11 +86,8 @@ internal static class CdcProviderSetupContractTestData
             Provider: CdcProvider.Postgresql,
             Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
             Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
-            BoundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
-                "source-123"
-            ),
-            ObservedSourceFingerprint: new CdcSourceFingerprint("dms-source-fingerprint-v1", "source-123"),
+            BoundPhysicalSourceFingerprint: PostgresqlSourceFingerprint,
+            ObservedSourceFingerprint: PostgresqlSourceFingerprint,
             ArtifactInventory:
             [
                 new CdcProviderArtifactObservation(

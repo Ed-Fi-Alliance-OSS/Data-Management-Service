@@ -98,7 +98,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
 
         return await CdcSourceFingerprintMetadata
-            .ReadAsync(executor, SourceFingerprintSql, cancellationToken)
+            .ReadAsync(executor, SourceFingerprintSql, CdcProvider.SqlServer, cancellationToken)
             .ConfigureAwait(false);
     }
 

@@ -114,8 +114,8 @@ public class Given_MssqlCdcProviderArtifacts
             new CdcProviderSetupRequest(
                 provider: CdcProvider.SqlServer,
                 mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-                boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                    "dms-source-fingerprint-v1",
+                boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                    CdcProvider.SqlServer,
                     await ReadDataStoreIdentityAsync(connection)
                 ),
                 setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("sa")),
@@ -168,15 +168,18 @@ public class Given_MssqlCdcProviderArtifacts
 
     private void AssertProviderResult(CdcProviderSetupResult result, string expectedSourceIdentity)
     {
+        var expectedSourceFingerprint = CdcSourceFingerprintMetadata.Compute(
+            CdcProvider.SqlServer,
+            expectedSourceIdentity
+        );
+
         result.Provider.Should().Be(CdcProvider.SqlServer);
         result
             .HeartbeatActionQuery!.Sql.Should()
             .Be(
                 "UPDATE [dms].[CdcHeartbeat] SET [HeartbeatSequence] = [HeartbeatSequence] + 1, [HeartbeatAt] = sysutcdatetime() WHERE [HeartbeatId] = 1"
             );
-        result
-            .ObservedSourceFingerprint.Should()
-            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", expectedSourceIdentity));
+        result.ObservedSourceFingerprint.Should().Be(expectedSourceFingerprint);
         result
             .SourceTableInventory.Select(table => $"{table.TableName.Schema.Value}.{table.TableName.Name}")
             .Should()

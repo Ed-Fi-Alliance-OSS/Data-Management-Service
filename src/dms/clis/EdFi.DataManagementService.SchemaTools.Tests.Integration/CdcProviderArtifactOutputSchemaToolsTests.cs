@@ -81,9 +81,9 @@ public class Given_CdcProviderArtifactOutput
         new(
             provider: CdcProvider.Postgresql,
             mode: CdcProviderSetupMode.ValidateOnly,
-            boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
-                "source-123"
+            boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                CdcProvider.Postgresql,
+                "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("setup_principal")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("connector_principal")),

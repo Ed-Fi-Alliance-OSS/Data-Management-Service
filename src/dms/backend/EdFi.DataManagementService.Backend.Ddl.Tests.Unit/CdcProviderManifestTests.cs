@@ -48,7 +48,7 @@ public class Given_CdcProviderManifest_Emitter
             .GetProperty("value")
             .GetString()
             .Should()
-            .Be("observed-source");
+            .Be(CdcProviderSetupContractTestData.PostgresqlSourceFingerprint.Value);
         root.GetProperty("source_table_inventory").EnumerateArray().Should().HaveCount(3);
         root.GetProperty("provider_artifacts").EnumerateArray().Should().HaveCount(2);
         root.GetProperty("grant_inventory").EnumerateArray().Should().HaveCount(2);
@@ -96,16 +96,16 @@ public class Given_CdcProviderManifest_Emitter
     {
         var result = BuildManifestResult() with
         {
-            BoundPhysicalSourceFingerprint = new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
-                "bound-physical-source-from-binding"
-            ),
+            BoundPhysicalSourceFingerprint =
+                CdcProviderSetupContractTestData.OtherPostgresqlSourceFingerprint,
         };
 
         var payload = CdcProviderManifestEmitter.CreatePayload(result);
 
-        payload.Json.Should().Contain("observed-source");
-        payload.Json.Should().NotContain("bound-physical-source-from-binding");
+        payload.Json.Should().Contain(CdcProviderSetupContractTestData.PostgresqlSourceFingerprint.Value);
+        payload
+            .Json.Should()
+            .NotContain(CdcProviderSetupContractTestData.OtherPostgresqlSourceFingerprint.Value);
         payload.Json.Should().NotContain("effective_schema_hash");
         payload.Json.Should().NotContain("resource_key_seed_hash");
         payload.Json.Should().NotContain("relational_mapping_version");
@@ -122,14 +122,8 @@ public class Given_CdcProviderManifest_Emitter
             Provider: CdcProvider.Postgresql,
             Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
             Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
-            BoundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
-                "bound-source"
-            ),
-            ObservedSourceFingerprint: new CdcSourceFingerprint(
-                "dms-source-fingerprint-v1",
-                "observed-source"
-            ),
+            BoundPhysicalSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint,
+            ObservedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint,
             ArtifactInventory:
             [
                 new CdcProviderArtifactObservation(
@@ -295,10 +289,7 @@ public class Given_CdcProviderManifest_Setup_Service
             (_, _) =>
                 Task.FromResult(
                     new CdcProviderSetupStepResult(
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "observed-source"
-                        ),
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint,
                         artifactInventory:
                         [
                             new CdcProviderArtifactObservation(

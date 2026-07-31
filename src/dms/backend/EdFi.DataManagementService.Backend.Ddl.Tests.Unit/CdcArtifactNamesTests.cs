@@ -178,10 +178,7 @@ public class Given_CdcArtifactNames_Exact_Match_Validation
                         CdcProviderArtifactKind.SourceFingerprint,
                         CdcSourceFingerprintMetadata.SafeArtifactName,
                         canCreateInInitialSetup: false,
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "source-123"
-                        )
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.SqlServerSourceFingerprint
                     ),
                     RecordingStep.Create(
                         CdcProviderArtifactKind.SqlServerCaptureInstance,
@@ -216,10 +213,7 @@ public class Given_CdcArtifactNames_Exact_Match_Validation
                         CdcProviderArtifactKind.SourceFingerprint,
                         CdcSourceFingerprintMetadata.SafeArtifactName,
                         canCreateInInitialSetup: false,
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "source-123"
-                        ),
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.SqlServerSourceFingerprint,
                         grantInventory:
                         [
                             new CdcGrantObservation(

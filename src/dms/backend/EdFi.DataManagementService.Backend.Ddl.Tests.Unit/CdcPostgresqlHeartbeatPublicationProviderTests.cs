@@ -113,7 +113,7 @@ public class Given_PostgresqlCdcHeartbeatPublication_Initial_Setup
     {
         _result
             .ObservedSourceFingerprint.Should()
-            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", "source-123"));
+            .Be(CdcProviderSetupContractTestData.PostgresqlSourceFingerprint);
         _result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -121,18 +121,16 @@ public class Given_PostgresqlCdcHeartbeatPublication_Initial_Setup
                 && observation.SafeArtifactName.Value == "dms.DataStoreIdentity"
                 && observation.State == CdcProviderArtifactState.Matched
                 && observation.SafeObservedValues["source_fingerprint_version"] == "dms-source-fingerprint-v1"
-                && observation.SafeObservedValues["source_identity"] == "source-123"
+                && observation.SafeObservedValues["physical_source_fingerprint"]
+                    == CdcProviderSetupContractTestData.PostgresqlSourceFingerprint.Value
+                && observation.SafeObservedValues["provider_token"] == "postgresql"
+                && !observation.SafeObservedValues.ContainsKey("source_identity")
             );
+        _result.ManifestPayload!.Json.Should().Contain("\"observed_source_fingerprint\": {");
         _result
-            .ManifestPayload!.Json.Should()
-            .Contain(
-                """
-                  "observed_source_fingerprint": {
-                    "version": "dms-source-fingerprint-v1",
-                    "value": "source-123"
-                  }
-                """
-            );
+            .ManifestPayload.Json.Should()
+            .Contain($"\"value\": \"{CdcProviderSetupContractTestData.PostgresqlSourceFingerprint.Value}\"");
+        _result.ManifestPayload.Json.Should().NotContain(CdcProviderSetupContractTestData.SourceIdentity);
     }
 }
 
@@ -722,7 +720,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         string connectorDocumentCacheWritePrivileges = "",
         string connectorWorkTablePrivileges = "",
         string connectorExtraDmsSelectTables = "",
-        string sourceIdentity = "source-123"
+        string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity
     )
     {
         _heartbeatTableExists = heartbeatTableExists;

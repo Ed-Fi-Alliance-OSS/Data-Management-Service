@@ -463,7 +463,7 @@ public class Given_MssqlCdcProviderAccessRetry
         var result = await RunSetupAsync(
             connection,
             CdcProviderSetupMode.InitialCreateOrExactMatch,
-            boundSourceIdentity: "mismatched-source"
+            boundSourceIdentity: "11111111-1111-1111-1111-111111111111"
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -489,8 +489,8 @@ public class Given_MssqlCdcProviderAccessRetry
             new CdcProviderSetupRequest(
                 provider: CdcProvider.SqlServer,
                 mode: mode,
-                boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                    "dms-source-fingerprint-v1",
+                boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                    CdcProvider.SqlServer,
                     boundSourceIdentity ?? await ReadDataStoreIdentityAsync(connection)
                 ),
                 setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("sa")),

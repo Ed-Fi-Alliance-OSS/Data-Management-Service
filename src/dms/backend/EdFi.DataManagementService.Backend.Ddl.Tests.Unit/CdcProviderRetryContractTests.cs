@@ -96,7 +96,7 @@ public class Given_CdcProviderRetryContract_Initial_Setup
                 CdcProviderArtifactKind.SourceFingerprint,
                 CdcSourceFingerprintMetadata.SafeArtifactName,
                 canCreateInInitialSetup: false,
-                observedSourceFingerprint: new CdcSourceFingerprint("dms-source-fingerprint-v1", "source-123")
+                observedSourceFingerprint: CdcProviderSetupContractTestData.PostgresqlSourceFingerprint
             ),
             RecordingStep.Create(
                 CdcProviderArtifactKind.HeartbeatTable,
@@ -305,10 +305,7 @@ public class Given_CdcProviderRetryContract_Fail_Closed_Mismatches
                         CdcProviderArtifactKind.SourceFingerprint,
                         CdcSourceFingerprintMetadata.SafeArtifactName,
                         canCreateInInitialSetup: false,
-                        observedSourceFingerprint: new CdcSourceFingerprint(
-                            "dms-source-fingerprint-v1",
-                            "other-source"
-                        )
+                        observedSourceFingerprint: CdcProviderSetupContractTestData.OtherPostgresqlSourceFingerprint
                     ),
                     laterCreateStep.ToSetupStep(CdcProviderArtifactKind.PostgresqlPublication),
                 ]

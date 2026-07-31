@@ -164,8 +164,8 @@ public class Given_PostgresqlCdcProviderArtifacts
             new CdcProviderSetupRequest(
                 provider: CdcProvider.Postgresql,
                 mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-                boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                    "dms-source-fingerprint-v1",
+                boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                    CdcProvider.Postgresql,
                     await ReadDataStoreIdentityAsync(connection)
                 ),
                 setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("postgres")),

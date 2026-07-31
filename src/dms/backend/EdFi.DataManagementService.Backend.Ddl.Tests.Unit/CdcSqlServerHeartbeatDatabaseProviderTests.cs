@@ -107,7 +107,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
     {
         _result
             .ObservedSourceFingerprint.Should()
-            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", "source-123"));
+            .Be(CdcProviderSetupContractTestData.SqlServerSourceFingerprint);
         _result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -115,18 +115,16 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && observation.SafeArtifactName.Value == "dms.DataStoreIdentity"
                 && observation.State == CdcProviderArtifactState.Matched
                 && observation.SafeObservedValues["source_fingerprint_version"] == "dms-source-fingerprint-v1"
-                && observation.SafeObservedValues["source_identity"] == "source-123"
+                && observation.SafeObservedValues["physical_source_fingerprint"]
+                    == CdcProviderSetupContractTestData.SqlServerSourceFingerprint.Value
+                && observation.SafeObservedValues["provider_token"] == "sqlserver"
+                && !observation.SafeObservedValues.ContainsKey("source_identity")
             );
+        _result.ManifestPayload!.Json.Should().Contain("\"observed_source_fingerprint\": {");
         _result
-            .ManifestPayload!.Json.Should()
-            .Contain(
-                """
-                  "observed_source_fingerprint": {
-                    "version": "dms-source-fingerprint-v1",
-                    "value": "source-123"
-                  }
-                """
-            );
+            .ManifestPayload.Json.Should()
+            .Contain($"\"value\": \"{CdcProviderSetupContractTestData.SqlServerSourceFingerprint.Value}\"");
+        _result.ManifestPayload.Json.Should().NotContain(CdcProviderSetupContractTestData.SourceIdentity);
     }
 
     [Test]
@@ -879,7 +877,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobLastRunStatus = "",
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
-        string sourceIdentity = "source-123"
+        string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
