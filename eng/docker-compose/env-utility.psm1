@@ -1549,6 +1549,207 @@ function Move-EnvFileKeyBeforeAnotherKey {
     [System.IO.File]::WriteAllText($Path, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
+function Get-ComposeServiceIdentityValue {
+    <#
+    .SYNOPSIS
+        The literal identity declared by a `container_name:` / `hostname:` line, or $null when the value is
+        not a token this function will admit as a network identity.
+
+    .DESCRIPTION
+        Applied in order: strip an inline comment, trim, drop one matching pair of surrounding quotes, then
+        admit only an identifier-shaped token.
+
+        The final identifier check is authoritative, and deliberately STRICTER than Compose - `docker
+        compose config` does not validate `container_name` content at all, accepting values such as
+        "bad name" and "db#1". This value decides which endpoint the Configuration Service may talk to, so
+        anything that is not a plain hostname-shaped token is not admitted. That single rule is what makes
+        several shapes narrow the accepted set rather than widen it:
+
+          - an interpolated value ("${DB_HOST:-x}") contains characters outside the set;
+          - a comment strip that mangled a quoted value ('"a # b"' -> '"a') fails the check, so mangled
+            text can never become an accepted partial value;
+          - a name with a space, or an empty value, fails the check.
+
+    .OUTPUTS
+        [string] the admitted identity, or $null.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$RawValue
+    )
+
+    # An inline comment starts at the first '#' that is preceded by whitespace, or at the start of the
+    # value. YAML requires that separating whitespace, which is why a '#' inside a token (db#1) is left
+    # alone here and rejected by the identifier check below instead.
+    $text = $RawValue
+    $commentMatch = [regex]::Match($text, '(^|[ \t])#')
+    if ($commentMatch.Success) { $text = $text.Substring(0, $commentMatch.Index) }
+
+    $text = $text.Trim()
+    if ($text.Length -ge 2) {
+        $quote = $text[0]
+        if (($quote -eq '"' -or $quote -eq "'") -and $text[$text.Length - 1] -eq $quote) {
+            $text = $text.Substring(1, $text.Length - 2)
+        }
+    }
+
+    if ($text -match '^[A-Za-z0-9][A-Za-z0-9_.-]*$') { return $text }
+    return $null
+}
+
+function Get-ComposeDatabaseServiceHostAlias {
+    <#
+    .SYNOPSIS
+        Every name the composed database service answers to on the shared Compose network, read from the
+        engine's own compose file.
+
+    .DESCRIPTION
+        On a user-defined Docker network a service is reachable by its service key, by its
+        `container_name`, and by its `hostname`. Both postgresql.yml and mssql.yml deliberately name the
+        service `db` - mssql.yml's own header says so, to make it a drop-in swap for postgresql.yml - while
+        setting `container_name`/`hostname` to `dms-postgresql` / `dms-mssql`. All of those address the
+        same database, so a CMS connection string may legitimately use any of them.
+
+        The list is DERIVED, not hard-coded, so renaming the service, container, or hostname in a compose
+        file cannot leave endpoint validation asserting a name the stack no longer answers to.
+
+        This is a targeted read of a known file shape, NOT a general YAML parser. Because the accepted-host
+        set is safety-relevant, the read is an explicit state machine with enumerated fail-closed outcomes
+        rather than a set of accept/skip rules - three successive reviews each found a different input shape
+        that slipped through the rule-based version, twice returning a wrong host.
+
+        States, and the only transitions between them:
+
+          SeekServices      -- `^services:[ ]*(#.*)?$` at column 0 --> SeekFirstService
+                               end of file                         --> throw (no services mapping)
+
+          SeekFirstService  -- the FIRST meaningful line here is authoritative and is consumed exactly
+                               once. There is deliberately NO path back into this state, which is what
+                               guarantees a later sibling can never be adopted as the database service:
+                                 indent 0 or end of file           --> throw (no service entry)
+                                 `^(?<indent> +)(?<name>[A-Za-z0-9_.-]+):[ ]*(#.*)?$` --> InService
+                                 anything else                     --> throw (unsupported header)
+
+          InService         -- indent <= the service key's indent   --> Complete (sibling service, or a
+                                                                       top-level key after `services:`)
+                               the first deeper line establishes the direct-child indent; only lines AT
+                               that indent are considered, so keys inside a nested mapping
+                               (environment:, healthcheck:, labels:, ...) are not identities
+                               `container_name:` / `hostname:` at that indent --> Get-ComposeServiceIdentityValue
+
+        Blank and comment-only lines never establish state: they do not satisfy "the first entry under
+        services:" and they do not establish the child indent. Indentation is counted in SPACES only; a
+        tab-indented compose file is rejected by Compose itself, so treating a tab as non-indentation
+        routes such a file deterministically to a fail-closed outcome instead of to a guess.
+
+        Unsupported first-service headers - anchors, aliases, merge keys, quoted keys, inline mappings,
+        sequence entries - all fail closed, even though Compose accepts them, because the alternative is a
+        validator that silently stops protecting the invariant it exists for. Diagnostics name the file and
+        line number and never echo line content, so a compose line carrying an interpolated reference to a
+        secret cannot be disclosed by a parse failure.
+
+    .OUTPUTS
+        [string[]] one or more distinct host names, in file order, service key first.
+    #>
+    param(
+        [Parameter(Mandatory)] [ValidateSet("postgresql", "mssql")] [string]$DatabaseEngine,
+        [string]$DockerComposeRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) { $DockerComposeRoot = $PSScriptRoot }
+    $composeFile = Join-Path $DockerComposeRoot "$DatabaseEngine.yml"
+
+    # With no compose file to read, fall back to the canonical container name ONLY - never to a guessed
+    # service key. Absent input must not widen what endpoint validation accepts; it may only narrow it back
+    # to the historical behavior. In production the compose files sit beside this module, so this path is
+    # reached by isolated harnesses that stage the module without the .yml files.
+    if (-not (Test-Path -LiteralPath $composeFile -PathType Leaf)) {
+        return @("dms-$DatabaseEngine")
+    }
+
+    $aliases = [System.Collections.Generic.List[string]]::new()
+    $state = "SeekServices"
+    $serviceIndent = -1
+    $childIndent = -1
+    $lineNumber = 0
+    foreach ($line in [System.IO.File]::ReadAllLines($composeFile)) {
+        $lineNumber++
+
+        # Blank and comment-only lines never establish state: they neither satisfy "the first entry under
+        # services:" nor establish the direct-child indent.
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line -match '^ *#') { continue }
+
+        # Spaces only. A tab in the indentation makes this 0, which routes the line to a fail-closed
+        # outcome rather than to a guess - correct, because Compose rejects a tab-indented file outright.
+        $indent = [regex]::Match($line, '^ *').Value.Length
+
+        if ($state -eq "SeekServices") {
+            if ($line -match '^services:[ ]*(#.*)?$') { $state = "SeekFirstService" }
+            continue
+        }
+
+        if ($state -eq "SeekFirstService") {
+            # Authoritative and consumed exactly once. Either this line IS the database service or the
+            # file is not in a shape this function reads; the state changes either way, so no later
+            # sibling can be adopted. Scanning forward from here is what let `db: # primary`,
+            # `db: &database`, `"db":`, and `db: {...}` hand the accepted-host set to a DIFFERENT
+            # container - the correct identities absent and a wrong one accepted.
+            if ($indent -eq 0) {
+                throw "Get-ComposeDatabaseServiceHostAlias: 'services:' in '$composeFile' declares no service entry."
+            }
+
+            $serviceMatch = [regex]::Match($line, '^(?<indent> +)(?<name>[A-Za-z0-9_.-]+):[ ]*(#.*)?$')
+            if (-not $serviceMatch.Success) {
+                throw "Get-ComposeDatabaseServiceHostAlias: the first service entry in '$composeFile' at line $lineNumber does not use the supported 'name:' header form; anchors, aliases, quoted keys, and inline mappings are not supported here."
+            }
+
+            $serviceIndent = $indent
+            $aliases.Add($serviceMatch.Groups['name'].Value)
+            $state = "InService"
+            continue
+        }
+
+        # Anything back at or above the service key's own level ends this service's block: the next
+        # service, or a top-level key following the services: mapping. Purely indentation-based, because a
+        # rule that also required the line to LOOK like a bare key let a differently-shaped line at that
+        # level fall through and the walk continue into the next service.
+        if ($indent -le $serviceIndent) { break }
+
+        # Only DIRECT children of the service are network identities. The service's children all share
+        # one indent, established by the first of them; anything deeper belongs to a nested mapping such
+        # as environment:, healthcheck:, or labels:, where a key spelled "hostname" is an environment
+        # variable, a probe argument, or a label - not a name the container answers to. Matching at any
+        # depth would let
+        #
+        #     environment:
+        #       hostname: unrelated-host
+        #
+        # widen the accepted endpoint set to an unrelated host. The rule is "at the child indent", not
+        # "before the first nested block", so a service-level alias declared after one is still read.
+        if ($childIndent -lt 0) { $childIndent = $indent }
+        if ($indent -ne $childIndent) { continue }
+
+        $aliasMatch = [regex]::Match($line, '^ +(?:container_name|hostname):[ ]*(?<raw>.*)$')
+        if (-not $aliasMatch.Success) { continue }
+
+        $value = Get-ComposeServiceIdentityValue -RawValue $aliasMatch.Groups['raw'].Value
+        if ($null -eq $value) { continue }
+        if (-not $aliases.Contains($value)) { $aliases.Add($value) }
+    }
+
+    if ($state -eq "SeekServices") {
+        throw "Get-ComposeDatabaseServiceHostAlias: no top-level 'services:' mapping found in '$composeFile'."
+    }
+    if ($state -eq "SeekFirstService") {
+        throw "Get-ComposeDatabaseServiceHostAlias: 'services:' in '$composeFile' declares no service entry."
+    }
+
+    # Plain @() rather than the ",@()" no-unroll idiom used elsewhere in this module: the caller wraps the
+    # result in @() itself, and the two together nest the array inside a one-element array that
+    # stringifies as "db dms-postgresql" - which then matches no host at all.
+    return @($aliases)
+}
+
 function Get-ConnectionStringSegmentDifference {
     <#
     .SYNOPSIS
@@ -2236,7 +2437,10 @@ function Confirm-CmsDatabaseTopologyAgreement {
     # resolver, this function no longer reads through ReadValuesFromEnvFile at all.
     $sequential = Resolve-DotenvFileSequentially -Path $EnvironmentFile
     $datastoreNameKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
-    $expectedHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+    # Deliberately a single name, and NOT the accepted-host set computed further down: this one
+    # reconstructs the connection string Compose's own inline fallback renders when the file declares
+    # none, so it must be the exact host that fallback names. A test pins it to a real Compose render.
+    $inlineFallbackHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
     $expectedPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
     $nameComparison = if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
 
@@ -2298,7 +2502,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
         else {
             $postgresPassword = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "POSTGRES_PASSWORD")
             $defaultConnectionString = Get-CmsDatabaseTopologyDefaultConnectionString `
-                -ExpectedHost $expectedHost `
+                -ExpectedHost $inlineFallbackHost `
                 -ExpectedPort $expectedPort `
                 -ExpectedDatabaseName $expectedDatabaseName `
                 -PostgresPassword $postgresPassword
@@ -2319,9 +2523,23 @@ function Confirm-CmsDatabaseTopologyAgreement {
     if ($actualEndpoints.Count -eq 0) {
         throw "Confirm-CmsDatabaseTopologyAgreement: DMS_CONFIG_DATABASE_CONNECTION_STRING must include a host key recognized for '$DatabaseEngine' so the CMS database endpoint can be verified."
     }
+    # The database service is reachable under more than one name on the shared Compose network, and all of
+    # them denote the SAME container: the service key under `services:` (deliberately `db` in both
+    # postgresql.yml and mssql.yml so either file is a drop-in swap), plus that service's
+    # `container_name:` and `hostname:`. Accepting only `dms-<engine>` rejected a connection string using
+    # the service name, which is a legitimate way to address exactly this database.
+    #
+    # The set is derived from the compose file itself rather than listed here, so renaming the service,
+    # container, or hostname cannot leave this validation silently out of step with the stack it validates.
+    # Host-side names (localhost, 127.0.0.1) are deliberately NOT accepted: this connection string is the
+    # container's, and accepting them would mask a genuinely wrong endpoint.
+    $acceptedHosts = @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine $DatabaseEngine -DockerComposeRoot $PSScriptRoot)
     foreach ($actualEndpoint in $actualEndpoints) {
-        if (-not [string]::Equals($actualEndpoint.Host, $expectedHost, [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "CMS database topology mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets host '$($actualEndpoint.Host)', but the effective topology contract requires '$expectedHost'."
+        $hostIsAccepted = @($acceptedHosts | Where-Object {
+            [string]::Equals($actualEndpoint.Host, $_, [System.StringComparison]::OrdinalIgnoreCase)
+        }).Count -gt 0
+        if (-not $hostIsAccepted) {
+            throw "CMS database topology mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets host '$($actualEndpoint.Host)', but the effective topology contract requires the composed database service, addressable as $(($acceptedHosts | ForEach-Object { "'$_'" }) -join ' or ')."
         }
         $actualPort = if ([string]::IsNullOrWhiteSpace($actualEndpoint.Port)) { $expectedPort } else { $actualEndpoint.Port }
         if (-not [string]::Equals($actualPort, $expectedPort, [System.StringComparison]::Ordinal)) {

@@ -264,17 +264,30 @@ if (-not $d) {
         throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
     }
 
+    if ($DbOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
+        throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DbOnly."
+    }
+
+    if ($NoDataStore -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+        throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores."
+    }
+
     # -DataStoreDatabaseName renames the DMS datastore database for the CMS data-store record,
     # AFTER topology validation has already run - so it could silently reintroduce the very
     # sharing -SeparateConfigDatabase exists to remove. Distinctness is enforced here, at the same
-    # fail-fast boundary as the other parameter rules, but only for the startup shape that reaches
-    # the data-store registration below: -InfraOnly, -DmsOnly, and -DbOnly return before it, and
-    # -NoDataStore (without -SchoolYearRange) skips it, so the parameter is inert there and the
-    # switch combination stays a no-op, matching continuation behavior. The comparison follows the
-    # engine's identifier semantics: SQL Server database names are case-insensitive; PostgreSQL
-    # names are case-sensitive, so a case-variant IS a physically distinct database there.
-    $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly) -and
-        (-not $NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange))
+    # fail-fast boundary as the other parameter rules, but deliberately AFTER them: this check is new,
+    # and an invalid parameter shape must keep reporting the established diagnostic that describes it.
+    # Placed first, it masked "-NoDataStore and -SchoolYearRange are mutually exclusive" for a caller who
+    # had made that mistake and happened to also pass the reserved database name.
+    #
+    # It applies only to a shape that actually reaches the data-store registration below: -InfraOnly,
+    # -DmsOnly, and -DbOnly all return before it, and -NoDataStore skips it. Because -NoDataStore and
+    # -SchoolYearRange are mutually exclusive - rejected immediately above - -NoDataStore always means the
+    # registration is skipped, so the parameter is inert in that shape too and the switch combination
+    # stays a no-op, matching continuation behavior. The comparison follows the engine's identifier
+    # semantics: SQL Server database names are case-insensitive; PostgreSQL names are case-sensitive, so
+    # a case-variant IS a physically distinct database there.
+    $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly -or $NoDataStore)
     $databaseNameComparison =
         if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase }
         else { [System.StringComparison]::Ordinal }
@@ -282,14 +295,6 @@ if (-not $d) {
         -not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName) -and
         [string]::Equals($DataStoreDatabaseName, "edfi_configurationservice", $databaseNameComparison)) {
         throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of."
-    }
-
-    if ($DbOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
-        throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DbOnly."
-    }
-
-    if ($NoDataStore -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
-        throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores."
     }
 
     # Resolved once with Compose precedence and reused by the data-store creation below, so the
