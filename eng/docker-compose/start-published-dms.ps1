@@ -286,15 +286,26 @@ if (-not $d) {
     # registration is skipped, so the parameter is inert in that shape too and the switch combination
     # stays a no-op, matching continuation behavior.
     #
-    # WHETHER a name collides is not decided here. Test-DatastoreNameCollidesWithReservedCmsDatabase is the
-    # single authority, shared with Confirm-CmsDatabaseTopologyAgreement, and it models the unquoted
-    # CREATE DATABASE the local datastore path actually runs rather than applying a per-engine string
-    # comparison. A second copy of that judgment here is what previously let this script and the validator
-    # disagree about a PostgreSQL case variant.
+    # WHETHER a name collides is decided by Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase,
+    # and that is deliberately NOT the predicate Confirm-CmsDatabaseTopologyAgreement uses. The two ask
+    # about different physical creation mechanisms: -DataStoreDatabaseName never reaches
+    # postgresql-init.sh's unquoted CREATE DATABASE. It is copied verbatim into the datastore connection
+    # string registered in CMS below, and SchemaTools creates the database with a QUOTED identifier - so
+    # on PostgreSQL nothing folds, only this exact name collides, and a mixed-case name is a genuinely
+    # distinct database. Sharing one engine-neutral predicate across both call sites is what made this
+    # script reject that distinct PostgreSQL database while the validator accepted a colliding one.
     $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly -or $NoDataStore)
     if ($SeparateConfigDatabase -and $dataStoreRegistrationRuns -and
-        (Test-DatastoreNameCollidesWithReservedCmsDatabase -DatastoreDatabaseName $DataStoreDatabaseName)) {
-        throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' (or any case variant of it) with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. The local datastore is created with an unquoted CREATE DATABASE, which PostgreSQL folds to lower case; SQL Server matches database names case-insensitively."
+        (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $DataStoreDatabaseName)) {
+        # Names the parameter and the reserved literal only - never the caller's own value.
+        $collisionRule =
+            if ($DatabaseEngine -eq "mssql") {
+                "SQL Server matches database names case-insensitively, so a case variant of that name is the same database."
+            }
+            else {
+                "On PostgreSQL the name is used verbatim - SchemaTools creates it with a quoted identifier - so only this exact name collides."
+            }
+        throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. $collisionRule"
     }
 
     # Resolved once with Compose precedence and reused by the data-store creation below, so the

@@ -2048,47 +2048,132 @@ function Get-DotenvDependencyClosure {
     return @($closure)
 }
 
-function Test-DatastoreNameCollidesWithReservedCmsDatabase {
+# The characters PostgreSQL's SQL lexer discards around an UNQUOTED identifier, and nothing more.
+# Measured against postgres:16 by running postgresql-init.sh's own statement form,
+# `CREATE DATABASE ${POSTGRES_DB_NAME};`, and reading pg_database back:
+#
+#   space (0x20), tab (0x09), LF (0x0A), CR (0x0D), FF (0x0C) - discarded, leading or trailing, so
+#     the identifier folds to edfi_configurationservice and the datastore lands in the database the
+#     separate topology reserves for CMS;
+#   vertical tab (0x0B) - NOT lexer whitespace: the statement fails with `syntax error at or near ""`;
+#   no-break space (0xA0) - an identifier character: it creates a genuinely DIFFERENT database
+#     (datname hex ends c2a0).
+#
+# The set is therefore passed to Trim explicitly, and String.Trim() with no argument is wrong here:
+# .NET counts both 0x0B and 0xA0 as whitespace, and trimming either would report a collision for a
+# name that in fact fails outright or names another database.
+$script:PostgresUnquotedIdentifierTrimCharacter = [char[]]@(
+    [char]0x20, [char]0x09, [char]0x0A, [char]0x0D, [char]0x0C
+)
+
+function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
     <#
     .SYNOPSIS
-        True when a DMS datastore database name would land in the SAME physical database as
-        'edfi_configurationservice', the dedicated Configuration Service database that
-        -SeparateConfigDatabase establishes.
+        True when the datastore database the LOCAL INITIALIZATION path creates from POSTGRES_DB_NAME /
+        MSSQL_DB_NAME would be the SAME physical database as 'edfi_configurationservice', the dedicated
+        Configuration Service database that -SeparateConfigDatabase establishes.
 
     .DESCRIPTION
-        Models this repository's own local datastore creation path, and nothing else. It is deliberately
-        NOT a general database-name comparison and must not be reused as one.
+        Models ONE creation mechanism: the database the local initialization path itself creates from the
+        engine's datastore-name environment key. It is deliberately not a general database-name comparison,
+        and it is NOT the authority for -DataStoreDatabaseName - that value never reaches this mechanism
+        and has its own predicate, Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase.
 
-        PostgreSQL: postgresql-init.sh creates the datastore with an UNQUOTED
-        `CREATE DATABASE ${POSTGRES_DB_NAME};`, and PostgreSQL folds an unquoted identifier to lower case.
-        POSTGRES_DB_NAME=EDFI_ConfigurationService therefore creates edfi_configurationservice - the very
-        database the separate topology reserves for CMS. An ordinal comparison here approved exactly that
-        configuration while promising two physically distinct databases.
+        PostgreSQL: postgresql-init.sh runs `CREATE DATABASE ${POSTGRES_DB_NAME};` with the identifier NOT
+        SQL-quoted. PostgreSQL folds an unquoted identifier to lower case AND its lexer discards the
+        whitespace around it, so POSTGRES_DB_NAME=EDFI_ConfigurationService and
+        POSTGRES_DB_NAME='EDFI_ConfigurationService ' both create edfi_configurationservice. The comparison
+        therefore trims the measured lexer-whitespace set - see
+        $script:PostgresUnquotedIdentifierTrimCharacter for exactly what was measured, and for the two
+        characters deliberately excluded - and then ignores case.
 
-        SQL Server: New-MssqlCreateDatabaseStatement bracket-quotes the identifier, which prevents folding,
-        but a database name is matched under the server's collation and the default is case-insensitive, so
-        a case variant names the same database there too.
+        SQL Server: the identifier is bracket-quoted, so it does not fold, but a database name is matched
+        under the server's collation and the default is case-insensitive, so a case variant names the same
+        database. Whitespace is deliberately NOT normalized on this engine: that keeps its established
+        behavior, and the two engines' normalizations are not interchangeable.
 
-        Both engines answer identically, for different reasons, so this predicate takes no -DatabaseEngine
-        parameter: an inert engine branch here is what let the two answers drift apart in the first place.
-        Every OTHER database-name comparison keeps its own semantics - notably a resolved connection-string
-        database name, which is not an unquoted identifier, does not fold, and stays ordinal
-        case-sensitive on PostgreSQL.
+        -DatabaseEngine is mandatory. The engine selects a physical creation mechanism and the mechanisms
+        answer differently; an engine-neutral answer covering both call sites is what previously accepted a
+        colliding PostgreSQL name here while rejecting a distinct one at the other call site.
+
+    .PARAMETER DatabaseEngine
+        "postgresql" or "mssql" - which local initialization mechanism creates the datastore database.
 
     .PARAMETER DatastoreDatabaseName
-        The DMS datastore database name: either resolved with Compose precedence, or taken straight from a
-        caller parameter. A blank name is not a collision - callers report absence separately.
+        The datastore database name resolved with Compose precedence from POSTGRES_DB_NAME or
+        MSSQL_DB_NAME. A blank name is not a collision - callers report absence separately.
     #>
     param(
+        [Parameter(Mandatory)] [ValidateSet("postgresql", "mssql")] [string]$DatabaseEngine,
         [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatastoreDatabaseName
     )
 
     if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
 
+    $createdIdentifier =
+        if ($DatabaseEngine -eq "mssql") {
+            $DatastoreDatabaseName
+        }
+        else {
+            $DatastoreDatabaseName.Trim($script:PostgresUnquotedIdentifierTrimCharacter)
+        }
+
     return [string]::Equals(
-        $DatastoreDatabaseName,
+        $createdIdentifier,
         "edfi_configurationservice",
         [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
+    <#
+    .SYNOPSIS
+        True when the datastore database name REGISTERED by an explicit -DataStoreDatabaseName would be
+        the SAME physical database as the dedicated 'edfi_configurationservice'.
+
+    .DESCRIPTION
+        Models the OTHER creation mechanism, and must not be confused with the local initialization path:
+        -DataStoreDatabaseName is copied verbatim into the datastore connection string registered in CMS,
+        and the database itself is created by SchemaTools. It never reaches postgresql-init.sh, so the
+        unquoted-identifier folding that governs
+        Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase does not apply and must not be
+        borrowed here.
+
+        PostgreSQL: SchemaTools creates the database with a QUOTED identifier
+        (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), and a connection string's database
+        name is passed verbatim. Neither folds, so EDFI_ConfigurationService is a genuinely distinct
+        physical database from edfi_configurationservice - measured, both coexisting in pg_database. The
+        comparison is therefore ORDINAL and exact: only the reserved name itself collides, and rejecting a
+        mixed-case name here would refuse a working configuration.
+
+        SQL Server: the name is matched under the server's collation, whose default is case-insensitive,
+        so a case variant does name the same database.
+
+        -DatabaseEngine is mandatory: on this path the two engines genuinely disagree, so there is no
+        engine-neutral answer to give.
+
+    .PARAMETER DatabaseEngine
+        "postgresql" or "mssql" - which provider selects or creates the registered database.
+
+    .PARAMETER DatastoreDatabaseName
+        The caller's explicit -DataStoreDatabaseName value. A blank name means the datastore name was not
+        overridden at all and is never a collision.
+    #>
+    param(
+        [Parameter(Mandatory)] [ValidateSet("postgresql", "mssql")] [string]$DatabaseEngine,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatastoreDatabaseName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
+
+    $comparison =
+        if ($DatabaseEngine -eq "mssql") {
+            [System.StringComparison]::OrdinalIgnoreCase
+        }
+        else {
+            [System.StringComparison]::Ordinal
+        }
+
+    return [string]::Equals($DatastoreDatabaseName, "edfi_configurationservice", $comparison)
 }
 
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
@@ -2627,8 +2712,9 @@ function Confirm-CmsDatabaseTopologyAgreement {
     # Governs the RESOLVED database names compared below - the connection string's own database segments
     # and an ambient DMS_CONFIG_DATABASE_NAME override. Neither is an unquoted SQL identifier, so neither
     # folds, and PostgreSQL stays case-sensitive for both. It deliberately does NOT govern the
-    # datastore-versus-reserved-CMS-name collision, which models the unquoted CREATE DATABASE the local
-    # datastore path runs and belongs to Test-DatastoreNameCollidesWithReservedCmsDatabase.
+    # datastore-versus-reserved-CMS-name collision: that answer is fixed by the mechanism that physically
+    # CREATES the datastore database, which is
+    # Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase.
     $nameComparison = if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
 
     # The marker comes from its own raw declaration through the shared assignment model, then through
@@ -2665,13 +2751,23 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # Separate mode's whole promise is two physically distinct databases. A datastore name that would
         # land in the dedicated CMS database would pass every equality check below while both services
         # silently share one database, so distinctness is proven explicitly - and it is proven by the
-        # single collision authority, which models the unquoted CREATE DATABASE the local datastore path
-        # actually runs rather than comparing two strings under this function's connection-string
-        # comparison rule. Resolved with the same Compose precedence as everything else here, so an
-        # ambient datastore-name override that collides is caught too.
+        # predicate for THIS creation mechanism, the database the local initialization path creates from
+        # $datastoreNameKey, rather than by this function's connection-string comparison rule. The other
+        # call site's -DataStoreDatabaseName reaches a different mechanism and has its own predicate.
+        # Resolved with the same Compose precedence as everything else here, so an ambient datastore-name
+        # override that collides is caught too.
         $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
-        if (Test-DatastoreNameCollidesWithReservedCmsDatabase -DatastoreDatabaseName $datastoreDatabaseName) {
-            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that denotes the same physical database as the dedicated 'edfi_configurationservice' (the local datastore is created with an unquoted CREATE DATABASE, which PostgreSQL folds to lower case; SQL Server matches database names case-insensitively). The resolved value is withheld. Rename the datastore database or use shared mode."
+        if (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $datastoreDatabaseName) {
+            # Engine-specific, because the two mechanisms collide for different reasons and a single
+            # sentence covering both is what made this check look interchangeable with the other one.
+            $collisionReason =
+                if ($DatabaseEngine -eq "mssql") {
+                    "SQL Server matches database names case-insensitively under its default collation"
+                }
+                else {
+                    "postgresql-init.sh creates that database with an unquoted CREATE DATABASE, and PostgreSQL discards the whitespace around an unquoted identifier and folds it to lower case"
+                }
+            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that denotes the same physical database as the dedicated 'edfi_configurationservice' ($collisionReason). The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
 

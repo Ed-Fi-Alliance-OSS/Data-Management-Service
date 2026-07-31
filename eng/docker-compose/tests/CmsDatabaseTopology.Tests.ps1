@@ -3201,19 +3201,18 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
-        It "rejects a -DataStoreDatabaseName case variant on BOTH engines: the datastore creation path folds or collates it (<_>)" -ForEach @('mssql', 'postgresql') {
-            # One authority answers this for both engines, so the two paths cannot drift apart again.
-            # PostgreSQL: postgresql-init.sh runs an UNQUOTED `CREATE DATABASE ${POSTGRES_DB_NAME};`,
-            # which PostgreSQL folds to lower case, so the case-variant creates the reserved CMS
-            # database. SQL Server: database names match under a case-insensitive default collation.
-            # The earlier claim here - that a PostgreSQL case-variant is a physically distinct database
-            # and must be accepted - was wrong, and accepting it silently re-shared the database.
-            $engine = $_
+        It "rejects a -DataStoreDatabaseName case variant on MSSQL, where the server collation resolves it to the same database" {
+            # MSSQL only, and deliberately not "both engines". -DataStoreDatabaseName does NOT reach
+            # postgresql-init.sh's unquoted CREATE DATABASE - it is copied verbatim into the registered
+            # datastore connection string and created by SchemaTools with a QUOTED identifier - so on
+            # PostgreSQL nothing folds and a case variant is a genuinely distinct database. Asserting a
+            # single answer for both engines here rejected that working PostgreSQL configuration; the
+            # PostgreSQL half of this behavior is covered by its own acceptance test.
             $run = Invoke-StartScript {
-                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine $engine -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "$engine resolves the case-variant to the same physical database"
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "SQL Server matches database names case-insensitively"
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
