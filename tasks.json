@@ -109,7 +109,7 @@
       "Run provider integration tests for both PostgreSQL and SQL Server with filters matching cache-ahead latch behavior.",
       "Review tests to confirm stale candidates, missing work, work mismatch, missing source rows, and duplicate writers never set CacheAheadRecoveryRequired."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "fault-injection",

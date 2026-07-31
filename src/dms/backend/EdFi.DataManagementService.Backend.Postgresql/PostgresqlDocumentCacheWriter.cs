@@ -122,7 +122,18 @@ internal sealed class PostgresqlDocumentCacheWriter(
             {
                 await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
-                return await ConfirmCacheAheadAsync(request, connectionString, cancellationToken)
+                return await DocumentCacheWriterCacheAheadIncidentFlow
+                    .ExecuteAsync(
+                        new DocumentCacheWriterCacheAheadIncidentRequest(
+                            RelationalProviderToken.Postgresql,
+                            request.TargetContext.TargetKey,
+                            request.Purpose,
+                            DocumentCacheWriterCacheAheadIncidentFlow.DefaultIncidentTimeout
+                        ),
+                        incidentCancellationToken =>
+                            ConfirmCacheAheadAsync(request, connectionString, incidentCancellationToken),
+                        _logger
+                    )
                     .ConfigureAwait(false);
             }
 
@@ -267,43 +278,28 @@ internal sealed class PostgresqlDocumentCacheWriter(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
-            DocumentCacheWriterClassificationSelection recheckSelection =
-                DocumentCacheWriterClassificationSelector.Select(
-                    new DocumentCacheWriterClassificationRequest(
-                        request.Purpose,
-                        lifecycleReadResult,
-                        currentObservation.ToCurrentState(),
-                        BuildCandidateObservation(request, currentObservation)
-                    )
+            DocumentCacheWriterCacheAheadIncidentDecision recheckDecision =
+                DocumentCacheWriterCacheAheadIncidentFlow.SelectRecheckDecision(
+                    request.Purpose,
+                    lifecycleReadResult,
+                    currentObservation.ToCurrentState(),
+                    BuildCandidateObservation(request, currentObservation)
                 );
 
-            if (!recheckSelection.RequestsCacheAheadLatchFlow)
+            if (recheckDecision.TerminalResult is not null)
             {
                 await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
-                return DocumentCacheWriterResult.CacheAheadDisappeared.Instance;
+                return recheckDecision.TerminalResult;
             }
 
             int latchRows = await SetCacheAheadLatchAsync(connection, transaction, cancellationToken)
                 .ConfigureAwait(false);
-            if (latchRows != 1)
-            {
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
-                transactionCompleted = true;
-                return new DocumentCacheWriterResult.LifecycleOrLatchFenced(
-                    DocumentCacheWriterFenceReason.CacheAheadRecoveryRequired,
-                    lifecycleReadResult.Lifecycle!.State,
-                    cacheAheadRecoveryRequired: true
-                );
-            }
 
             await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
-            return new DocumentCacheWriterResult.CacheAheadLatchSet(
-                currentObservation.SourceContentVersion!.Value,
-                currentObservation.CacheContentVersion!.Value
-            );
+            return DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(recheckDecision, latchRows);
         }
         catch
         {

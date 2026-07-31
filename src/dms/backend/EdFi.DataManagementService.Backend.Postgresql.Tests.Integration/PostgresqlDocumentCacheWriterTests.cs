@@ -146,6 +146,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
         stale.CandidateContentVersion.Should().Be(9);
         (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
     [Test]
@@ -207,6 +208,49 @@ public class Given_A_Postgresql_DocumentCacheWriter
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
     }
 
+    [Test]
+    public async Task It_does_not_set_the_cache_ahead_latch_for_non_cache_ahead_anomalies()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument missingWorkSource = await InsertSourceDocumentAsync(contentVersion: 10);
+        await DeleteWorkAsync(missingWorkSource.DocumentId);
+
+        DocumentCacheWriterResult missingWork = await WriteAsync(missingWorkSource, candidate: null);
+
+        missingWork
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+            .Which.Kind.Should()
+            .Be(DocumentCacheWriterWorkAnomalyKind.MissingWork);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+
+        SourceDocument mismatchedWorkSource = await InsertSourceDocumentAsync(contentVersion: 10);
+        await SetWorkRequiredContentVersionAsync(mismatchedWorkSource.DocumentId, requiredContentVersion: 11);
+
+        DocumentCacheWriterResult mismatchedWork = await WriteAsync(mismatchedWorkSource, candidate: null);
+
+        mismatchedWork
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+            .Which.Kind.Should()
+            .Be(DocumentCacheWriterWorkAnomalyKind.WorkVersionMismatch);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+
+        DocumentCacheWriterResult missingSource = await _writer.WriteAsync(
+            new DocumentCacheWriterRequest(
+                CreateTargetContext(),
+                documentId: 9_999_999,
+                selectedRequiredContentVersion: null,
+                DocumentCacheWriterPurpose.DurableWorkProjection,
+                candidate: null,
+                CancellationToken.None
+            )
+        );
+
+        missingSource.Should().BeSameAs(DocumentCacheWriterResult.SourceMissingOrDeleted.Instance);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
     private async Task<DocumentCacheWriterResult> WriteAsync(
         SourceDocument source,
         DocumentCacheMaterializationCandidate? candidate
@@ -244,6 +288,33 @@ public class Given_A_Postgresql_DocumentCacheWriter
             """,
             new NpgsqlParameter("lifecycleState", lifecycleState.ToString()),
             new NpgsqlParameter("cacheAheadRecoveryRequired", cacheAheadRecoveryRequired)
+        );
+    }
+
+    private async Task DeleteWorkAsync(long documentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM "dms"."DocumentProjectionWork"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+        );
+    }
+
+    private async Task SetWorkRequiredContentVersionAsync(long documentId, long requiredContentVersion)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "dms"."DocumentProjectionWork"
+            SET "RequiredContentVersion" = @requiredContentVersion
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId },
+            new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint)
+            {
+                Value = requiredContentVersion,
+            }
         );
     }
 
