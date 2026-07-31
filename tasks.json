@@ -124,7 +124,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcPrincipalAccess",
       "Review emitted diagnostics and manifest snapshots for absence of credentials and unsafe identifiers."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-heartbeat-database",

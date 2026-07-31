@@ -19,6 +19,7 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
 
     private string _databaseName = null!;
     private string _connectionString = null!;
+    private string _connectorRoleName = null!;
 
     [SetUp]
     public void SetUp()
@@ -27,8 +28,10 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
 
         _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
         _connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+        _connectorRoleName = $"cdc_connector_{_databaseName}";
 
         PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
+        CreateConnectorRole(_connectorRoleName);
 
         var (exitCode, output, error) = ProvisionTestHelper.RunProvision("pgsql", _connectionString);
         exitCode
@@ -43,6 +46,7 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         {
             DropReplicationSlotIfExists();
             PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+            DropConnectorRoleIfExists();
         }
     }
 
@@ -152,7 +156,42 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         ReadHeartbeatSnapshot(connection).Should().Be(beforeValidate);
     }
 
-    private static CdcProviderSetupRequest BuildRequest(
+    [Test]
+    public async Task PostgresqlCdcPrincipalAccess_should_grant_and_validate_connector_principal_boundaries()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        setupResult.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        setupResult.Diagnostics.Should().BeEmpty();
+        setupResult
+            .GrantInventory.Should()
+            .Contain(grant =>
+                grant.SafePrincipalName.Value == _connectorRoleName
+                && grant.SafeObjectName.Value == "dms.Document"
+                && grant.Privileges.SequenceEqual(new[] { "SELECT" })
+            );
+        setupResult
+            .GrantInventory.Should()
+            .Contain(grant =>
+                grant.SafePrincipalName.Value == _connectorRoleName
+                && grant.SafeObjectName.Value == "dms.CdcHeartbeat"
+                && grant.Privileges.SequenceEqual(new[] { "UPDATE" })
+                && grant
+                    .Columns.Select(column => column.Value)
+                    .SequenceEqual(new[] { "HeartbeatSequence", "HeartbeatAt" })
+            );
+
+        AssertConnectorPrincipalAccess(connection);
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        validateResult.Diagnostics.Should().BeEmpty();
+    }
+
+    private CdcProviderSetupRequest BuildRequest(
         ICdcProviderDatabaseExecutor databaseExecutor,
         CdcProviderSetupMode mode
     ) =>
@@ -164,7 +203,7 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
                 "integration-source"
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("postgres")),
-            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("cdc_connector")),
+            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(_connectorRoleName)),
             artifactNames: CdcProviderArtifactNames.ForPostgresql(
                 new CdcSafeName(PublicationName),
                 new CdcSafeName(ReplicationSlotName)
@@ -176,7 +215,7 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             databaseExecutor: databaseExecutor
         );
 
-    private static async Task<CdcProviderSetupResult> RunSetupAsync(
+    private async Task<CdcProviderSetupResult> RunSetupAsync(
         NpgsqlConnection connection,
         CdcProviderSetupMode mode
     )
@@ -185,6 +224,17 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
 
         return await service.SetupAsync(BuildRequest(executor, mode));
+    }
+
+    private static void CreateConnectorRole(string connectorRoleName)
+    {
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"CREATE ROLE {QuoteIdentifier(connectorRoleName)} WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;";
+        command.ExecuteNonQuery();
     }
 
     private static void AssumePostgresqlLogicalReplicationAvailable()
@@ -229,6 +279,98 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             );
             """;
         command.Parameters.AddWithValue("table_name", tableName);
+        return (bool)command.ExecuteScalar()!;
+    }
+
+    private void AssertConnectorPrincipalAccess(NpgsqlConnection connection)
+    {
+        HasDatabasePrivilege(connection, "CONNECT").Should().BeTrue();
+        HasSchemaPrivilege(connection, "dms", "USAGE").Should().BeTrue();
+
+        HasTablePrivilege(connection, "\"dms\".\"Document\"", "SELECT").Should().BeTrue();
+        HasTablePrivilege(connection, "\"dms\".\"DocumentCache\"", "SELECT").Should().BeTrue();
+        HasTablePrivilege(connection, "\"dms\".\"CdcHeartbeat\"", "SELECT").Should().BeTrue();
+        HasTablePrivilege(connection, "\"dms\".\"DocumentProjectionWork\"", "SELECT").Should().BeFalse();
+        HasTablePrivilege(connection, "\"dms\".\"Document\"", "UPDATE").Should().BeFalse();
+        HasTablePrivilege(connection, "\"dms\".\"DocumentCache\"", "UPDATE").Should().BeFalse();
+
+        HasColumnPrivilege(connection, "\"dms\".\"CdcHeartbeat\"", "HeartbeatSequence", "UPDATE")
+            .Should()
+            .BeTrue();
+        HasColumnPrivilege(connection, "\"dms\".\"CdcHeartbeat\"", "HeartbeatAt", "UPDATE").Should().BeTrue();
+        HasColumnPrivilege(connection, "\"dms\".\"CdcHeartbeat\"", "HeartbeatId", "UPDATE")
+            .Should()
+            .BeFalse();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                role_info.rolcanlogin,
+                role_info.rolreplication,
+                role_info.rolsuper,
+                role_info.rolcreatedb,
+                role_info.rolcreaterole,
+                role_info.rolbypassrls
+            FROM pg_catalog.pg_roles role_info
+            WHERE role_info.rolname = @role_name;
+            """;
+        command.Parameters.AddWithValue("role_name", _connectorRoleName);
+
+        using var reader = command.ExecuteReader();
+        reader.Read().Should().BeTrue();
+        reader.GetBoolean(0).Should().BeTrue();
+        reader.GetBoolean(1).Should().BeTrue();
+        reader.GetBoolean(2).Should().BeFalse();
+        reader.GetBoolean(3).Should().BeFalse();
+        reader.GetBoolean(4).Should().BeFalse();
+        reader.GetBoolean(5).Should().BeFalse();
+        reader.Read().Should().BeFalse();
+    }
+
+    private bool HasDatabasePrivilege(NpgsqlConnection connection, string privilege)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT pg_catalog.has_database_privilege(@role_name, current_database(), @privilege);";
+        command.Parameters.AddWithValue("role_name", _connectorRoleName);
+        command.Parameters.AddWithValue("privilege", privilege);
+        return (bool)command.ExecuteScalar()!;
+    }
+
+    private bool HasSchemaPrivilege(NpgsqlConnection connection, string schemaName, string privilege)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_catalog.has_schema_privilege(@role_name, @schema_name, @privilege);";
+        command.Parameters.AddWithValue("role_name", _connectorRoleName);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("privilege", privilege);
+        return (bool)command.ExecuteScalar()!;
+    }
+
+    private bool HasTablePrivilege(NpgsqlConnection connection, string tableName, string privilege)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_catalog.has_table_privilege(@role_name, @table_name, @privilege);";
+        command.Parameters.AddWithValue("role_name", _connectorRoleName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.AddWithValue("privilege", privilege);
+        return (bool)command.ExecuteScalar()!;
+    }
+
+    private bool HasColumnPrivilege(
+        NpgsqlConnection connection,
+        string tableName,
+        string columnName,
+        string privilege
+    )
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT pg_catalog.has_column_privilege(@role_name, @table_name, @column_name, @privilege);";
+        command.Parameters.AddWithValue("role_name", _connectorRoleName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.AddWithValue("column_name", columnName);
+        command.Parameters.AddWithValue("privilege", privilege);
         return (bool)command.ExecuteScalar()!;
     }
 
@@ -433,6 +575,29 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             // The database drop helper still performs final cleanup for cases where the database no longer exists.
         }
     }
+
+    private void DropConnectorRoleIfExists()
+    {
+        try
+        {
+            using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = $"DROP ROLE IF EXISTS {QuoteIdentifier(_connectorRoleName)};";
+            command.ExecuteNonQuery();
+        }
+        catch (PostgresException)
+        {
+            // Database cleanup owns dependent objects; role cleanup is best-effort in teardown.
+        }
+        catch (NpgsqlException)
+        {
+            // Database cleanup owns dependent objects; role cleanup is best-effort in teardown.
+        }
+    }
+
+    private static string QuoteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";
 
     private static ReplicationSlotSnapshot? ReadReplicationSlotSnapshot(NpgsqlConnection connection)
     {

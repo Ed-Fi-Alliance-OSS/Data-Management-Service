@@ -63,6 +63,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 canCreateInInitialSetup: true,
                 ExecuteReplicationSlotAsync
             ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.Grant,
+                request.ConnectorPrincipal.SafePrincipalName,
+                canCreateInInitialSetup: true,
+                ExecuteConnectorPrincipalAccessAsync
+            ),
         ];
     }
 
@@ -539,6 +545,81 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 "CDC_POSTGRESQL_REPLICATION_SLOT_HISTORY_UNAVAILABLE",
                 providerErrorClass: exception.GetType().Name
             );
+        }
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteConnectorPrincipalAccessAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!TryGetExecutor(context, CdcProviderArtifactKind.Grant, out var executor, out var failure))
+        {
+            return failure;
+        }
+
+        var connectorPrincipal = context.Request.ConnectorPrincipal.SafePrincipalName;
+
+        try
+        {
+            var access = await InspectConnectorPrincipalAccessAsync(
+                    executor,
+                    context.Request,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            var state = CdcProviderArtifactState.Matched;
+
+            if (
+                access.IsGrantableMissingPrivilege
+                && context.Mode == CdcProviderSetupStepMode.CreateOrExactMatch
+            )
+            {
+                await executor
+                    .ExecuteNonQueryAsync(GrantConnectorPrivilegesSql(context.Request), cancellationToken)
+                    .ConfigureAwait(false);
+                state = CdcProviderArtifactState.Created;
+                access = await InspectConnectorPrincipalAccessAsync(
+                        executor,
+                        context.Request,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            if (!access.IsExactMatch)
+            {
+                return ConnectorPrincipalAccessResult(
+                    connectorPrincipal,
+                    CdcProviderArtifactState.Mismatched,
+                    access
+                );
+            }
+
+            var result = ConnectorPrincipalAccessResult(connectorPrincipal, state, access);
+
+            if (context.Request.ConnectorPrincipalProbeFactory is null)
+            {
+                return result;
+            }
+
+            var probeResult = await context
+                .Request.ConnectorPrincipalProbeFactory.ProbeAsync(context.Request, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new CdcProviderSetupStepResult(
+                artifactInventory: result.ArtifactInventory,
+                grantInventory: result.GrantInventory.Concat(probeResult.GrantInventory).ToArray(),
+                diagnostics: result.Diagnostics.Concat(probeResult.Diagnostics).ToArray()
+            );
+        }
+        catch (DbException exception)
+        {
+            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
         }
     }
 
@@ -1135,6 +1216,662 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             WHERE slot.slot_name = '{EscapeSqlLiteral(replicationSlotName.Value)}';
             """;
 
+    private static async Task<ConnectorPrincipalAccessInspection> InspectConnectorPrincipalAccessAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(ConnectorPrincipalAccessSql(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Count == 0)
+        {
+            return new ConnectorPrincipalAccessInspection(
+                IsExactMatch: false,
+                IsGrantableMissingPrivilege: false,
+                ObservedValues: new Dictionary<string, string> { ["connector_access"] = "unavailable" },
+                GrantInventory: [],
+                Diagnostics:
+                [
+                    ConnectorPrincipalPrivilegeFailure(
+                        request.ConnectorPrincipal.SafePrincipalName,
+                        "CDC_POSTGRESQL_CONNECTOR_PRIVILEGE_UNAVAILABLE",
+                        expectedValue: "readable-connector-privilege-inventory",
+                        observedValue: "unavailable"
+                    ),
+                ]
+            );
+        }
+
+        var row = rows[0];
+        var roleExists = ReadBool(row, "role_exists");
+        var canLogin = ReadBool(row, "can_login");
+        var canReplicate = ReadBool(row, "can_replicate");
+        var disallowedRoleAttributes = ReadCsv(row, "disallowed_role_attributes");
+        var ownership = ReadCsv(row, "ownership");
+        var hasDatabaseConnect = ReadBool(row, "database_connect");
+        var hasSchemaUsage = ReadBool(row, "schema_usage");
+        var hasDocumentSelect = ReadBool(row, "document_select");
+        var hasDocumentCacheSelect = ReadBool(row, "document_cache_select");
+        var hasHeartbeatSelect = ReadBool(row, "heartbeat_select");
+        var hasHeartbeatSequenceUpdate = ReadBool(row, "heartbeat_sequence_update");
+        var hasHeartbeatAtUpdate = ReadBool(row, "heartbeat_at_update");
+        var hasHeartbeatIdUpdate = ReadBool(row, "heartbeat_id_update");
+        var documentWritePrivileges = ReadCsv(row, "document_write_privileges");
+        var documentCacheWritePrivileges = ReadCsv(row, "document_cache_write_privileges");
+        var workTablePrivileges = ReadCsv(row, "work_table_privileges");
+        var extraDmsSelectTables = ReadCsv(row, "extra_dms_select_tables");
+
+        var missingRequiredPrivileges = MissingRequiredConnectorPrivileges(
+            hasDatabaseConnect,
+            hasSchemaUsage,
+            hasDocumentSelect,
+            hasDocumentCacheSelect,
+            hasHeartbeatSelect,
+            hasHeartbeatSequenceUpdate,
+            hasHeartbeatAtUpdate
+        );
+        var hasRequiredRoleAttributes =
+            roleExists
+            && canLogin
+            && canReplicate
+            && disallowedRoleAttributes.Count == 0
+            && ownership.Count == 0;
+        var hasForbiddenPrivileges =
+            hasHeartbeatIdUpdate
+            || documentWritePrivileges.Count > 0
+            || documentCacheWritePrivileges.Count > 0
+            || workTablePrivileges.Count > 0
+            || extraDmsSelectTables.Count > 0;
+        var isGrantableMissingPrivilege =
+            hasRequiredRoleAttributes && !hasForbiddenPrivileges && missingRequiredPrivileges.Count > 0;
+        var isExactMatch =
+            hasRequiredRoleAttributes && !hasForbiddenPrivileges && missingRequiredPrivileges.Count == 0;
+
+        var observedValues = new Dictionary<string, string>
+        {
+            ["role_exists"] = roleExists.ToString(),
+            ["can_login"] = canLogin.ToString(),
+            ["can_replicate"] = canReplicate.ToString(),
+            ["disallowed_role_attributes"] = CsvOrNone(disallowedRoleAttributes),
+            ["ownership"] = CsvOrNone(ownership),
+            ["missing_required_privileges"] = CsvOrNone(missingRequiredPrivileges),
+            ["document_write_privileges"] = CsvOrNone(documentWritePrivileges),
+            ["document_cache_write_privileges"] = CsvOrNone(documentCacheWritePrivileges),
+            ["heartbeat_id_update"] = hasHeartbeatIdUpdate.ToString(),
+            ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
+            ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
+        };
+
+        var diagnostics = ConnectorPrincipalAccessDiagnostics(
+            request.ConnectorPrincipal.SafePrincipalName,
+            roleExists,
+            canLogin,
+            canReplicate,
+            disallowedRoleAttributes,
+            ownership,
+            missingRequiredPrivileges,
+            hasHeartbeatIdUpdate,
+            documentWritePrivileges,
+            documentCacheWritePrivileges,
+            workTablePrivileges,
+            extraDmsSelectTables
+        );
+
+        return new ConnectorPrincipalAccessInspection(
+            isExactMatch,
+            isGrantableMissingPrivilege,
+            observedValues,
+            ConnectorGrantInventory(
+                request,
+                hasDatabaseConnect,
+                hasSchemaUsage,
+                hasDocumentSelect,
+                hasDocumentCacheSelect,
+                hasHeartbeatSelect,
+                hasHeartbeatSequenceUpdate,
+                hasHeartbeatAtUpdate,
+                hasHeartbeatIdUpdate,
+                documentWritePrivileges,
+                documentCacheWritePrivileges,
+                workTablePrivileges
+            ),
+            diagnostics
+        );
+    }
+
+    private static string ConnectorPrincipalAccessSql(CdcProviderSetupRequest request)
+    {
+        var connectorPrincipal = EscapeSqlLiteral(request.ConnectorPrincipal.SafePrincipalName.Value);
+        var documentTable = EscapeSqlLiteral(
+            SourceTable(request, CdcSourceTableKind.Document).EmittedQuotedTableName
+        );
+        var documentCacheTable = EscapeSqlLiteral(
+            SourceTable(request, CdcSourceTableKind.DocumentCache).EmittedQuotedTableName
+        );
+        var heartbeatTable = EscapeSqlLiteral(
+            SourceTable(request, CdcSourceTableKind.CdcHeartbeat).EmittedQuotedTableName
+        );
+        var workTable = EscapeSqlLiteral(_dialect.QualifyTable(DmsTableNames.DocumentProjectionWork));
+        var publicationName = EscapeSqlLiteral(request.ArtifactNames.Postgresql!.PublicationName.Value);
+
+        return $"""
+            /* cdc:postgresql:connector-principal-access */
+            WITH connector AS (
+                SELECT
+                    role_info.oid,
+                    role_info.rolcanlogin,
+                    role_info.rolreplication,
+                    role_info.rolsuper,
+                    role_info.rolcreatedb,
+                    role_info.rolcreaterole,
+                    role_info.rolbypassrls
+                FROM pg_catalog.pg_roles role_info
+                WHERE role_info.rolname = '{connectorPrincipal}'
+            ),
+            dms_tables AS (
+                SELECT table_info.table_name
+                FROM information_schema.tables table_info
+                WHERE table_info.table_schema = 'dms'
+                AND table_info.table_type = 'BASE TABLE'
+            )
+            SELECT
+                EXISTS (SELECT 1 FROM connector)::text AS role_exists,
+                COALESCE((SELECT rolcanlogin::text FROM connector), 'false') AS can_login,
+                COALESCE((SELECT rolreplication::text FROM connector), 'false') AS can_replicate,
+                COALESCE(
+                    (
+                        SELECT string_agg(attribute_name, ',' ORDER BY attribute_name)
+                        FROM (
+                            SELECT 'SUPERUSER' AS attribute_name FROM connector WHERE rolsuper
+                            UNION ALL SELECT 'CREATEDB' FROM connector WHERE rolcreatedb
+                            UNION ALL SELECT 'CREATEROLE' FROM connector WHERE rolcreaterole
+                            UNION ALL SELECT 'BYPASSRLS' FROM connector WHERE rolbypassrls
+                            UNION ALL
+                            SELECT special_role.rolname
+                            FROM connector
+                            INNER JOIN pg_catalog.pg_roles special_role
+                                ON special_role.rolname IN ('pg_read_all_data', 'pg_write_all_data')
+                                AND pg_catalog.pg_has_role(connector.oid, special_role.oid, 'member')
+                        ) disallowed_attributes
+                    ),
+                    ''
+                ) AS disallowed_role_attributes,
+                COALESCE(
+                    (
+                        SELECT string_agg(owned_object, ',' ORDER BY owned_object)
+                        FROM (
+                            SELECT 'database' AS owned_object
+                            FROM connector
+                            INNER JOIN pg_catalog.pg_database database_info
+                                ON database_info.datname = current_database()
+                                AND database_info.datdba = connector.oid
+                            UNION ALL
+                            SELECT 'schema:dms'
+                            FROM connector
+                            INNER JOIN pg_catalog.pg_namespace namespace_info
+                                ON namespace_info.nspname = 'dms'
+                                AND namespace_info.nspowner = connector.oid
+                            UNION ALL
+                            SELECT 'table:' || table_info.relname
+                            FROM connector
+                            INNER JOIN pg_catalog.pg_class table_info
+                                ON table_info.relowner = connector.oid
+                            INNER JOIN pg_catalog.pg_namespace namespace_info
+                                ON namespace_info.oid = table_info.relnamespace
+                                AND namespace_info.nspname = 'dms'
+                            WHERE table_info.relkind IN ('r', 'p')
+                            UNION ALL
+                            SELECT 'publication'
+                            FROM connector
+                            INNER JOIN pg_catalog.pg_publication publication
+                                ON publication.pubname = '{publicationName}'
+                                AND publication.pubowner = connector.oid
+                        ) ownership
+                    ),
+                    ''
+                ) AS ownership,
+                COALESCE((SELECT pg_catalog.has_database_privilege(oid, current_database(), 'CONNECT')::text FROM connector), 'false') AS database_connect,
+                COALESCE((SELECT pg_catalog.has_schema_privilege(oid, 'dms', 'USAGE')::text FROM connector), 'false') AS schema_usage,
+                COALESCE((SELECT pg_catalog.has_table_privilege(oid, '{documentTable}', 'SELECT')::text FROM connector), 'false') AS document_select,
+                COALESCE((SELECT pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'SELECT')::text FROM connector), 'false') AS document_cache_select,
+                COALESCE((SELECT pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'SELECT')::text FROM connector), 'false') AS heartbeat_select,
+                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatSequence', 'UPDATE')::text FROM connector), 'false') AS heartbeat_sequence_update,
+                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatAt', 'UPDATE')::text FROM connector), 'false') AS heartbeat_at_update,
+                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatId', 'UPDATE')::text FROM connector), 'false') AS heartbeat_id_update,
+                COALESCE(
+                    (
+                        SELECT string_agg(privilege_name, ',' ORDER BY privilege_name)
+                        FROM (
+                            SELECT 'INSERT' AS privilege_name FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentTable}', 'INSERT')
+                            UNION ALL SELECT 'UPDATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentTable}', 'UPDATE')
+                            UNION ALL SELECT 'DELETE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentTable}', 'DELETE')
+                            UNION ALL SELECT 'TRUNCATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentTable}', 'TRUNCATE')
+                            UNION ALL SELECT 'REFERENCES' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentTable}', 'REFERENCES')
+                            UNION ALL SELECT 'TRIGGER' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentTable}', 'TRIGGER')
+                        ) document_write_privileges
+                    ),
+                    ''
+                ) AS document_write_privileges,
+                COALESCE(
+                    (
+                        SELECT string_agg(privilege_name, ',' ORDER BY privilege_name)
+                        FROM (
+                            SELECT 'INSERT' AS privilege_name FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'INSERT')
+                            UNION ALL SELECT 'UPDATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'UPDATE')
+                            UNION ALL SELECT 'DELETE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'DELETE')
+                            UNION ALL SELECT 'TRUNCATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'TRUNCATE')
+                            UNION ALL SELECT 'REFERENCES' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'REFERENCES')
+                            UNION ALL SELECT 'TRIGGER' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{documentCacheTable}', 'TRIGGER')
+                        ) document_cache_write_privileges
+                    ),
+                    ''
+                ) AS document_cache_write_privileges,
+                COALESCE(
+                    (
+                        SELECT string_agg(privilege_name, ',' ORDER BY privilege_name)
+                        FROM (
+                            SELECT 'SELECT' AS privilege_name FROM connector WHERE pg_catalog.has_table_privilege(oid, '{workTable}', 'SELECT')
+                            UNION ALL SELECT 'INSERT' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{workTable}', 'INSERT')
+                            UNION ALL SELECT 'UPDATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{workTable}', 'UPDATE')
+                            UNION ALL SELECT 'DELETE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{workTable}', 'DELETE')
+                            UNION ALL SELECT 'TRUNCATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{workTable}', 'TRUNCATE')
+                            UNION ALL SELECT 'REFERENCES' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{workTable}', 'REFERENCES')
+                            UNION ALL SELECT 'TRIGGER' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{workTable}', 'TRIGGER')
+                        ) work_table_privileges
+                    ),
+                    ''
+                ) AS work_table_privileges,
+                COALESCE(
+                    (
+                        SELECT string_agg(table_name, ',' ORDER BY table_name)
+                        FROM connector
+                        CROSS JOIN dms_tables
+                        WHERE dms_tables.table_name NOT IN ('Document', 'DocumentCache', 'CdcHeartbeat', 'DocumentProjectionWork')
+                        AND pg_catalog.has_table_privilege(connector.oid, pg_catalog.format('%I.%I', 'dms', dms_tables.table_name), 'SELECT')
+                    ),
+                    ''
+                ) AS extra_dms_select_tables;
+            """;
+    }
+
+    private static string GrantConnectorPrivilegesSql(CdcProviderSetupRequest request)
+    {
+        var connectorPrincipalLiteral = EscapeSqlLiteral(request.ConnectorPrincipal.SafePrincipalName.Value);
+        var connectorPrincipalIdentifier = _dialect.QuoteIdentifier(
+            request.ConnectorPrincipal.SafePrincipalName.Value
+        );
+        var document = SourceTable(request, CdcSourceTableKind.Document);
+        var documentCache = SourceTable(request, CdcSourceTableKind.DocumentCache);
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
+        var heartbeatAt = SourceColumn(heartbeat, "HeartbeatAt");
+
+        return $"""
+            /* cdc:postgresql:grant-connector-access */
+            DO $cdc$
+            DECLARE
+                _database_name text := current_database();
+            BEGIN
+                EXECUTE pg_catalog.format('GRANT CONNECT ON DATABASE %I TO %I', _database_name, '{connectorPrincipalLiteral}');
+            END;
+            $cdc$;
+
+            GRANT USAGE ON SCHEMA {_dialect.QuoteIdentifier(
+                DmsTableNames.DmsSchema.Value
+            )} TO {connectorPrincipalIdentifier};
+            GRANT SELECT ON TABLE {document.EmittedQuotedTableName}, {documentCache.EmittedQuotedTableName}, {heartbeat.EmittedQuotedTableName} TO {connectorPrincipalIdentifier};
+            GRANT UPDATE ({heartbeatSequence.EmittedQuotedColumnName}, {heartbeatAt.EmittedQuotedColumnName}) ON TABLE {heartbeat.EmittedQuotedTableName} TO {connectorPrincipalIdentifier};
+            """;
+    }
+
+    private static CdcProviderSetupStepResult ConnectorPrincipalAccessResult(
+        CdcSafeName connectorPrincipal,
+        CdcProviderArtifactState state,
+        ConnectorPrincipalAccessInspection access
+    ) =>
+        new(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.Grant,
+                    connectorPrincipal,
+                    state,
+                    access.ObservedValues
+                ),
+            ],
+            grantInventory: access.GrantInventory,
+            diagnostics: access.Diagnostics
+        );
+
+    private static IReadOnlyList<string> MissingRequiredConnectorPrivileges(
+        bool hasDatabaseConnect,
+        bool hasSchemaUsage,
+        bool hasDocumentSelect,
+        bool hasDocumentCacheSelect,
+        bool hasHeartbeatSelect,
+        bool hasHeartbeatSequenceUpdate,
+        bool hasHeartbeatAtUpdate
+    )
+    {
+        List<string> missing = [];
+
+        if (!hasDatabaseConnect)
+        {
+            missing.Add("CONNECT:database");
+        }
+
+        if (!hasSchemaUsage)
+        {
+            missing.Add("USAGE:dms");
+        }
+
+        if (!hasDocumentSelect)
+        {
+            missing.Add("SELECT:dms.Document");
+        }
+
+        if (!hasDocumentCacheSelect)
+        {
+            missing.Add("SELECT:dms.DocumentCache");
+        }
+
+        if (!hasHeartbeatSelect)
+        {
+            missing.Add("SELECT:dms.CdcHeartbeat");
+        }
+
+        if (!hasHeartbeatSequenceUpdate)
+        {
+            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatSequence");
+        }
+
+        if (!hasHeartbeatAtUpdate)
+        {
+            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatAt");
+        }
+
+        return missing;
+    }
+
+    private static IReadOnlyList<CdcProviderDiagnostic> ConnectorPrincipalAccessDiagnostics(
+        CdcSafeName connectorPrincipal,
+        bool roleExists,
+        bool canLogin,
+        bool canReplicate,
+        IReadOnlyList<string> disallowedRoleAttributes,
+        IReadOnlyList<string> ownership,
+        IReadOnlyList<string> missingRequiredPrivileges,
+        bool hasHeartbeatIdUpdate,
+        IReadOnlyList<string> documentWritePrivileges,
+        IReadOnlyList<string> documentCacheWritePrivileges,
+        IReadOnlyList<string> workTablePrivileges,
+        IReadOnlyList<string> extraDmsSelectTables
+    )
+    {
+        List<CdcProviderDiagnostic> diagnostics = [];
+
+        if (!roleExists)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_ROLE_MISSING",
+                    expectedValue: "existing-login-replication-role",
+                    observedValue: "missing"
+                )
+            );
+        }
+
+        if (roleExists && (!canLogin || !canReplicate || disallowedRoleAttributes.Count > 0))
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_ROLE_ATTRIBUTES_MISMATCH",
+                    expectedValue: "LOGIN,REPLICATION,without-elevated-role-attributes",
+                    observedValue: string.Join(
+                        ";",
+                        new[]
+                        {
+                            canLogin ? null : "LOGIN:missing",
+                            canReplicate ? null : "REPLICATION:missing",
+                            disallowedRoleAttributes.Count == 0
+                                ? null
+                                : $"disallowed:{CsvOrNone(disallowedRoleAttributes)}",
+                        }.Where(value => value is not null)
+                    )
+                )
+            );
+        }
+
+        if (ownership.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_OWNERSHIP_MISMATCH",
+                    expectedValue: "no-database-schema-table-or-publication-ownership",
+                    observedValue: CsvOrNone(ownership)
+                )
+            );
+        }
+
+        if (missingRequiredPrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_REQUIRED_GRANTS_MISSING",
+                    expectedValue: "connect-schema-usage-source-select-heartbeat-column-update",
+                    observedValue: CsvOrNone(missingRequiredPrivileges)
+                )
+            );
+        }
+
+        if (documentWritePrivileges.Count > 0 || documentCacheWritePrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH",
+                    expectedValue: "no-write-on-dms.Document-or-dms.DocumentCache",
+                    observedValue: $"Document={CsvOrNone(documentWritePrivileges)};DocumentCache={CsvOrNone(documentCacheWritePrivileges)}"
+                )
+            );
+        }
+
+        if (hasHeartbeatIdUpdate)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH",
+                    expectedValue: "UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
+                    observedValue: "HeartbeatId"
+                )
+            );
+        }
+
+        if (extraDmsSelectTables.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH",
+                    expectedValue: "SELECT-only-Document-DocumentCache-CdcHeartbeat",
+                    observedValue: CsvOrNone(extraDmsSelectTables)
+                )
+            );
+        }
+
+        if (workTablePrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                new CdcProviderDiagnostic(
+                    Code: "CDC_POSTGRESQL_CONNECTOR_WORK_TABLE_GRANT_MISMATCH",
+                    Category: CdcProviderDiagnosticCategory.WorkTableGrantViolation,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+                    ArtifactKind: CdcProviderArtifactKind.Grant,
+                    SafeName: connectorPrincipal,
+                    ExpectedValue: "no-dms.DocumentProjectionWork-privileges",
+                    ObservedValue: CsvOrNone(workTablePrivileges),
+                    ProviderErrorClass: null,
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                )
+            );
+        }
+
+        return diagnostics;
+    }
+
+    private static CdcProviderDiagnostic ConnectorPrincipalPrivilegeFailure(
+        CdcSafeName connectorPrincipal,
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+            ArtifactKind: CdcProviderArtifactKind.Grant,
+            SafeName: connectorPrincipal,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.FailClosed
+        );
+
+    private static IReadOnlyList<CdcGrantObservation> ConnectorGrantInventory(
+        CdcProviderSetupRequest request,
+        bool hasDatabaseConnect,
+        bool hasSchemaUsage,
+        bool hasDocumentSelect,
+        bool hasDocumentCacheSelect,
+        bool hasHeartbeatSelect,
+        bool hasHeartbeatSequenceUpdate,
+        bool hasHeartbeatAtUpdate,
+        bool hasHeartbeatIdUpdate,
+        IReadOnlyList<string> documentWritePrivileges,
+        IReadOnlyList<string> documentCacheWritePrivileges,
+        IReadOnlyList<string> workTablePrivileges
+    )
+    {
+        var connector = request.ConnectorPrincipal.SafePrincipalName;
+        List<CdcGrantObservation> grants = [];
+
+        if (hasDatabaseConnect)
+        {
+            grants.Add(GrantObservation(connector, new CdcSafeName("database.current"), ["CONNECT"]));
+        }
+
+        if (hasSchemaUsage)
+        {
+            grants.Add(GrantObservation(connector, new CdcSafeName("dms"), ["USAGE"]));
+        }
+
+        if (hasDocumentSelect || documentWritePrivileges.Count > 0)
+        {
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    SafeName(DmsTableNames.Document),
+                    Privileges(hasDocumentSelect, documentWritePrivileges)
+                )
+            );
+        }
+
+        if (hasDocumentCacheSelect || documentCacheWritePrivileges.Count > 0)
+        {
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    SafeName(DmsTableNames.DocumentCache),
+                    Privileges(hasDocumentCacheSelect, documentCacheWritePrivileges)
+                )
+            );
+        }
+
+        if (hasHeartbeatSelect)
+        {
+            grants.Add(GrantObservation(connector, SafeName(DmsTableNames.CdcHeartbeat), ["SELECT"]));
+        }
+
+        List<DbColumnName> heartbeatUpdateColumns = [];
+        if (hasHeartbeatSequenceUpdate)
+        {
+            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatSequence"));
+        }
+
+        if (hasHeartbeatAtUpdate)
+        {
+            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatAt"));
+        }
+
+        if (hasHeartbeatIdUpdate)
+        {
+            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatId"));
+        }
+
+        if (heartbeatUpdateColumns.Count > 0)
+        {
+            grants.Add(
+                new CdcGrantObservation(
+                    CdcPrincipalKind.ConnectorPrincipal,
+                    connector,
+                    CdcProviderArtifactKind.Grant,
+                    SafeName(DmsTableNames.CdcHeartbeat),
+                    ["UPDATE"],
+                    heartbeatUpdateColumns
+                )
+            );
+        }
+
+        if (workTablePrivileges.Count > 0)
+        {
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    SafeName(DmsTableNames.DocumentProjectionWork),
+                    workTablePrivileges
+                )
+            );
+        }
+
+        return grants;
+    }
+
+    private static CdcGrantObservation GrantObservation(
+        CdcSafeName connector,
+        CdcSafeName objectName,
+        IReadOnlyList<string> privileges
+    ) =>
+        new(
+            CdcPrincipalKind.ConnectorPrincipal,
+            connector,
+            CdcProviderArtifactKind.Grant,
+            objectName,
+            privileges,
+            []
+        );
+
+    private static IReadOnlyList<string> Privileges(bool includeSelect, IReadOnlyList<string> writePrivileges)
+    {
+        List<string> privileges = [];
+        if (includeSelect)
+        {
+            privileges.Add("SELECT");
+        }
+
+        privileges.AddRange(writePrivileges);
+        return privileges.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+    }
+
     private static bool TryGetExecutor(
         CdcProviderSetupStepContext context,
         CdcProviderArtifactKind artifactKind,
@@ -1410,6 +2147,18 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         return builder.ToString();
     }
 
+    private static IReadOnlyList<string> ReadCsv(
+        IReadOnlyDictionary<string, string?> row,
+        string columnName
+    ) =>
+        ReadRequired(row, columnName)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(SafeText)
+            .ToArray();
+
+    private static string CsvOrNone(IReadOnlyList<string> values) =>
+        values.Count == 0 ? "none" : string.Join(",", values);
+
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
 
     private static string Sha256(string value) =>
@@ -1466,6 +2215,14 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         bool IsExactMatch,
         IReadOnlyDictionary<string, string> ObservedValues,
         CdcProviderRetryContinuityClassification Classification,
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+    );
+
+    private sealed record ConnectorPrincipalAccessInspection(
+        bool IsExactMatch,
+        bool IsGrantableMissingPrivilege,
+        IReadOnlyDictionary<string, string> ObservedValues,
+        IReadOnlyList<CdcGrantObservation> GrantInventory,
         IReadOnlyList<CdcProviderDiagnostic> Diagnostics
     );
 }

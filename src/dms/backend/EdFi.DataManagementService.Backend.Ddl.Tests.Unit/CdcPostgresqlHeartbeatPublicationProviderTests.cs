@@ -363,6 +363,262 @@ public class Given_PostgresqlCdcSlotHistory_ValidateOnly
     }
 }
 
+[TestFixture]
+public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
+{
+    [Test]
+    public async Task It_should_grant_only_required_database_local_privileges_to_existing_connector_role()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants();
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result.Diagnostics.Should().BeEmpty();
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.SafeArtifactName.Value == "connector_principal"
+                && observation.State == CdcProviderArtifactState.Created
+            );
+
+        var grantSql = executor.ExecutedSql.Single(sql =>
+            sql.Contains("cdc:postgresql:grant-connector-access")
+        );
+        grantSql
+            .Should()
+            .Contain(
+                "GRANT SELECT ON TABLE \"dms\".\"Document\", \"dms\".\"DocumentCache\", \"dms\".\"CdcHeartbeat\""
+            );
+        grantSql
+            .Should()
+            .Contain(
+                "GRANT UPDATE (\"HeartbeatSequence\", \"HeartbeatAt\") ON TABLE \"dms\".\"CdcHeartbeat\""
+            );
+        grantSql.Should().NotContain("DocumentProjectionWork");
+        grantSql.Should().NotContain("ALTER ROLE");
+
+        result
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafeObjectName.Value == "dms.Document"
+                && grant.Privileges.SequenceEqual(new[] { "SELECT" })
+            );
+        result
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafeObjectName.Value == "dms.DocumentCache"
+                && grant.Privileges.SequenceEqual(new[] { "SELECT" })
+            );
+        result
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafeObjectName.Value == "dms.CdcHeartbeat"
+                && grant.Privileges.SequenceEqual(new[] { "UPDATE" })
+                && grant
+                    .Columns.Select(column => column.Value)
+                    .SequenceEqual(new[] { "HeartbeatSequence", "HeartbeatAt" })
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant => grant.SafeObjectName.Value == "dms.DocumentProjectionWork");
+    }
+
+    [Test]
+    public async Task It_should_not_add_replication_or_elevated_role_attributes()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants(connectorCanReplicate: false);
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_ROLE_ATTRIBUTES_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+                && diagnostic.PrincipalKind == CdcPrincipalKind.ConnectorPrincipal
+            );
+        executor
+            .ExecutedSql.Should()
+            .NotContain(sql =>
+                sql.Contains("cdc:postgresql:grant-connector-access") || sql.Contains("ALTER ROLE")
+            );
+    }
+
+    [Test]
+    public async Task It_should_reject_disallowed_elevated_connector_role_attributes()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            connectorDisallowedRoleAttributes: "SUPERUSER,pg_read_all_data"
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_ROLE_ATTRIBUTES_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("SUPERUSER")
+                && diagnostic.ObservedValue.Contains("pg_read_all_data")
+            );
+        executor
+            .ExecutedSql.Should()
+            .NotContain(sql => sql.Contains("cdc:postgresql:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task It_should_reject_connector_access_to_document_projection_work()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(connectorWorkTablePrivileges: "SELECT");
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
+                && diagnostic.ExpectedValue == "no-dms.DocumentProjectionWork-privileges"
+            );
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_optional_live_probe_reports_connector_boundary_failure()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess();
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                connectorPrincipalProbeFactory: new FailingConnectorPrincipalProbeFactory()
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_PROBE_BOUNDARY_FAILURE"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+            )
+            .Which;
+        diagnostic.ProviderErrorClass.Should().BeNull();
+    }
+
+    private static RecordingPostgresqlCdcExecutor ExistingArtifactsWithoutConnectorGrants(
+        bool connectorCanReplicate = true
+    ) =>
+        new(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            documentReplicaIdentityFull: true,
+            publicationExists: true,
+            slotExists: true,
+            connectorCanReplicate: connectorCanReplicate
+        );
+
+    private static RecordingPostgresqlCdcExecutor ExistingArtifactsWithConnectorAccess(
+        string connectorDisallowedRoleAttributes = "",
+        string connectorWorkTablePrivileges = ""
+    ) =>
+        new(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            documentReplicaIdentityFull: true,
+            publicationExists: true,
+            slotExists: true,
+            connectorDisallowedRoleAttributes: connectorDisallowedRoleAttributes,
+            connectorDatabaseConnect: true,
+            connectorSchemaUsage: true,
+            connectorDocumentSelect: true,
+            connectorDocumentCacheSelect: true,
+            connectorHeartbeatSelect: true,
+            connectorHeartbeatSequenceUpdate: true,
+            connectorHeartbeatAtUpdate: true,
+            connectorWorkTablePrivileges: connectorWorkTablePrivileges
+        );
+}
+
+[TestFixture]
+public class Given_PostgresqlCdcPrincipalAccess_ValidateOnly
+{
+    [Test]
+    public async Task It_should_report_missing_required_grants_without_creating_them()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            documentReplicaIdentityFull: true,
+            publicationExists: true,
+            slotExists: true
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+            );
+        executor
+            .ExecutedSql.Should()
+            .NotContain(sql => sql.Contains("cdc:postgresql:grant-connector-access"));
+    }
+}
+
+internal sealed class FailingConnectorPrincipalProbeFactory : ICdcConnectorPrincipalProbeFactory
+{
+    public Task<CdcConnectorPrincipalProbeResult> ProbeAsync(
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult(
+            new CdcConnectorPrincipalProbeResult(
+                GrantInventory: [],
+                Diagnostics:
+                [
+                    new CdcProviderDiagnostic(
+                        Code: "CDC_POSTGRESQL_CONNECTOR_PROBE_BOUNDARY_FAILURE",
+                        Category: CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure,
+                        Severity: CdcProviderDiagnosticSeverity.Error,
+                        PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+                        ArtifactKind: CdcProviderArtifactKind.Grant,
+                        SafeName: request.ConnectorPrincipal.SafePrincipalName,
+                        ExpectedValue: "rolled-back-boundary-probe-success",
+                        ObservedValue: "probe-failed",
+                        ProviderErrorClass: null,
+                        Classification: CdcProviderRetryContinuityClassification.FailClosed
+                    ),
+                ]
+            )
+        );
+}
+
 internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecutor
 {
     private const string CurrentDatabaseName = "dms_test";
@@ -383,6 +639,23 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private readonly string _slotConfirmedFlushLsn;
     private readonly string _slotWalStatus;
     private readonly string _slotInvalidationReason;
+    private readonly bool _connectorRoleExists;
+    private readonly bool _connectorCanLogin;
+    private readonly bool _connectorCanReplicate;
+    private readonly string _connectorDisallowedRoleAttributes;
+    private readonly string _connectorOwnership;
+    private bool _connectorDatabaseConnect;
+    private bool _connectorSchemaUsage;
+    private bool _connectorDocumentSelect;
+    private bool _connectorDocumentCacheSelect;
+    private bool _connectorHeartbeatSelect;
+    private bool _connectorHeartbeatSequenceUpdate;
+    private bool _connectorHeartbeatAtUpdate;
+    private readonly bool _connectorHeartbeatIdUpdate;
+    private readonly string _connectorDocumentWritePrivileges;
+    private readonly string _connectorDocumentCacheWritePrivileges;
+    private readonly string _connectorWorkTablePrivileges;
+    private readonly string _connectorExtraDmsSelectTables;
 
     public RecordingPostgresqlCdcExecutor(
         bool heartbeatTableExists = false,
@@ -400,7 +673,24 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         string slotRestartLsn = "0/16B6C50",
         string slotConfirmedFlushLsn = "0/16B6C50",
         string slotWalStatus = "reserved",
-        string slotInvalidationReason = ""
+        string slotInvalidationReason = "",
+        bool connectorRoleExists = true,
+        bool connectorCanLogin = true,
+        bool connectorCanReplicate = true,
+        string connectorDisallowedRoleAttributes = "",
+        string connectorOwnership = "",
+        bool connectorDatabaseConnect = false,
+        bool connectorSchemaUsage = false,
+        bool connectorDocumentSelect = false,
+        bool connectorDocumentCacheSelect = false,
+        bool connectorHeartbeatSelect = false,
+        bool connectorHeartbeatSequenceUpdate = false,
+        bool connectorHeartbeatAtUpdate = false,
+        bool connectorHeartbeatIdUpdate = false,
+        string connectorDocumentWritePrivileges = "",
+        string connectorDocumentCacheWritePrivileges = "",
+        string connectorWorkTablePrivileges = "",
+        string connectorExtraDmsSelectTables = ""
     )
     {
         _heartbeatTableExists = heartbeatTableExists;
@@ -419,6 +709,23 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _slotConfirmedFlushLsn = slotConfirmedFlushLsn;
         _slotWalStatus = slotWalStatus;
         _slotInvalidationReason = slotInvalidationReason;
+        _connectorRoleExists = connectorRoleExists;
+        _connectorCanLogin = connectorCanLogin;
+        _connectorCanReplicate = connectorCanReplicate;
+        _connectorDisallowedRoleAttributes = connectorDisallowedRoleAttributes;
+        _connectorOwnership = connectorOwnership;
+        _connectorDatabaseConnect = connectorDatabaseConnect;
+        _connectorSchemaUsage = connectorSchemaUsage;
+        _connectorDocumentSelect = connectorDocumentSelect;
+        _connectorDocumentCacheSelect = connectorDocumentCacheSelect;
+        _connectorHeartbeatSelect = connectorHeartbeatSelect;
+        _connectorHeartbeatSequenceUpdate = connectorHeartbeatSequenceUpdate;
+        _connectorHeartbeatAtUpdate = connectorHeartbeatAtUpdate;
+        _connectorHeartbeatIdUpdate = connectorHeartbeatIdUpdate;
+        _connectorDocumentWritePrivileges = connectorDocumentWritePrivileges;
+        _connectorDocumentCacheWritePrivileges = connectorDocumentCacheWritePrivileges;
+        _connectorWorkTablePrivileges = connectorWorkTablePrivileges;
+        _connectorExtraDmsSelectTables = connectorExtraDmsSelectTables;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -451,7 +758,14 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
             slotRestartLsn: slotRestartLsn,
             slotConfirmedFlushLsn: slotConfirmedFlushLsn,
             slotWalStatus: slotWalStatus,
-            slotInvalidationReason: slotInvalidationReason
+            slotInvalidationReason: slotInvalidationReason,
+            connectorDatabaseConnect: true,
+            connectorSchemaUsage: true,
+            connectorDocumentSelect: true,
+            connectorDocumentCacheSelect: true,
+            connectorHeartbeatSelect: true,
+            connectorHeartbeatSequenceUpdate: true,
+            connectorHeartbeatAtUpdate: true
         );
 
     public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
@@ -482,6 +796,17 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         if (sql.Contains("pg_create_logical_replication_slot"))
         {
             _slotExists = true;
+        }
+
+        if (sql.Contains("cdc:postgresql:grant-connector-access"))
+        {
+            _connectorDatabaseConnect = true;
+            _connectorSchemaUsage = true;
+            _connectorDocumentSelect = true;
+            _connectorDocumentCacheSelect = true;
+            _connectorHeartbeatSelect = true;
+            _connectorHeartbeatSequenceUpdate = true;
+            _connectorHeartbeatAtUpdate = true;
         }
 
         return Task.CompletedTask;
@@ -559,6 +884,28 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
                     ),
                 ]
                 : [],
+            var text when text.Contains("cdc:postgresql:connector-principal-access") =>
+            [
+                Row(
+                    ("role_exists", _connectorRoleExists.ToString()),
+                    ("can_login", _connectorCanLogin.ToString()),
+                    ("can_replicate", _connectorCanReplicate.ToString()),
+                    ("disallowed_role_attributes", _connectorDisallowedRoleAttributes),
+                    ("ownership", _connectorOwnership),
+                    ("database_connect", _connectorDatabaseConnect.ToString()),
+                    ("schema_usage", _connectorSchemaUsage.ToString()),
+                    ("document_select", _connectorDocumentSelect.ToString()),
+                    ("document_cache_select", _connectorDocumentCacheSelect.ToString()),
+                    ("heartbeat_select", _connectorHeartbeatSelect.ToString()),
+                    ("heartbeat_sequence_update", _connectorHeartbeatSequenceUpdate.ToString()),
+                    ("heartbeat_at_update", _connectorHeartbeatAtUpdate.ToString()),
+                    ("heartbeat_id_update", _connectorHeartbeatIdUpdate.ToString()),
+                    ("document_write_privileges", _connectorDocumentWritePrivileges),
+                    ("document_cache_write_privileges", _connectorDocumentCacheWritePrivileges),
+                    ("work_table_privileges", _connectorWorkTablePrivileges),
+                    ("extra_dms_select_tables", _connectorExtraDmsSelectTables)
+                ),
+            ],
             _ => throw new InvalidOperationException($"Unexpected PostgreSQL CDC query: {sql}"),
         };
 

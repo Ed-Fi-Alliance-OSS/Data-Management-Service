@@ -10,7 +10,13 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
-internal sealed class TestConnectorPrincipalProbeFactory : ICdcConnectorPrincipalProbeFactory;
+internal sealed class TestConnectorPrincipalProbeFactory : ICdcConnectorPrincipalProbeFactory
+{
+    public Task<CdcConnectorPrincipalProbeResult> ProbeAsync(
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    ) => Task.FromResult(new CdcConnectorPrincipalProbeResult());
+}
 
 internal static class CdcProviderSetupContractTestData
 {
@@ -18,7 +24,8 @@ internal static class CdcProviderSetupContractTestData
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
         CdcProviderArtifactOutputRequest? artifactOutput = null,
-        ICdcProviderDatabaseExecutor? databaseExecutor = null
+        ICdcProviderDatabaseExecutor? databaseExecutor = null,
+        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
     ) =>
         new(
             provider: CdcProvider.Postgresql,
@@ -36,7 +43,8 @@ internal static class CdcProviderSetupContractTestData
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildRequiredSourceInventory(),
-            connectorPrincipalProbeFactory: new TestConnectorPrincipalProbeFactory(),
+            connectorPrincipalProbeFactory: connectorPrincipalProbeFactory
+                ?? new TestConnectorPrincipalProbeFactory(),
             databaseExecutor: databaseExecutor
         );
 

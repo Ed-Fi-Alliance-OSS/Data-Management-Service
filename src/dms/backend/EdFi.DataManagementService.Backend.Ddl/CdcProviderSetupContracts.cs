@@ -101,7 +101,22 @@ internal sealed record CdcSetupPrincipalContext(CdcSafeName SafePrincipalName);
 
 internal sealed record CdcConnectorPrincipal(CdcSafeName SafePrincipalName);
 
-internal interface ICdcConnectorPrincipalProbeFactory;
+internal interface ICdcConnectorPrincipalProbeFactory
+{
+    Task<CdcConnectorPrincipalProbeResult> ProbeAsync(
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    );
+}
+
+internal sealed record CdcConnectorPrincipalProbeResult(
+    IReadOnlyList<CdcGrantObservation> GrantInventory,
+    IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+)
+{
+    public CdcConnectorPrincipalProbeResult()
+        : this([], []) { }
+}
 
 internal sealed record CdcProviderArtifactOutputRequest(bool IncludeManifestPayload);
 
