@@ -20,11 +20,17 @@ internal sealed class MssqlDocumentCacheWriter(
     IDocumentCacheWriterRetryAdapter retryAdapter,
     ILogger<MssqlDocumentCacheWriter> logger,
     ITransactionFaultInjectionObserver? faultInjectionObserver = null,
-    IDocumentCacheWriterTelemetry? telemetry = null
+    IDocumentCacheWriterTelemetry? telemetry = null,
+    string? sessionInitializationCommandText = null
 ) : IDocumentCacheWriter
 {
     private const int ForeignKeyConstraintViolationNumber = 547;
+    private const int InvalidObjectNameNumber = 208;
     private const int ThrowStatementNumber = 50000;
+
+    private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
+        DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Mssql);
+    private static readonly MssqlRelationalWriteExceptionClassifier LifecycleReadExceptionClassifier = new();
 
     private readonly IDocumentCacheWriterRetryAdapter _retryAdapter =
         retryAdapter ?? throw new ArgumentNullException(nameof(retryAdapter));
@@ -34,6 +40,11 @@ internal sealed class MssqlDocumentCacheWriter(
         faultInjectionObserver ?? NoOpTransactionFaultInjectionObserver.Instance;
     private readonly IDocumentCacheWriterTelemetry _telemetry =
         telemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
+    private readonly string? _sessionInitializationCommandText = string.IsNullOrWhiteSpace(
+        sessionInitializationCommandText
+    )
+        ? null
+        : sessionInitializationCommandText;
 
     public async Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
     {
@@ -79,6 +90,7 @@ internal sealed class MssqlDocumentCacheWriter(
     {
         await using SqlConnection connection = new(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await InitializeSessionAsync(connection, cancellationToken).ConfigureAwait(false);
         await using SqlTransaction transaction = (SqlTransaction)
             await connection
                 .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
@@ -107,7 +119,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -380,6 +392,7 @@ internal sealed class MssqlDocumentCacheWriter(
     {
         await using SqlConnection connection = new(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await InitializeSessionAsync(connection, cancellationToken).ConfigureAwait(false);
         await using SqlTransaction transaction = (SqlTransaction)
             await connection
                 .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
@@ -406,7 +419,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -523,6 +536,18 @@ internal sealed class MssqlDocumentCacheWriter(
             )
             .ConfigureAwait(false);
 
+    private async Task InitializeSessionAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (_sessionInitializationCommandText is null)
+        {
+            return;
+        }
+
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = _sessionInitializationCommandText;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         SqlConnection connection,
         SqlTransaction transaction,
@@ -530,40 +555,34 @@ internal sealed class MssqlDocumentCacheWriter(
         CancellationToken cancellationToken
     )
     {
-        await using SqlCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sql;
+        try
+        {
+            await using SqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
 
-        await using SqlDataReader reader = await command
-            .ExecuteReaderAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            await using SqlDataReader reader = await command
+                .ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return await DocumentCacheLifecycleReaderSupport
+                .ReadLifecycleAsync(reader, LifecycleReaderQuery, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (SqlException exception) when (exception.Number == InvalidObjectNameNumber)
         {
             return DocumentCacheLifecycleReadResult.Failure(
                 DocumentCacheLifecycleReadStatus.Missing,
-                "DocumentCache lifecycle state row is missing."
+                "DocumentCache lifecycle state table is missing."
             );
         }
-
-        string lifecycleText = reader.GetString(0);
-        bool cacheAheadRecoveryRequired = reader.GetBoolean(1);
-
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        catch (DbException exception) when (!LifecycleReadExceptionClassifier.IsTransientFailure(exception))
         {
             return DocumentCacheLifecycleReadResult.Failure(
-                DocumentCacheLifecycleReadStatus.Invalid,
-                "DocumentCache lifecycle state returned multiple rows."
+                DocumentCacheLifecycleReadStatus.Unreadable,
+                "DocumentCache lifecycle state is unreadable."
             );
         }
-
-        return Enum.TryParse(lifecycleText, ignoreCase: false, out DocumentCacheLifecycleState lifecycleState)
-            ? DocumentCacheLifecycleReadResult.Success(
-                new DocumentCacheLifecycleObservation(lifecycleState, cacheAheadRecoveryRequired)
-            )
-            : DocumentCacheLifecycleReadResult.Failure(
-                DocumentCacheLifecycleReadStatus.Invalid,
-                "DocumentCache lifecycle state is unsupported."
-            );
     }
 
     private static async Task<MssqlDocumentCacheWriterCurrentObservation> ReadCurrentObservationAsync(

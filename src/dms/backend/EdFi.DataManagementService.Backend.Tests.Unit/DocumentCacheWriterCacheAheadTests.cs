@@ -112,10 +112,22 @@ public class Given_DocumentCacheWriterCacheAhead
             cacheContentVersion: 11,
             workRequiredContentVersion: 10
         );
+        DocumentCacheWriterCacheAheadIncidentDecision unreadableState = SelectRecheck(
+            DocumentCacheLifecycleReadResult.Failure(
+                DocumentCacheLifecycleReadStatus.Unreadable,
+                "state row unreadable"
+            ),
+            sourceContentVersion: 10,
+            cacheContentVersion: 11,
+            workRequiredContentVersion: 10
+        );
 
         disabled.Action.Should().Be(DocumentCacheWriterCacheAheadIncidentAction.ReturnLifecycleOrLatchFence);
         setLatch.Action.Should().Be(DocumentCacheWriterCacheAheadIncidentAction.ReturnLifecycleOrLatchFence);
         missingState
+            .Action.Should()
+            .Be(DocumentCacheWriterCacheAheadIncidentAction.ReturnLifecycleOrLatchFence);
+        unreadableState
             .Action.Should()
             .Be(DocumentCacheWriterCacheAheadIncidentAction.ReturnLifecycleOrLatchFence);
         disabled
@@ -133,6 +145,11 @@ public class Given_DocumentCacheWriterCacheAhead
             .BeOfType<DocumentCacheWriterResult.LifecycleOrLatchFenced>()
             .Which.Reason.Should()
             .Be(DocumentCacheWriterFenceReason.StateMissing);
+        unreadableState
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.LifecycleOrLatchFenced>()
+            .Which.Reason.Should()
+            .Be(DocumentCacheWriterFenceReason.StateUnreadable);
     }
 
     [Test]

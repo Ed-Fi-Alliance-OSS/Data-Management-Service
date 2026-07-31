@@ -25,6 +25,11 @@ internal sealed class PostgresqlDocumentCacheWriter(
     IDocumentCacheWriterTelemetry? telemetry = null
 ) : IDocumentCacheWriter
 {
+    private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
+        DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Pgsql);
+    private static readonly PostgresqlRelationalWriteExceptionClassifier LifecycleReadExceptionClassifier =
+        new();
+
     private readonly NpgsqlDataSourceCache _dataSourceCache =
         dataSourceCache ?? throw new ArgumentNullException(nameof(dataSourceCache));
     private readonly IDocumentCacheWriterRetryAdapter _retryAdapter =
@@ -109,7 +114,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -410,7 +415,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -537,40 +542,34 @@ internal sealed class PostgresqlDocumentCacheWriter(
         CancellationToken cancellationToken
     )
     {
-        await using NpgsqlCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sql;
+        try
+        {
+            await using NpgsqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
 
-        await using NpgsqlDataReader reader = await command
-            .ExecuteReaderAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            await using NpgsqlDataReader reader = await command
+                .ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return await DocumentCacheLifecycleReaderSupport
+                .ReadLifecycleAsync(reader, LifecycleReaderQuery, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
         {
             return DocumentCacheLifecycleReadResult.Failure(
                 DocumentCacheLifecycleReadStatus.Missing,
-                "DocumentCache lifecycle state row is missing."
+                "DocumentCache lifecycle state table is missing."
             );
         }
-
-        string lifecycleText = reader.GetString(0);
-        bool cacheAheadRecoveryRequired = reader.GetBoolean(1);
-
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        catch (DbException exception) when (!LifecycleReadExceptionClassifier.IsTransientFailure(exception))
         {
             return DocumentCacheLifecycleReadResult.Failure(
-                DocumentCacheLifecycleReadStatus.Invalid,
-                "DocumentCache lifecycle state returned multiple rows."
+                DocumentCacheLifecycleReadStatus.Unreadable,
+                "DocumentCache lifecycle state is unreadable."
             );
         }
-
-        return Enum.TryParse(lifecycleText, ignoreCase: false, out DocumentCacheLifecycleState lifecycleState)
-            ? DocumentCacheLifecycleReadResult.Success(
-                new DocumentCacheLifecycleObservation(lifecycleState, cacheAheadRecoveryRequired)
-            )
-            : DocumentCacheLifecycleReadResult.Failure(
-                DocumentCacheLifecycleReadStatus.Invalid,
-                "DocumentCache lifecycle state is unsupported."
-            );
     }
 
     private static async Task<PostgresqlDocumentCacheWriterCurrentObservation> ReadCurrentObservationAsync(

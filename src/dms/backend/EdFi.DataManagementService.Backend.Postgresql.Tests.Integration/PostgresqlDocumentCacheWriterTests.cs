@@ -34,6 +34,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private NpgsqlDataSourceCache _dataSourceCache = null!;
     private PostgresqlDocumentCacheWriter _writer = null!;
+    private string? _overrideConnectionString;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -50,6 +51,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
     {
         _database = await _baseline.CreateIsolatedDatabaseAsync();
         _dataSourceCache = new NpgsqlDataSourceCache(NullLogger<NpgsqlDataSourceCache>.Instance);
+        _overrideConnectionString = null;
         _writer = CreateWriter();
     }
 
@@ -362,6 +364,64 @@ public class Given_A_Postgresql_DocumentCacheWriter
         fenced.CacheAheadRecoveryRequired.Should().BeNull();
         (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_fences_unreadable_lifecycle_state_without_cache_dml_or_acknowledgement()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(
+            source,
+            "candidate-unreadable-state"
+        );
+        await MakeLifecycleStateUnreadableAsync();
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        DocumentCacheWriterResult.LifecycleOrLatchFenced fenced = AssertLifecycleFence(
+            result,
+            DocumentCacheWriterFenceReason.StateUnreadable
+        );
+        fenced.LifecycleState.Should().BeNull();
+        fenced.CacheAheadRecoveryRequired.Should().BeNull();
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_retries_transient_locked_lifecycle_read_failures_before_classification()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-after-retry");
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        PostgresqlDocumentCacheWriter writer = CreateWriter(telemetry: telemetry, maxRetryAttempts: 3);
+        _overrideConnectionString = CreateLockTimeoutConnectionString();
+
+        await using NpgsqlConnection blockerConnection = new(_database.ConnectionString);
+        await blockerConnection.OpenAsync();
+        await using NpgsqlTransaction blockerTransaction = await blockerConnection.BeginTransactionAsync();
+        await LockLifecycleStateForUpdateAsync(blockerConnection, blockerTransaction);
+
+        Task<DocumentCacheWriterResult> writeTask = writer.WriteAsync(CreateRequest(source, candidate));
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        await blockerTransaction.RollbackAsync();
+
+        DocumentCacheWriterResult result = await writeTask.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Retry && record.AttemptCount > 1
+            );
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
     }
 
     [Test]
@@ -814,7 +874,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
             new DocumentCacheProjectionTargetKey("tenant-cache-writer", new DataStoreId(7)),
             _fixture.MappingSet,
             DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
-            _database.ConnectionString
+            _overrideConnectionString ?? _database.ConnectionString
         );
 
     private async Task SetLifecycleAsync(
@@ -856,6 +916,43 @@ public class Given_A_Postgresql_DocumentCacheWriter
             WHERE "StateId" = 1;
             """
         );
+    }
+
+    private async Task MakeLifecycleStateUnreadableAsync()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            ALTER TABLE "dms"."DocumentCacheState"
+            DROP COLUMN "CacheAheadRecoveryRequired";
+            """
+        );
+    }
+
+    private string CreateLockTimeoutConnectionString()
+    {
+        NpgsqlConnectionStringBuilder builder = new(_database.ConnectionString)
+        {
+            Options = "-c lock_timeout=100ms",
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private static async Task LockLifecycleStateForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT 1
+            FROM "dms"."DocumentCacheState"
+            WHERE "StateId" = 1
+            FOR UPDATE;
+            """;
+
+        (await command.ExecuteScalarAsync()).Should().NotBeNull();
     }
 
     private async Task DeleteWorkAsync(long documentId)

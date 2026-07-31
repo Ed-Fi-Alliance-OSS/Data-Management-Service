@@ -370,6 +370,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DocumentCacheWriter.",
       "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
     ],
-    "completed": false
+    "completed": true
   }
 ]

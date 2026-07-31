@@ -64,7 +64,8 @@ public class Given_A_Mssql_DocumentCacheWriter
     private MssqlDocumentCacheWriter CreateWriter(
         ITransactionFaultInjectionObserver? faultInjectionObserver = null,
         IDocumentCacheWriterTelemetry? telemetry = null,
-        int maxRetryAttempts = 0
+        int maxRetryAttempts = 0,
+        string? sessionInitializationCommandText = null
     ) =>
         new(
             new DocumentCacheWriterRetryAdapter(
@@ -80,7 +81,8 @@ public class Given_A_Mssql_DocumentCacheWriter
             ),
             NullLogger<MssqlDocumentCacheWriter>.Instance,
             faultInjectionObserver,
-            telemetry
+            telemetry,
+            sessionInitializationCommandText
         );
 
     [TearDown]
@@ -367,6 +369,68 @@ public class Given_A_Mssql_DocumentCacheWriter
         fenced.CacheAheadRecoveryRequired.Should().BeNull();
         (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_fences_unreadable_lifecycle_state_without_cache_dml_or_acknowledgement()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(
+            source,
+            "candidate-unreadable-state"
+        );
+        await MakeLifecycleStateUnreadableAsync();
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidate);
+
+        DocumentCacheWriterResult.LifecycleOrLatchFenced fenced = AssertLifecycleFence(
+            result,
+            DocumentCacheWriterFenceReason.StateUnreadable
+        );
+        fenced.LifecycleState.Should().BeNull();
+        fenced.CacheAheadRecoveryRequired.Should().BeNull();
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_retries_transient_locked_lifecycle_read_failures_before_classification()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-after-retry");
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        MssqlDocumentCacheWriter writer = CreateWriter(
+            telemetry: telemetry,
+            maxRetryAttempts: 3,
+            sessionInitializationCommandText: "SET LOCK_TIMEOUT 100;"
+        );
+
+        await using SqlConnection blockerConnection = new(_database.ConnectionString);
+        await blockerConnection.OpenAsync();
+        await using SqlTransaction blockerTransaction = (SqlTransaction)
+            await blockerConnection.BeginTransactionAsync();
+        await LockLifecycleStateForUpdateAsync(blockerConnection, blockerTransaction);
+
+        Task<DocumentCacheWriterResult> writeTask = writer.WriteAsync(CreateRequest(source, candidate));
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        await blockerTransaction.RollbackAsync();
+
+        DocumentCacheWriterResult result = await writeTask.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Retry && record.AttemptCount > 1
+            );
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
     }
 
     [Test]
@@ -933,6 +997,32 @@ public class Given_A_Mssql_DocumentCacheWriter
             WHERE [StateId] = 1;
             """
         );
+    }
+
+    private async Task MakeLifecycleStateUnreadableAsync()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            ALTER TABLE [dms].[DocumentCacheState]
+            DROP COLUMN [CacheAheadRecoveryRequired];
+            """
+        );
+    }
+
+    private static async Task LockLifecycleStateForUpdateAsync(
+        SqlConnection connection,
+        SqlTransaction transaction
+    )
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT 1
+            FROM [dms].[DocumentCacheState] WITH (XLOCK, HOLDLOCK)
+            WHERE [StateId] = 1;
+            """;
+
+        (await command.ExecuteScalarAsync()).Should().NotBeNull();
     }
 
     private async Task DeleteWorkAsync(long documentId)
