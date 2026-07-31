@@ -7,6 +7,7 @@ using System.Data;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ internal static class MssqlBackendIntegrationTestServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.TryAddSingleton(new DeadlockRetrySettings());
         services.AddSelectedDataStoreIntegrationTestProvider();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddMssqlReferenceResolver();
