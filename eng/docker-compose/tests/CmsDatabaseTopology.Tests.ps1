@@ -276,6 +276,161 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         }
     }
 
+    # Order-dependence cuts both ways. Moving a key above the connection string also moves it above
+    # everything in between, which can make a reference resolvable that previously resolved to nothing
+    # and silently change a variable this seam does not own. The connection-string postcondition cannot
+    # see that - it only checks the key the repair targets - so the move itself must prove it first.
+    Context "a reorder must preserve every declaration whose visibility it changes (DMS-1270)" {
+        BeforeAll {
+            # Returns the names of the files this suite's derived directory holds, so a failed repair can
+            # be shown to leave no artifact behind. -Force because derived files are dot-prefixed and
+            # Linux PowerShell treats a leading dot as hidden.
+            function script:Get-DerivedArtifactName {
+                $derivedDir = Join-Path $script:work ".derived"
+                if (-not (Test-Path -LiteralPath $derivedDir)) { return @() }
+                return @(Get-ChildItem -LiteralPath $derivedDir -Name -Force)
+            }
+        }
+
+        It "fails closed rather than firing an intervening ':-' default branch that had not fired" {
+            # The measured reproduction. Before the repair FEATURE renders 'disabled'; relocating
+            # PASSWORD above the connection string also places it above FEATURE, so the ':-' default
+            # arm stops firing and FEATURE silently becomes the password. The connection string itself
+            # repairs correctly, which is exactly why the postcondition passed and this went unnoticed.
+            $basePath = Join-Path $script:work ".env.unsafe-lazy"
+            $sourceLines = @(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=${PASSWORD:-disabled}',
+                'PASSWORD=secret',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            )
+            Set-Content -LiteralPath $basePath -Value ($sourceLines -join "`n") -NoNewline
+            $sourceHashBefore = (Get-FileHash -LiteralPath $basePath -Algorithm SHA256).Hash
+
+            (Resolve-DotenvFileSequentially -Path $basePath).Effective["FEATURE"] |
+                Should -BeExactly 'disabled' -Because "this is what Compose renders before any repair"
+
+            $thrown = { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw -PassThru
+
+            $thrown.Exception.Message | Should -BeLike "*would change the value Docker Compose renders for 'FEATURE' (line 4)*"
+            $thrown.Exception.Message | Should -Not -BeLike "*secret*" -Because "an environment file carries credentials; the diagnostic names keys and lines only"
+            $thrown.Exception.Message | Should -Not -BeLike "*disabled*" -Because "neither the before nor the after value may be rendered"
+
+            (Get-FileHash -LiteralPath $basePath -Algorithm SHA256).Hash |
+                Should -Be $sourceHashBefore -Because "the source environment file is never written to"
+            Get-DerivedArtifactName | Should -BeNullOrEmpty -Because "the unsafe artifact this call created must not survive for a later run to pick up"
+        }
+
+        It "fails closed for an intervening '-' consumer too, not only ':-'" {
+            # ${VAR-default} takes the default only when VAR is UNSET, which is a different Compose rule
+            # from ${VAR:-default}. The move changes VAR from unset to set, so this consumer's value
+            # changes as well - and the proof must be about evaluated values, not about which operator
+            # spelling appears in the text.
+            $basePath = Join-Path $script:work ".env.unsafe-dash"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=${PASSWORD-fallback}',
+                'PASSWORD=secret',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*renders for 'FEATURE'*"
+        }
+
+        It "fails closed for an unsafe DMS_CONFIG_DATABASE_NAME move, not only for a credential key" {
+            # The topology alias is moved by the same function and gets the same proof. Covering only
+            # PASSWORD would leave the alias move - the one this design performs on every migrated file -
+            # unproven.
+            $basePath = Join-Path $script:work ".env.unsafe-alias"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=${DMS_CONFIG_DATABASE_NAME:-disabled}',
+                'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice'
+            ) -join "`n") -NoNewline
+
+            $thrown = { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw -PassThru
+
+            $thrown.Exception.Message | Should -BeLike "*reordering 'DMS_CONFIG_DATABASE_NAME' above 'DMS_CONFIG_DATABASE_CONNECTION_STRING'*"
+            $thrown.Exception.Message | Should -BeLike "*renders for 'FEATURE'*"
+            Get-DerivedArtifactName | Should -BeNullOrEmpty
+        }
+
+        It "still repairs the same shape when no intervening declaration is affected" {
+            # Identical to the reproduction minus the consumer in between. The proof must permit the
+            # repair it exists to protect, or it would just be a refusal to repair anything.
+            $basePath = Join-Path $script:work ".env.safe-hop"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'UNRELATED=constant',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $derived = Resolve-DotenvFileSequentially -Path $result
+            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+            $derived.Effective["UNRELATED"] | Should -BeExactly 'constant'
+        }
+
+        It "still repairs when an intervening declaration only LOOKS like a consumer: an escaped '$$' reference" {
+            # A '$$' escape is a literal, not a reference. A lexical scan over the line text would see
+            # "${PASSWORD}" and refuse a perfectly safe move; the evaluated value is identical before and
+            # after, so the repair proceeds.
+            $basePath = Join-Path $script:work ".env.escaped-decoy"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=$${POSTGRES_PASSWORD}',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $derived = Resolve-DotenvFileSequentially -Path $result
+            $derived.Effective["FEATURE"] | Should -BeExactly '${POSTGRES_PASSWORD}' -Because "the escape is a literal in both orderings"
+            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+        }
+
+        It "still repairs when an intervening lazy branch mentioning the moved key never fires" {
+            # ${SET_ABOVE:-${POSTGRES_PASSWORD}} never evaluates its default arm, because SET_ABOVE is
+            # declared above with a non-empty value. The moved key is textually present and behaviourally
+            # absent, and it is the behaviour that decides.
+            $basePath = Join-Path $script:work ".env.unfired-branch"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'SET_ABOVE=already-set',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=${SET_ABOVE:-${POSTGRES_PASSWORD}}',
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $derived = Resolve-DotenvFileSequentially -Path $result
+            $derived.Effective["FEATURE"] | Should -BeExactly 'already-set'
+            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+        }
+    }
+
     # Docker Compose resolves an --env-file sequentially. Validation built on a complete hashtable
     # answers a different question and can approve a file Compose renders differently, so these pin the
     # required outcome for each input class. Each expectation was confirmed against a real
@@ -2650,6 +2805,26 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
 
             $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
+        }
+
+        It "stops before docker, and leaves no derived artifact, when the repair would change an unrelated value" {
+            # The end-to-end consequence of the reorder proof: a file whose repair would silently change
+            # a variable the seam does not own must never reach a compose invocation, and the
+            # half-repaired artifact produced on the way must not be left behind for a later run.
+            $envFile = New-WiringEnvFile -AdditionalLines @(
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${CMS_MOVE_PROOF_PW};database=${POSTGRES_DB_NAME};',
+                'CMS_MOVE_PROOF_FEATURE=${CMS_MOVE_PROOF_PW:-disabled}',
+                'CMS_MOVE_PROOF_PW=abcdefgh1!'
+            )
+
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -EnvironmentFile $envFile -InfraOnly *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*renders for 'CMS_MOVE_PROOF_FEATURE'*"
+            $run.ErrorMessage | Should -Not -BeLike "*abcdefgh1!*" -Because "the diagnostic names keys and lines, never values"
+            $run.Invocations | Should -BeNullOrEmpty -Because "no docker boundary may be reached once the repair has failed closed"
+            $run.NewDerivedFiles | Should -BeNullOrEmpty -Because "the artifact this run created is removed on failure"
         }
 
         It "postgresql shared mode: writes the seam without redirecting it away from POSTGRES_DB_NAME" {
