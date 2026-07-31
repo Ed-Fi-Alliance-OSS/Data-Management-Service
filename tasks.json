@@ -284,6 +284,6 @@
       "Review provider adapter SQL and tests to confirm the documented lock order avoids work-row-first locking and retries complete transactions after enqueue/acknowledgement deadlocks.",
       "dotnet csharpier format src/dms/backend src/dms/core"
     ],
-    "completed": false
+    "completed": true
   }
 ]
