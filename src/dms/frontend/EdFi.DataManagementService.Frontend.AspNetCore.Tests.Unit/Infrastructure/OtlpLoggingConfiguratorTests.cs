@@ -115,6 +115,28 @@ public class Given_OtlpLogging_Enabled_Without_An_Endpoint
 
         sinkApplied.Should().BeFalse();
     }
+
+    [Test]
+    public void It_does_not_apply_the_otlp_sink_for_a_whitespace_endpoint()
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = "true",
+                    ["OtlpLogging:Endpoint"] = "   ",
+                }
+            )
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // A whitespace-only endpoint would otherwise be normalized away by the sink, silently
+        // installing an inert exporter instead of surfacing the misconfiguration warning.
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        sinkApplied.Should().BeFalse();
+    }
 }
 
 [TestFixture]
@@ -180,6 +202,7 @@ public class Given_OtlpLogging_Keys_Are_Fully_Configured
                     ["service.name"] = "custom-service",
                     ["service.version"] = "9.9.9",
                     ["deployment.environment"] = "production",
+                    ["deployment.environment.name"] = "production",
                     ["service.instance.id"] = "instance-42",
                 }
             );
@@ -216,6 +239,7 @@ public class Given_OtlpLogging_Optional_Keys_Are_Unset
                 }
             );
         resourceAttributes.Should().NotContainKey("deployment.environment");
+        resourceAttributes.Should().NotContainKey("deployment.environment.name");
         resourceAttributes.Should().NotContainKey("service.instance.id");
     }
 }

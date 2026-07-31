@@ -247,8 +247,9 @@ The `OtlpLogging` section supports these keys:
   CMS, matching each application's `Application` request log property.
 * `ServiceVersion`: the `service.version` resource attribute. Defaults to the
   application's informational version.
-* `DeploymentEnvironment`: optional `deployment.environment` resource
-  attribute.
+* `DeploymentEnvironment`: optional deployment environment, emitted as both
+  the legacy `deployment.environment` resource attribute and its stable
+  semantic-convention replacement `deployment.environment.name`.
 * `ServiceInstanceId`: optional `service.instance.id` resource attribute.
 
 > [!NOTE]
@@ -271,7 +272,11 @@ The `OtlpLogging` section supports these keys:
 Vendor-specific integrations belong outside the CMS and DMS processes: send
 OTLP directly to a compatible service, or through an OpenTelemetry Collector,
 to Splunk, Datadog, Elastic, Seq, CloudWatch, Azure, or another backend of
-choice. CMS and DMS do not document or bundle vendor-specific sinks.
+choice. CMS and DMS do not document or bundle vendor-specific sinks. The
+`OtlpLogging` section has no authentication-header key, and the standard
+`OTEL_EXPORTER_OTLP_HEADERS` variable is ignored along with the other OTLP
+environment variables, so backends that require authentication must be
+reached through an OpenTelemetry Collector rather than directly.
 
 ### Deployment Recipes
 

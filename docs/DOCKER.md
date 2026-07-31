@@ -40,7 +40,11 @@ OTLP log export is also available, disabled by default, through the
 `OtlpLogging` configuration section (for example,
 `OtlpLogging__Enabled=true`, `OtlpLogging__Endpoint=...`). See
 [LOGGING.md](./LOGGING.md#otlp-export) and
-[CONFIGURATION.md](./CONFIGURATION.md#otlplogging) for details.
+[CONFIGURATION.md](./CONFIGURATION.md#otlplogging) for details. Note that the
+compose files under `eng/docker-compose` do not pass the `OtlpLogging__*`
+variables through to the containers, so adding them to a `.env` file alone
+has no effect; the compose service definition must forward them, as described
+in the LOGGING.md Docker recipe.
 
 For example, you might have a `.env` file like the following:
 

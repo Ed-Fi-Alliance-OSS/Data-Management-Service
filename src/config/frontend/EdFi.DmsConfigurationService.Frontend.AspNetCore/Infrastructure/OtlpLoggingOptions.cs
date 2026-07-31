@@ -61,8 +61,10 @@ public class OtlpLoggingOptions
 
     /// <summary>
     /// Builds the OTLP resource attributes for this configuration. "service.name" and "service.version"
-    /// are always included; "deployment.environment" and "service.instance.id" are included only when set,
-    /// so the sink's own defaults apply otherwise.
+    /// are always included; optional attributes are included only when set and are otherwise simply
+    /// absent from the exported resource. The deployment environment is emitted under both the legacy
+    /// "deployment.environment" key and its stable semantic-convention replacement
+    /// "deployment.environment.name" so consumers of either convention can find it.
     /// </summary>
     public IReadOnlyDictionary<string, object> ToResourceAttributes()
     {
@@ -75,6 +77,7 @@ public class OtlpLoggingOptions
         if (!string.IsNullOrEmpty(DeploymentEnvironment))
         {
             attributes["deployment.environment"] = DeploymentEnvironment;
+            attributes["deployment.environment.name"] = DeploymentEnvironment;
         }
 
         if (!string.IsNullOrEmpty(ServiceInstanceId))

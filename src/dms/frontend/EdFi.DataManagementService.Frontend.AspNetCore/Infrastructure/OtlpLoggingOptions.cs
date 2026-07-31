@@ -27,8 +27,11 @@ public class OtlpLoggingOptions
     public string? ServiceInstanceId { get; set; }
 
     /// <summary>
-    /// Builds the OpenTelemetry resource attributes for this service, omitting optional
-    /// attributes that have not been configured so that the sink's own defaults apply.
+    /// Builds the OpenTelemetry resource attributes for this service. Optional attributes that
+    /// have not been configured are simply absent from the exported resource. The deployment
+    /// environment is emitted under both the legacy "deployment.environment" key and its stable
+    /// semantic-convention replacement "deployment.environment.name" so consumers of either
+    /// convention can find it.
     /// </summary>
     public IReadOnlyDictionary<string, object> ToResourceAttributes()
     {
@@ -41,6 +44,7 @@ public class OtlpLoggingOptions
         if (!string.IsNullOrEmpty(DeploymentEnvironment))
         {
             resourceAttributes["deployment.environment"] = DeploymentEnvironment;
+            resourceAttributes["deployment.environment.name"] = DeploymentEnvironment;
         }
 
         if (!string.IsNullOrEmpty(ServiceInstanceId))

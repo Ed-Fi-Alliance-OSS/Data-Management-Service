@@ -131,6 +131,31 @@ public class OtlpLoggingConfiguratorTests
         sinkApplied.Should().BeFalse();
     }
 
+    [Test]
+    public void ApplyOtlpSink_Returns_False_When_Endpoint_Is_Whitespace()
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["OtlpLogging:Enabled"] = "true",
+                    ["OtlpLogging:Endpoint"] = "   ",
+                }
+            )
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // Act
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        // Assert
+        sinkApplied
+            .Should()
+            .BeFalse("a whitespace-only endpoint would otherwise install a silently inert sink");
+    }
+
     [TestCase("Grpc", OtlpProtocol.Grpc)]
     [TestCase("HttpProtobuf", OtlpProtocol.HttpProtobuf)]
     public void Binding_Maps_Every_OtlpLogging_Key_From_Configuration(
@@ -196,6 +221,7 @@ public class OtlpLoggingConfiguratorTests
                     ["service.name"] = "test-service",
                     ["service.version"] = "9.9.9",
                     ["deployment.environment"] = "production",
+                    ["deployment.environment.name"] = "production",
                     ["service.instance.id"] = "instance-42",
                 }
             );

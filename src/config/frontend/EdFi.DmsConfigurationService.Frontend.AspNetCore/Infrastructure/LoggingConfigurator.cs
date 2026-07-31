@@ -40,7 +40,7 @@ public static class LoggingConfigurator
             return false;
         }
 
-        if (string.IsNullOrEmpty(options.Endpoint))
+        if (string.IsNullOrWhiteSpace(options.Endpoint))
         {
             Console.Error.WriteLine(
                 "OtlpLogging is enabled but no Endpoint is configured; OTLP export is not applied."
