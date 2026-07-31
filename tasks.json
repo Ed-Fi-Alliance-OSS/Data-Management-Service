@@ -212,7 +212,7 @@
       "Inspect failed test database state, if any, to confirm dms.DocumentCache and dms.DocumentProjectionWork are either both changed or both unchanged for each atomicity scenario.",
       "Run dotnet csharpier format on all modified PostgreSQL integration-test files."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "provider-tests-sqlserver",
