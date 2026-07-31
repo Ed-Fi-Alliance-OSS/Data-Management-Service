@@ -65,7 +65,7 @@ public class DataStoreContextRepository(
                 );
                 """;
 
-            var id = await connection.ExecuteScalarAsync<long?>(
+            var id = await connection.ExecuteScalarAsync<int?>(
                 sql,
                 new
                 {
@@ -138,7 +138,7 @@ public class DataStoreContextRepository(
         }
     }
 
-    public async Task<DataStoreContextGetResult> GetDataStoreContext(long id)
+    public async Task<DataStoreContextGetResult> GetDataStoreContext(int id)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -236,7 +236,7 @@ public class DataStoreContextRepository(
         }
     }
 
-    public async Task<DataStoreContextDeleteResult> DeleteDataStoreContext(long id)
+    public async Task<DataStoreContextDeleteResult> DeleteDataStoreContext(int id)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -262,9 +262,7 @@ public class DataStoreContextRepository(
         }
     }
 
-    public async Task<DataStoreContextQueryByDataStoreResult> GetDataStoreContextsByDataStore(
-        long dataStoreId
-    )
+    public async Task<DataStoreContextQueryByDataStoreResult> GetDataStoreContextsByDataStore(int dataStoreId)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -292,7 +290,7 @@ public class DataStoreContextRepository(
     }
 
     public async Task<DataStoreContextQueryByDataStoreIdsResult> GetDataStoreContextsByDataStoreIds(
-        List<long> dataStoreIds
+        List<int> dataStoreIds
     )
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -325,7 +323,7 @@ public class DataStoreContextRepository(
         }
     }
 
-    private async Task<bool> ContextExistsForTenant(SqlConnection connection, long id)
+    private async Task<bool> ContextExistsForTenant(SqlConnection connection, int id)
     {
         var sql = $"""
             SELECT COUNT(1) FROM dmscs.DataStoreContext rc

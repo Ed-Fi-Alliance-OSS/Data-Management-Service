@@ -98,7 +98,7 @@ public class VendorModuleTests
                     ])
                 );
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse()
@@ -115,7 +115,7 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.Success(new List<Guid>()));
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.Success());
         }
 
@@ -394,13 +394,13 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(new VendorGetResult.FailureNotFound());
 
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.FailureNotExists());
         }
 
@@ -481,13 +481,13 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(new VendorQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(new VendorGetResult.FailureUnknown(""));
 
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.FailureUnknown(""));
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.FailureUnknown(""));
         }
 
@@ -554,12 +554,12 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(new VendorQueryResult());
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored)).Returns(new VendorGetResult());
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored)).Returns(new VendorGetResult());
 
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored)).Returns(new VendorDeleteResult());
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored)).Returns(new VendorDeleteResult());
         }
 
         [Test]
@@ -619,7 +619,7 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<int>.Ignored))
                 .Returns(
                     new VendorApplicationsResult.Success([
                         new ApplicationResponse()
@@ -647,7 +647,7 @@ public class VendorModuleTests
         {
             // Arrange
             using var client = SetUpClient();
-            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<int>.Ignored))
                 .Returns(
                     new VendorApplicationsResult.Success([
                         new ApplicationResponse()
@@ -686,7 +686,7 @@ public class VendorModuleTests
             // Arrange
             using var client = SetUpClient();
 
-            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<int>.Ignored))
                 .Returns(new VendorApplicationsResult.Success([]));
 
             // Act
@@ -704,7 +704,7 @@ public class VendorModuleTests
             // Arrange
             using var client = SetUpClient();
 
-            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<int>.Ignored))
                 .Returns(new VendorApplicationsResult.FailureNotExists());
 
             // Act
@@ -841,6 +841,73 @@ public class VendorModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/vendors?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    /// <summary>
+    /// Route binding at the edges of the int32 resource identifier. The upper bound must be usable,
+    /// not merely parseable, and a value beyond it must be rejected before the repository is reached.
+    /// There is deliberately no negative-id test: -1 binds to int perfectly well and VendorModule
+    /// passes it straight through to the repository, so it 404s exactly as it did when the id was a
+    /// long. Adding positive-id route validation would be a separate behavior change.
+    /// </summary>
+    // Instance per test case so each test gets its own repository fake: NUnit otherwise shares one
+    // fixture instance across the fixture, and the accepted call below would leak into the
+    // MustNotHaveHappened assertion of the rejection test.
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_id_at_the_int32_boundary : VendorModuleTests
+    {
+        [Test]
+        public async Task It_accepts_an_id_at_int_MaxValue()
+        {
+            // Arrange
+            A.CallTo(() => _vendorRepository.GetVendor(int.MaxValue))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse()
+                        {
+                            Id = int.MaxValue,
+                            Company = "Test Company",
+                            ContactEmailAddress = "test@test.com",
+                            ContactName = "Test Contact",
+                            NamespacePrefixes = "Test Prefix",
+                        }
+                    )
+                );
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync($"/v3/vendors/{int.MaxValue}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            A.CallTo(() => _vendorRepository.GetVendor(int.MaxValue)).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_rejects_an_id_above_int_MaxValue_with_400()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            // Before the narrowing this id bound successfully and answered 404. Rejecting it at the
+            // binding layer is the observable behavior change the int32 contract introduces.
+            var response = await client.GetAsync($"/v3/vendors/{(long)int.MaxValue + 1}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored)).MustNotHaveHappened();
+
+            // The status is only half the change. No module runs, so the 400 originates in framework
+            // route binding as a BadHttpRequestException; GlobalExceptionHandler.MapBadRequest is what
+            // classifies an unbindable route value as parameter-level and gives it an Ed-Fi envelope.
+            // Asserting the type keeps an out-of-range id from regressing to a bodiless framework 400
+            // or to the generic bad-request classification.
+            var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["status"]!.GetValue<int>().Should().Be(400);
         }
     }
 }

@@ -78,7 +78,7 @@ public class ApplicationInfo
     /// List of data store IDs associated with this API client.
     /// These IDs are included in the dataStoreIds claim in issued JWT tokens.
     /// </summary>
-    public long[] DataStoreIds { get; set; } = [];
+    public int[] DataStoreIds { get; set; } = [];
 
     /// <summary>
     /// Indicates whether all API clients associated with this application are approved.

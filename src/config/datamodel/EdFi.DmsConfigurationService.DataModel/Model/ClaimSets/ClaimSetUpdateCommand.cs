@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ClaimSetUpdateCommand : IClaimSetCommand
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
 
     [JsonPropertyName("claimSetName")]
     public required string Name { get; set; }

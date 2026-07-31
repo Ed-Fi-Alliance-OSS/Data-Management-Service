@@ -59,8 +59,8 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class Given_insert_data_store_derivative : DataStoreDerivativeTests
     {
-        private long _dataStoreId;
-        private long _derivativeId;
+        private int _dataStoreId;
+        private int _derivativeId;
 
         [SetUp]
         public async Task Setup()
@@ -130,8 +130,8 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class Given_insert_data_store_derivative_with_snapshot_type : DataStoreDerivativeTests
     {
-        private long _dataStoreId;
-        private long _derivativeId;
+        private int _dataStoreId;
+        private int _derivativeId;
 
         [SetUp]
         public async Task Setup()
@@ -176,8 +176,8 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class Given_insert_data_store_derivative_without_connection_string : DataStoreDerivativeTests
     {
-        private long _dataStoreId;
-        private long _derivativeId;
+        private int _dataStoreId;
+        private int _derivativeId;
 
         [SetUp]
         public async Task Setup()
@@ -222,7 +222,7 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class Given_update_data_store_derivative : DataStoreDerivativeTests
     {
-        private long _dataStoreId;
+        private int _dataStoreId;
         private DataStoreDerivativeInsertCommand _derivativeInsert = null!;
         private DataStoreDerivativeUpdateCommand _derivativeUpdate = null!;
 
@@ -301,9 +301,9 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class Given_delete_data_store_derivative : DataStoreDerivativeTests
     {
-        private long _dataStoreId;
-        private long _derivative1Id;
-        private long _derivative2Id;
+        private int _dataStoreId;
+        private int _derivative1Id;
+        private int _derivative2Id;
 
         [SetUp]
         public async Task Setup()
@@ -554,8 +554,8 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class Given_update_derivative_with_invalid_instance_id : DataStoreDerivativeTests
     {
-        private long _dataStoreId;
-        private long _derivativeId;
+        private int _dataStoreId;
+        private int _derivativeId;
 
         [SetUp]
         public async Task Setup()
@@ -601,9 +601,9 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class Given_cascade_delete_parent_instance : DataStoreDerivativeTests
     {
-        private long _dataStoreId;
-        private long _derivative1Id;
-        private long _derivative2Id;
+        private int _dataStoreId;
+        private int _derivative1Id;
+        private int _derivative2Id;
 
         [SetUp]
         public async Task Setup()
@@ -673,9 +673,9 @@ public class DataStoreDerivativeTests : DatabaseTest
     {
         private IDataStoreDerivativeRepository _tenantARepository = null!;
         private IDataStoreDerivativeRepository _tenantBRepository = null!;
-        private long _tenantADataStoreId;
-        private long _tenantADerivativeId;
-        private long _tenantBDerivativeId;
+        private int _tenantADataStoreId;
+        private int _tenantADerivativeId;
+        private int _tenantBDerivativeId;
 
         [SetUp]
         public async Task Setup()
@@ -734,7 +734,7 @@ public class DataStoreDerivativeTests : DatabaseTest
                 tenantContextProvider
             );
 
-        private static async Task<(long DataStoreId, long DerivativeId)> InsertDataStoreWithDerivative(
+        private static async Task<(int DataStoreId, int DerivativeId)> InsertDataStoreWithDerivative(
             TenantContextProvider tenantContextProvider,
             IDataStoreDerivativeRepository derivativeRepository,
             string dataStoreName

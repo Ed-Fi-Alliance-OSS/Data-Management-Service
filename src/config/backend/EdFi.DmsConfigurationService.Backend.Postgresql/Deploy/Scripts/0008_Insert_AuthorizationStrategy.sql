@@ -27,7 +27,7 @@ WHERE NOT EXISTS (
 
 DO $$
 DECLARE
-    next_id bigint;
+    next_id int;
 BEGIN
     SELECT COALESCE(MAX("Id"), 0) + 1 INTO next_id FROM "dmscs"."AuthorizationStrategy";
     EXECUTE format('ALTER TABLE "dmscs"."AuthorizationStrategy" ALTER COLUMN "Id" RESTART WITH %s', next_id);

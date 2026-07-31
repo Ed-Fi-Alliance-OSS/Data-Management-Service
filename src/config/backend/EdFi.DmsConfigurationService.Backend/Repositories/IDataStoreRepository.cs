@@ -13,16 +13,16 @@ public interface IDataStoreRepository
 {
     Task<DataStoreInsertResult> InsertDataStore(DataStoreInsertCommand command);
     Task<DataStoreQueryResult> QueryDataStore(DataStoreQuery query);
-    Task<DataStoreGetResult> GetDataStore(long id);
+    Task<DataStoreGetResult> GetDataStore(int id);
     Task<DataStoreUpdateResult> UpdateDataStore(DataStoreUpdateCommand command);
-    Task<DataStoreDeleteResult> DeleteDataStore(long id);
-    Task<DataStoreIdsExistResult> GetExistingDataStoreIds(long[] ids);
-    Task<ApplicationByDataStoreQueryResult> QueryApplicationByDataStore(long dataStoreId, PagingQuery query);
+    Task<DataStoreDeleteResult> DeleteDataStore(int id);
+    Task<DataStoreIdsExistResult> GetExistingDataStoreIds(int[] ids);
+    Task<ApplicationByDataStoreQueryResult> QueryApplicationByDataStore(int dataStoreId, PagingQuery query);
 }
 
 public record DataStoreInsertResult
 {
-    public record Success(long Id) : DataStoreInsertResult();
+    public record Success(int Id) : DataStoreInsertResult();
 
     public record FailureUnknown(string FailureMessage) : DataStoreInsertResult();
 }
@@ -67,7 +67,7 @@ public record DataStoreIdsExistResult
     /// Successfully retrieved existing DataStoreIds
     /// </summary>
     /// <param name="ExistingIds">The set of DataStoreIds that exist in the database</param>
-    public record Success(HashSet<long> ExistingIds) : DataStoreIdsExistResult();
+    public record Success(HashSet<int> ExistingIds) : DataStoreIdsExistResult();
 
     public record FailureUnknown(string FailureMessage) : DataStoreIdsExistResult();
 }

@@ -25,7 +25,7 @@ public class ResourceClaimRepository(
     ILogger<ResourceClaimRepository> logger
 ) : IResourceClaimRepository
 {
-    private sealed record ResourceClaimMetadataRow(long Id, string ResourceName, string ClaimName);
+    private sealed record ResourceClaimMetadataRow(int Id, string ResourceName, string ClaimName);
 
     private sealed record ProjectionResult(
         List<ResourceClaimResponse> Roots,
@@ -40,7 +40,7 @@ public class ResourceClaimRepository(
             "SELECT \"Id\", \"ResourceName\", \"ClaimName\" FROM \"dmscs\".\"ResourceClaim\" WHERE \"TenantId\" IS NULL"
         );
         return rows.Select(r => new ResourceClaimMetadataRow(
-                (long)r.Id,
+                (int)r.Id,
                 (string)r.ResourceName,
                 (string)r.ClaimName
             ))
@@ -235,7 +235,7 @@ public class ResourceClaimRepository(
         }
     }
 
-    public async Task<ResourceClaimGetResult> GetResourceClaim(long id)
+    public async Task<ResourceClaimGetResult> GetResourceClaim(int id)
     {
         try
         {

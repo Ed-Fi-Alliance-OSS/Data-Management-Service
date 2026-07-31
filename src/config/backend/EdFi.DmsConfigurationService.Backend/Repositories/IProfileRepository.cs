@@ -12,9 +12,9 @@ public interface IProfileRepository
 {
     Task<ProfileInsertResult> InsertProfile(ProfileInsertCommand command);
     Task<ProfileUpdateResult> UpdateProfile(ProfileUpdateCommand command);
-    Task<ProfileGetResult> GetProfile(long id);
+    Task<ProfileGetResult> GetProfile(int id);
     Task<IEnumerable<ProfileGetResult>> QueryProfiles(ProfileQuery query);
-    Task<ProfileDeleteResult> DeleteProfile(long id);
+    Task<ProfileDeleteResult> DeleteProfile(int id);
 }
 
 public abstract record ProfileGetResult
@@ -29,7 +29,7 @@ public abstract record ProfileGetResult
 // Result types for ProfileRepository operations
 public abstract record ProfileInsertResult
 {
-    public record Success(long Id) : ProfileInsertResult;
+    public record Success(int Id) : ProfileInsertResult;
 
     public record FailureDuplicateName(string Name) : ProfileInsertResult;
 
@@ -42,7 +42,7 @@ public abstract record ProfileUpdateResult
 
     public record FailureDuplicateName(string Name) : ProfileUpdateResult;
 
-    public record FailureNotExists(long Id) : ProfileUpdateResult;
+    public record FailureNotExists(int Id) : ProfileUpdateResult;
 
     public record FailureUnknown(string Message) : ProfileUpdateResult;
 }
@@ -51,9 +51,9 @@ public abstract record ProfileDeleteResult
 {
     public record Success : ProfileDeleteResult;
 
-    public record FailureInUse(long Id) : ProfileDeleteResult;
+    public record FailureInUse(int Id) : ProfileDeleteResult;
 
-    public record FailureNotExists(long Id) : ProfileDeleteResult;
+    public record FailureNotExists(int Id) : ProfileDeleteResult;
 
     public record FailureUnknown(string Message) : ProfileDeleteResult;
 }

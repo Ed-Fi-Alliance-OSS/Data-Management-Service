@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.AuthorizationStrategy', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.AuthorizationStrategy (
-        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_AuthorizationStrategy PRIMARY KEY,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_AuthorizationStrategy PRIMARY KEY,
         AuthorizationStrategyName NVARCHAR(255) NOT NULL,
         DisplayName NVARCHAR(255) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),

@@ -57,7 +57,7 @@ public class ApiClientRepository(
     private async Task<bool> AllDataStoresInTenant(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        long[] dataStoreIds
+        int[] dataStoreIds
     )
     {
         string sql = $"""
@@ -89,7 +89,7 @@ public class ApiClientRepository(
                 RETURNING "Id";
                 """;
 
-            long? apiClientId = await connection.ExecuteScalarAsync<long?>(
+            int? apiClientId = await connection.ExecuteScalarAsync<int?>(
                 sql,
                 new
                 {
@@ -208,7 +208,7 @@ public class ApiClientRepository(
                 {outerOrderByClause};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
@@ -261,7 +261,7 @@ public class ApiClientRepository(
                 WHERE ac."ClientId" = @ClientId AND {TenantScopedApplicationCondition("ac")};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
@@ -296,7 +296,7 @@ public class ApiClientRepository(
         }
     }
 
-    public async Task<ApiClientGetResult> GetApiClientById(long id)
+    public async Task<ApiClientGetResult> GetApiClientById(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -310,7 +310,7 @@ public class ApiClientRepository(
                 WHERE ac."Id" = @Id AND {TenantScopedApplicationCondition("ac")};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
@@ -462,7 +462,7 @@ public class ApiClientRepository(
         }
     }
 
-    public async Task<ApiClientDeleteResult> DeleteApiClient(long id)
+    public async Task<ApiClientDeleteResult> DeleteApiClient(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -505,7 +505,7 @@ public class ApiClientRepository(
         }
     }
 
-    public async Task<ApiClientResolutionResult> GetApiClientResolutionState(long id)
+    public async Task<ApiClientResolutionResult> GetApiClientResolutionState(int id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -521,7 +521,7 @@ public class ApiClientRepository(
                 FOR UPDATE OF ac;
                 """;
             var client = await connection.QuerySingleOrDefaultAsync<(
-                long ApplicationId,
+                int ApplicationId,
                 string Name,
                 bool IsApproved,
                 string ClientId,
@@ -533,9 +533,9 @@ public class ApiClientRepository(
                 return new ApiClientResolutionResult.FailureNotExists();
             }
 
-            long[] dataStoreIds =
+            int[] dataStoreIds =
             [
-                .. await connection.QueryAsync<long>(
+                .. await connection.QueryAsync<int>(
                     """
                     SELECT "DataStoreId" FROM "dmscs"."ApiClientDataStore"
                     WHERE "ApiClientId" = @Id;
@@ -567,7 +567,7 @@ public class ApiClientRepository(
     }
 
     public async Task<ApiClientUuidSyncResult> SyncApiClientUuid(
-        long id,
+        int id,
         Guid expectedClientUuid,
         Guid newClientUuid
     )

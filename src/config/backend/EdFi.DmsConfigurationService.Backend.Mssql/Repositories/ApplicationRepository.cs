@@ -43,7 +43,7 @@ public class ApplicationRepository(
     private async Task<bool> AllDataStoresInTenant(
         SqlConnection connection,
         DbTransaction? transaction,
-        long[] dataStoreIds
+        int[] dataStoreIds
     )
     {
         string sql = $"""
@@ -61,7 +61,7 @@ public class ApplicationRepository(
     private async Task<bool> ApplicationExistsForTenant(
         SqlConnection connection,
         DbTransaction? transaction,
-        long id
+        int id
     )
     {
         string sql = $"""
@@ -91,7 +91,7 @@ public class ApplicationRepository(
                 );
                 """;
 
-            long? insertedId = await connection.ExecuteScalarAsync<long?>(
+            int? insertedId = await connection.ExecuteScalarAsync<int?>(
                 sql,
                 new
                 {
@@ -111,7 +111,7 @@ public class ApplicationRepository(
                 return new ApplicationInsertResult.FailureVendorNotFound();
             }
 
-            long id = insertedId.Value;
+            int id = insertedId.Value;
 
             sql = """
                 INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId, CreatedBy)
@@ -134,7 +134,7 @@ public class ApplicationRepository(
                 VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy);
                 """;
 
-            long apiClientId = await connection.ExecuteScalarAsync<long>(
+            int apiClientId = await connection.ExecuteScalarAsync<int>(
                 sql,
                 new
                 {
@@ -308,8 +308,8 @@ public class ApplicationRepository(
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
                 long?,
-                long?,
-                long?,
+                int?,
+                int?,
                 ApplicationResponse
             >(
                 sql,
@@ -365,7 +365,7 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationGetResult> GetApplication(long id)
+    public async Task<ApplicationGetResult> GetApplication(int id)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -387,8 +387,8 @@ public class ApplicationRepository(
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
                 long?,
-                long?,
-                long?,
+                int?,
+                int?,
                 ApplicationResponse
             >(
                 sql,
@@ -535,7 +535,7 @@ public class ApplicationRepository(
             // Get ApiClient Id for DataStore relationship update
             sql =
                 "SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId AND ApplicationId = @ApplicationId;";
-            long apiClientId = await connection.ExecuteScalarAsync<long>(
+            int apiClientId = await connection.ExecuteScalarAsync<int>(
                 sql,
                 new { clientCommand.ClientId, ApplicationId = command.Id },
                 transaction
@@ -627,7 +627,7 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationDeleteResult> DeleteApplication(long id)
+    public async Task<ApplicationDeleteResult> DeleteApplication(int id)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -648,7 +648,7 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationApiClientsResult> GetApplicationApiClients(long id)
+    public async Task<ApplicationApiClientsResult> GetApplicationApiClients(int id)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -673,7 +673,7 @@ public class ApplicationRepository(
     }
 
     public async Task<ApplicationUpdateStateResult> GetApplicationUpdateState(
-        long applicationId,
+        int applicationId,
         string clientId
     )
     {
@@ -691,7 +691,7 @@ public class ApplicationRepository(
                 """;
             var application = await connection.QuerySingleOrDefaultAsync<(
                 string ApplicationName,
-                long VendorId,
+                int VendorId,
                 string ClaimSetName
             )?>(applicationSql, new { Id = applicationId, TenantId }, transaction);
 
@@ -706,7 +706,7 @@ public class ApplicationRepository(
                 WHERE ClientId = @ClientId AND ApplicationId = @ApplicationId;
                 """;
             var client = await connection.QuerySingleOrDefaultAsync<(
-                long Id,
+                int Id,
                 Guid ClientUuid,
                 bool IsApproved
             )?>(clientSql, new { ClientId = clientId, ApplicationId = applicationId }, transaction);
@@ -728,9 +728,9 @@ public class ApplicationRepository(
                 ),
             ];
 
-            long[] profileIds =
+            int[] profileIds =
             [
-                .. await connection.QueryAsync<long>(
+                .. await connection.QueryAsync<int>(
                     """
                     SELECT ProfileId FROM dmscs.ApplicationProfile
                     WHERE ApplicationId = @ApplicationId;
@@ -740,9 +740,9 @@ public class ApplicationRepository(
                 ),
             ];
 
-            long[] clientDataStoreIds =
+            int[] clientDataStoreIds =
             [
-                .. await connection.QueryAsync<long>(
+                .. await connection.QueryAsync<int>(
                     """
                     SELECT DataStoreId FROM dmscs.ApiClientDataStore
                     WHERE ApiClientId = @ApiClientId;
@@ -777,7 +777,7 @@ public class ApplicationRepository(
     }
 
     public async Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
-        long applicationId,
+        int applicationId,
         string clientId,
         Guid expectedClientUuid,
         Guid newClientUuid

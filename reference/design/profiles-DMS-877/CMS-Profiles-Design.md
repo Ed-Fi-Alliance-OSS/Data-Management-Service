@@ -30,7 +30,7 @@ Special Education). The Configuration Service needs to:
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `Id` | BIGINT | PK, Auto-generated | Unique identifier |
+| `Id` | INT | PK, Auto-generated | Unique identifier |
 | `ProfileName` | VARCHAR(500) | NOT NULL, UNIQUE | Profile name |
 | `Definition` | TEXT | NOT NULL | XML profile definition |
 | `CreatedAt` | TIMESTAMP | NOT NULL, DEFAULT NOW() | Creation timestamp |
@@ -42,8 +42,8 @@ Special Education). The Configuration Service needs to:
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| `ApplicationId` | BIGINT | FK, ON DELETE CASCADE | Application reference |
-| `ProfileId` | BIGINT | FK, ON DELETE RESTRICT | Profile reference |
+| `ApplicationId` | INT | FK, ON DELETE CASCADE | Application reference |
+| `ProfileId` | INT | FK, ON DELETE RESTRICT | Profile reference |
 | `CreatedAt` | TIMESTAMP | NOT NULL, DEFAULT NOW() | Creation timestamp |
 | `CreatedBy` | VARCHAR(256) | | Creator identifier |
 
@@ -311,7 +311,7 @@ id (if the application is configured for enforcing profiles).
 
 ```sql
 CREATE TABLE dmscs.Profile (
-    Id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    Id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ProfileName VARCHAR(500) NOT NULL,
     Definition TEXT NOT NULL,
     CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -328,8 +328,8 @@ CREATE INDEX ix_profile_name ON dmscs.Profile (ProfileName);
 
 ```sql
 CREATE TABLE dmscs.ApplicationProfile (
-    ApplicationId BIGINT NOT NULL,
-    ProfileId BIGINT NOT NULL,
+    ApplicationId INT NOT NULL,
+    ProfileId INT NOT NULL,
     CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
     CreatedBy VARCHAR(256),
     PRIMARY KEY (ApplicationId, ProfileId),

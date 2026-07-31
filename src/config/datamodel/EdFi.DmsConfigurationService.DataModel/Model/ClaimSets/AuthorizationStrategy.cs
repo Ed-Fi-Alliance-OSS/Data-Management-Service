@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class AuthorizationStrategy
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
 
     [JsonPropertyName("name")]
     public required string AuthorizationStrategyName { get; set; }

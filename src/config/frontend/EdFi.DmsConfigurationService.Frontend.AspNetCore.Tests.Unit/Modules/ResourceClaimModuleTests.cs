@@ -124,10 +124,10 @@ public class ResourceClaimModuleTests
             A.CallTo(() => _repository.GetResourceClaims(A<ResourceClaimQuery>.Ignored))
                 .Returns(new ResourceClaimListResult.Success(FakeResourceClaims));
 
-            A.CallTo(() => _repository.GetResourceClaim(1L))
+            A.CallTo(() => _repository.GetResourceClaim(1))
                 .Returns(new ResourceClaimGetResult.Success(FakeResourceClaims[0]));
 
-            A.CallTo(() => _repository.GetResourceClaim(999L))
+            A.CallTo(() => _repository.GetResourceClaim(999))
                 .Returns(new ResourceClaimGetResult.FailureNotFound());
 
             A.CallTo(() => _repository.GetResourceClaimActions(A<ResourceClaimActionQuery>.Ignored))
@@ -286,7 +286,7 @@ public class ResourceClaimModuleTests
             A.CallTo(() => _repository.GetResourceClaims(A<ResourceClaimQuery>.Ignored))
                 .Returns(new ResourceClaimListResult.FailureHierarchyNotFound());
 
-            A.CallTo(() => _repository.GetResourceClaim(A<long>.Ignored))
+            A.CallTo(() => _repository.GetResourceClaim(A<int>.Ignored))
                 .Returns(new ResourceClaimGetResult.FailureHierarchyNotFound());
 
             A.CallTo(() => _repository.GetResourceClaimActions(A<ResourceClaimActionQuery>.Ignored))
@@ -348,7 +348,7 @@ public class ResourceClaimModuleTests
                     new ResourceClaimListResult.FailureProjectionIntegrity("Projection failed for test.")
                 );
 
-            A.CallTo(() => _repository.GetResourceClaim(A<long>.Ignored))
+            A.CallTo(() => _repository.GetResourceClaim(A<int>.Ignored))
                 .Returns(
                     new ResourceClaimGetResult.FailureProjectionIntegrity("Projection failed for test.")
                 );
@@ -439,9 +439,7 @@ public class ResourceClaimModuleTests
             using var client = SetUpClient();
             await client.GetAsync("/v3/resourceClaims?id=42");
 
-            A.CallTo(() =>
-                    _repository.GetResourceClaims(A<ResourceClaimQuery>.That.Matches(q => q.Id == 42L))
-                )
+            A.CallTo(() => _repository.GetResourceClaims(A<ResourceClaimQuery>.That.Matches(q => q.Id == 42)))
                 .MustHaveHappenedOnceExactly();
         }
 

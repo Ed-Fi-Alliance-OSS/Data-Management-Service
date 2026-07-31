@@ -280,7 +280,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetProfileById_Valid_ShouldReturnOk()
     {
-        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
             .Returns(
                 new ProfileGetResult.Success(
                     new ProfileResponse
@@ -300,7 +300,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetProfileById_NotFound_ShouldReturnNotFound()
     {
-        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
             .Returns(new ProfileGetResult.FailureNotFound());
         using var client = SetUpClient();
         var response = await client.GetAsync("/v3/profiles/999");
@@ -357,7 +357,7 @@ public class ProfileModuleTests
     [Test]
     public async Task DeleteProfile_Valid_ShouldReturnNoContent()
     {
-        A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.DeleteProfile(A<int>.Ignored))
             .Returns(new ProfileDeleteResult.Success());
         using var client = SetUpClient();
         var response = await client.DeleteAsync("/v3/profiles/1");
@@ -367,7 +367,7 @@ public class ProfileModuleTests
     [Test]
     public async Task DeleteProfile_NotFound_ShouldReturnNotFound()
     {
-        A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.DeleteProfile(A<int>.Ignored))
             .Returns(new ProfileDeleteResult.FailureNotExists(999));
         using var client = SetUpClient();
         var response = await client.DeleteAsync("/v3/profiles/999");
@@ -377,7 +377,7 @@ public class ProfileModuleTests
     [Test]
     public async Task DeleteProfile_InUse_ShouldReturnConflict()
     {
-        A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.DeleteProfile(A<int>.Ignored))
             .Returns(new ProfileDeleteResult.FailureInUse(1));
         using var client = SetUpClient();
         var response = await client.DeleteAsync("/v3/profiles/1");
@@ -587,7 +587,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetProfileById_FailureUnknown_ShouldReturnInternalServerError()
     {
-        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
             .Returns(new ProfileGetResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
         var response = await client.GetAsync("/v3/profiles/1");
@@ -641,7 +641,7 @@ public class ProfileModuleTests
     [Test]
     public async Task DeleteProfile_FailureUnknown_ShouldReturnInternalServerError()
     {
-        A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.DeleteProfile(A<int>.Ignored))
             .Returns(new ProfileDeleteResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
         var response = await client.DeleteAsync("/v3/profiles/1");
@@ -708,7 +708,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetProfileById_InvalidProfile_ShouldReturnNotFound()
     {
-        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
             .Returns(
                 new ProfileGetResult.Success(
                     new ProfileResponse
@@ -728,7 +728,7 @@ public class ProfileModuleTests
     [Test]
     public async Task GetProfileById_InvalidXmlProfile_ShouldReturnNotFound()
     {
-        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
             .Returns(
                 new ProfileGetResult.Success(
                     new ProfileResponse

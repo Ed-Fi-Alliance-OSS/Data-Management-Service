@@ -68,41 +68,41 @@ erDiagram
     DataStore ||--o{ DataStoreDerivative : "has"
 
     Application {
-        bigint Id PK
+        int Id PK
         varchar ApplicationName
-        bigint VendorId FK
+        int VendorId FK
         varchar ClaimSetName
     }
 
     ApiClient {
-        bigint Id PK
-        bigint ApplicationId FK
+        int Id PK
+        int ApplicationId FK
         varchar ClientId
         uuid ClientUuid
     }
 
     ApiClientDataStore {
-        bigint ApiClientId PK_FK
-        bigint DataStoreId PK_FK
+        int ApiClientId PK_FK
+        int DataStoreId PK_FK
     }
 
     DataStore {
-        bigint Id PK
+        int Id PK
         varchar DataStoreType
         varchar Name
         bytea ConnectionString
     }
 
     DataStoreContext {
-        bigint Id PK
-        bigint DataStoreId FK
+        int Id PK
+        int DataStoreId FK
         varchar ContextKey
         varchar ContextValue
     }
 
     DataStoreDerivative {
-        bigint Id PK
-        bigint DataStoreId FK
+        int Id PK
+        int DataStoreId FK
         varchar DerivativeType
         bytea ConnectionString
     }
@@ -114,7 +114,7 @@ Stores data store definitions and encrypted connection strings.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| Id | BIGINT | Primary key |
+| Id | INT | Primary key |
 | DataStoreType | VARCHAR(50) | Data store classification |
 | Name | VARCHAR(256) | Human-readable data store name |
 | ConnectionString | BYTEA | Encrypted database connection string |
@@ -125,8 +125,8 @@ Stores context key-value pairs for route-based data store resolution.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| Id | BIGINT | Primary key |
-| DataStoreId | BIGINT | Foreign key to DataStore |
+| Id | INT | Primary key |
+| DataStoreId | INT | Foreign key to DataStore |
 | ContextKey | VARCHAR(256) | Context dimension name |
 | ContextValue | VARCHAR(256) | Context value |
 
@@ -139,8 +139,8 @@ Stores derivative data stores (read replicas and snapshots) associated with a pa
 
 | Column | Type | Description |
 |--------|------|-------------|
-| Id | BIGINT | Primary key |
-| DataStoreId | BIGINT | Foreign key to parent DataStore |
+| Id | INT | Primary key |
+| DataStoreId | INT | Foreign key to parent DataStore |
 | DerivativeType | VARCHAR(50) | Type of derivative: "ReadReplica" or "Snapshot" |
 | ConnectionString | BYTEA | Encrypted database connection string |
 
@@ -156,8 +156,8 @@ Stores OAuth client credentials for applications.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| Id | BIGINT | Primary key |
-| ApplicationId | BIGINT | Foreign key to Application |
+| Id | INT | Primary key |
+| ApplicationId | INT | Foreign key to Application |
 | ClientId | VARCHAR(36) | OAuth client identifier |
 | ClientUuid | UUID | Globally unique client identifier |
 
@@ -167,8 +167,8 @@ Maps API clients to data stores they can access (many-to-many).
 
 | Column | Type | Description |
 |--------|------|-------------|
-| ApiClientId | BIGINT | Foreign key to ApiClient |
-| DataStoreId | BIGINT | Foreign key to DataStore |
+| ApiClientId | INT | Foreign key to ApiClient |
+| DataStoreId | INT | Foreign key to DataStore |
 
 ## Data Store Derivatives
 

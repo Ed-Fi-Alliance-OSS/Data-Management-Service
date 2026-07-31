@@ -96,17 +96,17 @@ The DMS Configuration Service data model for managing security metadata will be 
 ```mermaid
 erDiagram
   ResourceClaim {
-    bigint Id PK
+    int Id PK
     varchar ResourceName
     varchar ClaimName
   }
   AuthorizationStrategy {
-    bigint Id PK
+    int Id PK
     varchar AuthorizationStrategyName
     varchar DisplayName
   }
   ClaimSet {
-    bigint Id PK
+    int Id PK
     varchar ClaimSetName
     boolean IsSystemReserved
   }

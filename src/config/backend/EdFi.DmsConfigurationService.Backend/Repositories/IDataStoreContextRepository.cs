@@ -12,12 +12,12 @@ public interface IDataStoreContextRepository
 {
     Task<DataStoreContextInsertResult> InsertDataStoreContext(DataStoreContextInsertCommand command);
     Task<DataStoreContextQueryResult> QueryDataStoreContext(PagingQuery query);
-    Task<DataStoreContextGetResult> GetDataStoreContext(long id);
+    Task<DataStoreContextGetResult> GetDataStoreContext(int id);
     Task<DataStoreContextUpdateResult> UpdateDataStoreContext(DataStoreContextUpdateCommand command);
-    Task<DataStoreContextDeleteResult> DeleteDataStoreContext(long id);
-    Task<DataStoreContextQueryByDataStoreResult> GetDataStoreContextsByDataStore(long dataStoreId);
+    Task<DataStoreContextDeleteResult> DeleteDataStoreContext(int id);
+    Task<DataStoreContextQueryByDataStoreResult> GetDataStoreContextsByDataStore(int dataStoreId);
     Task<DataStoreContextQueryByDataStoreIdsResult> GetDataStoreContextsByDataStoreIds(
-        List<long> dataStoreIds
+        List<int> dataStoreIds
     );
 }
 
@@ -27,7 +27,7 @@ public record DataStoreContextInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : DataStoreContextInsertResult();
+    public record Success(int Id) : DataStoreContextInsertResult();
 
     /// <summary>
     /// Referenced data store not found exception thrown and caught
@@ -37,7 +37,7 @@ public record DataStoreContextInsertResult
     /// <summary>
     /// Data store context already exists for the given DataStoreId and ContextKey
     /// </summary>
-    public record FailureDuplicateDataStoreContext(long DataStoreId, string ContextKey)
+    public record FailureDuplicateDataStoreContext(int DataStoreId, string ContextKey)
         : DataStoreContextInsertResult();
 
     /// <summary>
@@ -98,7 +98,7 @@ public record DataStoreContextUpdateResult
     /// <summary>
     /// Data store context already exists for the given DataStoreId and ContextKey
     /// </summary>
-    public record FailureDuplicateDataStoreContext(long DataStoreId, string ContextKey)
+    public record FailureDuplicateDataStoreContext(int DataStoreId, string ContextKey)
         : DataStoreContextUpdateResult();
 
     /// <summary>

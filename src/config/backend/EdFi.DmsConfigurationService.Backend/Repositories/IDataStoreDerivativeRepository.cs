@@ -12,12 +12,12 @@ public interface IDataStoreDerivativeRepository
 {
     Task<DataStoreDerivativeInsertResult> InsertDataStoreDerivative(DataStoreDerivativeInsertCommand command);
     Task<DataStoreDerivativeQueryResult> QueryDataStoreDerivative(PagingQuery query);
-    Task<DataStoreDerivativeGetResult> GetDataStoreDerivative(long id);
+    Task<DataStoreDerivativeGetResult> GetDataStoreDerivative(int id);
     Task<DataStoreDerivativeUpdateResult> UpdateDataStoreDerivative(DataStoreDerivativeUpdateCommand command);
-    Task<DataStoreDerivativeDeleteResult> DeleteDataStoreDerivative(long id);
-    Task<DataStoreDerivativeQueryByDataStoreResult> GetDataStoreDerivativesByDataStore(long dataStoreId);
+    Task<DataStoreDerivativeDeleteResult> DeleteDataStoreDerivative(int id);
+    Task<DataStoreDerivativeQueryByDataStoreResult> GetDataStoreDerivativesByDataStore(int dataStoreId);
     Task<DataStoreDerivativeQueryByDataStoreIdsResult> GetDataStoreDerivativesByDataStoreIds(
-        List<long> dataStoreIds
+        List<int> dataStoreIds
     );
 }
 
@@ -27,7 +27,7 @@ public record DataStoreDerivativeInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : DataStoreDerivativeInsertResult();
+    public record Success(int Id) : DataStoreDerivativeInsertResult();
 
     /// <summary>
     /// Insert failed due to foreign key violation (invalid DataStoreId)

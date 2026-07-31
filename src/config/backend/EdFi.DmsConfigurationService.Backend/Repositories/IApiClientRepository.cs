@@ -16,17 +16,17 @@ public interface IApiClientRepository
         ApiClientCommand clientCommand
     );
     Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
-    Task<ApiClientDeleteResult> DeleteApiClient(long id);
+    Task<ApiClientDeleteResult> DeleteApiClient(int id);
     Task<ApiClientQueryResult> QueryApiClient(ApiClientQuery query);
     Task<ApiClientGetResult> GetApiClientByClientId(string clientId);
-    Task<ApiClientGetResult> GetApiClientById(long id);
+    Task<ApiClientGetResult> GetApiClientById(int id);
 
     /// <summary>
     /// Reads the complete update-relevant state of an ApiClient inside a row-locking
     /// transaction. Locking the row waits out any in-flight update transaction, so the returned
     /// snapshot reflects that transaction's final outcome.
     /// </summary>
-    Task<ApiClientResolutionResult> GetApiClientResolutionState(long id);
+    Task<ApiClientResolutionResult> GetApiClientResolutionState(int id);
 
     /// <summary>
     /// Atomically sets the stored identity-provider client UUID, guarded by its expected current
@@ -34,7 +34,7 @@ public interface IApiClientRepository
     /// distinguishes whether any row still references the new UUID so the caller can decide
     /// whether deleting the recreated provider client is safe.
     /// </summary>
-    Task<ApiClientUuidSyncResult> SyncApiClientUuid(long id, Guid expectedClientUuid, Guid newClientUuid);
+    Task<ApiClientUuidSyncResult> SyncApiClientUuid(int id, Guid expectedClientUuid, Guid newClientUuid);
 
     /// <summary>
     /// Reports whether any ApiClient row references the given identity-provider client UUID.
@@ -48,12 +48,12 @@ public interface IApiClientRepository
 /// The complete state an ApiClient update mutates, including the exact data store set.
 /// </summary>
 public record ApiClientResolutionState(
-    long ApplicationId,
+    int ApplicationId,
     string Name,
     bool IsApproved,
     string ClientId,
     Guid ClientUuid,
-    long[] DataStoreIds
+    int[] DataStoreIds
 );
 
 public record ApiClientResolutionResult
@@ -130,7 +130,7 @@ public record ApiClientInsertResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : ApiClientInsertResult();
+    public record Success(int Id) : ApiClientInsertResult();
 
     /// <summary>
     /// Referenced application not found exception thrown and caught

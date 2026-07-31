@@ -74,7 +74,7 @@ public class DataStoreModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreRepository repository
     )
@@ -95,7 +95,7 @@ public class DataStoreModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         DataStoreUpdateCommand command,
         DataStoreUpdateCommand.Validator validator,
         HttpContext httpContext,
@@ -128,7 +128,7 @@ public class DataStoreModule : IEndpointModule
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreRepository repository
     )
@@ -149,7 +149,7 @@ public class DataStoreModule : IEndpointModule
     }
 
     private static async Task<IResult> GetApplicationsByDataStore(
-        long id,
+        int id,
         IDataStoreRepository repository,
         [AsParameters] PagingQuery query,
         HttpContext httpContext

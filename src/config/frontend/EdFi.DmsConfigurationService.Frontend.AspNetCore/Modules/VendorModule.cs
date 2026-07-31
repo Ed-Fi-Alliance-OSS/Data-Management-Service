@@ -123,7 +123,7 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IVendorRepository repository,
         ILogger<VendorModule> logger
@@ -146,7 +146,7 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         VendorUpdateCommand command,
         VendorUpdateCommand.Validator validator,
         HttpContext httpContext,
@@ -217,7 +217,7 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IVendorRepository repository,
         ILogger<VendorModule> logger
@@ -240,7 +240,7 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> GetApplicationsByVendorId(
-        long id,
+        int id,
         IVendorRepository repository,
         HttpContext httpContext
     )

@@ -13,10 +13,10 @@ public interface IVendorRepository
 {
     Task<VendorInsertResult> InsertVendor(VendorInsertCommand command);
     Task<VendorQueryResult> QueryVendor(VendorQuery query);
-    Task<VendorGetResult> GetVendor(long id);
+    Task<VendorGetResult> GetVendor(int id);
     Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command);
-    Task<VendorDeleteResult> DeleteVendor(long id);
-    Task<VendorApplicationsResult> GetVendorApplications(long vendorId);
+    Task<VendorDeleteResult> DeleteVendor(int id);
+    Task<VendorApplicationsResult> GetVendorApplications(int vendorId);
 }
 
 public record VendorInsertResult
@@ -26,7 +26,7 @@ public record VendorInsertResult
     /// </summary>
     /// <param name="Id">The Id of the inserted or updated vendor.</param>
     /// <param name="IsNewVendor">True if the vendor was newly inserted; false if an existing vendor was updated.</param>
-    public record Success(long Id, bool IsNewVendor) : VendorInsertResult();
+    public record Success(int Id, bool IsNewVendor) : VendorInsertResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

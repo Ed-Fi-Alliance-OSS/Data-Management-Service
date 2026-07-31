@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.DataStore;
 
 public class DataStoreResponse
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public required string DataStoreType { get; set; }
     public required string Name { get; set; }
     public string? ConnectionString { get; set; }
@@ -16,11 +16,11 @@ public class DataStoreResponse
     public long? TenantId { get; set; }
 }
 
-public record DataStoreContextItem(long Id, long DataStoreId, string ContextKey, string ContextValue);
+public record DataStoreContextItem(int Id, int DataStoreId, string ContextKey, string ContextValue);
 
 public record DataStoreDerivativeItem(
-    long Id,
-    long DataStoreId,
+    int Id,
+    int DataStoreId,
     string DerivativeType,
     string? ConnectionString
 );

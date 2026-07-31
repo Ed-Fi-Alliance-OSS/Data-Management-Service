@@ -87,7 +87,7 @@ public class DataStoreContextModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreContextRepository dataStoreContextRepository,
         ILogger<DataStoreContextModule> logger
@@ -107,7 +107,7 @@ public class DataStoreContextModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        long id,
+        int id,
         DataStoreContextUpdateCommand.Validator validator,
         DataStoreContextUpdateCommand command,
         HttpContext httpContext,
@@ -157,7 +157,7 @@ public class DataStoreContextModule : IEndpointModule
     }
 
     private static async Task<IResult> Delete(
-        long id,
+        int id,
         HttpContext httpContext,
         IDataStoreContextRepository dataStoreContextRepository,
         ILogger<DataStoreContextModule> logger

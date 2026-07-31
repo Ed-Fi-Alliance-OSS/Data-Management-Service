@@ -34,7 +34,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
 {
     private sealed class ClientState
     {
-        public long ApplicationId { get; set; }
+        public int ApplicationId { get; set; }
         public string ClientId { get; init; } = "";
         public Guid ClientUuid { get; set; }
     }
@@ -65,7 +65,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         public void Open() => _gateOpened.TrySetResult();
 
         public async Task<ApplicationLockResult> AcquireAsync(
-            long applicationId,
+            int applicationId,
             CancellationToken cancellationToken
         )
         {
@@ -92,7 +92,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     }
 
     private readonly object _stateLock = new();
-    private Dictionary<long, ClientState> _clients = [];
+    private Dictionary<int, ClientState> _clients = [];
 
     private IApplicationRepository _applicationRepository = null!;
     private IApiClientRepository _apiClientRepository = null!;
@@ -154,7 +154,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     /// The provider mutation numbered by <see cref="_pausedProviderCall"/> (or the first
     /// repository ApiClient update when configured) pauses until the test releases it.
     /// </summary>
-    private protected void SetUpWorkflowFakes(params (long ApiClientId, long ApplicationId)[] clients)
+    private protected void SetUpWorkflowFakes(params (int ApiClientId, int ApplicationId)[] clients)
     {
         _clients = clients.ToDictionary(
             client => client.ApiClientId,
@@ -187,7 +187,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         _providerUpdates = [];
         _outstandingRequests = [];
 
-        A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+        A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
             .Returns(
                 new VendorGetResult.Success(
                     new VendorResponse
@@ -201,22 +201,22 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 )
             );
 
-        A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+        A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
             .ReturnsLazily(call =>
             {
-                long[] ids = call.GetArgument<long[]>(0) ?? [];
+                int[] ids = call.GetArgument<int[]>(0) ?? [];
                 return Task.FromResult<DataStoreIdsExistResult>(
                     new DataStoreIdsExistResult.Success([.. ids])
                 );
             });
 
-        A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+        A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
             .ReturnsLazily(call =>
                 Task.FromResult<ApplicationGetResult>(
                     new ApplicationGetResult.Success(
                         new ApplicationResponse
                         {
-                            Id = call.GetArgument<long>(0),
+                            Id = call.GetArgument<int>(0),
                             ApplicationName = "Test Application",
                             ClaimSetName = "TestClaimSet",
                             VendorId = 1,
@@ -227,11 +227,11 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 )
             );
 
-        A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+        A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
             .ReturnsLazily(call =>
             {
                 Interlocked.Increment(ref _applicationApiClientsReads);
-                long applicationId = call.GetArgument<long>(0);
+                int applicationId = call.GetArgument<int>(0);
                 lock (_stateLock)
                 {
                     RepositoryApiClient[] applicationClients =
@@ -250,10 +250,10 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 }
             });
 
-        A.CallTo(() => _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored))
+        A.CallTo(() => _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored))
             .ReturnsLazily(call =>
             {
-                long applicationId = call.GetArgument<long>(0);
+                int applicationId = call.GetArgument<int>(0);
                 string clientId = call.GetArgument<string>(1)!;
                 lock (_stateLock)
                 {
@@ -282,7 +282,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
 
         A.CallTo(() =>
                 _applicationRepository.SyncApplicationApiClientUuid(
-                    A<long>.Ignored,
+                    A<int>.Ignored,
                     A<string>.Ignored,
                     A<Guid>.Ignored,
                     A<Guid>.Ignored
@@ -290,7 +290,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             )
             .ReturnsLazily(call =>
             {
-                long applicationId = call.GetArgument<long>(0);
+                int applicationId = call.GetArgument<int>(0);
                 string clientId = call.GetArgument<string>(1)!;
                 Guid expectedUuid = call.GetArgument<Guid>(2);
                 Guid newUuid = call.GetArgument<Guid>(3);
@@ -344,11 +344,11 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 return Task.FromResult<ApplicationUpdateResult>(new ApplicationUpdateResult.Success());
             });
 
-        A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+        A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
             .ReturnsLazily(call =>
             {
                 Interlocked.Increment(ref _apiClientReads);
-                long apiClientId = call.GetArgument<long>(0);
+                int apiClientId = call.GetArgument<int>(0);
                 lock (_stateLock)
                 {
                     ClientState state = _clients[apiClientId];
@@ -380,7 +380,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                     A<string>.Ignored,
                     A<string>.Ignored,
                     A<string>.Ignored,
-                    A<long[]?>.Ignored,
+                    A<int[]?>.Ignored,
                     A<bool>.Ignored,
                     A<string>.Ignored
                 )
@@ -470,7 +470,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         return client;
     }
 
-    private protected Guid CurrentClientUuid(long apiClientId)
+    private protected Guid CurrentClientUuid(int apiClientId)
     {
         lock (_stateLock)
         {
@@ -478,7 +478,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         }
     }
 
-    private protected long CurrentClientApplicationId(long apiClientId)
+    private protected int CurrentClientApplicationId(int apiClientId)
     {
         lock (_stateLock)
         {
@@ -634,7 +634,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         private bool _applicationCompletedWhileMoveCommitPending;
         private int _applicationReadsWhileMoveCommitPending;
         private int _applicationReadsAfterCompletion;
-        private long _movedClientParentAfterCommit;
+        private int _movedClientParentAfterCommit;
         private ProviderUpdate[] _updates = [];
 
         [SetUp]

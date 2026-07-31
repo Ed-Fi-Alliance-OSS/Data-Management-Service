@@ -4,8 +4,8 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS "dmscs"."DataStoreContext" (
-    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "DataStoreId" BIGINT NOT NULL,
+    "Id" INT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "DataStoreId" INT NOT NULL,
     "ContextKey" VARCHAR(256) NOT NULL,
     "ContextValue" VARCHAR(256) NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),

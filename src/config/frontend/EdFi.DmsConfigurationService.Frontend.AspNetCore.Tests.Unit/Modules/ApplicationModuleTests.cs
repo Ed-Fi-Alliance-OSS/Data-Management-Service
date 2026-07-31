@@ -40,14 +40,14 @@ public class ApplicationModuleTests
 
     public ApplicationModuleTests()
     {
-        A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+        A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
             .ReturnsLazily(_ =>
                 Task.FromResult<ApplicationLockResult>(
                     new ApplicationLockResult.Acquired(A.Fake<IAsyncDisposable>())
                 )
             );
 
-        A.CallTo(() => _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored))
+        A.CallTo(() => _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored))
             .Returns(
                 new ApplicationUpdateStateResult.Success(
                     new ApplicationUpdateState(
@@ -66,7 +66,7 @@ public class ApplicationModuleTests
 
         A.CallTo(() =>
                 _applicationRepository.SyncApplicationApiClientUuid(
-                    A<long>.Ignored,
+                    A<int>.Ignored,
                     A<string>.Ignored,
                     A<Guid>.Ignored,
                     A<Guid>.Ignored
@@ -77,16 +77,16 @@ public class ApplicationModuleTests
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .Returns(new ApiClientUuidReferenceResult.None());
 
-        A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+        A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
             .ReturnsLazily(call =>
             {
-                long[] ids = call.GetArgument<long[]>(0) ?? [];
+                int[] ids = call.GetArgument<int[]>(0) ?? [];
                 return Task.FromResult<DataStoreIdsExistResult>(
                     new DataStoreIdsExistResult.Success([.. ids])
                 );
             });
 
-        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+        A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
             .Returns(
                 new ProfileGetResult.Success(
                     new EdFi.DmsConfigurationService.DataModel.Model.Profile.ProfileResponse
@@ -155,7 +155,7 @@ public class ApplicationModuleTests
         [SetUp]
         public void Setup()
         {
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -192,7 +192,7 @@ public class ApplicationModuleTests
                     ])
                 );
 
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(
                     new ApplicationGetResult.Success(
                         new ApplicationResponse()
@@ -216,10 +216,10 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult.Success());
 
-            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult.Success());
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid(), true)]));
 
             A.CallTo(() =>
@@ -231,7 +231,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
@@ -249,7 +249,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -327,7 +327,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
@@ -540,7 +540,7 @@ public class ApplicationModuleTests
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
 
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
 
             A.CallTo(() =>
@@ -551,16 +551,16 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureNotExists());
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
         }
 
@@ -603,7 +603,7 @@ public class ApplicationModuleTests
         public async Task Should_return_not_found_before_validating_references_on_update()
         {
             // Arrange - the requested data store ids do not exist for this tenant either
-            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
                 .Returns(new DataStoreIdsExistResult.Success([]));
 
             using var client = SetUpClient();
@@ -640,7 +640,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -681,13 +681,13 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -714,7 +714,7 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
                 .Returns(new ApplicationQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(new ApplicationGetResult.FailureUnknown(""));
 
             A.CallTo(() =>
@@ -725,10 +725,10 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult.FailureUnknown(""));
 
-            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureUnknown(""));
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.FailureUnknown(""));
         }
 
@@ -801,7 +801,7 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult());
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -817,7 +817,7 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
                 .Returns(new ApplicationQueryResult());
 
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(new ApplicationGetResult());
 
             A.CallTo(() =>
@@ -828,10 +828,10 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult());
 
-            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult());
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult());
         }
 
@@ -903,14 +903,14 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
             // Keep the pre-check successful so repository-result tests reach their target branch.
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -939,7 +939,7 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid(), true)])
                 );
@@ -950,7 +950,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1014,7 +1014,7 @@ public class ApplicationModuleTests
             // Arrange
             var originalUuid = Guid.NewGuid();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(
                     new ApplicationUpdateStateResult.Success(
@@ -1041,7 +1041,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1070,7 +1070,7 @@ public class ApplicationModuleTests
             List<(Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -1130,7 +1130,7 @@ public class ApplicationModuleTests
         public async Task Should_not_update_identity_provider_when_update_vendor_id_is_invalid()
         {
             // Arrange
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(new VendorGetResult.FailureNotFound());
 
             using var client = SetUpClient();
@@ -1162,7 +1162,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1181,7 +1181,7 @@ public class ApplicationModuleTests
         public async Task It_returns_internal_server_error_when_vendor_lookup_fails_on_insert()
         {
             const string Sentinel = "SENTINEL_VENDOR_LOOKUP_INSERT_must_not_leak";
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(new VendorGetResult.FailureUnknown(Sentinel));
 
             using var client = SetUpClient();
@@ -1228,7 +1228,7 @@ public class ApplicationModuleTests
         public async Task It_returns_internal_server_error_when_vendor_lookup_fails_on_update()
         {
             const string Sentinel = "SENTINEL_VENDOR_LOOKUP_UPDATE_must_not_leak";
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(new VendorGetResult.FailureUnknown(Sentinel));
 
             using var client = SetUpClient();
@@ -1288,13 +1288,13 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -1323,7 +1323,7 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult.FailureDuplicateApplication("Test Application"));
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
@@ -1334,7 +1334,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1410,7 +1410,7 @@ public class ApplicationModuleTests
             );
 
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(new ApplicationUpdateStateResult.Success(originalState));
 
@@ -1419,7 +1419,7 @@ public class ApplicationModuleTests
                 string DisplayName,
                 string Scope,
                 string EducationOrganizationIds,
-                long[]? DataStoreIds
+                int[]? DataStoreIds
             )> providerUpdates = [];
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
@@ -1427,7 +1427,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1439,7 +1439,7 @@ public class ApplicationModuleTests
                             call.GetArgument<string>(1)!,
                             call.GetArgument<string>(2)!,
                             call.GetArgument<string>(3)!,
-                            call.GetArgument<long[]?>(4)
+                            call.GetArgument<int[]?>(4)
                         )
                     )
                 )
@@ -1448,10 +1448,10 @@ public class ApplicationModuleTests
                     new ClientUpdateResult.Success(rollbackUuid)
                 );
 
-            List<(long ApplicationId, string ClientId, Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
+            List<(int ApplicationId, string ClientId, Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -1460,7 +1460,7 @@ public class ApplicationModuleTests
                 .Invokes(call =>
                     syncCalls.Add(
                         (
-                            call.GetArgument<long>(0),
+                            call.GetArgument<int>(0),
                             call.GetArgument<string>(1)!,
                             call.GetArgument<Guid>(2),
                             call.GetArgument<Guid>(3)
@@ -1506,7 +1506,7 @@ public class ApplicationModuleTests
             providerUpdates[1].DisplayName.Should().Be("Original Application");
             providerUpdates[1].Scope.Should().Be("OriginalClaim");
             providerUpdates[1].EducationOrganizationIds.Should().Be("9");
-            providerUpdates[1].DataStoreIds.Should().Equal(42L);
+            providerUpdates[1].DataStoreIds.Should().Equal(42);
 
             syncCalls.Should().HaveCount(1);
             syncCalls[0].ApplicationId.Should().Be(1);
@@ -1553,7 +1553,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
@@ -1576,13 +1576,13 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -1596,8 +1596,8 @@ public class ApplicationModuleTests
                 );
 
             // Reset the default because sibling tests override this fake.
-            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored!))
-                .Returns(new DataStoreIdsExistResult.Success([999L]));
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored!))
+                .Returns(new DataStoreIdsExistResult.Success([999]));
 
             A.CallTo(() =>
                     _applicationRepository.InsertApplication(
@@ -1615,7 +1615,7 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult.FailureDataStoreNotFound());
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
@@ -1626,7 +1626,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1691,7 +1691,7 @@ public class ApplicationModuleTests
             // Arrange
             var originalUuid = Guid.NewGuid();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(
                     new ApplicationUpdateStateResult.Success(
@@ -1718,7 +1718,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1747,7 +1747,7 @@ public class ApplicationModuleTests
             List<(Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -1809,7 +1809,7 @@ public class ApplicationModuleTests
             // Arrange
             A.CallTo(() =>
                     _dataStoreRepository.GetExistingDataStoreIds(
-                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999L)
+                        A<int[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999)
                     )
                 )
                 .Returns(new DataStoreIdsExistResult.Success([]));
@@ -1846,7 +1846,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
@@ -1866,7 +1866,7 @@ public class ApplicationModuleTests
             // Arrange
             A.CallTo(() =>
                     _dataStoreRepository.GetExistingDataStoreIds(
-                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999L)
+                        A<int[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999)
                     )
                 )
                 .Returns(new DataStoreIdsExistResult.Success([]));
@@ -1901,7 +1901,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -1932,13 +1932,13 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -1967,7 +1967,7 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationUpdateResult.FailureProfileNotFound());
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
@@ -1978,7 +1978,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2042,7 +2042,7 @@ public class ApplicationModuleTests
         public async Task Should_return_conflict_when_profile_not_found_at_pre_check_on_update()
         {
             // Arrange
-            A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+            A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
                 .Returns(new ProfileGetResult.FailureNotFound());
 
             using var client = SetUpClient();
@@ -2091,7 +2091,7 @@ public class ApplicationModuleTests
         [Test]
         public async Task It_returns_conflict_when_profile_not_found_at_repository_on_update()
         {
-            A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+            A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
                 .Returns(
                     new ProfileGetResult.Success(
                         new ProfileResponse
@@ -2105,7 +2105,7 @@ public class ApplicationModuleTests
 
             var originalUuid = Guid.NewGuid();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(
                     new ApplicationUpdateStateResult.Success(
@@ -2132,7 +2132,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2161,7 +2161,7 @@ public class ApplicationModuleTests
             List<(Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -2220,7 +2220,7 @@ public class ApplicationModuleTests
         public async Task Should_not_update_identity_provider_when_update_profile_id_is_invalid()
         {
             // Arrange
-            A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+            A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
                 .Returns(new ProfileGetResult.FailureNotFound());
 
             // Local capture lists rather than MustNotHaveHappened: the shared fixture instance
@@ -2232,7 +2232,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2317,11 +2317,11 @@ public class ApplicationModuleTests
             );
 
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(new ApplicationUpdateStateResult.Success(_originalState));
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -2334,7 +2334,7 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([
                         new ApiClient("clientId", _originalClientUuid, true),
@@ -2347,7 +2347,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2411,7 +2411,7 @@ public class ApplicationModuleTests
         public async Task Act()
         {
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(new ApplicationUpdateStateResult.FailureNotExists());
 
@@ -2422,7 +2422,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2450,7 +2450,7 @@ public class ApplicationModuleTests
         public async Task Act()
         {
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(new ApplicationUpdateStateResult.FailureUnknown(Sentinel));
 
@@ -2461,7 +2461,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2499,7 +2499,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2558,7 +2558,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -2594,7 +2594,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2614,7 +2614,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -2658,7 +2658,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2769,7 +2769,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2790,7 +2790,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -2833,7 +2833,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2882,7 +2882,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -2912,7 +2912,7 @@ public class ApplicationModuleTests
         public void It_does_not_synchronize_the_client_uuid() =>
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -2923,7 +2923,7 @@ public class ApplicationModuleTests
         [Test]
         public void It_acquires_and_releases_the_aggregate_lock()
         {
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1);
             _recordingLockManager.Handle.Disposed.Should().BeTrue();
         }
     }
@@ -3009,7 +3009,7 @@ public class ApplicationModuleTests
     {
         private Guid _providerClientUuid;
         private List<string> _providerDeletes = null!;
-        private List<long> _databaseDeletes = null!;
+        private List<int> _databaseDeletes = null!;
         private HttpResponseMessage _deleteResponse = null!;
 
         [SetUp]
@@ -3019,7 +3019,7 @@ public class ApplicationModuleTests
             _providerDeletes = [];
             _databaseDeletes = [];
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([
                         new ApiClient("clientId", _providerClientUuid, true),
@@ -3030,8 +3030,8 @@ public class ApplicationModuleTests
                 .Invokes(call => _providerDeletes.Add(call.GetArgument<string>(0)!))
                 .Returns(new ClientDeleteResult.FailureClientNotFound("Client not found"));
 
-            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
-                .Invokes(call => _databaseDeletes.Add(call.GetArgument<long>(0)))
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
+                .Invokes(call => _databaseDeletes.Add(call.GetArgument<int>(0)))
                 .Returns(new ApplicationDeleteResult.Success());
 
             using var client = SetUpClient();
@@ -3050,14 +3050,14 @@ public class ApplicationModuleTests
             _providerDeletes.Should().Equal(_providerClientUuid.ToString());
 
         [Test]
-        public void It_invokes_the_database_delete() => _databaseDeletes.Should().Equal(1L);
+        public void It_invokes_the_database_delete() => _databaseDeletes.Should().Equal(1);
     }
 
     public abstract class DeleteProviderFailureTestBase : ApplicationModuleTests
     {
         protected Guid _providerClientUuid;
         protected List<string> _providerDeletes = null!;
-        protected List<long> _databaseDeletes = null!;
+        protected List<int> _databaseDeletes = null!;
         protected HttpResponseMessage _deleteResponse = null!;
 
         [SetUp]
@@ -3067,15 +3067,15 @@ public class ApplicationModuleTests
             _providerDeletes = [];
             _databaseDeletes = [];
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([
                         new ApiClient("clientId", _providerClientUuid, true),
                     ])
                 );
 
-            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
-                .Invokes(call => _databaseDeletes.Add(call.GetArgument<long>(0)))
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
+                .Invokes(call => _databaseDeletes.Add(call.GetArgument<int>(0)))
                 .Returns(new ApplicationDeleteResult.Success());
         }
 
@@ -3112,7 +3112,7 @@ public class ApplicationModuleTests
             _recordingLockManager = new RecordingLockManager(() => _callOrder.Add("lock"));
             _lockManager = _recordingLockManager;
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Invokes(_ => _callOrder.Add("clients-read"))
                 .Returns(
                     new ApplicationApiClientsResult.Success([
@@ -3160,7 +3160,7 @@ public class ApplicationModuleTests
         [Test]
         public void It_acquires_the_lock_before_the_clients_read()
         {
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1);
             _callOrder.Take(2).Should().Equal("lock", "clients-read");
         }
 
@@ -3242,7 +3242,7 @@ public class ApplicationModuleTests
     {
         private Guid _secondClientUuid;
         private Guid _thirdClientUuid;
-        private List<long> _databaseDeletesAfterFailedAttempt = null!;
+        private List<int> _databaseDeletesAfterFailedAttempt = null!;
         private HttpResponseMessage _retryResponse = null!;
 
         [SetUp]
@@ -3251,7 +3251,7 @@ public class ApplicationModuleTests
             _secondClientUuid = Guid.NewGuid();
             _thirdClientUuid = Guid.NewGuid();
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
                     new ApplicationApiClientsResult.Success([
                         new ApiClient("clientOne", _providerClientUuid, true),
@@ -3324,7 +3324,7 @@ public class ApplicationModuleTests
         public void It_converges_on_retry()
         {
             _retryResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            _databaseDeletes.Should().Equal(1L);
+            _databaseDeletes.Should().Equal(1);
         }
 
         [Test]
@@ -3352,7 +3352,7 @@ public class ApplicationModuleTests
             _createdClientUuid = Guid.NewGuid();
             _deletedClientUuids = [];
 
-            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
                 .Returns(
                     new VendorGetResult.Success(
                         new VendorResponse
@@ -3374,7 +3374,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored
                     )
                 )
@@ -3454,7 +3454,7 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([new ApiClient("1", Guid.NewGuid(), true)]));
 
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
@@ -3475,7 +3475,7 @@ public class ApplicationModuleTests
             var responseBody = await resetResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             actualResponse.Should().NotBeNull();
-            actualResponse!["id"]!.GetValue<long>().Should().Be(1);
+            actualResponse!["id"]!.GetValue<int>().Should().Be(1);
             actualResponse!["key"]!.GetValue<string>().Should().Be("1");
             actualResponse!["secret"]!.GetValue<string>().Should().Be("NEW_SECRET");
         }
@@ -3485,7 +3485,7 @@ public class ApplicationModuleTests
         {
             // Arrange
             using var client = SetUpClient();
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
 
             // Act
@@ -3800,7 +3800,7 @@ public class ApplicationModuleTests
             // Arrange
             using var client = SetUpClientWithEndpointDisabled();
 
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(
                     new ApplicationGetResult.Success(
                         new ApplicationResponse()
@@ -3897,7 +3897,7 @@ public class ApplicationModuleTests
         public async Task It_returns_enabled_false_on_get_by_id_when_application_is_disabled()
         {
             // Arrange
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(
                     new ApplicationGetResult.Success(
                         new ApplicationResponse()
@@ -3941,10 +3941,10 @@ public class ApplicationModuleTests
     private sealed class RecordingLockManager(Action? onAcquire = null) : IApplicationLockManager
     {
         public RecordingLockHandle Handle { get; } = new();
-        public List<long> AcquiredApplicationIds { get; } = [];
+        public List<int> AcquiredApplicationIds { get; } = [];
 
         public Task<ApplicationLockResult> AcquireAsync(
-            long applicationId,
+            int applicationId,
             CancellationToken cancellationToken
         )
         {
@@ -3986,7 +3986,7 @@ public class ApplicationModuleTests
         public async Task Act()
         {
             _dependencyCalls = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
                 .Returns(new ApplicationLockResult.FailureTimeout());
             A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
             A.CallTo(_apiClientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
@@ -4016,7 +4016,7 @@ public class ApplicationModuleTests
         [SetUp]
         public async Task Act()
         {
-            A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
                 .Returns(new ApplicationLockResult.FailureUnknown(Sentinel));
 
             await ActUpdateAsync();
@@ -4040,7 +4040,7 @@ public class ApplicationModuleTests
             _recordingLockManager = new RecordingLockManager(() => _callOrder.Add("lock"));
             _lockManager = _recordingLockManager;
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Invokes(_ => _callOrder.Add("clients-read"))
                 .Returns(
                     new ApplicationApiClientsResult.Success([
@@ -4066,7 +4066,7 @@ public class ApplicationModuleTests
         [Test]
         public void It_acquires_the_lock_before_the_first_read()
         {
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1L);
+            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1);
             _callOrder.Take(2).Should().Equal("lock", "clients-read");
         }
 
@@ -4095,7 +4095,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -4110,7 +4110,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -4142,7 +4142,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -4167,7 +4167,7 @@ public class ApplicationModuleTests
         {
             ArrangeProviderUpdates();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .ReturnsNextFromSequence(
                     new ApplicationUpdateStateResult.Success(_originalState),
@@ -4205,7 +4205,7 @@ public class ApplicationModuleTests
         {
             ArrangeProviderUpdates();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .ReturnsNextFromSequence(
                     new ApplicationUpdateStateResult.Success(_originalState),
@@ -4239,7 +4239,7 @@ public class ApplicationModuleTests
         {
             ArrangeProviderUpdates();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .ReturnsNextFromSequence(
                     new ApplicationUpdateStateResult.Success(_originalState),
@@ -4284,7 +4284,7 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
@@ -4324,14 +4324,14 @@ public class ApplicationModuleTests
     [TestFixture]
     public class Given_a_failed_application_update_with_disjoint_client_data_stores : UpdateRollbackTestBase
     {
-        private List<long[]?> _providerDataStoreArguments = null!;
+        private List<int[]?> _providerDataStoreArguments = null!;
 
         [SetUp]
         public async Task Act()
         {
             // The aggregate read unions data stores across clients; compensation must restore
             // the selected client's exact set instead.
-            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(
                     new ApplicationGetResult.Success(
                         new ApplicationResponse
@@ -4359,7 +4359,7 @@ public class ApplicationModuleTests
                 [1]
             );
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .Returns(new ApplicationUpdateStateResult.Success(_originalState));
 
@@ -4370,12 +4370,12 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored,
+                        A<int[]?>.Ignored,
                         A<bool>.Ignored,
                         A<string>.Ignored
                     )
                 )
-                .Invokes(call => _providerDataStoreArguments.Add(call.GetArgument<long[]?>(4)))
+                .Invokes(call => _providerDataStoreArguments.Add(call.GetArgument<int[]?>(4)))
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
 
             A.CallTo(() =>
@@ -4397,7 +4397,7 @@ public class ApplicationModuleTests
         public void It_restores_only_the_selected_clients_data_stores()
         {
             _providerDataStoreArguments.Should().HaveCount(2);
-            _providerDataStoreArguments[1].Should().Equal(1L);
+            _providerDataStoreArguments[1].Should().Equal(1);
         }
     }
 
@@ -4424,7 +4424,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -4467,7 +4467,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored
@@ -4494,7 +4494,7 @@ public class ApplicationModuleTests
         {
             ArrangeProviderUpdates();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .ReturnsNextFromSequence(
                     new ApplicationUpdateStateResult.Success(_originalState),
@@ -4559,7 +4559,7 @@ public class ApplicationModuleTests
         public async Task Act()
         {
             _dependencyCalls = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
                 .Returns(new ApplicationLockResult.FailureTimeout());
             A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
             A.CallTo(_clientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
@@ -4593,12 +4593,12 @@ public class ApplicationModuleTests
             _recordingLockManager = new RecordingLockManager();
             _lockManager = _recordingLockManager;
 
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
 
             var deleteEntered = new TaskCompletionSource();
             var releaseDelete = new TaskCompletionSource();
-            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .ReturnsLazily(async _ =>
                 {
                     deleteEntered.TrySetResult();
@@ -4642,7 +4642,7 @@ public class ApplicationModuleTests
         public async Task Act()
         {
             _dependencyCalls = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<long>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
                 .Returns(new ApplicationLockResult.FailureTimeout());
             A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
             A.CallTo(_clientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
@@ -4672,7 +4672,7 @@ public class ApplicationModuleTests
         {
             ArrangeProviderUpdates();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .ReturnsNextFromSequence(
                     new ApplicationUpdateStateResult.Success(_originalState),
@@ -4709,7 +4709,7 @@ public class ApplicationModuleTests
         {
             ArrangeProviderUpdates();
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<long>.Ignored, A<string>.Ignored)
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
                 .ReturnsNextFromSequence(
                     new ApplicationUpdateStateResult.Success(_originalState),
@@ -4756,7 +4756,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() =>
                     _applicationRepository.SyncApplicationApiClientUuid(
-                        A<long>.Ignored,
+                        A<int>.Ignored,
                         A<string>.Ignored,
                         A<Guid>.Ignored,
                         A<Guid>.Ignored

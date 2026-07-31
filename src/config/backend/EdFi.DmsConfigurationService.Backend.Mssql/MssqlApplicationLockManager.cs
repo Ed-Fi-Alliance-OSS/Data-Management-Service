@@ -48,7 +48,7 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
     }
 
     public async Task<ApplicationLockResult> AcquireAsync(
-        long applicationId,
+        int applicationId,
         CancellationToken cancellationToken
     )
     {
@@ -138,7 +138,7 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
     /// Deterministic session-lock resource name; the namespace prefix keeps future application
     /// locks from colliding with other uses.
     /// </summary>
-    internal static string ComputeLockResource(long applicationId) =>
+    internal static string ComputeLockResource(int applicationId) =>
         string.Create(CultureInfo.InvariantCulture, $"dmscs:application:{applicationId}");
 
     /// <summary>
@@ -195,7 +195,7 @@ internal sealed class MssqlApplicationLockManager : IApplicationLockManager
         MssqlApplicationLockManager manager,
         SqlConnection connection,
         string resource,
-        long applicationId
+        int applicationId
     ) : IAsyncDisposable
     {
         private readonly Stopwatch _held = Stopwatch.StartNew();

@@ -4,7 +4,7 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS "dmscs"."Vendor" (
-    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "Id" INT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
     "Company" VARCHAR(256) NOT NULL,
     "ContactName" VARCHAR(128),
     "ContactEmailAddress" VARCHAR(320),
@@ -45,7 +45,7 @@ BEGIN
 END$$;
 
 CREATE TABLE IF NOT EXISTS "dmscs"."VendorNamespacePrefix" (
-    "VendorId" BIGINT NOT NULL,
+    "VendorId" INT NOT NULL,
     "NamespacePrefix" VARCHAR(128) NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
     "CreatedBy" VARCHAR(256),
