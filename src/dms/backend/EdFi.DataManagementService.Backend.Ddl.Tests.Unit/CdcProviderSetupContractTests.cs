@@ -15,11 +15,12 @@ internal sealed class TestConnectorPrincipalProbeFactory : ICdcConnectorPrincipa
 internal static class CdcProviderSetupContractTestData
 {
     internal static CdcProviderSetupRequest BuildPostgresqlRequest(
-        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch
     ) =>
         new(
             provider: CdcProvider.Postgresql,
-            mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
+            mode: mode,
             boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
                 "dms-source-fingerprint-v1",
                 "source-123"
