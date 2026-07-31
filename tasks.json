@@ -160,7 +160,7 @@
       "Run provider integration tests for canonical write/enqueue retry cases in the PostgreSQL and SQL Server backend integration projects.",
       "Review write-path retry boundaries to confirm retries wrap repository calls and not trigger-specific fragments."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "service-registration",
