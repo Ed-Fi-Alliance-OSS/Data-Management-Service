@@ -149,6 +149,8 @@ public class DocumentCacheAdministrativeContractsTests
             DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
             DocumentCacheTargetDiagnosticCategory.NonemptyGuardedActivationState,
             DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown,
+            DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure,
+            DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
             DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch,
             DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
         ];
