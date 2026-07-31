@@ -323,7 +323,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderAccessRetry",
       "Review PostgreSQL fixtures to ensure no test relies on deleting and recreating replication slots as same-binding repair."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-db-apply-artifacts-tests",

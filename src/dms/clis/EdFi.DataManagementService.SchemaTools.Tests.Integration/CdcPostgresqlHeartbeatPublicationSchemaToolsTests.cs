@@ -275,7 +275,8 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     }
 
     [Test]
-    public async Task It_should_exact_match_existing_artifacts_in_validate_only_without_mutating_heartbeat()
+    [Category("PostgresqlCdcAccessRetry")]
+    public async Task PostgresqlCdcAccessRetry_should_exact_match_existing_artifacts_in_validate_only_without_mutating_heartbeat()
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -292,7 +293,8 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     }
 
     [Test]
-    public async Task PostgresqlCdcPrincipalAccess_should_grant_and_validate_connector_principal_boundaries()
+    [Category("PostgresqlCdcAccessRetry")]
+    public async Task PostgresqlCdcPrincipalAccess_PostgresqlCdcAccessRetry_should_grant_and_validate_connector_principal_boundaries()
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
