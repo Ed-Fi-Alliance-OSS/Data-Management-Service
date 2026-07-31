@@ -23,7 +23,8 @@ public class OtlpLoggingOptions
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// The OTLP collector endpoint, e.g. "http://collector:4318". When not set, the sink's own default applies.
+    /// The OTLP collector endpoint, e.g. "http://collector:4318". Required when <see cref="Enabled"/>
+    /// is true: when missing, the sink is not applied and a warning is written to stderr.
     /// </summary>
     public string? Endpoint { get; set; }
 

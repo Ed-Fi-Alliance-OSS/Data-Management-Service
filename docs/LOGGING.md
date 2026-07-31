@@ -238,7 +238,10 @@ The `OtlpLogging` section supports these keys:
 * `Endpoint`: the OTLP collector endpoint, for example
   `http://collector:4318`. Required when `Enabled` is `true`: if it is
   omitted, OTLP export is not applied and a warning is written to stderr.
-* `Protocol`: the OTLP wire protocol, either `Grpc` or `HttpProtobuf`.
+* `Protocol`: the OTLP wire protocol, either `Grpc` or `HttpProtobuf`. The
+  value binds case-insensitively, but OTLP-convention spellings such as
+  `http/protobuf` are not accepted and fail startup with a configuration
+  binding error.
 * `ServiceName`: the `service.name` resource attribute. Defaults to
   `EdFi.DataManagementService` for DMS and `EdFi.DmsConfigurationService` for
   CMS, matching each application's `Application` request log property.
@@ -273,9 +276,11 @@ choice. CMS and DMS do not document or bundle vendor-specific sinks.
 ### Deployment Recipes
 
 These recipes are guidance for routing CMS and DMS logs in common deployment
-environments. None of them require code or runnable asset changes; each
-recipe uses the stdout contract, the file sink, or the `OtlpLogging` section
-described above.
+environments. None of them require application code changes or a custom
+image; each recipe uses the stdout contract, the file sink, or the
+`OtlpLogging` section described above. The Docker recipe does require passing
+the `OtlpLogging` environment variables through the compose service
+definition, as described below.
 
 #### Kubernetes
 

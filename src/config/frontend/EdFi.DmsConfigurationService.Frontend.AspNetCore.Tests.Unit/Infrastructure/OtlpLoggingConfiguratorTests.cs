@@ -4,8 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
@@ -234,6 +237,7 @@ public class Given_an_unreachable_otlp_collector_endpoint
     [TearDown]
     public void TearDown()
     {
+        Serilog.Debugging.SelfLog.Disable();
         Environment.SetEnvironmentVariable(OtlpEnabledEnv, null);
         Environment.SetEnvironmentVariable(OtlpEndpointEnv, null);
     }
@@ -242,14 +246,27 @@ public class Given_an_unreachable_otlp_collector_endpoint
     public async Task It_starts_the_application_and_serves_a_request_despite_the_delivery_failure()
     {
         // Arrange
+        // Reserve and immediately release a loopback port so the endpoint is genuinely closed,
+        // instead of hoping a hard-coded port is unoccupied.
+        var portReservation = new TcpListener(IPAddress.Loopback, 0);
+        portReservation.Start();
+        int closedPort = ((IPEndPoint)portReservation.LocalEndpoint).Port;
+        portReservation.Stop();
+
         Environment.SetEnvironmentVariable(OtlpEnabledEnv, "true");
-        Environment.SetEnvironmentVariable(OtlpEndpointEnv, "http://127.0.0.1:59999");
+        Environment.SetEnvironmentVariable(OtlpEndpointEnv, $"http://127.0.0.1:{closedPort}");
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
         });
         using var client = factory.CreateClient();
+
+        // ApplyOtlpSink enabled SelfLog to stderr at boot; redirect it to a capture buffer so the
+        // export attempt is observable. This also proves the OTLP sink was actually installed -
+        // without it the test would pass trivially if the configuration never reached the logger.
+        var selfLogLines = new ConcurrentQueue<string>();
+        Serilog.Debugging.SelfLog.Enable(message => selfLogLines.Enqueue(message));
 
         // Act
         var response = await client.GetAsync("/openapi/v1.json");
@@ -260,6 +277,19 @@ public class Given_an_unreachable_otlp_collector_endpoint
             .Be(
                 HttpStatusCode.OK,
                 "an unreachable OTLP collector must not block application startup or request handling"
+            );
+
+        for (int i = 0; i < 30 && !selfLogLines.Any(l => l.Contains("failed emitting a batch")); i++)
+        {
+            await client.GetAsync("/openapi/v1.json");
+            await Task.Delay(500);
+        }
+
+        selfLogLines
+            .Should()
+            .Contain(
+                line => line.Contains("failed emitting a batch"),
+                "the export attempt against the closed port must be observable through SelfLog"
             );
     }
 }

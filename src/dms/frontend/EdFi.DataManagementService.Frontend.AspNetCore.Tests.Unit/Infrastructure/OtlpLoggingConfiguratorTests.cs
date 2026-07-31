@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Sockets;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -236,6 +238,7 @@ public class Given_An_Unreachable_Otlp_Export_Target
     [TearDown]
     public void TearDown()
     {
+        Serilog.Debugging.SelfLog.Disable();
         Environment.SetEnvironmentVariable(EnabledEnv, null);
         Environment.SetEnvironmentVariable(EndpointEnv, null);
     }
@@ -243,8 +246,15 @@ public class Given_An_Unreachable_Otlp_Export_Target
     [Test]
     public async Task It_starts_and_serves_requests_without_being_blocked_by_export_failures()
     {
+        // Reserve and immediately release a loopback port so the endpoint is genuinely closed,
+        // instead of hoping a hard-coded port is unoccupied.
+        var portReservation = new TcpListener(IPAddress.Loopback, 0);
+        portReservation.Start();
+        int closedPort = ((IPEndPoint)portReservation.LocalEndpoint).Port;
+        portReservation.Stop();
+
         Environment.SetEnvironmentVariable(EnabledEnv, "true");
-        Environment.SetEnvironmentVariable(EndpointEnv, "http://127.0.0.1:59999");
+        Environment.SetEnvironmentVariable(EndpointEnv, $"http://127.0.0.1:{closedPort}");
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -258,8 +268,26 @@ public class Given_An_Unreachable_Otlp_Export_Target
         });
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/health");
+        // ApplyOtlpSink enabled SelfLog to stderr at boot; redirect it to a capture buffer so the
+        // export attempt is observable. This also proves the OTLP sink was actually installed -
+        // without it the test would pass trivially if the configuration never reached the logger.
+        var selfLogLines = new ConcurrentQueue<string>();
+        Serilog.Debugging.SelfLog.Enable(message => selfLogLines.Enqueue(message));
 
+        var response = await client.GetAsync("/health");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        for (int i = 0; i < 30 && !selfLogLines.Any(l => l.Contains("failed emitting a batch")); i++)
+        {
+            await client.GetAsync("/health");
+            await Task.Delay(500);
+        }
+
+        selfLogLines
+            .Should()
+            .Contain(
+                line => line.Contains("failed emitting a batch"),
+                "the export attempt against the closed port must be observable through SelfLog"
+            );
     }
 }
