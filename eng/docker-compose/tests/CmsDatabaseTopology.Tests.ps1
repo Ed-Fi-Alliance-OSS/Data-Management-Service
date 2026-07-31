@@ -26,10 +26,37 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         # POSTGRES_DB_NAME/MSSQL_DB_NAME too, so a leftover value from the developer's own shell (or
         # a prior test) can now change these tests' outcome. Snapshot/clear/restore every ambient
         # variable either function under test consumes, not just the one a given test happens to set.
+        #
+        # The reorder-preservation cases below add a second reason: the proof treats a declaration whose
+        # own key the ambient environment supplies as inert, so an ordinary shell variable named FEATURE or
+        # PASSWORD would silently flip those tests from "rejects the unsafe move" to "permits it". Every
+        # name any fixture in this Describe declares is therefore snapshotted and cleared too.
         $script:ambientKeys = @(
             "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_SA_PASSWORD",
-            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE",
+            "FEATURE", "PASSWORD", "UNRELATED", "SET_ABOVE"
         )
+
+        # SHA-256 and byte length read through [System.IO.File], never Get-FileHash / Get-Item. Every
+        # fixture path in this Describe is dot-prefixed, and Linux PowerShell treats a leading dot as
+        # hidden, so Get-Item -LiteralPath returns NOTHING for them without -Force. Measured on
+        # ubuntu-latest: `(Get-Item $path).Length | Should -Be $lengthBefore` compared $null to $null and
+        # passed vacuously, so a clobbered file would have been reported as unchanged. Reading the bytes
+        # directly cannot be fooled that way, and it is the same byte-level notion of "unchanged" the
+        # production rollback promises.
+        function script:Get-FileFingerprint {
+            param([Parameter(Mandatory)] [string]$Path)
+
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            $algorithm = [System.Security.Cryptography.SHA256]::Create()
+            try {
+                $hash = [System.BitConverter]::ToString($algorithm.ComputeHash($bytes)).Replace('-', '')
+            }
+            finally {
+                $algorithm.Dispose()
+            }
+            return [pscustomobject]@{ Sha256 = $hash; Length = $bytes.Length }
+        }
     }
 
     BeforeEach {
@@ -307,7 +334,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             )
             Set-Content -LiteralPath $basePath -Value ($sourceLines -join "`n") -NoNewline
-            $sourceHashBefore = (Get-FileHash -LiteralPath $basePath -Algorithm SHA256).Hash
+            $sourceFingerprintBefore = Get-FileFingerprint -Path $basePath
 
             (Resolve-DotenvFileSequentially -Path $basePath).Effective["FEATURE"] |
                 Should -BeExactly 'disabled' -Because "this is what Compose renders before any repair"
@@ -319,8 +346,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $thrown.Exception.Message | Should -Not -BeLike "*secret*" -Because "an environment file carries credentials; the diagnostic names keys and lines only"
             $thrown.Exception.Message | Should -Not -BeLike "*disabled*" -Because "neither the before nor the after value may be rendered"
 
-            (Get-FileHash -LiteralPath $basePath -Algorithm SHA256).Hash |
-                Should -Be $sourceHashBefore -Because "the source environment file is never written to"
+            (Get-FileFingerprint -Path $basePath).Sha256 |
+                Should -Be $sourceFingerprintBefore.Sha256 -Because "the source environment file is never written to"
             Get-DerivedArtifactName | Should -BeNullOrEmpty -Because "the unsafe artifact this call created must not survive for a later run to pick up"
         }
 
@@ -428,6 +455,194 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $derived.Effective["FEATURE"] | Should -BeExactly 'already-set'
             $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+        }
+
+        It "permits the move when the affected declaration's own key comes from the ambient environment" {
+            # A matched pair with the ':-' rejection above: the same file, one variable changed. Ambient
+            # precedence makes the FEATURE declaration inert - Compose ignores the file's value entirely,
+            # both for the final environment and for every later reference - so the value frozen at that
+            # line is not something a move can change. Comparing it anyway refused a safe repair over a
+            # value that never reaches the container.
+            $sharedLines = @(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=${PASSWORD:-disabled}',
+                'PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            )
+            $basePath = Join-Path $script:work ".env.ambient-shadowed"
+            Set-Content -LiteralPath $basePath -Value ($sharedLines -join "`n") -NoNewline
+
+            # The other half of the pair, asserted on the SAME file: without the ambient value this must
+            # still be rejected, or the exemption would be a blanket one.
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*renders for 'FEATURE'*"
+
+            [System.Environment]::SetEnvironmentVariable("FEATURE", "ambient-stable")
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+
+            $derived = Resolve-DotenvFileSequentially -Path $result
+            $derived.Effective["FEATURE"] | Should -BeExactly 'ambient-stable' -Because "ambient wins in both orderings, so what Compose renders for FEATURE did not change"
+            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+                Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
+        }
+
+        It "counts a present-but-EMPTY ambient value as supplied, like the evaluator's own provenance rule" {
+            # Resolve-DotenvFileSequentially tests ambient provenance with a $null check, not a blank check,
+            # so an explicitly-empty ambient value still shadows the file declaration. The proof has to use
+            # the same rule or the two disagree about which declarations are live.
+            $basePath = Join-Path $script:work ".env.ambient-empty"
+            Set-Content -LiteralPath $basePath -Value (@(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=${PASSWORD:-disabled}',
+                'PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("FEATURE", "")
+            if ($null -eq [System.Environment]::GetEnvironmentVariable("FEATURE")) {
+                # On Unix .NET deletes the variable when it is set to an empty string, so the state under
+                # test cannot be established. Assert the precondition rather than letting the platform
+                # silently decide whether this test means anything.
+                Set-ItResult -Skipped -Because "this platform cannot represent a present-but-blank ambient environment variable"
+                return
+            }
+
+            $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
+            (Resolve-DotenvFileSequentially -Path $result).Effective["FEATURE"] | Should -BeExactly ''
+        }
+    }
+
+    # A rejected repair must be a no-op on disk. Write-DerivedEnvFile replaces its target outright, so the
+    # write has to sit inside the same protected region as the moves it precedes - otherwise the rejection
+    # arrives after the previous artifact has already been destroyed.
+    Context "a rejected repair leaves the derived target exactly as it was found (DMS-1270)" {
+        BeforeAll {
+            $script:unsafeReorderLines = @(
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'FEATURE=${PASSWORD:-disabled}',
+                'PASSWORD=secret',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
+            )
+        }
+
+        It "restores a pre-existing derived target byte-for-byte instead of clobbering it" {
+            $basePath = Join-Path $script:work ".env.preexisting-target"
+            Set-Content -LiteralPath $basePath -Value ($script:unsafeReorderLines -join "`n") -NoNewline
+
+            $derivedDir = Join-Path $script:work ".derived"
+            New-Item -ItemType Directory -Path $derivedDir -Force | Out-Null
+            $targetPath = Join-Path $derivedDir ".env.preexisting-target.topology"
+            # Deliberately unlike anything this function would ever write, so a clobber cannot pass as a
+            # coincidentally-correct result.
+            [System.IO.File]::WriteAllBytes($targetPath, [System.Text.Encoding]::UTF8.GetBytes("PRIOR_RUN_MARKER=keep-me`n"))
+            $fingerprintBefore = Get-FileFingerprint -Path $targetPath
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*renders for 'FEATURE'*"
+
+            $fingerprintAfter = Get-FileFingerprint -Path $targetPath
+            $fingerprintAfter.Sha256 | Should -Be $fingerprintBefore.Sha256
+            $fingerprintAfter.Length | Should -Be $fingerprintBefore.Length
+            [System.IO.File]::ReadAllText($targetPath) | Should -BeExactly "PRIOR_RUN_MARKER=keep-me`n"
+        }
+
+        It "restores the caller's own input file in the same-path .topology re-entry shape" {
+            # Re-deriving from a previous output makes $derivedPath IS $BaseEnvironmentFile, so an
+            # unprotected write rewrote the very file the caller handed in - the one case where clobbering
+            # the target and touching the source are the same event.
+            $derivedDir = Join-Path $script:work ".derived"
+            New-Item -ItemType Directory -Path $derivedDir -Force | Out-Null
+            $reentryPath = Join-Path $derivedDir ".env.reentry.topology"
+            [System.IO.File]::WriteAllBytes($reentryPath, [System.Text.Encoding]::UTF8.GetBytes((($script:unsafeReorderLines -join "`n") + "`n")))
+            $fingerprintBefore = Get-FileFingerprint -Path $reentryPath
+
+            { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $reentryPath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                Should -Throw "*renders for 'FEATURE'*"
+
+            $fingerprintAfter = Get-FileFingerprint -Path $reentryPath
+            $fingerprintAfter.Sha256 | Should -Be $fingerprintBefore.Sha256 -Because "the file the caller passed in must survive a rejected repair unchanged"
+            $fingerprintAfter.Length | Should -Be $fingerprintBefore.Length
+            [System.IO.File]::ReadAllLines($reentryPath) | Should -Be $script:unsafeReorderLines -Because "the alias must not be left literalized"
+        }
+
+        It "refuses to begin when an existing target cannot be snapshotted, and leaves it untouched" {
+            # A write with no snapshot behind it is a write that cannot be undone, so the run must stop
+            # before Write-DerivedEnvFile rather than discover the problem at rollback time.
+            $basePath = Join-Path $script:work ".env.unreadable-target"
+            Set-Content -LiteralPath $basePath -Value ($script:unsafeReorderLines -join "`n") -NoNewline
+
+            $derivedDir = Join-Path $script:work ".derived"
+            New-Item -ItemType Directory -Path $derivedDir -Force | Out-Null
+            $targetPath = Join-Path $derivedDir ".env.unreadable-target.topology"
+            [System.IO.File]::WriteAllBytes($targetPath, [System.Text.Encoding]::UTF8.GetBytes("PRIOR_RUN_MARKER=keep-me`n"))
+            $fingerprintBefore = Get-FileFingerprint -Path $targetPath
+
+            $handle = [System.IO.File]::Open($targetPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            try {
+                # Unix does not enforce exclusive handles, so probe rather than assume the state exists.
+                $isExclusive = $false
+                try { [System.IO.File]::ReadAllBytes($targetPath) | Out-Null } catch { $isExclusive = $true }
+                if (-not $isExclusive) {
+                    Set-ItResult -Skipped -Because "this platform does not enforce exclusive file handles, so an unreadable target cannot be simulated"
+                    return
+                }
+
+                $thrown = { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                    Should -Throw -PassThru
+
+                $thrown.Exception.Message | Should -BeLike "*could not be read*"
+                $thrown.Exception.Message | Should -BeLike "*Nothing was written*"
+                $thrown.Exception.Message | Should -Not -BeLike "*secret*"
+            }
+            finally {
+                $handle.Dispose()
+            }
+
+            (Get-FileFingerprint -Path $targetPath).Sha256 | Should -Be $fingerprintBefore.Sha256
+        }
+
+        It "reports a failed rollback as its own, worse condition - and still withholds values" {
+            # A rollback that itself fails leaves a file on disk that no longer means what its owner thinks.
+            # A read-only target reproduces it precisely: the snapshot succeeds, so the run begins, and then
+            # both the derived write and the restore fail.
+            $basePath = Join-Path $script:work ".env.readonly-target"
+            Set-Content -LiteralPath $basePath -Value ($script:unsafeReorderLines -join "`n") -NoNewline
+
+            $derivedDir = Join-Path $script:work ".derived"
+            New-Item -ItemType Directory -Path $derivedDir -Force | Out-Null
+            $targetPath = Join-Path $derivedDir ".env.readonly-target.topology"
+            [System.IO.File]::WriteAllBytes($targetPath, [System.Text.Encoding]::UTF8.GetBytes("PRIOR_RUN_MARKER=keep-me`n"))
+            # [System.IO.FileInfo] directly, not Get-Item: the provider returns nothing for a dot-prefixed
+            # path on Linux without -Force, and the property assignment then failed against $null.
+            $targetFile = [System.IO.FileInfo]::new($targetPath)
+            $targetFile.IsReadOnly = $true
+            try {
+                # A root-owned container ignores the read-only bit, so probe with a harmless empty append
+                # rather than assume the state exists.
+                $isReadOnly = $false
+                try { [System.IO.File]::AppendAllText($targetPath, "") } catch { $isReadOnly = $true }
+                if (-not $isReadOnly) {
+                    Set-ItResult -Skipped -Because "this platform/user can write a read-only file, so a failed rollback cannot be simulated"
+                    return
+                }
+
+                $thrown = { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
+                    Should -Throw -PassThru
+
+                $thrown.Exception.Message | Should -BeLike "*could not be restored to its previous contents*"
+                $thrown.Exception.Message | Should -BeLike "*indeterminate state*"
+                $thrown.Exception.Message | Should -Not -BeLike "*secret*" -Because "neither file's values may appear, even in the worst-case report"
+                $thrown.Exception.Message | Should -Not -BeLike "*keep-me*"
+            }
+            finally {
+                $targetFile.IsReadOnly = $false
+            }
         }
     }
 
