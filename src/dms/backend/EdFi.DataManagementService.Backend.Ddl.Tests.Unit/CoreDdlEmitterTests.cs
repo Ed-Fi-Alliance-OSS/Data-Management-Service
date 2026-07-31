@@ -1661,6 +1661,20 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 /// </summary>
 internal static class SharedDescriptorTrackedChangeFixture
 {
+    /// <summary>
+    /// Slices the descriptor tombstone <c>INSERT … ;</c> statement out of an emitted script, so
+    /// assertions cannot accidentally match the surrounding stamp statements — which legitimately
+    /// still read and write <c>dms.Document</c>.
+    /// </summary>
+    internal static string TombstoneInsert(string ddl, string insertPrefix)
+    {
+        var start = ddl.IndexOf(insertPrefix, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, "the descriptor tombstone INSERT must be present");
+        var end = ddl.IndexOf(";\n", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start, "the descriptor tombstone INSERT must be terminated");
+        return ddl[start..(end + 2)];
+    }
+
     internal static TrackedChangeTableInfo Build() =>
         new(
             new DbTableName(new DbSchemaName("tracked_changes_edfi"), "Descriptor"),
@@ -1753,10 +1767,27 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Pgsql
     }
 
     [Test]
-    public void It_should_read_document_uuid_and_content_version_from_doc_join()
+    public void It_should_read_document_uuid_from_the_old_image_and_change_version_from_the_stamp()
     {
-        _ddl.Should().Contain("doc.\"DocumentUuid\"");
-        _ddl.Should().Contain("doc.\"ContentVersion\"");
+        var tombstone = SharedDescriptorTrackedChangeFixture.TombstoneInsert(
+            _ddl,
+            "INSERT INTO \"tracked_changes_edfi\".\"Descriptor\""
+        );
+
+        tombstone.Should().Contain("OLD.\"DocumentUuid\",");
+        tombstone.Should().Contain("_stampedContentVersion");
+        tombstone.Should().NotContain("\"dms\".\"Document\"");
+        // No joins on the shared descriptor tombstone, so the SELECT stands alone.
+        tombstone.Should().NotContain("FROM");
+    }
+
+    [Test]
+    public void It_should_declare_and_capture_the_content_stamp_for_the_tombstone()
+    {
+        // The descriptor trigger function had no locals before the tombstone needed the post-bump
+        // ContentVersion; the DELETE-branch stamp now hands it back.
+        _ddl.Should().Contain("DECLARE\n    _stampedContentVersion bigint;\n");
+        _ddl.Should().Contain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
     }
 
     [Test]
@@ -1766,7 +1797,7 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Pgsql
         deleteStart.Should().BeGreaterOrEqualTo(0);
 
         var documentUpdate = _ddl.IndexOf(
-            "WHERE \"DocumentId\" = OLD.\"DocumentId\";",
+            "RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;",
             deleteStart,
             StringComparison.Ordinal
         );
@@ -1824,17 +1855,23 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
     }
 
     [Test]
-    public void It_should_read_document_uuid_and_content_version_from_doc_join()
+    public void It_should_read_document_uuid_from_the_deleted_image_and_change_version_from_the_stamp()
     {
-        _ddl.Should().Contain("doc.[DocumentUuid]");
-        _ddl.Should().Contain("doc.[ContentVersion]");
+        var tombstone = SharedDescriptorTrackedChangeFixture.TombstoneInsert(
+            _ddl,
+            "INSERT INTO [tracked_changes_edfi].[Descriptor]"
+        );
+
+        tombstone.Should().Contain("del.[DocumentUuid],");
+        tombstone.Should().Contain("s.[ContentVersion]");
+        tombstone.Should().NotContain("[dms].[Document]");
     }
 
     [Test]
-    public void It_should_join_deleted_del_and_document_doc_in_from_clause()
+    public void It_should_join_deleted_del_and_the_stamp_table_in_from_clause()
     {
         _ddl.Should().Contain("FROM deleted del");
-        _ddl.Should().Contain("INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]");
+        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];");
     }
 
     [Test]

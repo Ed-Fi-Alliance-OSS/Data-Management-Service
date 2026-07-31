@@ -791,15 +791,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                         mirrorStampTargetTable,
                         "OLD",
                         assignToNewMirrorColumns: false,
-                        updateMirrorTable: !isRootDocumentStampingTrigger
+                        updateMirrorTable: !isRootDocumentStampingTrigger,
+                        // The tombstone's ChangeVersion must be the post-bump value; the OLD row
+                        // image carries the pre-bump one, so only this statement can supply it.
+                        captureStampedContentVersion: trackedChangePlan is not null
                     );
                     if (trackedChangePlan is not null)
                     {
                         TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
                             writer,
                             _dialect,
-                            trackedChangePlan,
-                            deleteKeyColumn
+                            trackedChangePlan
                         );
                     }
                     writer.AppendLine("RETURN OLD;");
@@ -1359,8 +1361,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
                         writer,
                         _dialect,
-                        trackedChangePlan,
-                        keyColumn
+                        trackedChangePlan
                     );
                 }
             }
@@ -1434,6 +1435,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(" := _stampedCreatedAt;");
     }
 
+    /// <param name="captureStampedContentVersion">
+    /// When <see langword="true"/>, the stamp <c>UPDATE</c> hands the bumped <c>ContentVersion</c> back
+    /// through <c>RETURNING … INTO STRICT _stampedContentVersion</c> so a following statement (the
+    /// tracked-change tombstone) can read the post-bump value. Only meaningful on the flat
+    /// (non-CTE) form, which is the only form the DELETE branch of a root trigger emits.
+    /// </param>
     private void EmitPgsqlDocumentContentStampUpdate(
         SqlWriter writer,
         string documentTable,
@@ -1442,7 +1449,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         DbTableName mirrorStampTargetTable,
         string sourceRowAlias,
         bool assignToNewMirrorColumns,
-        bool updateMirrorTable
+        bool updateMirrorTable,
+        bool captureStampedContentVersion = false
     )
     {
         if (assignToNewMirrorColumns || !updateMirrorTable)
@@ -1479,6 +1487,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append("NEW.");
                 writer.Append(Quote(ContentLastModifiedAtColumn));
                 writer.AppendLine(" := _stampedContentLastModifiedAt;");
+            }
+            else if (captureStampedContentVersion)
+            {
+                writer.AppendLine();
+                writer.Append("RETURNING ");
+                writer.Append(Quote(ContentVersionColumn));
+                // STRICT: the stamp requires the dms.Document row, so a missing row must fail
+                // loudly here rather than silently produce a NULL tombstone ChangeVersion.
+                writer.AppendLine(" INTO STRICT _stampedContentVersion;");
             }
             else
             {

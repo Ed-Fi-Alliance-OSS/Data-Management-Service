@@ -976,6 +976,16 @@ public sealed class CoreDdlEmitter
 
         writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
         writer.AppendLine("RETURNS TRIGGER AS $func$");
+        if (_sharedDescriptorTrackedChangeTable is not null)
+        {
+            // Only the tombstone needs a local: it reports the post-bump ContentVersion, which the
+            // DELETE-branch stamp hands back. Every other branch mirrors through a CTE.
+            writer.AppendLine("DECLARE");
+            using (writer.Indent())
+            {
+                writer.AppendLine("_stampedContentVersion bigint;");
+            }
+        }
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
@@ -1071,9 +1081,18 @@ public sealed class CoreDdlEmitter
                 writer.Append(Quote("DocumentId"));
                 writer.Append(" = OLD.");
                 writer.Append(Quote("DocumentId"));
-                writer.AppendLine(";");
-                if (_sharedDescriptorTrackedChangeTable is not null)
+                if (_sharedDescriptorTrackedChangeTable is null)
                 {
+                    writer.AppendLine(";");
+                }
+                else
+                {
+                    writer.AppendLine();
+                    writer.Append("RETURNING ");
+                    writer.Append(Quote("ContentVersion"));
+                    // STRICT: the stamp requires the dms.Document row, so a missing row must fail
+                    // loudly here rather than silently produce a NULL tombstone ChangeVersion.
+                    writer.AppendLine(" INTO STRICT _stampedContentVersion;");
                     TrackedChangeTriggerBodyEmitter.EmitDescriptorTombstoneInsert(
                         writer,
                         _dialect,

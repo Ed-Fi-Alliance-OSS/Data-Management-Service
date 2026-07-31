@@ -427,6 +427,8 @@ CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."Referen
 
 CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
 RETURNS TRIGGER AS $func$
+DECLARE
+    _stampedContentVersion bigint;
 BEGIN
     IF TG_OP = 'UPDATE' THEN
         IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
@@ -457,7 +459,8 @@ BEGIN
     ELSIF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."Descriptor" (
             "Discriminator",
             "OldNamespace",
@@ -469,10 +472,8 @@ BEGIN
             OLD."Discriminator",
             OLD."Namespace",
             OLD."CodeValue",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     RETURN NEW;
@@ -638,7 +639,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "Id",
@@ -646,10 +648,8 @@ BEGIN
         )
         SELECT
             OLD."SchoolId",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
@@ -690,10 +690,8 @@ BEGIN
         SELECT
             OLD."SchoolId",
             NEW."SchoolId",
-            doc."DocumentUuid",
-            _stampedContentVersion
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = NEW."DocumentId";
+            NEW."DocumentUuid",
+            _stampedContentVersion;
     END IF;
     RETURN NEW;
 END;

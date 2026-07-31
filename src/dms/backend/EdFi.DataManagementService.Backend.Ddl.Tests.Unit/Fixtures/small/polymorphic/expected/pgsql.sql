@@ -696,7 +696,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."LocalEducationAgency" (
             "OldLocalEducationAgencyId",
             "Id",
@@ -704,10 +705,8 @@ BEGIN
         )
         SELECT
             OLD."LocalEducationAgencyId",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId" OR OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
@@ -835,7 +834,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "Id",
@@ -843,10 +843,8 @@ BEGIN
         )
         SELECT
             OLD."SchoolId",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN

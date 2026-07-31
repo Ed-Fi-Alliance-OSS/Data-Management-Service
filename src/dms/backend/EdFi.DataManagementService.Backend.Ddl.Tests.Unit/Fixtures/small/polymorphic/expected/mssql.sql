@@ -778,10 +778,10 @@ BEGIN
         )
         SELECT
             del.[LocalEducationAgencyId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([LocalEducationAgencyId]))
     BEGIN
@@ -967,10 +967,10 @@ BEGIN
         )
         SELECT
             del.[SchoolId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN

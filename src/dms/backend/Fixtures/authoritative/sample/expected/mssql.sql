@@ -472,10 +472,10 @@ BEGIN
             del.[Discriminator],
             del.[Namespace],
             del.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
 END;
 GO
@@ -39623,10 +39623,10 @@ BEGIN
         SELECT
             del.[School_SchoolId],
             del.[WeekIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39651,12 +39651,11 @@ BEGIN
             del.[WeekIdentifier],
             i.[School_SchoolId],
             i.[WeekIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -39764,10 +39763,10 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[RatingTitle],
             del.[SchoolYear_SchoolYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39796,12 +39795,11 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[RatingTitle],
             i.[SchoolYear_SchoolYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -39907,10 +39905,10 @@ BEGIN
         SELECT
             del.[AssessmentIdentifier],
             del.[Namespace],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39935,12 +39933,11 @@ BEGIN
             del.[Namespace],
             i.[AssessmentIdentifier],
             i.[Namespace],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -40121,10 +40118,10 @@ BEGIN
             del.[Assessment_AssessmentIdentifier],
             del.[Assessment_Namespace],
             del.[AssigningEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40157,12 +40154,11 @@ BEGIN
             i.[Assessment_AssessmentIdentifier],
             i.[Assessment_Namespace],
             i.[AssigningEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -40313,10 +40309,10 @@ BEGIN
             del.[AssessmentAdministration_AssigningEducationOrganizationId],
             del.[AssessmentAdministration_Namespace],
             del.[ParticipatingEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40353,12 +40349,11 @@ BEGIN
             i.[AssessmentAdministration_AssigningEducationOrganizationId],
             i.[AssessmentAdministration_Namespace],
             i.[ParticipatingEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -40622,10 +40617,10 @@ BEGIN
             del.[AssessmentBatteryPartName],
             del.[Assessment_AssessmentIdentifier],
             del.[Assessment_Namespace],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40654,12 +40649,11 @@ BEGIN
             i.[AssessmentBatteryPartName],
             i.[Assessment_AssessmentIdentifier],
             i.[Assessment_Namespace],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -40845,10 +40839,10 @@ BEGIN
             del.[Assessment_AssessmentIdentifier],
             del.[Assessment_Namespace],
             del.[IdentificationCode],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40877,12 +40871,11 @@ BEGIN
             i.[Assessment_AssessmentIdentifier],
             i.[Assessment_Namespace],
             i.[IdentificationCode],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -41302,10 +41295,10 @@ BEGIN
             del.[AssessmentIdentifier_Unified],
             del.[Namespace_Unified],
             del.[ScoreRangeId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41334,12 +41327,11 @@ BEGIN
             i.[AssessmentIdentifier_Unified],
             i.[Namespace_Unified],
             i.[ScoreRangeId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -41523,10 +41515,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41551,12 +41543,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -41701,10 +41692,10 @@ BEGIN
         SELECT
             del.[BellScheduleName],
             del.[School_SchoolId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41729,12 +41720,11 @@ BEGIN
             del.[School_SchoolId],
             i.[BellScheduleName],
             i.[School_SchoolId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -41959,10 +41949,10 @@ BEGIN
             del.[CalendarCode],
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41991,12 +41981,11 @@ BEGIN
             i.[CalendarCode],
             i.[School_SchoolId],
             i.[SchoolYear_SchoolYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -42106,10 +42095,10 @@ BEGIN
             del.[Calendar_SchoolId],
             del.[Calendar_SchoolYear],
             del.[Date],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42142,12 +42131,11 @@ BEGIN
             i.[Calendar_SchoolId],
             i.[Calendar_SchoolYear],
             i.[Date],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -42357,10 +42345,10 @@ BEGIN
             del.[AccountIdentifier],
             del.[EducationOrganization_EducationOrganizationId],
             del.[FiscalYear_Unified],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42389,12 +42377,11 @@ BEGIN
             i.[AccountIdentifier],
             i.[EducationOrganization_EducationOrganizationId],
             i.[FiscalYear_Unified],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -42579,10 +42566,10 @@ BEGIN
         SELECT
             del.[ClassPeriodName],
             del.[School_SchoolId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42607,12 +42594,11 @@ BEGIN
             del.[School_SchoolId],
             i.[ClassPeriodName],
             i.[School_SchoolId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -42797,10 +42783,10 @@ BEGIN
         SELECT
             del.[CohortIdentifier],
             del.[EducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42825,12 +42811,11 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             i.[CohortIdentifier],
             i.[EducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -43049,10 +43034,10 @@ BEGIN
         )
         SELECT
             del.[CommunityOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([CommunityOrganizationId]))
     BEGIN
@@ -43660,10 +43645,10 @@ BEGIN
         )
         SELECT
             del.[CommunityProviderId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([CommunityProviderId]))
     BEGIN
@@ -44089,10 +44074,10 @@ BEGIN
             del.[CommunityProvider_CommunityProviderId],
             del.[LicenseIdentifier],
             del.[LicensingOrganization],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44121,12 +44106,11 @@ BEGIN
             i.[CommunityProvider_CommunityProviderId],
             i.[LicenseIdentifier],
             i.[LicensingOrganization],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -44260,10 +44244,10 @@ BEGIN
             del.[Objective],
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -44297,12 +44281,11 @@ BEGIN
             i.[Objective],
             newDj0.[Namespace],
             newDj0.[CodeValue],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -44410,10 +44393,10 @@ BEGIN
         SELECT
             del.[ContactUniqueId],
             del.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44438,12 +44421,11 @@ BEGIN
             del.[DocumentId],
             i.[ContactUniqueId],
             i.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -44948,10 +44930,10 @@ BEGIN
         SELECT
             del.[CourseCode],
             del.[EducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44976,12 +44958,11 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             i.[CourseCode],
             i.[EducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -45349,10 +45330,10 @@ BEGIN
             del.[SchoolId_Unified],
             del.[Session_SchoolYear],
             del.[Session_SessionName],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45385,12 +45366,11 @@ BEGIN
             i.[SchoolId_Unified],
             i.[Session_SchoolYear],
             i.[Session_SessionName],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -45629,10 +45609,10 @@ BEGIN
             oldDj1.[Namespace],
             oldDj1.[CodeValue],
             oldPj0s1.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentAcademicRecord] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAcademicRecord_DocumentId]
@@ -45693,12 +45673,11 @@ BEGIN
             newDj1.[Namespace],
             newDj1.[CodeValue],
             newPj0s1.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentAcademicRecord] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAcademicRecord_DocumentId]
@@ -46089,10 +46068,10 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[Namespace],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -46126,12 +46105,11 @@ BEGIN
             newDj0.[Namespace],
             newDj0.[CodeValue],
             i.[Namespace],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -46354,10 +46332,10 @@ BEGIN
         )
         SELECT
             del.[CrisisEventName],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46378,12 +46356,11 @@ BEGIN
         SELECT
             del.[CrisisEventName],
             i.[CrisisEventName],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -46493,10 +46470,10 @@ BEGIN
             del.[MappedValue],
             del.[Namespace],
             del.[Value],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46529,12 +46506,11 @@ BEGIN
             i.[MappedValue],
             i.[Namespace],
             i.[Value],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -46685,10 +46661,10 @@ BEGIN
             del.[Student_StudentUniqueId],
             del.[ResponsibilitySchool_SchoolId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -46726,12 +46702,11 @@ BEGIN
             i.[Student_StudentUniqueId],
             i.[ResponsibilitySchool_SchoolId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -46956,10 +46931,10 @@ BEGIN
         SELECT
             del.[IncidentIdentifier],
             del.[School_SchoolId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46984,12 +46959,11 @@ BEGIN
             del.[School_SchoolId],
             i.[IncidentIdentifier],
             i.[School_SchoolId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -47212,10 +47186,10 @@ BEGIN
         SELECT
             del.[ContentIdentifier],
             del.[Namespace],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47240,12 +47214,11 @@ BEGIN
             del.[Namespace],
             i.[ContentIdentifier],
             i.[Namespace],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -48082,10 +48055,10 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId],
             del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48114,12 +48087,11 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId],
             i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -48299,10 +48271,10 @@ BEGIN
         )
         SELECT
             del.[EducationOrganizationNetworkId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationOrganizationNetworkId]))
     BEGIN
@@ -48492,10 +48464,10 @@ BEGIN
         SELECT
             del.[EducationOrganizationNetwork_EducationOrganizationNetworkId],
             del.[MemberEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48520,12 +48492,11 @@ BEGIN
             del.[MemberEducationOrganization_EducationOrganizationId],
             i.[EducationOrganizationNetwork_EducationOrganizationNetworkId],
             i.[MemberEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -48865,10 +48836,10 @@ BEGIN
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[PeerEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48893,12 +48864,11 @@ BEGIN
             del.[PeerEducationOrganization_EducationOrganizationId],
             i.[EducationOrganization_EducationOrganizationId],
             i.[PeerEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -49188,10 +49158,10 @@ BEGIN
         )
         SELECT
             del.[EducationServiceCenterId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationServiceCenterId]))
     BEGIN
@@ -49633,10 +49603,10 @@ BEGIN
             del.[ProgramEvaluationElement_ProgramName],
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId];
@@ -49700,12 +49670,11 @@ BEGIN
             i.[ProgramEvaluationElement_ProgramName],
             newDj2.[Namespace],
             newDj2.[CodeValue],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]
@@ -49819,10 +49788,10 @@ BEGIN
             del.[BeginDate],
             del.[FeederSchool_SchoolId],
             del.[School_SchoolId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49851,12 +49820,11 @@ BEGIN
             i.[BeginDate],
             i.[FeederSchool_SchoolId],
             i.[School_SchoolId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -49962,10 +49930,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49990,12 +49958,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -50140,10 +50107,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50168,12 +50135,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -50396,10 +50362,10 @@ BEGIN
             del.[StudentSectionAssociation_SessionName],
             del.[StudentSectionAssociation_StudentUniqueId],
             oldPj0s1.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
@@ -50472,12 +50438,11 @@ BEGIN
             i.[StudentSectionAssociation_SessionName],
             i.[StudentSectionAssociation_StudentUniqueId],
             newPj0s1.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
@@ -50654,10 +50619,10 @@ BEGIN
         SELECT
             del.[GradebookEntryIdentifier],
             del.[Namespace],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50682,12 +50647,11 @@ BEGIN
             del.[Namespace],
             i.[GradebookEntryIdentifier],
             i.[Namespace],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -50838,10 +50802,10 @@ BEGIN
             del.[GradingPeriodName],
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -50879,12 +50843,11 @@ BEGIN
             i.[GradingPeriodName],
             i.[School_SchoolId],
             i.[SchoolYear_SchoolYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodDescriptor_DescriptorId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -51036,10 +50999,10 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[GraduationSchoolYear_GraduationSchoolYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlanTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -51073,12 +51036,11 @@ BEGIN
             newDj0.[Namespace],
             newDj0.[CodeValue],
             i.[GraduationSchoolYear_GraduationSchoolYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlanTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GraduationPlanTypeDescriptor_DescriptorId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -51452,10 +51414,10 @@ BEGIN
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionIdentificationCode],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51480,12 +51442,11 @@ BEGIN
             del.[InterventionIdentificationCode],
             i.[EducationOrganization_EducationOrganizationId],
             i.[InterventionIdentificationCode],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -51943,10 +51904,10 @@ BEGIN
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionPrescriptionIdentificationCode],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51971,12 +51932,11 @@ BEGIN
             del.[InterventionPrescriptionIdentificationCode],
             i.[EducationOrganization_EducationOrganizationId],
             i.[InterventionPrescriptionIdentificationCode],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -52418,10 +52378,10 @@ BEGIN
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionStudyIdentificationCode],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52446,12 +52406,11 @@ BEGIN
             del.[InterventionStudyIdentificationCode],
             i.[EducationOrganization_EducationOrganizationId],
             i.[InterventionStudyIdentificationCode],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -52908,10 +52867,10 @@ BEGIN
         SELECT
             del.[LearningStandardId],
             del.[Namespace],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52936,12 +52895,11 @@ BEGIN
             del.[Namespace],
             i.[LearningStandardId],
             i.[Namespace],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -53127,10 +53085,10 @@ BEGIN
             del.[Namespace],
             del.[SourceLearningStandard_LearningStandardId],
             del.[TargetLearningStandard_LearningStandardId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53159,12 +53117,11 @@ BEGIN
             i.[Namespace],
             i.[SourceLearningStandard_LearningStandardId],
             i.[TargetLearningStandard_LearningStandardId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -53406,10 +53363,10 @@ BEGIN
             del.[AccountIdentifier],
             del.[EducationOrganization_EducationOrganizationId],
             del.[FiscalYear_Unified],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53438,12 +53395,11 @@ BEGIN
             i.[AccountIdentifier],
             i.[EducationOrganization_EducationOrganizationId],
             i.[FiscalYear_Unified],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -53592,10 +53548,10 @@ BEGIN
             del.[LocalAccount_AccountIdentifier],
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53628,12 +53584,11 @@ BEGIN
             i.[LocalAccount_AccountIdentifier],
             i.[LocalAccount_EducationOrganizationId],
             i.[LocalAccount_FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -53743,10 +53698,10 @@ BEGIN
             del.[LocalAccount_AccountIdentifier],
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53779,12 +53734,11 @@ BEGIN
             i.[LocalAccount_AccountIdentifier],
             i.[LocalAccount_EducationOrganizationId],
             i.[LocalAccount_FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -53898,10 +53852,10 @@ BEGIN
             del.[LocalAccount_FiscalYear],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -53943,12 +53897,11 @@ BEGIN
             i.[LocalAccount_FiscalYear],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -54330,10 +54283,10 @@ BEGIN
         )
         SELECT
             del.[LocalEducationAgencyId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([LocalEducationAgencyId]))
     BEGIN
@@ -54839,10 +54792,10 @@ BEGIN
             del.[LocalAccount_AccountIdentifier],
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54875,12 +54828,11 @@ BEGIN
             i.[LocalAccount_AccountIdentifier],
             i.[LocalAccount_EducationOrganizationId],
             i.[LocalAccount_FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -54994,10 +54946,10 @@ BEGIN
             del.[LocalAccount_FiscalYear],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -55039,12 +54991,11 @@ BEGIN
             i.[LocalAccount_FiscalYear],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -55176,10 +55127,10 @@ BEGIN
         SELECT
             del.[ClassroomIdentificationCode],
             del.[School_SchoolId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55204,12 +55155,11 @@ BEGIN
             del.[School_SchoolId],
             i.[ClassroomIdentificationCode],
             i.[School_SchoolId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -55315,10 +55265,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55343,12 +55293,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -55495,10 +55444,10 @@ BEGIN
             del.[AssessmentIdentifier_Unified],
             del.[Namespace_Unified],
             del.[IdentificationCode],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55527,12 +55476,11 @@ BEGIN
             i.[AssessmentIdentifier_Unified],
             i.[Namespace_Unified],
             i.[IdentificationCode],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -55794,10 +55742,10 @@ BEGIN
         SELECT
             del.[EducationOrganization_EducationOrganizationId],
             del.[RequisitionNumber],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55822,12 +55770,11 @@ BEGIN
             del.[RequisitionNumber],
             i.[EducationOrganization_EducationOrganizationId],
             i.[RequisitionNumber],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -56011,10 +55958,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56039,12 +55986,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -56375,10 +56321,10 @@ BEGIN
         SELECT
             del.[OrganizationDepartmentId],
             del.[ParentEducationOrganization_EducationOrganizationId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([OrganizationDepartmentId]))
     BEGIN
@@ -56804,10 +56750,10 @@ BEGIN
             del.[PersonId],
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[SourceSystemDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -56837,12 +56783,11 @@ BEGIN
             i.[PersonId],
             newDj0.[Namespace],
             newDj0.[CodeValue],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[SourceSystemDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[SourceSystemDescriptor_DescriptorId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -56956,10 +56901,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -56998,12 +56943,11 @@ BEGIN
             newDj0.[CodeValue],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId]
@@ -57187,10 +57131,10 @@ BEGIN
         )
         SELECT
             del.[PostSecondaryInstitutionId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([PostSecondaryInstitutionId]))
     BEGIN
@@ -57865,10 +57809,10 @@ BEGIN
             del.[ProgramName],
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -57902,12 +57846,11 @@ BEGIN
             i.[ProgramName],
             newDj0.[Namespace],
             newDj0.[CodeValue],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramTypeDescriptor_DescriptorId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -58054,10 +57997,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58082,12 +58025,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -58286,10 +58228,10 @@ BEGIN
             del.[ProgramProgram_ProgramName],
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
@@ -58345,12 +58287,11 @@ BEGIN
             i.[ProgramProgram_ProgramName],
             newDj2.[Namespace],
             newDj2.[CodeValue],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
@@ -58510,10 +58451,10 @@ BEGIN
             del.[ProgramName_Unified],
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
@@ -58573,12 +58514,11 @@ BEGIN
             i.[ProgramName_Unified],
             newDj2.[Namespace],
             newDj2.[CodeValue],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
@@ -58816,10 +58756,10 @@ BEGIN
             del.[ProgramEvaluation_ProgramName],
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
@@ -58879,12 +58819,11 @@ BEGIN
             i.[ProgramEvaluation_ProgramName],
             newDj2.[Namespace],
             newDj2.[CodeValue],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
@@ -59113,10 +59052,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59141,12 +59080,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -59327,10 +59265,10 @@ BEGIN
             del.[GradingPeriodGradingPeriod_SchoolYear],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -59381,12 +59319,11 @@ BEGIN
             i.[GradingPeriodGradingPeriod_SchoolYear],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
@@ -59617,10 +59554,10 @@ BEGIN
             del.[SchoolId_Unified],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -59654,12 +59591,11 @@ BEGIN
             i.[SchoolId_Unified],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -60029,10 +59965,10 @@ BEGIN
         )
         SELECT
             del.[SchoolId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN
@@ -60532,10 +60468,10 @@ BEGIN
         )
         SELECT
             del.[SchoolYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60556,12 +60492,11 @@ BEGIN
         SELECT
             del.[SchoolYear],
             i.[SchoolYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -60761,10 +60696,10 @@ BEGIN
             del.[CourseOffering_SchoolYear],
             del.[CourseOffering_SessionName],
             del.[SectionIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60801,12 +60736,11 @@ BEGIN
             i.[CourseOffering_SchoolYear],
             i.[CourseOffering_SessionName],
             i.[SectionIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -60922,10 +60856,10 @@ BEGIN
             del.[Section_LocalCourseCode],
             del.[Section_SectionIdentifier],
             del.[Section_SessionName],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60970,12 +60904,11 @@ BEGIN
             i.[Section_LocalCourseCode],
             i.[Section_SectionIdentifier],
             i.[Section_SessionName],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -61318,10 +61251,10 @@ BEGIN
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
             del.[SessionName],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61350,12 +61283,11 @@ BEGIN
             i.[School_SchoolId],
             i.[SchoolYear_SchoolYear],
             i.[SessionName],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -61539,10 +61471,10 @@ BEGIN
         SELECT
             del.[Code],
             del.[FiscalYear],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61567,12 +61499,11 @@ BEGIN
             del.[FiscalYear],
             i.[Code],
             i.[FiscalYear],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -61717,10 +61648,10 @@ BEGIN
         SELECT
             del.[StaffUniqueId],
             del.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61745,12 +61676,11 @@ BEGIN
             del.[DocumentId],
             i.[StaffUniqueId],
             i.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -61862,10 +61792,10 @@ BEGIN
             del.[EventDate],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -61904,12 +61834,11 @@ BEGIN
             i.[EventDate],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AbsenceEventCategoryDescriptor_DescriptorId]
@@ -62142,10 +62071,10 @@ BEGIN
             del.[Cohort_EducationOrganizationId],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -62183,12 +62112,11 @@ BEGIN
             i.[Cohort_EducationOrganizationId],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -62339,10 +62267,10 @@ BEGIN
             del.[DisciplineIncident_SchoolId],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -62376,12 +62304,11 @@ BEGIN
             i.[DisciplineIncident_SchoolId],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -62560,10 +62487,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[StaffUniqueId_Unified],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -62606,12 +62533,11 @@ BEGIN
             newDj0.[CodeValue],
             i.[StaffUniqueId_Unified],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StaffClassificationDescriptor_DescriptorId]
@@ -62725,10 +62651,10 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -62762,12 +62688,11 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -62993,10 +62918,10 @@ BEGIN
             del.[HireDate],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -63039,12 +62964,11 @@ BEGIN
             i.[HireDate],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[EmploymentStatusDescriptor_DescriptorId]
@@ -63394,10 +63318,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -63436,12 +63360,11 @@ BEGIN
             newDj0.[CodeValue],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId]
@@ -63639,10 +63562,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -63689,12 +63612,11 @@ BEGIN
             newDj0.[CodeValue],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
@@ -63888,10 +63810,10 @@ BEGIN
             del.[SchoolId_Unified],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -63930,12 +63852,11 @@ BEGIN
             i.[SchoolId_Unified],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramAssignmentDescriptor_DescriptorId]
@@ -64135,10 +64056,10 @@ BEGIN
             del.[Section_SessionName],
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -64188,12 +64109,11 @@ BEGIN
             i.[Section_SessionName],
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -64492,10 +64412,10 @@ BEGIN
         )
         SELECT
             del.[StateEducationAgencyId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StateEducationAgencyId]))
     BEGIN
@@ -64997,10 +64917,10 @@ BEGIN
         SELECT
             del.[StudentUniqueId],
             del.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65025,12 +64945,11 @@ BEGIN
             del.[DocumentId],
             i.[StudentUniqueId],
             i.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -65168,10 +65087,10 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -65214,12 +65133,11 @@ BEGIN
             newDj0.[Namespace],
             newDj0.[CodeValue],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[TermDescriptor_DescriptorId]
@@ -65532,10 +65450,10 @@ BEGIN
             del.[Student_StudentUniqueId],
             del.[ReportedSchool_SchoolId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -65577,12 +65495,11 @@ BEGIN
             i.[Student_StudentUniqueId],
             i.[ReportedSchool_SchoolId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -65741,10 +65658,10 @@ BEGIN
             del.[StudentAssessment_StudentAssessmentIdentifier],
             del.[StudentAssessment_StudentUniqueId],
             oldPj0s1.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentAssessment] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessment_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
@@ -65796,12 +65713,11 @@ BEGIN
             i.[StudentAssessment_StudentAssessmentIdentifier],
             i.[StudentAssessment_StudentUniqueId],
             newPj0s1.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentAssessment] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessment_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]
@@ -66025,10 +65941,10 @@ BEGIN
             del.[StudentEducationOrganizationAssociation_EducationOrganizationId],
             del.[StudentUniqueId_Unified],
             oldPj0s1.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentEducationOrganizationAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
     END
@@ -66075,12 +65991,11 @@ BEGIN
             i.[StudentEducationOrganizationAssociation_EducationOrganizationId],
             i.[StudentUniqueId_Unified],
             newPj0s1.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentEducationOrganizationAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentEducationOrganizationAssociation_DocumentId]
@@ -66280,10 +66195,10 @@ BEGIN
             del.[StudentAssessmentRegistration_EducationOrganizationId],
             del.[StudentAssessmentRegistration_StudentUniqueId],
             oldPj0s2.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[StudentAssessmentRegistration] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessmentRegistration_DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[StudentEducationOrganizationAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s2 ON oldPj0s2.[DocumentId] = oldPj0s1.[Student_DocumentId];
@@ -66335,12 +66250,11 @@ BEGIN
             i.[StudentAssessmentRegistration_EducationOrganizationId],
             i.[StudentAssessmentRegistration_StudentUniqueId],
             newPj0s2.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[StudentAssessmentRegistration] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessmentRegistration_DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[StudentEducationOrganizationAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s2 ON oldPj0s2.[DocumentId] = oldPj0s1.[Student_DocumentId]
@@ -66709,10 +66623,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -66910,10 +66824,10 @@ BEGIN
             del.[Cohort_EducationOrganizationId],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -66951,12 +66865,11 @@ BEGIN
             i.[Cohort_EducationOrganizationId],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -67145,10 +67058,10 @@ BEGIN
             oldDj1.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
@@ -67212,12 +67125,11 @@ BEGIN
             newDj1.[CodeValue],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -67411,10 +67323,10 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj1s0.[DocumentId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Contact] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Contact_DocumentId]
         INNER JOIN [edfi].[Student] oldPj1s0 ON oldPj1s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -67449,12 +67361,11 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj1s0.[DocumentId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Contact] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Contact_DocumentId]
         INNER JOIN [edfi].[Student] oldPj1s0 ON oldPj1s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Contact] newPj0s0 ON newPj0s0.[DocumentId] = i.[Contact_DocumentId]
@@ -67572,10 +67483,10 @@ BEGIN
             del.[DisciplineIncident_SchoolId],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -67618,12 +67529,11 @@ BEGIN
             i.[DisciplineIncident_SchoolId],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[BehaviorDescriptor_DescriptorId]
@@ -67815,10 +67725,10 @@ BEGIN
             del.[DisciplineIncident_SchoolId],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -67852,12 +67762,11 @@ BEGIN
             i.[DisciplineIncident_SchoolId],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -68030,10 +67939,10 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -68063,12 +67972,11 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -68241,10 +68149,10 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -68274,12 +68182,11 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -69136,10 +69043,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -69182,12 +69089,11 @@ BEGIN
             newDj0.[CodeValue],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ResponsibilityDescriptor_DescriptorId]
@@ -69301,10 +69207,10 @@ BEGIN
             del.[GradebookEntry_Namespace],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -69338,12 +69244,11 @@ BEGIN
             i.[GradebookEntry_Namespace],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -69453,10 +69358,10 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -69486,12 +69391,11 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -69817,10 +69721,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -70055,10 +69959,10 @@ BEGIN
             del.[Intervention_InterventionIdentificationCode],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -70092,12 +69996,11 @@ BEGIN
             i.[Intervention_InterventionIdentificationCode],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -70254,10 +70157,10 @@ BEGIN
             del.[Intervention_InterventionIdentificationCode],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -70304,12 +70207,11 @@ BEGIN
             i.[Intervention_InterventionIdentificationCode],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
@@ -70481,10 +70383,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -70777,10 +70679,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -71034,10 +70936,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -71393,10 +71295,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -71604,10 +71506,10 @@ BEGIN
             oldDj1.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
@@ -71667,12 +71569,11 @@ BEGIN
             newDj1.[CodeValue],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -71804,10 +71705,10 @@ BEGIN
             oldDj2.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
@@ -71876,12 +71777,11 @@ BEGIN
             newDj2.[CodeValue],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
@@ -72140,10 +72040,10 @@ BEGIN
             del.[SchoolId_Unified],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -72177,12 +72077,11 @@ BEGIN
             i.[SchoolId_Unified],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -72380,10 +72279,10 @@ BEGIN
             del.[Session_SessionName],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -72434,12 +72333,11 @@ BEGIN
             i.[Session_SessionName],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
@@ -72611,10 +72509,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -72868,10 +72766,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -73068,10 +72966,10 @@ BEGIN
             del.[Section_SessionName],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -73121,12 +73019,11 @@ BEGIN
             i.[Section_SessionName],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -73289,10 +73186,10 @@ BEGIN
             del.[Section_SessionName],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -73351,12 +73248,11 @@ BEGIN
             i.[Section_SessionName],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
@@ -73567,10 +73463,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -73930,10 +73826,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -73984,12 +73880,11 @@ BEGIN
             newDj0.[CodeValue],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
@@ -74161,10 +74056,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -74358,10 +74253,10 @@ BEGIN
             del.[Student_StudentUniqueId],
             del.[TransportationEducationOrganization_EducationOrganizationId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -74391,12 +74286,11 @@ BEGIN
             i.[Student_StudentUniqueId],
             i.[TransportationEducationOrganization_EducationOrganizationId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [edfi].[Student] newPj0s0 ON newPj0s0.[DocumentId] = i.[Student_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -74621,10 +74515,10 @@ BEGIN
         SELECT
             del.[Namespace],
             del.[SurveyIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74649,12 +74543,11 @@ BEGIN
             del.[SurveyIdentifier],
             i.[Namespace],
             i.[SurveyIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -74764,10 +74657,10 @@ BEGIN
             del.[Course_EducationOrganizationId],
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74800,12 +74693,11 @@ BEGIN
             i.[Course_EducationOrganizationId],
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -74919,10 +74811,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[Program_ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -74964,12 +74856,11 @@ BEGIN
             newDj0.[CodeValue],
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[Program_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[Program_ProgramTypeDescriptor_DescriptorId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -75079,10 +74970,10 @@ BEGIN
             del.[QuestionCode],
             del.[Namespace_Unified],
             del.[SurveyIdentifier_Unified],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75111,12 +75002,11 @@ BEGIN
             i.[QuestionCode],
             i.[Namespace_Unified],
             i.[SurveyIdentifier_Unified],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -75265,10 +75155,10 @@ BEGIN
             del.[SurveyQuestion_QuestionCode],
             del.[SurveyIdentifier_Unified],
             del.[SurveyResponse_SurveyResponseIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75301,12 +75191,11 @@ BEGIN
             i.[SurveyQuestion_QuestionCode],
             i.[SurveyIdentifier_Unified],
             i.[SurveyResponse_SurveyResponseIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -75531,10 +75420,10 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             del.[SurveyResponseIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75563,12 +75452,11 @@ BEGIN
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
             i.[SurveyResponseIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -75678,10 +75566,10 @@ BEGIN
             del.[SurveyResponse_Namespace],
             del.[SurveyResponse_SurveyIdentifier],
             del.[SurveyResponse_SurveyResponseIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75714,12 +75602,11 @@ BEGIN
             i.[SurveyResponse_Namespace],
             i.[SurveyResponse_SurveyIdentifier],
             i.[SurveyResponse_SurveyResponseIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -75831,10 +75718,10 @@ BEGIN
             del.[SurveyResponse_SurveyIdentifier],
             del.[SurveyResponse_SurveyResponseIdentifier],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -75872,12 +75759,11 @@ BEGIN
             i.[SurveyResponse_SurveyIdentifier],
             i.[SurveyResponse_SurveyResponseIdentifier],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -76026,10 +75912,10 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             del.[SurveySectionTitle],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76058,12 +75944,11 @@ BEGIN
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
             i.[SurveySectionTitle],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -76179,10 +76064,10 @@ BEGIN
             del.[Section_SessionName],
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76227,12 +76112,11 @@ BEGIN
             i.[Section_SessionName],
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -76342,10 +76226,10 @@ BEGIN
             del.[SurveyIdentifier_Unified],
             del.[SurveyResponse_SurveyResponseIdentifier],
             del.[SurveySection_SurveySectionTitle],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76378,12 +76262,11 @@ BEGIN
             i.[SurveyIdentifier_Unified],
             i.[SurveyResponse_SurveyResponseIdentifier],
             i.[SurveySection_SurveySectionTitle],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -76495,10 +76378,10 @@ BEGIN
             del.[SurveyIdentifier_Unified],
             del.[SurveySectionResponse_SurveyResponseIdentifier],
             del.[SurveySectionResponse_SurveySectionTitle],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76535,12 +76418,11 @@ BEGIN
             i.[SurveyIdentifier_Unified],
             i.[SurveySectionResponse_SurveyResponseIdentifier],
             i.[SurveySectionResponse_SurveySectionTitle],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -76654,10 +76536,10 @@ BEGIN
             del.[SurveySectionResponse_SurveyResponseIdentifier],
             del.[SurveySectionResponse_SurveySectionTitle],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -76699,12 +76581,11 @@ BEGIN
             i.[SurveySectionResponse_SurveyResponseIdentifier],
             i.[SurveySectionResponse_SurveySectionTitle],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
         INNER JOIN [edfi].[Staff] newPj0s0 ON newPj0s0.[DocumentId] = i.[Staff_DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
@@ -76810,10 +76691,10 @@ BEGIN
         )
         SELECT
             del.[BusId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76834,12 +76715,11 @@ BEGIN
         SELECT
             del.[BusId],
             i.[BusId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -76945,10 +76825,10 @@ BEGIN
         SELECT
             del.[Bus_BusId],
             del.[BusRouteNumber],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76973,12 +76853,11 @@ BEGIN
             del.[BusRouteNumber],
             i.[Bus_BusId],
             i.[BusRouteNumber],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r
@@ -77887,10 +77766,10 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -78948,10 +78827,10 @@ BEGIN
             del.[GraduationPlan_GraduationSchoolYear],
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -78994,12 +78873,11 @@ BEGIN
             i.[GraduationPlan_GraduationSchoolYear],
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
         INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId]

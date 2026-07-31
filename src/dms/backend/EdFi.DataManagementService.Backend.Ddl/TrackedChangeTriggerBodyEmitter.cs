@@ -339,32 +339,32 @@ internal static class TrackedChangeTriggerBodyEmitter
     private static readonly ImageBinding MssqlOldImage = new("del", "old");
     private static readonly ImageBinding MssqlNewImage = new("i", "new");
 
+    /// <summary>
+    /// The plpgsql local the stamping trigger captures the bumped <c>ContentVersion</c> into. Both the
+    /// DELETE branch (tombstone) and the identity-diff branch (key change) fill it from their own
+    /// stamp <c>UPDATE … RETURNING … INTO STRICT</c>, so every PostgreSQL tracked-change row reads the
+    /// post-bump value without touching <c>dms.Document</c>.
+    /// </summary>
+    private const string PgsqlStampedContentVersionLocal = "_stampedContentVersion";
+
     // ── PostgreSQL rendering entry points ───────────────────────────
 
     /// <summary>
     /// Emits a PostgreSQL <c>INSERT INTO … SELECT</c> statement that writes a tombstone row into the
-    /// tracked-change table when a document is deleted. Values come from the <c>OLD</c> row image and
-    /// a joined <c>dms.Document</c> row; <c>New*</c> columns are omitted (they default to NULL).
+    /// tracked-change table when a document is deleted. Values come from the <c>OLD</c> row image —
+    /// including the tracked <c>Id</c>, which reads the root row's own <c>DocumentUuid</c> mirror;
+    /// the change version comes from the plpgsql local <c>_stampedContentVersion</c> the DELETE
+    /// branch captured, because the <c>OLD</c> image carries the pre-bump <c>ContentVersion</c>.
+    /// <c>New*</c> columns are omitted (they default to NULL).
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
     /// <param name="plan">The resolved insert plan produced by <see cref="BuildPlan"/>.</param>
-    /// <param name="keyColumn">The physical FK column on the source table that joins to <c>dms.Document</c>.</param>
     internal static void EmitPgsqlTombstoneInsert(
         SqlWriter writer,
         ISqlDialect dialect,
-        TrackedChangeInsertPlan plan,
-        DbColumnName keyColumn
-    ) =>
-        EmitPgsqlInsert(
-            writer,
-            dialect,
-            plan,
-            newImage: null,
-            changeVersionSql: $"doc.{dialect.QuoteIdentifier("ContentVersion")}",
-            filterImage: PgsqlOldImage,
-            keyColumn
-        );
+        TrackedChangeInsertPlan plan
+    ) => EmitPgsqlInsert(writer, dialect, plan, newImage: null);
 
     /// <summary>
     /// Emits a PostgreSQL <c>INSERT INTO … SELECT</c> statement that writes a key-change row into the
@@ -375,36 +375,26 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
     /// <param name="plan">The resolved insert plan produced by <see cref="BuildPlan"/>.</param>
-    /// <param name="keyColumn">The physical FK column on the source table that joins to <c>dms.Document</c>.</param>
     internal static void EmitPgsqlKeyChangeInsert(
         SqlWriter writer,
         ISqlDialect dialect,
-        TrackedChangeInsertPlan plan,
-        DbColumnName keyColumn
-    ) =>
-        EmitPgsqlInsert(
-            writer,
-            dialect,
-            plan,
-            newImage: PgsqlNewImage,
-            changeVersionSql: "_stampedContentVersion",
-            filterImage: PgsqlNewImage,
-            keyColumn
-        );
+        TrackedChangeInsertPlan plan
+    ) => EmitPgsqlInsert(writer, dialect, plan, newImage: PgsqlNewImage);
 
     // ── SQL Server rendering entry points ───────────────────────────
 
     /// <summary>
     /// Emits a SQL Server <c>INSERT INTO … SELECT</c> statement that writes a tombstone row into the
     /// tracked-change table when a document is deleted. Old values come from the <c>deleted</c>
-    /// pseudo-table (alias <c>del</c>); <c>New*</c> columns are omitted (they default to NULL);
-    /// <c>ContentVersion</c> is read from the joined <c>dms.Document</c> row (already bumped by the
-    /// earlier stamp statement in the same trigger fire).
+    /// pseudo-table (alias <c>del</c>) — including the tracked <c>Id</c>, which reads the root row's
+    /// own <c>DocumentUuid</c> mirror; <c>New*</c> columns are omitted (they default to NULL);
+    /// <c>ContentVersion</c> is read from the trigger's own <c>@stamped</c> capture table, which the
+    /// earlier content-stamp statement filled with the post-bump value for this delete workset.
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
     /// <param name="plan">The resolved insert plan produced by <see cref="BuildPlan"/>.</param>
-    /// <param name="keyColumn">The physical FK column on the source table that joins to <c>dms.Document</c>.</param>
+    /// <param name="keyColumn">The physical column on the source table carrying the document key.</param>
     internal static void EmitMssqlTombstoneInsert(
         SqlWriter writer,
         ISqlDialect dialect,
@@ -421,15 +411,15 @@ internal static class TrackedChangeTriggerBodyEmitter
             plan,
             oldImage: MssqlOldImage,
             newImage: null,
-            changeVersionSql: $"doc.{dialect.QuoteIdentifier("ContentVersion")}"
+            changeVersionSql: $"s.{dialect.QuoteIdentifier("ContentVersion")}"
         );
 
-        // FROM deleted del … INNER JOIN dms.Document doc … optional old-image joins
+        // FROM deleted del … INNER JOIN @stamped s … optional old-image joins
         // The terminating `;` is appended to the last line of the block, not on its own line.
         var fixedLines = new[]
         {
             "FROM deleted del",
-            $"INNER JOIN {dialect.QualifyTable(DmsTableNames.Document)} doc ON doc.{dialect.QuoteIdentifier("DocumentId")} = del.{dialect.QuoteIdentifier(keyColumn.Value)}",
+            $"INNER JOIN @stamped s ON s.{dialect.QuoteIdentifier("DocumentId")} = del.{dialect.QuoteIdentifier(keyColumn.Value)}",
         };
         EmitMssqlFromJoinBlock(writer, dialect, plan, fixedLines, MssqlOldImage);
     }
@@ -437,14 +427,15 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <summary>
     /// Emits a SQL Server <c>INSERT INTO … SELECT</c> statement that writes a key-change row into the
     /// tracked-change table when a document's identity columns change. The SELECT joins
-    /// <c>@identityChangedDocs idc</c> to <c>inserted i</c>, <c>deleted del</c>, and
-    /// <c>dms.Document doc</c>; old values come from <c>del</c>, new from <c>i</c>;
-    /// <c>ChangeVersion</c> is read from <c>idc.[ContentVersion]</c>.
+    /// <c>@identityChangedDocs idc</c> to <c>inserted i</c> and <c>deleted del</c>; old values come
+    /// from <c>del</c>, new from <c>i</c> — including the tracked <c>Id</c>, which reads the root
+    /// row's own <c>DocumentUuid</c> mirror; <c>ChangeVersion</c> is read from
+    /// <c>idc.[ContentVersion]</c>.
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
     /// <param name="plan">The resolved insert plan produced by <see cref="BuildPlan"/>.</param>
-    /// <param name="keyColumn">The physical FK column on the source table that joins to <c>dms.Document</c>.</param>
+    /// <param name="keyColumn">The physical column on the source table carrying the document key.</param>
     internal static void EmitMssqlKeyChangeInsert(
         SqlWriter writer,
         ISqlDialect dialect,
@@ -471,7 +462,6 @@ internal static class TrackedChangeTriggerBodyEmitter
             "FROM @identityChangedDocs idc",
             $"INNER JOIN inserted i ON i.{dialect.QuoteIdentifier(keyColumn.Value)} = idc.{dialect.QuoteIdentifier("DocumentId")}",
             $"INNER JOIN deleted del ON del.{dialect.QuoteIdentifier(keyColumn.Value)} = i.{dialect.QuoteIdentifier(keyColumn.Value)}",
-            $"INNER JOIN {dialect.QualifyTable(DmsTableNames.Document)} doc ON doc.{dialect.QuoteIdentifier("DocumentId")} = i.{dialect.QuoteIdentifier(keyColumn.Value)}",
         };
         EmitMssqlFromJoinBlock(writer, dialect, plan, fixedLines, MssqlOldImage, MssqlNewImage);
     }
@@ -571,23 +561,28 @@ internal static class TrackedChangeTriggerBodyEmitter
     // ── Core INSERT emitter ─────────────────────────────────────────
 
     /// <summary>
-    /// Emits a single PostgreSQL <c>INSERT INTO … SELECT … FROM … JOIN … WHERE</c> statement
-    /// for either a tombstone (<paramref name="newImage"/> == null) or a key-change row
-    /// (<paramref name="newImage"/> != null).
-    /// Varying inputs: <paramref name="newImage"/> (null for tombstone), <paramref name="filterImage"/>
-    /// (the row ref used in the WHERE clause), and <paramref name="changeVersionSql"/>
-    /// (dialect-specific expression for the ChangeVersion column value).
+    /// Emits a single PostgreSQL <c>INSERT INTO … SELECT [FROM … JOIN …]</c> statement for either a
+    /// tombstone (<paramref name="newImage"/> == null) or a key-change row
+    /// (<paramref name="newImage"/> != null). Every value comes from a row image, a descriptor/person
+    /// join off a row image, or the plpgsql <c>_stampedContentVersion</c> local — so the statement
+    /// needs a <c>FROM</c> clause only when there is a join to hang off something. When there is, a
+    /// neutral one-row anchor supplies it, which keeps every join keyword and <c>ON</c> clause exactly
+    /// as it was when the joins hung off <c>dms.Document</c>.
     /// </summary>
     private static void EmitPgsqlInsert(
         SqlWriter writer,
         ISqlDialect dialect,
         TrackedChangeInsertPlan plan,
-        ImageBinding? newImage,
-        string changeVersionSql,
-        ImageBinding filterImage,
-        DbColumnName keyColumn
+        ImageBinding? newImage
     )
     {
+        // Old-image joins first, then new-image joins (key-change only).
+        var joinLines = new List<string>(BuildJoinLines(dialect, plan, PgsqlOldImage));
+        if (newImage is not null)
+        {
+            joinLines.AddRange(BuildJoinLines(dialect, plan, newImage));
+        }
+
         // INSERT INTO <qualified tracked table> (
         writer.AppendLine($"INSERT INTO {dialect.QualifyTable(plan.Table.Table)} (");
 
@@ -597,24 +592,25 @@ internal static class TrackedChangeTriggerBodyEmitter
             plan,
             oldImage: PgsqlOldImage,
             newImage: newImage,
-            changeVersionSql: changeVersionSql
+            changeVersionSql: PgsqlStampedContentVersionLocal,
+            // With no FROM clause to follow, the SELECT list carries the terminator.
+            terminateSelectList: joinLines.Count == 0
         );
 
-        // FROM dms.Document doc
-        writer.AppendLine($"FROM {dialect.QualifyTable(DmsTableNames.Document)} doc");
-
-        // Joins for the old image
-        EmitJoins(writer, dialect, plan, PgsqlOldImage);
-
-        // Joins for the new image (key-change only)
-        if (newImage is not null)
+        if (joinLines.Count == 0)
         {
-            EmitJoins(writer, dialect, plan, newImage);
+            return;
         }
 
-        writer.AppendLine(
-            $"WHERE doc.{dialect.QuoteIdentifier("DocumentId")} = {filterImage.RowRef}.{dialect.QuoteIdentifier(keyColumn.Value)};"
-        );
+        writer.AppendLine("FROM (SELECT 1) AS anchor");
+
+        // The terminating `;` is appended to the last join line, not on its own line.
+        for (int k = 0; k < joinLines.Count - 1; k++)
+        {
+            writer.AppendLine(joinLines[k]);
+        }
+
+        writer.AppendLine($"{joinLines[^1]};");
     }
 
     // ── Shared column-list + SELECT-list helper ─────────────────────
@@ -625,7 +621,7 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// indentation scopes for the column list and SELECT list.
     /// Emits: indented Old* columns, optional New* columns, Id column, ChangeVersion column;
     /// then closing paren, SELECT keyword, and indented old-image expressions, optional new-image
-    /// expressions, doc.DocumentUuid, and the ChangeVersion expression.
+    /// expressions, the tracked Id read off a row image, and the ChangeVersion expression.
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to write into.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting.</param>
@@ -633,16 +629,24 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <param name="oldImage">The image binding for old values (e.g. <c>OLD</c> / <c>del</c>).</param>
     /// <param name="newImage">The image binding for new values, or <c>null</c> for a tombstone.</param>
     /// <param name="changeVersionSql">The SQL expression for the ChangeVersion value in the SELECT list.</param>
+    /// <param name="terminateSelectList">
+    /// When <see langword="true"/>, appends the statement terminator to the ChangeVersion line because
+    /// no FROM/JOIN block follows to carry it.
+    /// </param>
     private static void EmitInsertColumnsAndSelect(
         SqlWriter writer,
         ISqlDialect dialect,
         TrackedChangeInsertPlan plan,
         ImageBinding oldImage,
         ImageBinding? newImage,
-        string changeVersionSql
+        string changeVersionSql,
+        bool terminateSelectList = false
     )
     {
         var idSql = dialect.QuoteIdentifier(plan.IdColumn.Value);
+        // The tracked Id is the document's UUID, mirrored onto the root row itself. A tombstone only
+        // has the old image; a key change reports the post-change document, so it reads the new one.
+        var idImage = newImage ?? oldImage;
 
         using (writer.Indent())
         {
@@ -691,11 +695,11 @@ internal static class TrackedChangeTriggerBodyEmitter
                 }
             }
 
-            // doc.DocumentUuid
-            writer.AppendLine($"doc.{dialect.QuoteIdentifier("DocumentUuid")},");
+            // Id — the row image's own DocumentUuid mirror
+            writer.AppendLine($"{idImage.RowRef}.{dialect.QuoteIdentifier("DocumentUuid")},");
 
             // ChangeVersion expression — no trailing comma
-            writer.AppendLine(changeVersionSql);
+            writer.AppendLine(terminateSelectList ? $"{changeVersionSql};" : changeVersionSql);
         }
     }
 
@@ -747,24 +751,6 @@ internal static class TrackedChangeTriggerBodyEmitter
         return $"{alias}.{dialect.QuoteIdentifier(lastStep.TargetColumnName!.Value.Value)}";
     }
 
-    /// <summary>
-    /// Emits INNER JOIN clauses for all descriptor and person joins required by the plan,
-    /// using the given image binding to produce the correct alias prefix and row reference.
-    /// Delegates to <see cref="BuildJoinLines"/> so the join-rendering logic is defined once.
-    /// </summary>
-    private static void EmitJoins(
-        SqlWriter writer,
-        ISqlDialect dialect,
-        TrackedChangeInsertPlan plan,
-        ImageBinding image
-    )
-    {
-        foreach (var line in BuildJoinLines(dialect, plan, image))
-        {
-            writer.AppendLine(line);
-        }
-    }
-
     // ── Descriptor tombstone renderer ────────────────────────────────
 
     /// <summary>
@@ -797,8 +783,10 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// for a SQL Server statement-level trigger whose row comes from the <c>deleted</c> pseudo-table.
     /// </param>
     /// <param name="fromDeletedSet">
-    /// <c>false</c> (PostgreSQL): the FROM clause is <c>dms.Document doc WHERE doc.DocumentId = OLD.DocumentId</c>.
-    /// <c>true</c> (SQL Server): the FROM clause is <c>deleted del INNER JOIN dms.Document doc ON …</c>.
+    /// <c>false</c> (PostgreSQL): there is no FROM clause — every value is an <c>OLD</c> field or the
+    /// plpgsql <c>_stampedContentVersion</c> local.
+    /// <c>true</c> (SQL Server): the FROM clause is
+    /// <c>deleted del INNER JOIN @stamped s ON s.DocumentId = del.DocumentId</c>.
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// Thrown when the <see cref="TrackedChangeSystemColumnRole.Id"/>,
@@ -876,28 +864,26 @@ internal static class TrackedChangeTriggerBodyEmitter
                 writer.AppendLine($"{imageRef}.{dialect.QuoteIdentifier(sourceCol)},");
             }
 
-            // doc.DocumentUuid (Id)
-            writer.AppendLine($"doc.{dialect.QuoteIdentifier("DocumentUuid")},");
+            // Id — the deleted descriptor row's own DocumentUuid mirror
+            writer.AppendLine($"{imageRef}.{dialect.QuoteIdentifier("DocumentUuid")},");
 
-            // doc.ContentVersion (ChangeVersion) — no trailing comma
-            writer.AppendLine($"doc.{dialect.QuoteIdentifier("ContentVersion")}");
+            // ChangeVersion — the post-bump content stamp, never the deleted row's stale copy.
+            // No trailing comma; on PostgreSQL this line also carries the statement terminator,
+            // because no FROM clause follows it.
+            writer.AppendLine(
+                fromDeletedSet
+                    ? $"s.{dialect.QuoteIdentifier("ContentVersion")}"
+                    : $"{PgsqlStampedContentVersionLocal};"
+            );
         }
 
         if (fromDeletedSet)
         {
-            // SQL Server statement trigger: join deleted pseudo-table to dms.Document.
-            var docTable = dialect.QualifyTable(DmsTableNames.Document);
-            var docIdCol = dialect.QuoteIdentifier("DocumentId");
+            // SQL Server statement trigger: join the deleted pseudo-table to the trigger's own
+            // @stamped capture table, which holds the post-bump stamp for this delete workset.
+            var documentIdColumn = dialect.QuoteIdentifier("DocumentId");
             writer.AppendLine("FROM deleted del");
-            writer.AppendLine($"INNER JOIN {docTable} doc ON doc.{docIdCol} = del.{docIdCol};");
-        }
-        else
-        {
-            // PostgreSQL row trigger: join dms.Document via the OLD row's DocumentId.
-            var docTable = dialect.QualifyTable(DmsTableNames.Document);
-            var docIdCol = dialect.QuoteIdentifier("DocumentId");
-            writer.AppendLine($"FROM {docTable} doc");
-            writer.AppendLine($"WHERE doc.{docIdCol} = {imageRef}.{docIdCol};");
+            writer.AppendLine($"INNER JOIN @stamped s ON s.{documentIdColumn} = del.{documentIdColumn};");
         }
     }
 

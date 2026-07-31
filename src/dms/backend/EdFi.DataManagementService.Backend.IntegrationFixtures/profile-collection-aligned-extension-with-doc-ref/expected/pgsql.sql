@@ -716,7 +716,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."ParentResource" (
             "OldParentResourceId",
             "Id",
@@ -724,10 +725,8 @@ BEGIN
         )
         SELECT
             OLD."ParentResourceId",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ParentResourceId" IS DISTINCT FROM NEW."ParentResourceId") THEN
@@ -768,10 +767,8 @@ BEGIN
         SELECT
             OLD."ParentResourceId",
             NEW."ParentResourceId",
-            doc."DocumentUuid",
-            _stampedContentVersion
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = NEW."DocumentId";
+            NEW."DocumentUuid",
+            _stampedContentVersion;
     END IF;
     RETURN NEW;
 END;
@@ -856,7 +853,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."Sponsor" (
             "OldSponsorName",
             "Id",
@@ -864,10 +862,8 @@ BEGIN
         )
         SELECT
             OLD."SponsorName",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SponsorName" IS DISTINCT FROM NEW."SponsorName") THEN
@@ -908,10 +904,8 @@ BEGIN
         SELECT
             OLD."SponsorName",
             NEW."SponsorName",
-            doc."DocumentUuid",
-            _stampedContentVersion
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = NEW."DocumentId";
+            NEW."DocumentUuid",
+            _stampedContentVersion;
     END IF;
     RETURN NEW;
 END;

@@ -819,7 +819,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."Program" (
             "OldProgramName",
             "Id",
@@ -827,10 +828,8 @@ BEGIN
         )
         SELECT
             OLD."ProgramName",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName") THEN
@@ -871,10 +870,8 @@ BEGIN
         SELECT
             OLD."ProgramName",
             NEW."ProgramName",
-            doc."DocumentUuid",
-            _stampedContentVersion
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = NEW."DocumentId";
+            NEW."DocumentUuid",
+            _stampedContentVersion;
     END IF;
     RETURN NEW;
 END;
@@ -918,7 +915,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "Id",
@@ -926,10 +924,8 @@ BEGIN
         )
         SELECT
             OLD."SchoolId",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
@@ -970,10 +966,8 @@ BEGIN
         SELECT
             OLD."SchoolId",
             NEW."SchoolId",
-            doc."DocumentUuid",
-            _stampedContentVersion
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = NEW."DocumentId";
+            NEW."DocumentUuid",
+            _stampedContentVersion;
     END IF;
     RETURN NEW;
 END;

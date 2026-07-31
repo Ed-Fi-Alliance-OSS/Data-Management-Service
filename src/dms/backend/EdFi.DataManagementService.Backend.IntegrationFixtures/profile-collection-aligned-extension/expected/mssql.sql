@@ -836,10 +836,10 @@ BEGIN
         )
         SELECT
             del.[ParentResourceId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
+            del.[DocumentUuid],
+            s.[ContentVersion]
         FROM deleted del
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -860,12 +860,11 @@ BEGIN
         SELECT
             del.[ParentResourceId],
             i.[ParentResourceId],
-            doc.[DocumentUuid],
+            i.[DocumentUuid],
             idc.[ContentVersion]
         FROM @identityChangedDocs idc
         INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId];
         IF EXISTS (SELECT 1 FROM @identityChangedDocs)
         BEGIN
             UPDATE r

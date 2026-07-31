@@ -175,8 +175,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
             tombstoneWriter,
             dialect,
-            plan,
-            new DbColumnName("DocumentId")
+            plan
         );
         _tombstone = tombstoneWriter.ToString();
 
@@ -184,8 +183,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
             keyChangeWriter,
             dialect,
-            plan,
-            new DbColumnName("DocumentId")
+            plan
         );
         _keyChange = keyChangeWriter.ToString();
     }
@@ -201,13 +199,30 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
     }
 
     [Test]
-    public void It_should_read_tombstone_values_from_the_OLD_image_and_document_row()
+    public void It_should_read_tombstone_values_from_the_OLD_image_and_the_captured_stamp()
     {
         _tombstone.Should().Contain("OLD.\"BeginDate\"");
         _tombstone.Should().Contain("OLD.\"SchoolId_Unified\"");
-        _tombstone.Should().Contain("doc.\"DocumentUuid\"");
-        _tombstone.Should().Contain("doc.\"ContentVersion\"");
-        _tombstone.Should().Contain("WHERE doc.\"DocumentId\" = OLD.\"DocumentId\"");
+        // Id comes from the root row's own mirror; ChangeVersion from the stamp the DELETE branch
+        // captured (the OLD image carries the pre-bump ContentVersion and must not be read).
+        _tombstone.Should().Contain("OLD.\"DocumentUuid\",");
+        _tombstone.Should().Contain("_stampedContentVersion");
+        _tombstone.Should().NotContain("\"dms\".\"Document\"");
+        _tombstone.Should().NotContain("doc.");
+    }
+
+    [Test]
+    public void It_should_anchor_the_tombstone_join_chain_on_a_neutral_one_row_source()
+    {
+        // The joins have to hang off something now that dms.Document is gone; a one-row anchor
+        // keeps every join keyword and ON clause byte-identical.
+        _tombstone.Should().Contain("FROM (SELECT 1) AS anchor\n");
+        // The terminator rides the last join line, never a line of its own.
+        _tombstone
+            .Should()
+            .EndWith(
+                "INNER JOIN \"edfi\".\"Student\" oldPj0s1 ON oldPj0s1.\"DocumentId\" = oldPj0s0.\"Student_DocumentId\";\n"
+            );
     }
 
     [Test]
@@ -243,7 +258,11 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         _keyChange.Should().Contain("newDj0.\"Namespace\"");
         _keyChange.Should().Contain("newPj0s1.\"DocumentId\"");
         _keyChange.Should().Contain("_stampedContentVersion");
-        _keyChange.Should().Contain("WHERE doc.\"DocumentId\" = NEW.\"DocumentId\"");
+        // The post-change image supplies Id; the identity-diff branch already captured the stamp.
+        _keyChange.Should().Contain("NEW.\"DocumentUuid\",");
+        _keyChange.Should().NotContain("\"dms\".\"Document\"");
+        _keyChange.Should().NotContain("doc.");
+        _keyChange.Should().Contain("FROM (SELECT 1) AS anchor\n");
         _keyChange
             .Should()
             .Contain(
@@ -315,7 +334,10 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _tombstone.Should().Contain("[OldBeginDate]");
         _tombstone.Should().NotContain("[NewBeginDate]");
         _tombstone.Should().Contain("FROM deleted del");
-        _tombstone.Should().Contain("INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]");
+        // ChangeVersion comes from the trigger's own capture table, which the content stamp filled
+        // with the post-bump value for exactly this pure-delete workset.
+        _tombstone.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]");
+        _tombstone.Should().NotContain("[dms].[Document]");
         _tombstone
             .Should()
             .Contain(
@@ -332,8 +354,8 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
                 "INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]"
             );
         _tombstone.Should().Contain("oldDj0.[Namespace]");
-        _tombstone.Should().Contain("doc.[DocumentUuid]");
-        _tombstone.Should().Contain("doc.[ContentVersion]");
+        _tombstone.Should().Contain("del.[DocumentUuid],");
+        _tombstone.Should().Contain("s.[ContentVersion]");
         _tombstone.Should().Contain("oldPj0s1.[DocumentId]");
         // The statement terminator must be attached to the last content line, never on its own line.
         _tombstone.Split('\n').Should().NotContain(l => l.Trim() == ";");
@@ -347,7 +369,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _keyChange.Should().Contain("FROM @identityChangedDocs idc");
         _keyChange.Should().Contain("INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]");
         _keyChange.Should().Contain("INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
-        _keyChange.Should().Contain("INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]");
+        _keyChange.Should().NotContain("[dms].[Document]");
         _keyChange.Should().Contain("del.[BeginDate]");
         _keyChange.Should().Contain("i.[BeginDate]");
         _keyChange
@@ -365,7 +387,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
             .Contain(
                 "INNER JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId]"
             );
-        _keyChange.Should().Contain("doc.[DocumentUuid]");
+        _keyChange.Should().Contain("i.[DocumentUuid],");
         _keyChange.Should().Contain("idc.[ContentVersion]");
         _keyChange
             .Should()
@@ -491,8 +513,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
         TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
             writer,
             dialect,
-            plan,
-            new DbColumnName("DocumentId")
+            plan
         );
         return writer.ToString();
     }
@@ -535,8 +556,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
         TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
             pgWriter,
             pgsqlDialect,
-            plan,
-            new DbColumnName("DocumentId")
+            plan
         );
         _pgsqlTombstone = pgWriter.ToString();
 
@@ -567,6 +587,27 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
         _mssqlTombstone.Should().NotContain("INNER JOIN [dms].[Descriptor]");
         _mssqlTombstone.Should().NotContain("Pj0");
     }
+
+    [Test]
+    public void It_should_omit_the_from_clause_entirely_on_pgsql_when_there_are_no_joins()
+    {
+        // Nothing left to select from: every value is a row-image field or a plpgsql local, so a
+        // FROM-less SELECT (legal in PG) is the whole statement — no anchor needed.
+        _pgsqlTombstone.Should().NotContain("FROM");
+        _pgsqlTombstone.Should().EndWith("    _stampedContentVersion;\n");
+        _pgsqlTombstone.Should().Contain("OLD.\"DocumentUuid\",");
+    }
+
+    [Test]
+    public void It_should_still_source_mssql_change_version_from_the_stamp_table_without_joins()
+    {
+        _mssqlTombstone.Should().Contain("del.[DocumentUuid],");
+        _mssqlTombstone.Should().Contain("s.[ContentVersion]");
+        _mssqlTombstone
+            .Should()
+            .EndWith("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];\n");
+        _mssqlTombstone.Should().NotContain("[dms].[Document]");
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -595,8 +636,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
         TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
             pgsqlTombstoneWriter,
             pgsqlDialect,
-            _plan,
-            new DbColumnName("DocumentId")
+            _plan
         );
         _pgsqlTombstone = pgsqlTombstoneWriter.ToString();
 
@@ -604,8 +644,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
         TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
             pgsqlKeyChangeWriter,
             pgsqlDialect,
-            _plan,
-            new DbColumnName("DocumentId")
+            _plan
         );
         _pgsqlKeyChange = pgsqlKeyChangeWriter.ToString();
 

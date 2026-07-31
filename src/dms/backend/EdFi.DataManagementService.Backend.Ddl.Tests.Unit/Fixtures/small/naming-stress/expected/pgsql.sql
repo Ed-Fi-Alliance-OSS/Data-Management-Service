@@ -555,7 +555,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
+        WHERE "DocumentId" = OLD."DocumentId"
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         INSERT INTO "tracked_changes_edfi"."NamingStressItem" (
             "OldNamingStressItemId",
             "Id",
@@ -563,10 +564,8 @@ BEGIN
         )
         SELECT
             OLD."NamingStressItemId",
-            doc."DocumentUuid",
-            doc."ContentVersion"
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = OLD."DocumentId";
+            OLD."DocumentUuid",
+            _stampedContentVersion;
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."NamingStressItemId" IS DISTINCT FROM NEW."NamingStressItemId" OR OLD."Order" IS DISTINCT FROM NEW."Order" OR OLD."ShortName" IS DISTINCT FROM NEW."ShortName" OR OLD."ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgre_026b941dbf" IS DISTINCT FROM NEW."ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgre_026b941dbf" OR OLD."ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgre_e2f35e760a" IS DISTINCT FROM NEW."ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgre_e2f35e760a" OR OLD."VeryLongIdentifierNameThatExceedsSixtyThreeCharacter_21402e5f2e" IS DISTINCT FROM NEW."VeryLongIdentifierNameThatExceedsSixtyThreeCharacter_21402e5f2e") THEN
@@ -607,10 +606,8 @@ BEGIN
         SELECT
             OLD."NamingStressItemId",
             NEW."NamingStressItemId",
-            doc."DocumentUuid",
-            _stampedContentVersion
-        FROM "dms"."Document" doc
-        WHERE doc."DocumentId" = NEW."DocumentId";
+            NEW."DocumentUuid",
+            _stampedContentVersion;
     END IF;
     RETURN NEW;
 END;

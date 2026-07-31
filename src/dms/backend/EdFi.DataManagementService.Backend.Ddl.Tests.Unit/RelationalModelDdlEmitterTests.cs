@@ -4541,6 +4541,27 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
             .Should()
             .BeGreaterThan(stampUpdateIdx, "tombstone INSERT must appear after the content-stamp UPDATE");
     }
+
+    [Test]
+    public void It_should_capture_the_delete_branch_content_stamp_for_the_tombstone()
+    {
+        // The tombstone's ChangeVersion must be the post-bump value, which only the stamp
+        // statement itself can hand back — the OLD row image carries the pre-bump value.
+        _ddl.Should().Contain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
+    }
+
+    [Test]
+    public void It_should_read_the_tombstone_id_from_the_old_row_image_not_the_document_table()
+    {
+        var tombstone = TrackedChangeTriggerFixture.FirstTrackedChangeInsert(
+            _ddl,
+            "INSERT INTO \"tracked_changes_edfi\"."
+        );
+
+        tombstone.Should().Contain("OLD.\"DocumentUuid\",");
+        tombstone.Should().Contain("_stampedContentVersion");
+        tombstone.Should().NotContain("\"dms\".\"Document\"");
+    }
 }
 
 [TestFixture]
@@ -4587,6 +4608,38 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         tombstoneBranchIdx
             .Should()
             .BeGreaterThan(mirrorUpdateIdx, "tombstone branch must appear after the mirror-update block");
+    }
+
+    [Test]
+    public void It_should_read_tombstone_values_from_the_deleted_image_and_the_stamp_table()
+    {
+        var tombstone = TrackedChangeTriggerFixture.FirstTrackedChangeInsert(
+            _ddl,
+            "INSERT INTO [tracked_changes_edfi]."
+        );
+
+        tombstone.Should().Contain("del.[DocumentUuid],");
+        tombstone.Should().Contain("s.[ContentVersion]");
+        tombstone.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]");
+        tombstone.Should().NotContain("[dms].[Document]");
+    }
+
+    [Test]
+    public void It_should_declare_and_fill_the_stamp_table_before_the_tombstone_reads_it()
+    {
+        // The tombstone joins @stamped, so the capture table must already exist and hold the
+        // post-bump content stamp by the time the tombstone block runs.
+        var declareIdx = _ddl.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
+        declareIdx.Should().BeGreaterThanOrEqualTo(0, "@stamped must be declared");
+
+        var fillIdx = _ddl.IndexOf(" INTO @stamped", declareIdx, StringComparison.Ordinal);
+        fillIdx.Should().BeGreaterThan(declareIdx, "the content stamp must OUTPUT into @stamped");
+
+        var tombstoneBranchIdx = _ddl.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
+            StringComparison.Ordinal
+        );
+        tombstoneBranchIdx.Should().BeGreaterThan(fillIdx);
     }
 }
 
@@ -4694,6 +4747,20 @@ public class Given_RelationalModelDdlEmitter_With_NonRoot_Attachment
 /// </summary>
 internal static class TrackedChangeTriggerFixture
 {
+    /// <summary>
+    /// Slices the first tracked-change <c>INSERT … ;</c> statement out of an emitted script so
+    /// assertions cannot accidentally match the surrounding stamp statements, which legitimately
+    /// still reference <c>dms.Document</c>.
+    /// </summary>
+    internal static string FirstTrackedChangeInsert(string ddl, string insertPrefix)
+    {
+        var start = ddl.IndexOf(insertPrefix, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, "a tracked-change INSERT must be present");
+        var end = ddl.IndexOf(";\n", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start, "the tracked-change INSERT must be terminated");
+        return ddl[start..(end + 2)];
+    }
+
     internal static DerivedRelationalModelSet BuildAttachedResource(SqlDialect dialect)
     {
         return Build(
