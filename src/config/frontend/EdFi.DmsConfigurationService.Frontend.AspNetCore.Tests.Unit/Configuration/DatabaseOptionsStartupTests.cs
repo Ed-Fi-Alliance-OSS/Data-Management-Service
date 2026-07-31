@@ -31,6 +31,13 @@ public class DatabaseOptionsStartupTests
 
     private const string ShippedDefaultEncryptionKey = "YourSecureEncryptionKey32Characters";
 
+    /// <summary>
+    /// The 32-character prefix of <see cref="ShippedDefaultEncryptionKey" />, which derives the same AES
+    /// key. It passes the length and ASCII rules, so it is the shape most likely to reach a running host
+    /// if the known-default rule ever stops covering significant prefixes.
+    /// </summary>
+    private const string ShippedDefaultEncryptionKeySignificantPrefix = "YourSecureEncryptionKey32Charact";
+
     private static WebApplicationFactory<Program> CreateFactory(string encryptionKey) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -119,6 +126,39 @@ public class DatabaseOptionsStartupTests
         public void Act()
         {
             _factory = CreateFactory(ShippedDefaultEncryptionKey);
+            _exception = StartupExceptionFor(_factory);
+            _validationFailure = FindOptionsValidationException(_exception);
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_fails_to_start() => _exception.Should().NotBeNull();
+
+        [Test]
+        public void It_fails_with_an_options_validation_exception() =>
+            _validationFailure.Should().NotBeNull();
+
+        [Test]
+        public void It_reports_the_known_default_rule() =>
+            _validationFailure!
+                .Message.Should()
+                .Contain("DatabaseSettings:EncryptionKey")
+                .And.Contain("default");
+    }
+
+    [TestFixture]
+    public class Given_the_significant_prefix_of_the_default_database_encryption_key_at_startup
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+        private OptionsValidationException? _validationFailure;
+
+        [SetUp]
+        public void Act()
+        {
+            _factory = CreateFactory(ShippedDefaultEncryptionKeySignificantPrefix);
             _exception = StartupExceptionFor(_factory);
             _validationFailure = FindOptionsValidationException(_exception);
         }

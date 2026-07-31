@@ -137,7 +137,7 @@ These settings configure how the DMS API connects to the Configuration Service t
 | BaseUrl                | The base URL of the Configuration Service. Example: `http://ed-fi-api-config:8081`                                                                                     |
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
-| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. DMS requires only a non-empty value; CMS rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and not the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
+| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. DMS requires only a non-empty value; CMS rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and does not derive the same key as the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
 
 > [!NOTE]
@@ -152,10 +152,11 @@ These settings configure how the DMS API connects to the Configuration Service t
 > **Valid values.** The Configuration Service validates its
 > `DatabaseSettings:EncryptionKey` at startup and refuses to start when the value
 > is blank, shorter than 32 characters, contains a non-ASCII character within the
-> first 32 characters, or is the former shipped `appsettings.json` default. DMS
-> enforces only that its `ConfigurationServiceSettings:EncryptionKey` is
-> non-empty, so it must be given the same value the Configuration Service
-> accepted.
+> first 32 characters, or derives the same key as the former shipped
+> `appsettings.json` default — that is, its first 32 characters match the
+> default's first 32 characters, whatever follows them. DMS enforces only that
+> its `ConfigurationServiceSettings:EncryptionKey` is non-empty, so it must be
+> given the same value the Configuration Service accepted.
 >
 > The AES-256 key is derived from the UTF-8 bytes of the configured text,
 > right-padded with `0` to 32 characters and then truncated to the first 32

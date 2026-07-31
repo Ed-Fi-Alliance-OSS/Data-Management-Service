@@ -24,7 +24,9 @@ namespace EdFi.DmsConfigurationService.Backend
 
         /// <summary>
         /// The value formerly shipped in appsettings.json. It is public in an open-source repository,
-        /// so any deployment left on it has decryptable connection strings.
+        /// so any deployment left on it has decryptable connection strings. Only its significant
+        /// 32-character prefix is compared: every value sharing that prefix derives the same key, so
+        /// rejecting the full string alone would leave the published key reachable.
         /// </summary>
         private const string ShippedDefaultEncryptionKey = "YourSecureEncryptionKey32Characters";
 
@@ -42,17 +44,25 @@ namespace EdFi.DmsConfigurationService.Backend
                 return ValidateOptionsResult.Fail("Missing required DatabaseSettings value: EncryptionKey");
             }
 
-            if (string.Equals(options.EncryptionKey, ShippedDefaultEncryptionKey, StringComparison.Ordinal))
-            {
-                return ValidateOptionsResult.Fail(
-                    "DatabaseSettings:EncryptionKey must not be the known default value; provide a unique key."
-                );
-            }
-
+            // Checked before the known-default rule so the comparison below always has 32 characters
+            // to read.
             if (options.EncryptionKey.Length < RequiredEncryptionKeyLength)
             {
                 return ValidateOptionsResult.Fail(
                     "DatabaseSettings:EncryptionKey must be at least 32 characters of ASCII key material."
+                );
+            }
+
+            // Compares significant prefixes, not whole strings: the known default truncated to 32
+            // characters, or that prefix with any suffix, derives the same publicly known key.
+            if (
+                options
+                    .EncryptionKey.AsSpan(0, RequiredEncryptionKeyLength)
+                    .SequenceEqual(ShippedDefaultEncryptionKey.AsSpan(0, RequiredEncryptionKeyLength))
+            )
+            {
+                return ValidateOptionsResult.Fail(
+                    "DatabaseSettings:EncryptionKey must not be the known default value; provide a unique key."
                 );
             }
 

@@ -30,6 +30,12 @@ public class DatabaseOptionsValidatorTests
     private const string ShippedDefaultKey = "YourSecureEncryptionKey32Characters";
 
     /// <summary>
+    /// The 32-character prefix of <see cref="ShippedDefaultKey" />: the part that actually reaches the
+    /// AES key. Any value sharing this prefix derives the published key, so it must be rejected too.
+    /// </summary>
+    private const string ShippedDefaultKeySignificantPrefix = "YourSecureEncryptionKey32Charact";
+
+    /// <summary>
     /// U+00E9, a non-ASCII code point. It occupies two bytes in UTF-8, so including it in the
     /// significant prefix pushes the derived key past the 32 bytes AES-256 accepts. Written as a code
     /// point so the source file stays ASCII.
@@ -68,6 +74,66 @@ public class DatabaseOptionsValidatorTests
         [Test]
         public void It_does_not_report_the_missing_value_rule() =>
             _result.FailureMessage.Should().NotContain("Missing required");
+    }
+
+    /// <summary>
+    /// The known default truncated to its significant 32 characters derives exactly the same AES key as
+    /// the full 35-character value, so it is the same published key by another spelling.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_significant_prefix_of_the_shipped_default_encryption_key
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Act() => _result = Validate(OptionsWithKey(ShippedDefaultKeySignificantPrefix));
+
+        /// <summary>
+        /// Pins the two constants together: an edit that leaves the prefix no longer prefixing the
+        /// default would otherwise make the fixtures below assert against a key the code never sees.
+        /// </summary>
+        [Test]
+        public void It_is_the_first_32_characters_of_the_shipped_default_key()
+        {
+            ShippedDefaultKeySignificantPrefix.Length.Should().Be(32);
+            ShippedDefaultKey.Should().StartWith(ShippedDefaultKeySignificantPrefix);
+        }
+
+        [Test]
+        public void It_fails_validation() => _result.Failed.Should().BeTrue();
+
+        [Test]
+        public void It_reports_the_known_default_rule() =>
+            _result.FailureMessage.Should().Contain("DatabaseSettings:EncryptionKey").And.Contain("default");
+
+        /// <summary>
+        /// It is exactly 32 characters, so reaching the length message here would mean the rule was
+        /// comparing whole strings again.
+        /// </summary>
+        [Test]
+        public void It_does_not_report_the_minimum_length_rule() =>
+            _result.FailureMessage.Should().NotContain("at least 32");
+    }
+
+    /// <summary>
+    /// Characters beyond the first 32 are discarded before the key is derived, so a suffix cannot make
+    /// the published key acceptable.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_shipped_default_key_prefix_followed_by_an_arbitrary_suffix
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Act() =>
+            _result = Validate(OptionsWithKey(ShippedDefaultKeySignificantPrefix + "_arbitrary_suffix"));
+
+        [Test]
+        public void It_fails_validation() => _result.Failed.Should().BeTrue();
+
+        [Test]
+        public void It_reports_the_known_default_rule() =>
+            _result.FailureMessage.Should().Contain("DatabaseSettings:EncryptionKey").And.Contain("default");
     }
 
     [TestFixture]
