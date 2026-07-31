@@ -20,7 +20,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// <c>IdentityLastModifiedAt</c>, <c>CreatedAt</c>, <c>ContentVersion</c> and
 /// <c>ContentLastModifiedAt</c>. <c>CreatedByOwnershipTokenId</c> is deliberately excluded: there is no
 /// such column on <c>dms.Document</c>, so the root/descriptor columns are unwritten NULL placeholders
-/// reserved for a later phase.
+/// reserved for a later phase. <c>dms.Descriptor</c> mirrors one column the root tables do not —
+/// <c>ResourceKeyId</c>, which Phase 2's descriptor reads filter by.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -306,6 +307,7 @@ public class PostgresqlDocumentMetadataDualWriteTests
         var seed = await InsertDescriptorDocumentAsync("Female");
 
         await AssertOwningRowMirrorsDocumentAsync(DescriptorTable, seed.DocumentId);
+        await AssertDescriptorMirrorsResourceKeyIdAsync(seed.DocumentId);
 
         var afterCreate = await ReadMetadataAsync(DescriptorTable, seed.DocumentId);
         afterCreate
@@ -329,6 +331,7 @@ public class PostgresqlDocumentMetadataDualWriteTests
         );
 
         await AssertOwningRowMirrorsDocumentAsync(DescriptorTable, seed.DocumentId);
+        await AssertDescriptorMirrorsResourceKeyIdAsync(seed.DocumentId);
 
         var afterUpdate = await ReadMetadataAsync(DescriptorTable, seed.DocumentId);
         afterUpdate
@@ -439,6 +442,37 @@ public class PostgresqlDocumentMetadataDualWriteTests
             .Should()
             .BeEmpty(
                 $"every mirrored column on {qualifiedTable} must equal dms.Document; mismatched: {string.Join(", ", mismatched)}"
+            );
+    }
+
+    /// <summary>
+    /// <c>dms.Descriptor</c> mirrors one column the root tables have no counterpart for:
+    /// <c>ResourceKeyId</c>, the project-qualified descriptor type Phase 2's descriptor reads filter by.
+    /// It has no default, so a non-NULL value can only have come from the stamping trigger.
+    /// </summary>
+    private async Task AssertDescriptorMirrorsResourceKeyIdAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT r."ResourceKeyId" AS "DescriptorResourceKeyId",
+                   d."ResourceKeyId" AS "DocumentResourceKeyId"
+            FROM "dms"."Descriptor" r
+            INNER JOIN "dms"."Document" d ON d."DocumentId" = r."DocumentId"
+            WHERE r."DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        var row = rows.Should().ContainSingle().Subject;
+        row["DescriptorResourceKeyId"]
+            .Should()
+            .NotBeNull("dms.Descriptor.ResourceKeyId has no default, so only the trigger can fill it");
+        Convert
+            .ToInt16(row["DescriptorResourceKeyId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(
+                Convert.ToInt16(row["DocumentResourceKeyId"], CultureInfo.InvariantCulture),
+                "the descriptor stamping trigger mirrors ResourceKeyId from dms.Document"
             );
     }
 

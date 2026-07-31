@@ -237,10 +237,13 @@ endpoints, which are still a placeholder shim (see the note below).
 Alongside the two change-version mirrors, every resource **root** table now carries five more
 `dms.Document` metadata columns — `DocumentUuid`, `IdentityVersion`, `IdentityLastModifiedAt`,
 `CreatedAt`, and `CreatedByOwnershipTokenId` — plus a `UX_<Table>_DocumentUuid` unique constraint. The
-shared `dms.Descriptor` table carries the same set, and each `<AbstractResource>Identity` table
-carries `DocumentUuid`. They are **not** client content: nothing in a write plan can set them
-(`IsWritable=false`), and hydration does not read them. The stamping triggers write the root and
-descriptor copies; the `TR_<Root>_AbstractIdentity` triggers write the abstract-identity copy.
+shared `dms.Descriptor` table carries the same set — plus one mirror no root table needs,
+`ResourceKeyId`, the project-qualified descriptor type descriptor reads filter by (nullable, no
+default, and no FK to `dms.ResourceKey`, so an out-of-band insert cannot fabricate a type) — and each
+`<AbstractResource>Identity` table carries `DocumentUuid`. They are **not** client content: nothing in
+a write plan can set them (`IsWritable=false`), and hydration does not read them. The stamping
+triggers write the root and descriptor copies; the `TR_<Root>_AbstractIdentity` triggers write the
+abstract-identity copy.
 
 - [`DeriveDocumentMetadataColumnsPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveDocumentMetadataColumnsPass.cs) — derives the five metadata columns onto root tables, including their non-writable classification
 

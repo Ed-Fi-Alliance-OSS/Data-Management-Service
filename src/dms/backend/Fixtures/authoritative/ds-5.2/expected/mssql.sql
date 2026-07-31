@@ -147,6 +147,7 @@ CREATE TABLE [dms].[Descriptor]
     [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
     [CreatedByOwnershipTokenId] smallint NULL,
+    [ResourceKeyId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
@@ -366,6 +367,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_ResourceKeyId_DocumentId'
+)
+CREATE INDEX [IX_Descriptor_ResourceKeyId_DocumentId] ON [dms].[Descriptor] ([ResourceKeyId], [DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_Uri_Discriminator'
 )
 CREATE INDEX [IX_Descriptor_Uri_Discriminator] ON [dms].[Descriptor] ([Uri], [Discriminator]);
@@ -412,10 +421,11 @@ BEGIN
         [DocumentUuid] uniqueidentifier NOT NULL,
         [IdentityVersion] bigint NOT NULL,
         [IdentityLastModifiedAt] datetime2(7) NOT NULL,
-        [CreatedAt] datetime2(7) NOT NULL
+        [CreatedAt] datetime2(7) NOT NULL,
+        [ResourceKeyId] smallint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], [DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], d.[DocumentUuid], d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], [DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt], [ResourceKeyId])
+    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], d.[DocumentUuid], d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt], d.[ResourceKeyId]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -433,7 +443,7 @@ BEGIN
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], inserted.[DocumentUuid], inserted.[IdentityVersion], inserted.[IdentityLastModifiedAt], inserted.[CreatedAt] INTO @stamped
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], inserted.[DocumentUuid], inserted.[IdentityVersion], inserted.[IdentityLastModifiedAt], inserted.[CreatedAt], inserted.[ResourceKeyId] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
@@ -444,7 +454,8 @@ BEGIN
             r.[DocumentUuid] = s.[DocumentUuid],
             r.[IdentityVersion] = s.[IdentityVersion],
             r.[IdentityLastModifiedAt] = s.[IdentityLastModifiedAt],
-            r.[CreatedAt] = s.[CreatedAt]
+            r.[CreatedAt] = s.[CreatedAt],
+            r.[ResourceKeyId] = s.[ResourceKeyId]
         FROM [dms].[Descriptor] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END

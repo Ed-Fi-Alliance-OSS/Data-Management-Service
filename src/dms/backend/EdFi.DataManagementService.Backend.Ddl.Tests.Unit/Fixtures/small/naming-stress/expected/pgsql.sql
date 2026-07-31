@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "CreatedByOwnershipTokenId" smallint NULL,
+    "ResourceKeyId" smallint NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
@@ -410,6 +411,8 @@ END $$;
 -- Phase 7: Indexes
 -- ==========================================================
 
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Uri_Discriminator" ON "dms"."Descriptor" ("Uri", "Discriminator");
 
 CREATE INDEX IF NOT EXISTS "IX_Document_ResourceKeyId_DocumentId" ON "dms"."Document" ("ResourceKeyId", "DocumentId");
@@ -432,12 +435,12 @@ BEGIN
     END IF;
     IF TG_OP = 'INSERT' THEN
         WITH stamped AS (
-            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
+            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
             FROM "dms"."Document"
             WHERE "DocumentId" = NEW."DocumentId"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt"
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
@@ -445,10 +448,10 @@ BEGIN
             UPDATE "dms"."Document"
             SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = NEW."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
+            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt", "DocumentUuid", "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt", "ResourceKeyId"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt"
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt", "DocumentUuid" = stamped."DocumentUuid", "IdentityVersion" = stamped."IdentityVersion", "IdentityLastModifiedAt" = stamped."IdentityLastModifiedAt", "CreatedAt" = stamped."CreatedAt", "ResourceKeyId" = stamped."ResourceKeyId"
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'DELETE' THEN

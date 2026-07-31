@@ -352,6 +352,12 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("CreatedByOwnershipTokenId"), _dialect.SmallintColumnType, true)},"
             );
+            // Mirror of dms.Document.ResourceKeyId, copied by TR_Descriptor_Stamp_Document; nullable with
+            // no default so an out-of-band insert cannot fabricate a descriptor type. Every supported
+            // write goes through the trigger, which fills the column before the statement completes.
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, true)},"
+            );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", "0")},"
             );
@@ -804,6 +810,17 @@ public sealed class CoreDdlEmitter
 
         // Ordered by (table name, index name).
 
+        // Keyset support for the descriptor page read: WHERE ResourceKeyId = @resourceKeyId
+        // ORDER BY DocumentId, matching IX_Document_ResourceKeyId_DocumentId on dms.Document.
+        writer.AppendLine(
+            _dialect.CreateIndexIfNotExists(
+                _descriptorTable,
+                "IX_Descriptor_ResourceKeyId_DocumentId",
+                [Col("ResourceKeyId"), Col("DocumentId")]
+            )
+        );
+        writer.AppendLine();
+
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
                 _descriptorTable,
@@ -904,6 +921,10 @@ public sealed class CoreDdlEmitter
     /// no-op change detection — which is also what bounds the recursion the mirror <c>UPDATE</c> would
     /// otherwise cause (it re-fires this same trigger).
     /// </para>
+    /// <para>
+    /// <c>ResourceKeyId</c> never changes for a document, so re-copying it on every stamp is wasted but
+    /// harmless; carrying it through the same mechanism as the rest keeps one copy list to maintain.
+    /// </para>
     /// </summary>
     private static readonly string[] _descriptorMirroredDocumentColumns =
     [
@@ -911,13 +932,14 @@ public sealed class CoreDdlEmitter
         "IdentityVersion",
         "IdentityLastModifiedAt",
         "CreatedAt",
+        "ResourceKeyId",
     ];
 
     /// <summary>
-    /// Appends <c>, DocumentUuid, IdentityVersion, IdentityLastModifiedAt, CreatedAt</c> — each quoted
-    /// for the dialect and optionally prefixed with <paramref name="qualifier"/> and a dot — for the
-    /// <c>dms.Document</c> metadata the descriptor stamping trigger copies. Callers always emit the
-    /// leading key/content-stamp columns first, so this starts with a separator.
+    /// Appends <see cref="_descriptorMirroredDocumentColumns"/> — each quoted for the dialect and
+    /// optionally prefixed with <paramref name="qualifier"/> and a dot — for the <c>dms.Document</c>
+    /// metadata the descriptor stamping trigger copies. Callers always emit the leading
+    /// key/content-stamp columns first, so this starts with a separator.
     /// </summary>
     private void AppendDescriptorMirroredDocumentColumns(SqlWriter writer, string? qualifier)
     {
@@ -1017,8 +1039,8 @@ public sealed class CoreDdlEmitter
                     writer.Append(" = NEW.");
                     writer.Append(Quote("DocumentId"));
                     writer.AppendLine();
-                    // The four mirrored metadata columns are unchanged by this UPDATE, but returning
-                    // them keeps the mirror statement one shape across both branches.
+                    // The mirrored metadata columns are unchanged by this UPDATE, but returning them
+                    // keeps the mirror statement one shape across both branches.
                     writer.Append("RETURNING ");
                     writer.Append(Quote("DocumentId"));
                     writer.Append(", ");
@@ -1148,7 +1170,8 @@ public sealed class CoreDdlEmitter
                 writer.AppendLine("[DocumentUuid] uniqueidentifier NOT NULL,");
                 writer.AppendLine("[IdentityVersion] bigint NOT NULL,");
                 writer.AppendLine("[IdentityLastModifiedAt] datetime2(7) NOT NULL,");
-                writer.AppendLine("[CreatedAt] datetime2(7) NOT NULL");
+                writer.AppendLine("[CreatedAt] datetime2(7) NOT NULL,");
+                writer.AppendLine("[ResourceKeyId] smallint NOT NULL");
             }
             writer.AppendLine(");");
             writer.Append("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt]");

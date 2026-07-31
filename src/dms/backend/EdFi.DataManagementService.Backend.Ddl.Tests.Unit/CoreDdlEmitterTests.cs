@@ -269,6 +269,21 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_mirror_resource_key_id_on_the_descriptor_row()
+    {
+        // The project-qualified descriptor type only lived on dms.Document, so descriptor reads rooted on
+        // dms.Descriptor need it mirrored here. Nullable with no default: a fabricated default would be
+        // silently-wrong data on a column the read path filters by, and the stamping trigger fills the
+        // column on every supported insert, so a NULL can only come from an out-of-band write.
+        var block = DescriptorTableColumnExtractor.ExtractPgBlock(_ddl);
+
+        // The trailing comma is load-bearing — it proves nothing (a DEFAULT) follows the null marker.
+        block.Should().Contain("\"ResourceKeyId\" smallint NULL,");
+        _ddl.Should().Contain("\"IX_Descriptor_ResourceKeyId_DocumentId\"");
+        _ddl.Should().Contain("\"ResourceKeyId\" = stamped.\"ResourceKeyId\"");
+    }
+
+    [Test]
     public void It_should_create_document_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"");
@@ -684,7 +699,8 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should()
             .Contain(
                 "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\", "
-                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\""
+                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\", "
+                    + "\"ResourceKeyId\""
             );
         _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
         _ddl.Should().Contain(PgsqlDescriptorMirrorSetClause);
@@ -695,7 +711,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_mirror_every_document_metadata_column_onto_the_descriptor_row()
     {
         // Both branches share one mirror statement, so the INSERT branch's SELECT and the UPDATE
-        // branch's RETURNING have to surface the same columns even though an UPDATE leaves the four
+        // branch's RETURNING have to surface the same columns even though an UPDATE leaves the
         // metadata values unchanged. Phase 2's descriptor reads depend on the row being self-sufficient.
         var insertBranch = SliceBranch(_ddl, "IF TG_OP = 'INSERT' THEN", "ELSIF TG_OP = 'UPDATE' THEN");
         var updateBranch = SliceBranch(_ddl, "ELSIF TG_OP = 'UPDATE' THEN", "ELSIF TG_OP = 'DELETE' THEN");
@@ -704,7 +720,8 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
             .Should()
             .Contain(
                 "SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\", "
-                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\""
+                    + "\"DocumentUuid\", \"IdentityVersion\", \"IdentityLastModifiedAt\", \"CreatedAt\", "
+                    + "\"ResourceKeyId\""
             );
         insertBranch.Should().Contain(PgsqlDescriptorMirrorSetClause);
         updateBranch.Should().Contain(PgsqlDescriptorMirrorSetClause);
@@ -744,7 +761,8 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         + "\"DocumentUuid\" = stamped.\"DocumentUuid\", "
         + "\"IdentityVersion\" = stamped.\"IdentityVersion\", "
         + "\"IdentityLastModifiedAt\" = stamped.\"IdentityLastModifiedAt\", "
-        + "\"CreatedAt\" = stamped.\"CreatedAt\"";
+        + "\"CreatedAt\" = stamped.\"CreatedAt\", "
+        + "\"ResourceKeyId\" = stamped.\"ResourceKeyId\"";
 
     [Test]
     public void It_should_diff_every_non_key_descriptor_column_in_stamping_trigger()
@@ -1083,6 +1101,23 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain("[CreatedByOwnershipTokenId] smallint NULL");
     }
 
+    [Test]
+    public void It_should_mirror_resource_key_id_on_the_descriptor_row()
+    {
+        // The project-qualified descriptor type only lived on dms.Document, so descriptor reads rooted on
+        // dms.Descriptor need it mirrored here. Nullable with no default: a fabricated default would be
+        // silently-wrong data on a column the read path filters by, and the stamping trigger fills the
+        // column on every supported insert, so a NULL can only come from an out-of-band write.
+        DescriptorTableColumnExtractor
+            .ExtractMssqlBlock(_ddl)
+            .Should()
+            // The trailing comma is load-bearing — it proves no DEFAULT constraint follows.
+            .Contain("[ResourceKeyId] smallint NULL,");
+        _ddl.Should().NotContain("DF_Descriptor_ResourceKeyId");
+        _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
+        _ddl.Should().Contain("r.[ResourceKeyId] = s.[ResourceKeyId]");
+    }
+
     // ── MSSQL named default constraints ─────────────────────────────
 
     [Test]
@@ -1256,8 +1291,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Indexes ─────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_four_indexes()
+    public void It_should_have_all_five_indexes()
     {
+        _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_Descriptor_Uri_Discriminator]");
         _ddl.Should().Contain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
@@ -1366,12 +1402,14 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should()
             .Contain(
                 "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt], "
-                    + "[DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt])"
+                    + "[DocumentUuid], [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt], "
+                    + "[ResourceKeyId])"
             );
         _ddl.Should()
             .Contain(
                 "SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt], "
-                    + "d.[DocumentUuid], d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt]"
+                    + "d.[DocumentUuid], d.[IdentityVersion], d.[IdentityLastModifiedAt], d.[CreatedAt], "
+                    + "d.[ResourceKeyId]"
             );
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
@@ -1387,7 +1425,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain(
                 "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt], "
                     + "inserted.[DocumentUuid], inserted.[IdentityVersion], "
-                    + "inserted.[IdentityLastModifiedAt], inserted.[CreatedAt] INTO @stamped"
+                    + "inserted.[IdentityLastModifiedAt], inserted.[CreatedAt], inserted.[ResourceKeyId] "
+                    + "INTO @stamped"
             );
         _ddl.Should().Contain("UPDATE r");
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
@@ -1395,7 +1434,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("r.[DocumentUuid] = s.[DocumentUuid],");
         _ddl.Should().Contain("r.[IdentityVersion] = s.[IdentityVersion],");
         _ddl.Should().Contain("r.[IdentityLastModifiedAt] = s.[IdentityLastModifiedAt],");
-        _ddl.Should().Contain("r.[CreatedAt] = s.[CreatedAt]");
+        _ddl.Should().Contain("r.[CreatedAt] = s.[CreatedAt],");
+        _ddl.Should().Contain("r.[ResourceKeyId] = s.[ResourceKeyId]");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
         _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
     }
@@ -1411,8 +1451,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         var declareEnd = _ddl.IndexOf(");", declareStart, StringComparison.Ordinal);
         declareEnd.Should().BeGreaterThan(declareStart);
 
+        var declareBlock = _ddl[declareStart..declareEnd];
         var declaredColumns = Regex
-            .Matches(_ddl[declareStart..declareEnd], @"\[(?<name>[A-Za-z][A-Za-z0-9]*)\]\s+\S")
+            .Matches(declareBlock, @"\[(?<name>[A-Za-z][A-Za-z0-9]*)\]\s+\S")
             .Select(m => m.Groups["name"].Value)
             .ToList();
 
@@ -1425,10 +1466,14 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 "DocumentUuid",
                 "IdentityVersion",
                 "IdentityLastModifiedAt",
-                "CreatedAt"
+                "CreatedAt",
+                "ResourceKeyId"
             );
-        _ddl.Should().Contain("[DocumentUuid] uniqueidentifier NOT NULL,");
-        _ddl.Should().Contain("[IdentityVersion] bigint NOT NULL,");
+        declareBlock.Should().Contain("[DocumentUuid] uniqueidentifier NOT NULL,");
+        declareBlock.Should().Contain("[IdentityVersion] bigint NOT NULL,");
+        // The capture table's columns are typed from dms.Document, where ResourceKeyId is NOT NULL; the
+        // nullable one is the dms.Descriptor mirror target this feeds.
+        declareBlock.Should().Contain("[ResourceKeyId] smallint NOT NULL");
     }
 
     [Test]

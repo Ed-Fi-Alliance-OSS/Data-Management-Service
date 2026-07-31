@@ -23,6 +23,7 @@ internal static class DescriptorTableColumnExtractor
         "IdentityVersion",
         "IdentityLastModifiedAt",
         "CreatedAt",
+        "ResourceKeyId",
     ];
 
     /// <summary>
