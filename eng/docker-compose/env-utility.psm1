@@ -2066,6 +2066,65 @@ $script:PostgresUnquotedIdentifierTrimCharacter = [char[]]@(
     [char]0x20, [char]0x09, [char]0x0A, [char]0x0D, [char]0x0C
 )
 
+# The characters SQL Server's own database-name comparison ignores at the END of a name, and nothing
+# else. Measured against the pinned mcr.microsoft.com/mssql/server:2025-latest image under its default
+# server collation (SQL_Latin1_General_CP1_CI_AS) with edfi_configurationservice present, confirmed two
+# independent ways for each candidate - CREATE DATABASE (error 1801 = duplicate) and DB_ID():
+#
+#   space (0x20), one or several - the SAME database. sys.databases stores the trailing spaces (name hex
+#     ends 0020 0020), so this is COMPARISON semantics rather than storage trimming: under this collation
+#     N'a' = N'a ' is TRUE.
+#   ideographic space (0x3000) - also the SAME database; the collation's code page folds it onto a space.
+#   tab (0x09), LF (0x0A), CR (0x0D), vertical tab (0x0B), form feed (0x0C), no-break space (0xA0) - each
+#     CREATED a genuinely DISTINCT database and DB_ID() did not match.
+#
+# LEADING whitespace is significant on this engine and is therefore never trimmed: DB_ID() does not match
+# and CREATE DATABASE fails with error 1802.
+#
+# Hence TrimEnd with this explicit set, and never TrimEnd() with no argument: .NET would also strip the
+# six characters measured as distinct, trading one fixed false negative for six new false positives.
+# 0x3000 is a property of this collation rather than of SQL Server generally; treating it as equivalent
+# errs toward refusing a name, which is the safe direction for a switch whose whole promise is two
+# physically distinct databases.
+$script:MssqlTrailingNameTrimCharacter = [char[]]@([char]0x20, [char]0x3000)
+
+function Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase {
+    <#
+    .SYNOPSIS
+        True when SQL Server would resolve a database name to the SAME physical database as the dedicated
+        'edfi_configurationservice'.
+
+    .DESCRIPTION
+        The single SQL Server physical-name authority, shared by BOTH MSSQL collision paths - MSSQL_DB_NAME
+        through the local initialization path and -DataStoreDatabaseName through the registered path -
+        because both end at the same server-side name lookup. Sharing it is correct precisely because
+        quoting decides nothing here: the identifier is bracket-quoted on either path, and the server
+        matches the name under its collation regardless.
+
+        Narrow on purpose. It is a SQL-Server-only rule and must not be reused for PostgreSQL, whose two
+        paths disagree with each other and with this one; and it is not a general name comparison - the
+        resolved CMS connection-string check keeps its own semantics.
+
+        See $script:MssqlTrailingNameTrimCharacter for exactly what was measured, what was excluded, and
+        why leading whitespace is left alone.
+
+    .PARAMETER DatabaseName
+        A database name already reduced to what SQL Server will look up: the resolved datastore-name
+        environment value, or the parsed database value from a registered connection string. A blank name
+        is not a match - callers report absence separately.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatabaseName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DatabaseName)) { return $false }
+
+    return [string]::Equals(
+        $DatabaseName.TrimEnd($script:MssqlTrailingNameTrimCharacter),
+        "edfi_configurationservice",
+        [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
     <#
     .SYNOPSIS
@@ -2087,10 +2146,13 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         $script:PostgresUnquotedIdentifierTrimCharacter for exactly what was measured, and for the two
         characters deliberately excluded - and then ignores case.
 
-        SQL Server: the identifier is bracket-quoted, so it does not fold, but a database name is matched
-        under the server's collation and the default is case-insensitive, so a case variant names the same
-        database. Whitespace is deliberately NOT normalized on this engine: that keeps its established
-        behavior, and the two engines' normalizations are not interchangeable.
+        SQL Server: the identifier is bracket-quoted, so it does not fold - but quoting is not what decides
+        identity there. The server matches the name under its collation, which is both case-insensitive and
+        trailing-space-insensitive by default, so that answer is owned by
+        Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and shared with the registered path. The
+        two engines' normalizations are measured separately and are not interchangeable: PostgreSQL ignores
+        whitespace at BOTH ends and over a wider character set, SQL Server only at the end and over a
+        narrower one.
 
         -DatabaseEngine is mandatory. The engine selects a physical creation mechanism and the mechanisms
         answer differently; an engine-neutral answer covering both call sites is what previously accepted a
@@ -2110,16 +2172,14 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
 
     if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
 
-    $createdIdentifier =
-        if ($DatabaseEngine -eq "mssql") {
-            $DatastoreDatabaseName
-        }
-        else {
-            $DatastoreDatabaseName.Trim($script:PostgresUnquotedIdentifierTrimCharacter)
-        }
+    if ($DatabaseEngine -eq "mssql") {
+        # Not a local rule: the server-side lookup decides identity here, and the registered path reaches
+        # the same lookup, so both go through the one SQL Server authority.
+        return Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName $DatastoreDatabaseName
+    }
 
     return [string]::Equals(
-        $createdIdentifier,
+        $DatastoreDatabaseName.Trim($script:PostgresUnquotedIdentifierTrimCharacter),
         "edfi_configurationservice",
         [System.StringComparison]::OrdinalIgnoreCase)
 }
@@ -2198,7 +2258,9 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
         comparison is therefore ORDINAL and exact against the parsed value.
 
         SQL Server: quoting does not decide identity at all; the server matches database names under its
-        collation, whose default is case-insensitive, so a case variant names the same database.
+        collation. That rule is owned by Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and
+        shared with the initialized path, because both MSSQL inputs reach the same server lookup. Sharing
+        it with the other MSSQL path is safe; sharing anything with the PostgreSQL paths is not.
 
         -DatabaseEngine is mandatory: on this path the two engines genuinely disagree, so there is no
         engine-neutral answer to give.
@@ -2220,15 +2282,14 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
     # The value the provider will actually receive, not the parameter text.
     $registeredDatabaseValue = Get-RegisteredDatastoreDatabaseValue -DatastoreDatabaseName $DatastoreDatabaseName
 
-    $comparison =
-        if ($DatabaseEngine -eq "mssql") {
-            [System.StringComparison]::OrdinalIgnoreCase
-        }
-        else {
-            [System.StringComparison]::Ordinal
-        }
+    if ($DatabaseEngine -eq "mssql") {
+        return Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName $registeredDatabaseValue
+    }
 
-    return [string]::Equals($registeredDatabaseValue, "edfi_configurationservice", $comparison)
+    return [string]::Equals(
+        $registeredDatabaseValue,
+        "edfi_configurationservice",
+        [System.StringComparison]::Ordinal)
 }
 
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
@@ -2817,7 +2878,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
             # sentence covering both is what made this check look interchangeable with the other one.
             $collisionReason =
                 if ($DatabaseEngine -eq "mssql") {
-                    "SQL Server matches database names case-insensitively under its default collation"
+                    "SQL Server matches database names under its default collation, which ignores both letter case and trailing spaces"
                 }
                 else {
                     "postgresql-init.sh creates that database with an unquoted CREATE DATABASE, and PostgreSQL discards the whitespace around an unquoted identifier and folds it to lower case"

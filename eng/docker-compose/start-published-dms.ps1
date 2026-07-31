@@ -300,7 +300,7 @@ if (-not $d) {
         # Names the parameter and the reserved literal only - never the caller's own value.
         $collisionRule =
             if ($DatabaseEngine -eq "mssql") {
-                "SQL Server matches database names case-insensitively, so a case variant of that name is the same database."
+                "SQL Server matches database names under its default collation, which ignores letter case and trailing spaces, so those variants of that name are the same database."
             }
             else {
                 "On PostgreSQL the name is used verbatim - SchemaTools creates it with a quoted identifier - so only this exact name collides."
