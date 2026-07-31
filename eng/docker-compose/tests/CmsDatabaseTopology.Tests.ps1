@@ -1776,23 +1776,33 @@ Describe "the registered datastore database name survives the transport that car
         # build always registered `password=`. These tests pin that the serializer path preserves
         # the ability. Invoke-Api is mocked, so no HTTP request is ever made; the registration
         # request is captured through a global closure function because a mock body's own scope is
-        # not readable from the test.
+        # not readable from the test. The function is installed under a PER-TEST UNIQUE name so no
+        # pre-existing global function - whatever its name, definition, or ReadOnly/Constant
+        # options - is ever shadowed, replaced, or removed; cleanup touches only the unique name.
         BeforeEach {
             $script:capturedRegistrations = [System.Collections.Generic.List[hashtable]]::new()
             $capturedRegistrations = $script:capturedRegistrations
-            Set-Item -Path Function:\global:Save-DataStoreRegistrationCapture -Value {
+            $script:captureFunctionName = "Save-DataStoreRegistrationCapture$([guid]::NewGuid().ToString('N'))"
+            Set-Item -Path "Function:\global:$($script:captureFunctionName)" -Value {
                 param([hashtable]$Registration)
                 $capturedRegistrations.Add($Registration)
             }.GetNewClosure()
 
-            Mock -ModuleName Dms-Management Invoke-Api {
-                Save-DataStoreRegistrationCapture @{ RelativeUrl = $RelativeUrl; Body = $Body }
-                [pscustomobject]@{ id = 42 }
-            }
+            # The mock body must call the unique name, so it is built from a template; nothing
+            # else in it is expanded ($RelativeUrl/$Body stay the mock's own parameters).
+            $mockBodyTemplate = @'
+__CAPTURE_FUNCTION__ @{ RelativeUrl = $RelativeUrl; Body = $Body }
+[pscustomobject]@{ id = 42 }
+'@
+            Mock -ModuleName Dms-Management Invoke-Api ([scriptblock]::Create(
+                $mockBodyTemplate.Replace('__CAPTURE_FUNCTION__', $script:captureFunctionName)))
         }
 
         AfterEach {
-            Remove-Item -Path Function:\global:Save-DataStoreRegistrationCapture -ErrorAction SilentlyContinue
+            if ($script:captureFunctionName) {
+                Remove-Item -LiteralPath "Function:\global:$($script:captureFunctionName)" -ErrorAction SilentlyContinue
+                $script:captureFunctionName = $null
+            }
         }
 
         It "registers an explicit empty password= value for an empty PostgreSQL credential" {
@@ -1811,9 +1821,38 @@ Describe "the registered datastore database name survives the transport that car
             $script:capturedRegistrations[0].RelativeUrl | Should -Be 'v3/dataStores'
 
             $registered = ($script:capturedRegistrations[0].Body | ConvertFrom-Json).connectionString
-            $registered | Should -BeLike "*password=;*"
+            # Segment-boundary anchored: a corrupted key such as `notpassword=;` must not satisfy
+            # this - the key itself has to be exactly `password`, at the string start or after `;`.
+            $registered | Should -Match '(?:^|;)password=;'
             Get-ParsedDatabaseValue -ConnectionString $registered |
                 Should -BeExactly 'edfi_datamanagementservice'
+        }
+
+        It "leaves a developer's pre-existing global function untouched, even ReadOnly" {
+            # Hostile-state proof for the capture plumbing: a global function already occupying the
+            # base capture name - with ReadOnly options, which a blind Set-Item/Remove-Item pair
+            # would corrupt or crash on - survives a full capture cycle exactly because the helper
+            # installs itself under a per-test unique name and cleans up only that name.
+            $hostileName = 'Save-DataStoreRegistrationCapture'
+            if (Test-Path -LiteralPath "Function:\$hostileName") {
+                Set-ItResult -Skipped -Because "a real $hostileName already exists in this session; refusing to touch it"
+                return
+            }
+
+            Set-Item -Path "Function:\global:$hostileName" -Value { 'developer state' } -Options ReadOnly
+            try {
+                $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+                Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                    -PostgresCredential $emptyCredential -PostgresDbName 'edfi_datamanagementservice' | Out-Null
+
+                $script:capturedRegistrations | Should -HaveCount 1 -Because "the capture must still work around the hostile function"
+                & $hostileName | Should -Be 'developer state'
+                (Get-Item -LiteralPath "Function:\$hostileName").Options |
+                    Should -Be ([System.Management.Automation.ScopedItemOptions]::ReadOnly)
+            }
+            finally {
+                Remove-Item -LiteralPath "Function:\$hostileName" -Force -ErrorAction SilentlyContinue
+            }
         }
 
         It "keeps the database escaped and exactly round-tripped alongside an empty password" {

@@ -87,7 +87,9 @@ Describe "New-DataStoreConnectionString (DMS-1238)" {
             -DatabaseEngine postgresql -DbHost "dms-postgresql" -Port 5432 `
             -Username "postgres" -Password "" -DatabaseName "edfi_datamanagementservice"
 
-        $cs | Should -BeLike "*password=;*"
+        # Segment-boundary anchored: a corrupted key such as `notpassword=;` must not satisfy
+        # this - the key itself has to be exactly `password`, at the string start or after `;`.
+        $cs | Should -Match '(?:^|;)password=;'
 
         $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
         $parsed.set_ConnectionString($cs)
