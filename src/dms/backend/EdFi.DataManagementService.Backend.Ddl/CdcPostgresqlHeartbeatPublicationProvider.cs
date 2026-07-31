@@ -1365,7 +1365,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         var hasHeartbeatSelect = ReadBool(row, "heartbeat_select");
         var hasHeartbeatSequenceUpdate = ReadBool(row, "heartbeat_sequence_update");
         var hasHeartbeatAtUpdate = ReadBool(row, "heartbeat_at_update");
-        var hasHeartbeatIdUpdate = ReadBool(row, "heartbeat_id_update");
+        var heartbeatForbiddenTablePrivileges = ReadCsv(row, "heartbeat_forbidden_table_privileges");
+        var heartbeatUnexpectedUpdateColumns = ReadCsv(row, "heartbeat_unexpected_update_columns");
+        var heartbeatForbiddenPrivileges = HeartbeatForbiddenPrivileges(
+            heartbeatForbiddenTablePrivileges,
+            heartbeatUnexpectedUpdateColumns
+        );
         var documentWritePrivileges = ReadCsv(row, "document_write_privileges");
         var documentCacheWritePrivileges = ReadCsv(row, "document_cache_write_privileges");
         var workTablePrivileges = ReadCsv(row, "work_table_privileges");
@@ -1387,7 +1392,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             && disallowedRoleAttributes.Count == 0
             && ownership.Count == 0;
         var hasForbiddenPrivileges =
-            hasHeartbeatIdUpdate
+            heartbeatForbiddenPrivileges.Count > 0
             || documentWritePrivileges.Count > 0
             || documentCacheWritePrivileges.Count > 0
             || workTablePrivileges.Count > 0
@@ -1407,7 +1412,10 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ["missing_required_privileges"] = CsvOrNone(missingRequiredPrivileges),
             ["document_write_privileges"] = CsvOrNone(documentWritePrivileges),
             ["document_cache_write_privileges"] = CsvOrNone(documentCacheWritePrivileges),
-            ["heartbeat_id_update"] = hasHeartbeatIdUpdate.ToString(),
+            ["heartbeat_id_update"] = heartbeatUnexpectedUpdateColumns
+                .Contains("HeartbeatId", StringComparer.Ordinal)
+                .ToString(),
+            ["heartbeat_forbidden_privileges"] = CsvOrNone(heartbeatForbiddenPrivileges),
             ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
             ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
         };
@@ -1420,7 +1428,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             disallowedRoleAttributes,
             ownership,
             missingRequiredPrivileges,
-            hasHeartbeatIdUpdate,
+            heartbeatForbiddenTablePrivileges,
+            heartbeatUnexpectedUpdateColumns,
             documentWritePrivileges,
             documentCacheWritePrivileges,
             workTablePrivileges,
@@ -1440,7 +1449,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 hasHeartbeatSelect,
                 hasHeartbeatSequenceUpdate,
                 hasHeartbeatAtUpdate,
-                hasHeartbeatIdUpdate,
+                heartbeatForbiddenTablePrivileges,
+                heartbeatUnexpectedUpdateColumns,
                 documentWritePrivileges,
                 documentCacheWritePrivileges,
                 workTablePrivileges
@@ -1547,7 +1557,32 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 COALESCE((SELECT pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'SELECT')::text FROM connector), 'false') AS heartbeat_select,
                 COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatSequence', 'UPDATE')::text FROM connector), 'false') AS heartbeat_sequence_update,
                 COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatAt', 'UPDATE')::text FROM connector), 'false') AS heartbeat_at_update,
-                COALESCE((SELECT pg_catalog.has_column_privilege(oid, '{heartbeatTable}', 'HeartbeatId', 'UPDATE')::text FROM connector), 'false') AS heartbeat_id_update,
+                COALESCE(
+                    (
+                        SELECT string_agg(privilege_name, ',' ORDER BY privilege_name)
+                        FROM (
+                            SELECT 'INSERT' AS privilege_name FROM connector WHERE pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'INSERT')
+                            UNION ALL SELECT 'UPDATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'UPDATE')
+                            UNION ALL SELECT 'DELETE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'DELETE')
+                            UNION ALL SELECT 'TRUNCATE' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'TRUNCATE')
+                            UNION ALL SELECT 'REFERENCES' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'REFERENCES')
+                            UNION ALL SELECT 'TRIGGER' FROM connector WHERE pg_catalog.has_table_privilege(oid, '{heartbeatTable}', 'TRIGGER')
+                        ) heartbeat_forbidden_table_privileges
+                    ),
+                    ''
+                ) AS heartbeat_forbidden_table_privileges,
+                COALESCE(
+                    (
+                        SELECT string_agg(column_info.column_name, ',' ORDER BY column_info.ordinal_position)
+                        FROM connector
+                        CROSS JOIN information_schema.columns column_info
+                        WHERE column_info.table_schema = 'dms'
+                        AND column_info.table_name = 'CdcHeartbeat'
+                        AND column_info.column_name NOT IN ('HeartbeatSequence', 'HeartbeatAt')
+                        AND pg_catalog.has_column_privilege(connector.oid, '{heartbeatTable}', column_info.column_name, 'UPDATE')
+                    ),
+                    ''
+                ) AS heartbeat_unexpected_update_columns,
                 COALESCE(
                     (
                         SELECT string_agg(privilege_name, ',' ORDER BY privilege_name)
@@ -1711,7 +1746,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         IReadOnlyList<string> disallowedRoleAttributes,
         IReadOnlyList<string> ownership,
         IReadOnlyList<string> missingRequiredPrivileges,
-        bool hasHeartbeatIdUpdate,
+        IReadOnlyList<string> heartbeatForbiddenTablePrivileges,
+        IReadOnlyList<string> heartbeatUnexpectedUpdateColumns,
         IReadOnlyList<string> documentWritePrivileges,
         IReadOnlyList<string> documentCacheWritePrivileges,
         IReadOnlyList<string> workTablePrivileges,
@@ -1790,14 +1826,26 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             );
         }
 
-        if (hasHeartbeatIdUpdate)
+        if (heartbeatForbiddenTablePrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_GRANT_MISMATCH",
+                    expectedValue: "SELECT-and-UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
+                    observedValue: CsvOrNone(heartbeatForbiddenTablePrivileges)
+                )
+            );
+        }
+
+        if (heartbeatUnexpectedUpdateColumns.Count > 0)
         {
             diagnostics.Add(
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH",
                     expectedValue: "UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
-                    observedValue: "HeartbeatId"
+                    observedValue: CsvOrNone(heartbeatUnexpectedUpdateColumns)
                 )
             );
         }
@@ -1863,7 +1911,8 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         bool hasHeartbeatSelect,
         bool hasHeartbeatSequenceUpdate,
         bool hasHeartbeatAtUpdate,
-        bool hasHeartbeatIdUpdate,
+        IReadOnlyList<string> heartbeatForbiddenTablePrivileges,
+        IReadOnlyList<string> heartbeatUnexpectedUpdateColumns,
         IReadOnlyList<string> documentWritePrivileges,
         IReadOnlyList<string> documentCacheWritePrivileges,
         IReadOnlyList<string> workTablePrivileges
@@ -1904,29 +1953,34 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             );
         }
 
-        if (hasHeartbeatSelect)
+        if (hasHeartbeatSelect || heartbeatForbiddenTablePrivileges.Count > 0)
         {
-            grants.Add(GrantObservation(connector, SafeName(DmsTableNames.CdcHeartbeat), ["SELECT"]));
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    SafeName(DmsTableNames.CdcHeartbeat),
+                    Privileges(hasHeartbeatSelect, heartbeatForbiddenTablePrivileges)
+                )
+            );
         }
 
-        List<DbColumnName> heartbeatUpdateColumns = [];
-        if (hasHeartbeatSequenceUpdate)
+        if (hasHeartbeatSequenceUpdate || hasHeartbeatAtUpdate || heartbeatUnexpectedUpdateColumns.Count > 0)
         {
-            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatSequence"));
-        }
+            List<DbColumnName> heartbeatUpdateColumns = [];
+            if (hasHeartbeatSequenceUpdate)
+            {
+                heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatSequence"));
+            }
 
-        if (hasHeartbeatAtUpdate)
-        {
-            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatAt"));
-        }
+            if (hasHeartbeatAtUpdate)
+            {
+                heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatAt"));
+            }
 
-        if (hasHeartbeatIdUpdate)
-        {
-            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatId"));
-        }
+            heartbeatUpdateColumns.AddRange(
+                heartbeatUnexpectedUpdateColumns.Select(column => new DbColumnName(column))
+            );
 
-        if (heartbeatUpdateColumns.Count > 0)
-        {
             grants.Add(
                 new CdcGrantObservation(
                     CdcPrincipalKind.ConnectorPrincipal,
@@ -1978,6 +2032,11 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         privileges.AddRange(writePrivileges);
         return privileges.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
     }
+
+    private static IReadOnlyList<string> HeartbeatForbiddenPrivileges(
+        IReadOnlyList<string> forbiddenTablePrivileges,
+        IReadOnlyList<string> unexpectedUpdateColumns
+    ) => [.. forbiddenTablePrivileges, .. unexpectedUpdateColumns.Select(column => $"UPDATE:{column}")];
 
     private static bool TryGetExecutor(
         CdcProviderSetupStepContext context,

@@ -336,6 +336,62 @@ public class Given_PostgresqlCdcProviderAccessRetry
             .BeTrue("validation reports the mismatch without destructive cleanup");
     }
 
+    [TestCase("INSERT", "INSERT")]
+    [TestCase("DELETE", "DELETE")]
+    [TestCase("UPDATE", "UPDATE")]
+    [TestCase("""UPDATE ("HeartbeatId")""", "UPDATE:HeartbeatId")]
+    public async Task It_should_fail_closed_on_forbidden_heartbeat_grants_without_removing_them(
+        string grantClause,
+        string expectedObservedPrivilege
+    )
+    {
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult.Diagnostics.Should().BeEmpty();
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"GRANT {grantClause} ON TABLE \"dms\".\"CdcHeartbeat\" TO {QuoteIdentifier(_connectorRoleName)};"
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var expectedDiagnosticCode = grantClause.Contains("HeartbeatId", StringComparison.Ordinal)
+            ? "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH"
+            : "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_GRANT_MISMATCH";
+        var expectedDiagnosticObservedValue = grantClause.Contains("HeartbeatId", StringComparison.Ordinal)
+            ? "HeartbeatId"
+            : expectedObservedPrivilege;
+        validateResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == expectedDiagnosticCode
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+                && diagnostic.SafeName.Value == _connectorRoleName
+                && diagnostic.ObservedValue!.Contains(expectedDiagnosticObservedValue)
+            );
+        validateResult
+            .GrantInventory.Should()
+            .Contain(grant => grant.SafeObjectName.Value == "dms.CdcHeartbeat");
+        validateResult.ManifestPayload!.Json.Should().Contain("dms.CdcHeartbeat");
+        validateResult.ManifestPayload.Json.Should().Contain(expectedObservedPrivilege);
+
+        if (grantClause.Contains("HeartbeatId", StringComparison.Ordinal))
+        {
+            (await HasColumnPrivilegeAsync(connection, "\"dms\".\"CdcHeartbeat\"", "HeartbeatId", "UPDATE"))
+                .Should()
+                .BeTrue("validation reports the heartbeat column overgrant without destructive cleanup");
+        }
+        else
+        {
+            (await HasTablePrivilegeAsync(connection, "\"dms\".\"CdcHeartbeat\"", grantClause))
+                .Should()
+                .BeTrue("validation reports the heartbeat table overgrant without destructive cleanup");
+        }
+    }
+
     [Test]
     public async Task It_should_fail_closed_on_elevated_connector_role_without_downgrading_it()
     {

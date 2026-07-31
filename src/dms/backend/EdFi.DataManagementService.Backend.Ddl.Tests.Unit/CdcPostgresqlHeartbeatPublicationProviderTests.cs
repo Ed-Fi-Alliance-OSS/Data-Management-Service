@@ -597,6 +597,60 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
             );
     }
 
+    [TestCase("INSERT", "", "INSERT")]
+    [TestCase("DELETE", "", "DELETE")]
+    [TestCase("TRUNCATE", "", "TRUNCATE")]
+    [TestCase("REFERENCES", "", "REFERENCES")]
+    [TestCase("TRIGGER", "", "TRIGGER")]
+    [TestCase("UPDATE", "", "UPDATE")]
+    [TestCase("", "HeartbeatId", "UPDATE:HeartbeatId")]
+    public async Task It_should_reject_forbidden_heartbeat_privileges(
+        string heartbeatTablePrivileges,
+        string heartbeatUnexpectedUpdateColumns,
+        string expectedObservedPrivilege
+    )
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            connectorHeartbeatForbiddenTablePrivileges: heartbeatTablePrivileges,
+            connectorHeartbeatUnexpectedUpdateColumns: heartbeatUnexpectedUpdateColumns
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                databaseExecutor: executor,
+                postgresqlInitialReplicationSlotProof: CdcProviderSetupContractTestData.BuildPostgresqlInitialSlotProof()
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var expectedDiagnosticCode = string.IsNullOrEmpty(heartbeatTablePrivileges)
+            ? "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH"
+            : "CDC_POSTGRESQL_CONNECTOR_HEARTBEAT_GRANT_MISMATCH";
+        var expectedDiagnosticObservedValue = string.IsNullOrEmpty(heartbeatTablePrivileges)
+            ? heartbeatUnexpectedUpdateColumns
+            : expectedObservedPrivilege;
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == expectedDiagnosticCode
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+                && diagnostic.ObservedValue!.Contains(expectedDiagnosticObservedValue)
+            );
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.SafeArtifactName.Value == "connector_principal"
+                && observation
+                    .SafeObservedValues["heartbeat_forbidden_privileges"]
+                    .Contains(expectedObservedPrivilege)
+            );
+        result.GrantInventory.Should().Contain(grant => grant.SafeObjectName.Value == "dms.CdcHeartbeat");
+        result.ManifestPayload!.Json.Should().Contain("dms.CdcHeartbeat");
+        result.ManifestPayload.Json.Should().Contain(expectedObservedPrivilege);
+    }
+
     [Test]
     public async Task It_should_fail_closed_when_optional_live_probe_reports_connector_boundary_failure()
     {
@@ -636,7 +690,9 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
 
     private static RecordingPostgresqlCdcExecutor ExistingArtifactsWithConnectorAccess(
         string connectorDisallowedRoleAttributes = "",
-        string connectorWorkTablePrivileges = ""
+        string connectorWorkTablePrivileges = "",
+        string connectorHeartbeatForbiddenTablePrivileges = "",
+        string connectorHeartbeatUnexpectedUpdateColumns = ""
     ) =>
         new(
             heartbeatTableExists: true,
@@ -652,6 +708,8 @@ public class Given_PostgresqlCdcPrincipalAccess_Initial_Setup
             connectorHeartbeatSelect: true,
             connectorHeartbeatSequenceUpdate: true,
             connectorHeartbeatAtUpdate: true,
+            connectorHeartbeatForbiddenTablePrivileges: connectorHeartbeatForbiddenTablePrivileges,
+            connectorHeartbeatUnexpectedUpdateColumns: connectorHeartbeatUnexpectedUpdateColumns,
             connectorWorkTablePrivileges: connectorWorkTablePrivileges
         );
 }
@@ -752,6 +810,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private bool _connectorHeartbeatSequenceUpdate;
     private bool _connectorHeartbeatAtUpdate;
     private readonly bool _connectorHeartbeatIdUpdate;
+    private readonly string _connectorHeartbeatForbiddenTablePrivileges;
+    private readonly string _connectorHeartbeatUnexpectedUpdateColumns;
     private readonly string _connectorDocumentWritePrivileges;
     private readonly string _connectorDocumentCacheWritePrivileges;
     private readonly string _connectorWorkTablePrivileges;
@@ -788,6 +848,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         bool connectorHeartbeatSequenceUpdate = false,
         bool connectorHeartbeatAtUpdate = false,
         bool connectorHeartbeatIdUpdate = false,
+        string connectorHeartbeatForbiddenTablePrivileges = "",
+        string connectorHeartbeatUnexpectedUpdateColumns = "",
         string connectorDocumentWritePrivileges = "",
         string connectorDocumentCacheWritePrivileges = "",
         string connectorWorkTablePrivileges = "",
@@ -824,6 +886,14 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _connectorHeartbeatSequenceUpdate = connectorHeartbeatSequenceUpdate;
         _connectorHeartbeatAtUpdate = connectorHeartbeatAtUpdate;
         _connectorHeartbeatIdUpdate = connectorHeartbeatIdUpdate;
+        _connectorHeartbeatForbiddenTablePrivileges = connectorHeartbeatForbiddenTablePrivileges;
+        _connectorHeartbeatUnexpectedUpdateColumns =
+            connectorHeartbeatIdUpdate
+            || connectorHeartbeatForbiddenTablePrivileges
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Contains("UPDATE", StringComparer.Ordinal)
+                ? Csv(connectorHeartbeatUnexpectedUpdateColumns, "HeartbeatId")
+                : connectorHeartbeatUnexpectedUpdateColumns;
         _connectorDocumentWritePrivileges = connectorDocumentWritePrivileges;
         _connectorDocumentCacheWritePrivileges = connectorDocumentCacheWritePrivileges;
         _connectorWorkTablePrivileges = connectorWorkTablePrivileges;
@@ -1007,6 +1077,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
                     ("heartbeat_sequence_update", _connectorHeartbeatSequenceUpdate.ToString()),
                     ("heartbeat_at_update", _connectorHeartbeatAtUpdate.ToString()),
                     ("heartbeat_id_update", _connectorHeartbeatIdUpdate.ToString()),
+                    ("heartbeat_forbidden_table_privileges", _connectorHeartbeatForbiddenTablePrivileges),
+                    ("heartbeat_unexpected_update_columns", _connectorHeartbeatUnexpectedUpdateColumns),
                     ("document_write_privileges", _connectorDocumentWritePrivileges),
                     ("document_cache_write_privileges", _connectorDocumentCacheWritePrivileges),
                     ("work_table_privileges", _connectorWorkTablePrivileges),
@@ -1072,6 +1144,16 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
             ("table_name", tableName),
             ("publishes_all_columns", "true"),
             ("row_filter_absent", "true")
+        );
+
+    private static string Csv(params string[] values) =>
+        string.Join(
+            ",",
+            values
+                .SelectMany(value =>
+                    value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                )
+                .Distinct(StringComparer.Ordinal)
         );
 
     private static IReadOnlyDictionary<string, string?> Row(params (string Key, string? Value)[] values) =>
