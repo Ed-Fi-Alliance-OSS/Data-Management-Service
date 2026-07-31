@@ -137,7 +137,7 @@ These settings configure how the DMS API connects to the Configuration Service t
 | BaseUrl                | The base URL of the Configuration Service. Example: `http://ed-fi-api-config:8081`                                                                                     |
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
-| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. Must be non-empty; see the note below for valid-value semantics. |
+| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. DMS requires only a non-empty value; CMS rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and not the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
 
 > [!NOTE]
@@ -149,18 +149,37 @@ These settings configure how the DMS API connects to the Configuration Service t
 > `provision-dms-schema.ps1` decrypts with it too), so all three must be configured
 > with an identical value.
 >
-> **Valid values.** The value must be non-empty. The AES-256 key is derived from the
-> UTF-8 bytes of the configured text, right-padded with `0` to 32 characters and then
-> truncated to the first 32 characters (see CMS `ConnectionStringEncryptionService`,
-> DMS `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`).
-> Consequences operators must account for:
-> - Only the first 32 characters are significant; any characters beyond 32 are ignored.
-> - Values shorter than 32 characters are zero-padded — accepted, but weakens the key.
-> - Use ASCII characters. A 32-character ASCII string yields exactly 32 key bytes;
->   multi-byte (non-ASCII) characters push the UTF-8 length past 32 bytes and break
->   AES key initialization.
+> **Valid values.** The Configuration Service validates its
+> `DatabaseSettings:EncryptionKey` at startup and refuses to start when the value
+> is blank, shorter than 32 characters, contains a non-ASCII character within the
+> first 32 characters, or is the former shipped `appsettings.json` default. DMS
+> enforces only that its `ConfigurationServiceSettings:EncryptionKey` is
+> non-empty, so it must be given the same value the Configuration Service
+> accepted.
 >
-> Recommended: a 32-character ASCII string.
+> The AES-256 key is derived from the UTF-8 bytes of the configured text,
+> right-padded with `0` to 32 characters and then truncated to the first 32
+> characters (see CMS `ConnectionStringEncryptionService`, DMS
+> `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`). That
+> derivation is unchanged, so its consequences still apply wherever the startup
+> rules are not enforced — a DMS configured on its own, or one reading connection
+> strings written by a Configuration Service that predates this validation:
+> - Only the first 32 characters are significant; any characters beyond 32 are ignored.
+> - Values shorter than 32 characters are zero-padded, which weakens the key. A
+>   weak value that both sides share still decrypts successfully, with no warning.
+> - Multi-byte (non-ASCII) characters within the first 32 push the UTF-8 length
+>   past 32 bytes and break AES key initialization.
+>
+> Required by the Configuration Service, and therefore the value to use
+> everywhere: a 32-character ASCII string.
+>
+> **Changing the encryption key.** Connection strings already stored by the
+> Configuration Service were encrypted with the previous key and are not
+> re-encrypted automatically. After setting a new key, re-submit each data store
+> and data store derivative connection string through the Admin API; an update
+> stores the value encrypted under the currently configured key. Until a
+> connection string has been re-submitted, DMS cannot decrypt it and reports a
+> decryption failure.
 
 ## CacheSettings
 
