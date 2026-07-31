@@ -49,6 +49,7 @@ internal enum CdcProviderArtifactKind
     HeartbeatTable,
     HeartbeatActionQuery,
     PostgresqlPublication,
+    PostgresqlReplicaIdentity,
     PostgresqlReplicationSlot,
     SqlServerCaptureInstance,
     SqlServerGatingRole,
@@ -289,7 +290,8 @@ internal sealed record CdcProviderSetupRequest
         CdcProviderArtifactNames artifactNames,
         CdcProviderArtifactOutputRequest artifactOutput,
         IReadOnlyList<CdcSourceTableInventory> expectedSourceInventory,
-        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null
+        ICdcConnectorPrincipalProbeFactory? connectorPrincipalProbeFactory = null,
+        ICdcProviderDatabaseExecutor? databaseExecutor = null
     )
     {
         ArgumentNullException.ThrowIfNull(boundPhysicalSourceFingerprint);
@@ -312,6 +314,7 @@ internal sealed record CdcProviderSetupRequest
             nameof(expectedSourceInventory)
         );
         ConnectorPrincipalProbeFactory = connectorPrincipalProbeFactory;
+        DatabaseExecutor = databaseExecutor;
     }
 
     public CdcProvider Provider { get; }
@@ -325,6 +328,9 @@ internal sealed record CdcProviderSetupRequest
 
     [JsonIgnore]
     public ICdcConnectorPrincipalProbeFactory? ConnectorPrincipalProbeFactory { get; }
+
+    [JsonIgnore]
+    public ICdcProviderDatabaseExecutor? DatabaseExecutor { get; }
 }
 
 internal sealed record CdcProviderSetupResult(

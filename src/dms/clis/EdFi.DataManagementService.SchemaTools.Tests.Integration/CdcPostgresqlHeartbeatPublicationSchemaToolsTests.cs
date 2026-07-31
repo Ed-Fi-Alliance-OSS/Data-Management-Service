@@ -1,0 +1,324 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
+using FluentAssertions;
+using Npgsql;
+
+namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
+
+[TestFixture]
+[Category("PostgresqlIntegration")]
+public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
+{
+    private const string PublicationName = "dms_binding_publication";
+    private const string ReplicationSlotName = "dms_binding_slot";
+
+    private string _databaseName = null!;
+    private string _connectionString = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        _connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
+
+        var (exitCode, output, error) = ProvisionTestHelper.RunProvision("pgsql", _connectionString);
+        exitCode
+            .Should()
+            .Be(0, $"ordinary PostgreSQL provisioning must succeed. Output: {output} Error: {error}");
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+    }
+
+    [Test]
+    public async Task It_should_create_heartbeat_replica_identity_and_exact_publication_only_when_opted_in()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        TableExists(connection, "CdcHeartbeat")
+            .Should()
+            .BeFalse("ordinary provisioning must not create CDC heartbeat");
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result.Diagnostics.Should().BeEmpty();
+        result
+            .HeartbeatActionQuery!.Sql.Should()
+            .Be(
+                """UPDATE "dms"."CdcHeartbeat" SET "HeartbeatSequence" = "HeartbeatSequence" + 1, "HeartbeatAt" = now() WHERE "HeartbeatId" = 1"""
+            );
+        result
+            .ExpectedMessageKeyColumns.Should()
+            .ContainSingle(key =>
+                key.TableKind == CdcSourceTableKind.Document
+                && key.KeyColumns.Select(column => column.Value).SequenceEqual(new[] { "DocumentUuid" })
+            );
+        result
+            .ExpectedMessageKeyColumns.Should()
+            .ContainSingle(key =>
+                key.TableKind == CdcSourceTableKind.DocumentCache
+                && key.KeyColumns.Select(column => column.Value).SequenceEqual(new[] { "DocumentUuid" })
+            );
+
+        AssertHeartbeatTable(connection);
+        AssertDocumentReplicaIdentityFull(connection);
+        AssertPublication(connection);
+        AssertDocumentCacheKeepsPrimaryKeyShape(connection);
+    }
+
+    [Test]
+    public async Task It_should_exact_match_existing_artifacts_in_validate_only_without_mutating_heartbeat()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult.Diagnostics.Should().BeEmpty();
+        var beforeValidate = ReadHeartbeatSnapshot(connection);
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        validateResult.Diagnostics.Should().BeEmpty();
+        ReadHeartbeatSnapshot(connection).Should().Be(beforeValidate);
+    }
+
+    private static CdcProviderSetupRequest BuildRequest(
+        ICdcProviderDatabaseExecutor databaseExecutor,
+        CdcProviderSetupMode mode
+    ) =>
+        new(
+            provider: CdcProvider.Postgresql,
+            mode: mode,
+            boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
+                "dms-source-fingerprint-v1",
+                "integration-source"
+            ),
+            setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("postgres")),
+            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("cdc_connector")),
+            artifactNames: CdcProviderArtifactNames.ForPostgresql(
+                new CdcSafeName(PublicationName),
+                new CdcSafeName(ReplicationSlotName)
+            ),
+            artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
+            expectedSourceInventory: CdcSourceInventoryBuilder.BuildExpectedSourceInventory(
+                SqlDialectFactory.Create(SqlDialect.Pgsql)
+            ),
+            databaseExecutor: databaseExecutor
+        );
+
+    private static async Task<CdcProviderSetupResult> RunSetupAsync(
+        NpgsqlConnection connection,
+        CdcProviderSetupMode mode
+    )
+    {
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+        var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
+
+        return await service.SetupAsync(BuildRequest(executor, mode));
+    }
+
+    private static bool TableExists(NpgsqlConnection connection, string tableName)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'dms'
+                AND table_name = @table_name
+            );
+            """;
+        command.Parameters.AddWithValue("table_name", tableName);
+        return (bool)command.ExecuteScalar()!;
+    }
+
+    private static void AssertHeartbeatTable(NpgsqlConnection connection)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT column_name, data_type, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'dms'
+                AND table_name = 'CdcHeartbeat'
+                ORDER BY ordinal_position;
+                """;
+
+            using var reader = command.ExecuteReader();
+            List<(string ColumnName, string DataType, string IsNullable)> columns = [];
+            while (reader.Read())
+            {
+                columns.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+            }
+
+            columns
+                .Should()
+                .Equal(
+                    ("HeartbeatId", "smallint", "NO"),
+                    ("HeartbeatSequence", "bigint", "NO"),
+                    ("HeartbeatAt", "timestamp with time zone", "NO")
+                );
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT conname
+                FROM pg_catalog.pg_constraint constraint_info
+                INNER JOIN pg_catalog.pg_class table_info
+                    ON table_info.oid = constraint_info.conrelid
+                INNER JOIN pg_catalog.pg_namespace namespace_info
+                    ON namespace_info.oid = table_info.relnamespace
+                WHERE namespace_info.nspname = 'dms'
+                AND table_info.relname = 'CdcHeartbeat'
+                ORDER BY conname;
+                """;
+
+            using var reader = command.ExecuteReader();
+            List<string> constraints = [];
+            while (reader.Read())
+            {
+                constraints.Add(reader.GetString(0));
+            }
+
+            constraints
+                .Should()
+                .Contain(["CK_CdcHeartbeat_Sequence", "CK_CdcHeartbeat_Singleton", "PK_CdcHeartbeat"]);
+        }
+
+        ReadHeartbeatSnapshot(connection).Should().Be(new HeartbeatSnapshot(1, 0));
+    }
+
+    private static HeartbeatSnapshot ReadHeartbeatSnapshot(NpgsqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "HeartbeatId", "HeartbeatSequence"
+            FROM "dms"."CdcHeartbeat";
+            """;
+
+        using var reader = command.ExecuteReader();
+        reader.Read().Should().BeTrue();
+        var snapshot = new HeartbeatSnapshot(reader.GetInt16(0), reader.GetInt64(1));
+        reader.Read().Should().BeFalse();
+        return snapshot;
+    }
+
+    private static void AssertDocumentReplicaIdentityFull(NpgsqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT table_info.relreplident
+            FROM pg_catalog.pg_class table_info
+            INNER JOIN pg_catalog.pg_namespace namespace_info
+                ON namespace_info.oid = table_info.relnamespace
+            WHERE namespace_info.nspname = 'dms'
+            AND table_info.relname = 'Document';
+            """;
+
+        command.ExecuteScalar()!.ToString().Should().Be("f");
+    }
+
+    private static void AssertPublication(NpgsqlConnection connection)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT pubinsert, pubupdate, pubdelete, pubtruncate, puballtables, pubviaroot
+                FROM pg_catalog.pg_publication
+                WHERE pubname = @publication_name;
+                """;
+            command.Parameters.AddWithValue("publication_name", PublicationName);
+
+            using var reader = command.ExecuteReader();
+            reader.Read().Should().BeTrue();
+            reader.GetBoolean(0).Should().BeTrue();
+            reader.GetBoolean(1).Should().BeTrue();
+            reader.GetBoolean(2).Should().BeTrue();
+            reader.GetBoolean(3).Should().BeFalse();
+            reader.GetBoolean(4).Should().BeFalse();
+            reader.GetBoolean(5).Should().BeFalse();
+            reader.Read().Should().BeFalse();
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT namespace_info.nspname || '.' || table_info.relname
+                FROM pg_catalog.pg_publication_rel publication_table
+                INNER JOIN pg_catalog.pg_publication publication
+                    ON publication.oid = publication_table.prpubid
+                INNER JOIN pg_catalog.pg_class table_info
+                    ON table_info.oid = publication_table.prrelid
+                INNER JOIN pg_catalog.pg_namespace namespace_info
+                    ON namespace_info.oid = table_info.relnamespace
+                WHERE publication.pubname = @publication_name
+                ORDER BY namespace_info.nspname, table_info.relname;
+                """;
+            command.Parameters.AddWithValue("publication_name", PublicationName);
+
+            using var reader = command.ExecuteReader();
+            List<string> tables = [];
+            while (reader.Read())
+            {
+                tables.Add(reader.GetString(0));
+            }
+
+            tables.Should().Equal("dms.CdcHeartbeat", "dms.Document", "dms.DocumentCache");
+            tables.Should().NotContain("dms.DocumentProjectionWork");
+        }
+    }
+
+    private static void AssertDocumentCacheKeepsPrimaryKeyShape(NpgsqlConnection connection)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT pg_catalog.array_agg(attribute_info.attname ORDER BY key_column.ordinality)
+                FROM pg_catalog.pg_constraint constraint_info
+                INNER JOIN pg_catalog.pg_class table_info
+                    ON table_info.oid = constraint_info.conrelid
+                INNER JOIN pg_catalog.pg_namespace namespace_info
+                    ON namespace_info.oid = table_info.relnamespace
+                INNER JOIN pg_catalog.unnest(constraint_info.conkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+                    ON TRUE
+                INNER JOIN pg_catalog.pg_attribute attribute_info
+                    ON attribute_info.attrelid = table_info.oid
+                    AND attribute_info.attnum = key_column.attnum
+                WHERE namespace_info.nspname = 'dms'
+                AND table_info.relname = 'DocumentCache'
+                AND constraint_info.contype = 'p';
+                """;
+
+            ((string[])command.ExecuteScalar()!).Should().Equal("DocumentId");
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT COUNT(*)
+                FROM pg_catalog.pg_indexes
+                WHERE schemaname = 'dms'
+                AND tablename = 'DocumentCache'
+                AND indexdef LIKE '%"DocumentUuid"%';
+                """;
+
+            Convert.ToInt64(command.ExecuteScalar()).Should().Be(0);
+        }
+    }
+
+    private sealed record HeartbeatSnapshot(short HeartbeatId, long HeartbeatSequence);
+}

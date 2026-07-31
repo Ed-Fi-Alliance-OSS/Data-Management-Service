@@ -86,7 +86,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcHeartbeatPublication",
       "Inspect a provisioned PostgreSQL test database with psql or the schema-tools introspector to confirm heartbeat shape, replica identity, publication membership, and publication properties."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql-slot-history",

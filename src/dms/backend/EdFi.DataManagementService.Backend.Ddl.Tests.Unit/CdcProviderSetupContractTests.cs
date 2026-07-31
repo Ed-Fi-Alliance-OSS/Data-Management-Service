@@ -17,7 +17,8 @@ internal static class CdcProviderSetupContractTestData
     internal static CdcProviderSetupRequest BuildPostgresqlRequest(
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
-        CdcProviderArtifactOutputRequest? artifactOutput = null
+        CdcProviderArtifactOutputRequest? artifactOutput = null,
+        ICdcProviderDatabaseExecutor? databaseExecutor = null
     ) =>
         new(
             provider: CdcProvider.Postgresql,
@@ -35,7 +36,8 @@ internal static class CdcProviderSetupContractTestData
             artifactOutput: artifactOutput
                 ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildRequiredSourceInventory(),
-            connectorPrincipalProbeFactory: new TestConnectorPrincipalProbeFactory()
+            connectorPrincipalProbeFactory: new TestConnectorPrincipalProbeFactory(),
+            databaseExecutor: databaseExecutor
         );
 
     internal static CdcProviderSetupResult BuildResult() =>
@@ -304,6 +306,7 @@ public class Given_CdcProviderSetupContract_Serialization
         var json = JsonSerializer.Serialize(request);
 
         json.Should().NotContain(nameof(CdcProviderSetupRequest.ConnectorPrincipalProbeFactory));
+        json.Should().NotContain(nameof(CdcProviderSetupRequest.DatabaseExecutor));
         json.Should().NotContain("Credential");
         json.Should().NotContain("ConnectionString");
         json.Should().NotContain("Password");

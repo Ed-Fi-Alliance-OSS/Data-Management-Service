@@ -459,6 +459,7 @@ internal static class CdcProviderManifestEmitter
             CdcProviderArtifactKind.HeartbeatTable => "heartbeat_table",
             CdcProviderArtifactKind.HeartbeatActionQuery => "heartbeat_action_query",
             CdcProviderArtifactKind.PostgresqlPublication => "postgresql_publication",
+            CdcProviderArtifactKind.PostgresqlReplicaIdentity => "postgresql_replica_identity",
             CdcProviderArtifactKind.PostgresqlReplicationSlot => "postgresql_replication_slot",
             CdcProviderArtifactKind.SqlServerCaptureInstance => "sqlserver_capture_instance",
             CdcProviderArtifactKind.SqlServerGatingRole => "sqlserver_gating_role",
