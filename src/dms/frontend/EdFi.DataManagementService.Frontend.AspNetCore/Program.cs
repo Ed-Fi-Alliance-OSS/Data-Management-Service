@@ -6,6 +6,7 @@
 using System.Linq;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Startup;
@@ -174,6 +175,13 @@ if (invalidConfigurationException is null)
         () => InitializeBackendMappings(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.InitializeDocumentCacheTargets,
+        "Initializing configured DocumentCache target contexts.",
+        "DocumentCache target context initialization completed successfully.",
+        "DocumentCache target context initialization failed. DMS cannot start with failed projection target initialization.",
+        () => InitializeDocumentCacheTargets(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeAuthMetadata,
         "Initializing authentication metadata caches (OIDC warm-up and claim sets).",
         "Authentication metadata initialization completed successfully.",
@@ -267,6 +275,10 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<MappingSetProviderOptions>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;
+        DocumentCacheOptions documentCacheOptions = app
+            .Services.GetRequiredService<IOptions<DocumentCacheOptions>>()
+            .Value;
+        DocumentCacheStartupDiagnostics.Log(app.Logger, documentCacheOptions);
     }
     catch (OptionsValidationException ex)
     {
@@ -351,6 +363,21 @@ async Task InitializeDataStores(WebApplication app)
     {
         await InitializeDataStoresForSingleTenancy(app, dataStoreProvider);
     }
+}
+
+async Task InitializeDocumentCacheTargets(WebApplication app)
+{
+    app.Logger.LogInformation("Initializing DocumentCache target registry at startup");
+    IDocumentCacheTargetRegistry targetRegistry =
+        app.Services.GetRequiredService<IDocumentCacheTargetRegistry>();
+    DocumentCacheTargetRegistrySnapshot snapshot = await targetRegistry.RefreshAsync(
+        DocumentCacheTargetRefreshReason.Startup
+    );
+
+    app.Logger.LogInformation(
+        "DocumentCache target registry startup refresh completed for {TargetCount} configured targets",
+        snapshot.Targets.Length
+    );
 }
 
 async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStoreProvider dataStoreProvider)

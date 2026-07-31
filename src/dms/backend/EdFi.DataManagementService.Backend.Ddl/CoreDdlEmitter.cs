@@ -72,12 +72,24 @@ public sealed class CoreDdlEmitter
     }
 
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
-    private const string DocumentCacheUuidValidationTriggerName = "TR_DocumentCache_ValidateDocumentUuid";
-    private const string DocumentEnqueueProjectionInsertFunctionName = "TF_Document_EnqueueProjectionInsert";
-    private const string DocumentEnqueueProjectionUpdateFunctionName = "TF_Document_EnqueueProjectionUpdate";
-    private const string DocumentEnqueueProjectionInsertTriggerName = "TR_Document_EnqueueProjectionInsert";
-    private const string DocumentEnqueueProjectionUpdateTriggerName = "TR_Document_EnqueueProjectionUpdate";
-    private const string DocumentEnqueueProjectionWorkTriggerName = "TR_Document_EnqueueProjectionWork";
+    private const string DocumentCacheUuidValidationTriggerName = DocumentCacheInventoryDefinition
+        .DocumentCacheTriggers
+        .ValidateDocumentUuid;
+    private const string DocumentEnqueueProjectionInsertFunctionName = DocumentCacheInventoryDefinition
+        .DocumentEnqueueArtifacts
+        .PgsqlInsertFunction;
+    private const string DocumentEnqueueProjectionUpdateFunctionName = DocumentCacheInventoryDefinition
+        .DocumentEnqueueArtifacts
+        .PgsqlUpdateFunction;
+    private const string DocumentEnqueueProjectionInsertTriggerName = DocumentCacheInventoryDefinition
+        .DocumentEnqueueArtifacts
+        .PgsqlInsertTrigger;
+    private const string DocumentEnqueueProjectionUpdateTriggerName = DocumentCacheInventoryDefinition
+        .DocumentEnqueueArtifacts
+        .PgsqlUpdateTrigger;
+    private const string DocumentEnqueueProjectionWorkTriggerName = DocumentCacheInventoryDefinition
+        .DocumentEnqueueArtifacts
+        .MssqlTrigger;
 
     private static readonly DbTableName _dataStoreIdentityTable = DmsTableNames.DataStoreIdentity;
     private static readonly DbTableName _descriptorTable = DmsTableNames.Descriptor;
@@ -347,7 +359,7 @@ public sealed class CoreDdlEmitter
             );
             writer.AppendLine(
                 _dialect.RenderNamedPrimaryKeyClause(
-                    "PK_DataStoreIdentity",
+                    DocumentCacheInventoryDefinition.DataStoreIdentityConstraints.PrimaryKey,
                     [Col("DataStoreIdentitySingletonId")]
                 )
             );
@@ -358,7 +370,7 @@ public sealed class CoreDdlEmitter
         writer.AppendLine(
             _dialect.AddCheckConstraint(
                 _dataStoreIdentityTable,
-                "CK_DataStoreIdentity_Singleton",
+                DocumentCacheInventoryDefinition.DataStoreIdentityConstraints.Singleton,
                 $"{Quote("DataStoreIdentitySingletonId")} = 1"
             )
         );
@@ -505,9 +517,14 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("DocumentJson"), _dialect.JsonColumnType, false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ComputedAt"), DateTimeType, false, "DF_DocumentCache_ComputedAt", _dialect.CurrentTimestampDefaultExpression)},"
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ComputedAt"), DateTimeType, false, DocumentCacheInventoryDefinition.DocumentCacheConstraints.ComputedAtDefault, _dialect.CurrentTimestampDefaultExpression)},"
             );
-            writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_DocumentCache", [Col("DocumentId")]));
+            writer.AppendLine(
+                _dialect.RenderNamedPrimaryKeyClause(
+                    DocumentCacheInventoryDefinition.DocumentCacheConstraints.PrimaryKey,
+                    [Col("DocumentId")]
+                )
+            );
         }
         writer.AppendLine(");");
         writer.AppendLine();
@@ -517,7 +534,7 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 _dialect.AddCheckConstraint(
                     _documentCacheTable,
-                    "CK_DocumentCache_JsonObject",
+                    DocumentCacheInventoryDefinition.DocumentCacheConstraints.PgsqlJsonObject,
                     $"jsonb_typeof({_dialect.QuoteIdentifier("DocumentJson")}) = 'object'"
                 )
             );
@@ -527,7 +544,7 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 _dialect.AddCheckConstraint(
                     _documentCacheTable,
-                    "CK_DocumentCache_IsJsonObject",
+                    DocumentCacheInventoryDefinition.DocumentCacheConstraints.MssqlJsonObject,
                     $"ISJSON({_dialect.QuoteIdentifier("DocumentJson")}) = 1 AND LEFT(LTRIM({_dialect.QuoteIdentifier("DocumentJson")}), 1) = '{{'"
                 )
             );
@@ -554,7 +571,10 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("CacheAheadRecoveryRequired"), BooleanType, false)},"
             );
             writer.AppendLine(
-                _dialect.RenderNamedPrimaryKeyClause("PK_DocumentCacheState", [Col("StateId")])
+                _dialect.RenderNamedPrimaryKeyClause(
+                    DocumentCacheInventoryDefinition.DocumentCacheStateConstraints.PrimaryKey,
+                    [Col("StateId")]
+                )
             );
         }
         writer.AppendLine(");");
@@ -563,7 +583,7 @@ public sealed class CoreDdlEmitter
         writer.AppendLine(
             _dialect.AddCheckConstraint(
                 _documentCacheStateTable,
-                "CK_DocumentCacheState_Singleton",
+                DocumentCacheInventoryDefinition.DocumentCacheStateConstraints.Singleton,
                 $"{Quote("StateId")} = 1"
             )
         );
@@ -577,7 +597,7 @@ public sealed class CoreDdlEmitter
         writer.AppendLine(
             _dialect.AddCheckConstraint(
                 _documentCacheStateTable,
-                "CK_DocumentCacheState_Lifecycle",
+                DocumentCacheInventoryDefinition.DocumentCacheStateConstraints.Lifecycle,
                 lifecycleCheck
             )
         );
@@ -606,7 +626,10 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("LastEnqueuedAt"), DateTimeType, false)},"
             );
             writer.AppendLine(
-                _dialect.RenderNamedPrimaryKeyClause("PK_DocumentProjectionWork", [Col("DocumentId")])
+                _dialect.RenderNamedPrimaryKeyClause(
+                    DocumentCacheInventoryDefinition.DocumentProjectionWorkConstraints.PrimaryKey,
+                    [Col("DocumentId")]
+                )
             );
         }
         writer.AppendLine(");");
@@ -874,7 +897,7 @@ public sealed class CoreDdlEmitter
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
                 _documentCacheTable,
-                "FK_DocumentCache_Document",
+                DocumentCacheInventoryDefinition.DocumentCacheConstraints.ForeignKeyToDocument,
                 [Col("DocumentId")],
                 _documentTable,
                 [Col("DocumentId")],
@@ -886,7 +909,7 @@ public sealed class CoreDdlEmitter
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
                 _documentProjectionWorkTable,
-                "FK_DocumentProjectionWork_Document",
+                DocumentCacheInventoryDefinition.DocumentProjectionWorkConstraints.ForeignKeyToDocument,
                 [Col("DocumentId")],
                 _documentTable,
                 [Col("DocumentId")],
@@ -978,7 +1001,7 @@ public sealed class CoreDdlEmitter
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
                 _documentProjectionWorkTable,
-                "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId",
+                DocumentCacheInventoryDefinition.DocumentProjectionWorkIndexes.FirstEnqueuedAtDocumentId,
                 [Col("FirstEnqueuedAt"), Col("DocumentId")]
             )
         );
@@ -1022,7 +1045,7 @@ public sealed class CoreDdlEmitter
         var documentCacheTable = _dialect.QualifyTable(_documentCacheTable);
         var documentTable = _dialect.QualifyTable(_documentTable);
         var funcName =
-            $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_DocumentCache_ValidateDocumentUuid")}";
+            $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DocumentCacheInventoryDefinition.DocumentCacheTriggers.PgsqlValidateDocumentUuidFunction)}";
 
         writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
         writer.AppendLine("RETURNS TRIGGER AS $func$");

@@ -5,8 +5,10 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Features;
@@ -15,6 +17,7 @@ using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -38,6 +41,19 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 [NonParallelizable]
 public class ConfigurationTests
 {
+    private sealed class RecordingStartupProcessExit : IStartupProcessExit
+    {
+        public int ExitCallCount { get; private set; }
+
+        public int? ExitCode { get; private set; }
+
+        public void Exit(int exitCode)
+        {
+            ExitCallCount++;
+            ExitCode = exitCode;
+        }
+    }
+
     [TestFixture]
     public class Given_A_Configuration_With_Invalid_App_Settings
     {
@@ -290,6 +306,107 @@ public class ConfigurationTests
 
             startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
             startupStatus["ErrorMessage"]!.GetValue<string>().Should().Contain("MaxRequestBodySizeMegabytes");
+        }
+    }
+
+    [TestFixture]
+    public class Given_DocumentCache_Target_Initialization_Fails
+    {
+        private WebApplicationFactory<Program>? _factory;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+        private RecordingStartupProcessExit _startupProcessExit = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+            _startupProcessExit = new RecordingStartupProcessExit();
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:StartupStatusFilePath"] = _statusFilePath,
+                            }
+                        );
+                    }
+                );
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        TestMockHelper.AddEssentialMocks(collection);
+                        collection.Replace(
+                            ServiceDescriptor.Singleton<IStartupProcessExit>(_startupProcessExit)
+                        );
+
+                        IDocumentCacheTargetRegistry targetRegistry = A.Fake<IDocumentCacheTargetRegistry>();
+                        A.CallTo(() =>
+                                targetRegistry.RefreshAsync(
+                                    DocumentCacheTargetRefreshReason.Startup,
+                                    A<CancellationToken>.Ignored
+                                )
+                            )
+                            .ThrowsAsync(
+                                new InvalidOperationException("DocumentCache target refresh failed.")
+                            );
+                        collection.Replace(
+                            ServiceDescriptor.Singleton<IDocumentCacheTargetRegistry>(targetRegistry)
+                        );
+                    }
+                );
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            _factory!.Dispose();
+
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_writes_failed_startup_status_for_the_DocumentCache_target_phase()
+        {
+            // Act
+            Action act = () => _factory!.CreateClient();
+
+            // Assert
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("DocumentCache target refresh failed.");
+            _startupProcessExit.ExitCallCount.Should().Be(1);
+            _startupProcessExit.ExitCode.Should().Be(-1);
+
+            File.Exists(_statusFilePath).Should().BeTrue();
+            var startupStatus = JsonNode.Parse(File.ReadAllText(_statusFilePath))!.AsObject();
+
+            startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
+            startupStatus["Phase"]!
+                .GetValue<string>()
+                .Should()
+                .Be(DmsStartupPhases.InitializeDocumentCacheTargets);
+            startupStatus["Summary"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "DocumentCache target context initialization failed. DMS cannot start with failed projection target initialization."
+                );
+            startupStatus["ErrorType"]!.GetValue<string>().Should().Be(nameof(InvalidOperationException));
+            startupStatus["ErrorMessage"]!
+                .GetValue<string>()
+                .Should()
+                .Be("DocumentCache target refresh failed.");
         }
     }
 
