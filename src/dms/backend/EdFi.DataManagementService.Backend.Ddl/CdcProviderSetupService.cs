@@ -232,7 +232,6 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
     private readonly List<CdcProviderDiagnostic> _diagnostics = [];
     private CdcSourceFingerprint? _observedSourceFingerprint;
     private CdcHeartbeatActionQuery? _heartbeatActionQuery;
-    private CdcProviderManifestPayload? _manifestPayload;
 
     public bool HasErrorDiagnostics =>
         _diagnostics.Exists(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
@@ -259,7 +258,6 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
         _diagnostics.AddRange(stepResult.Diagnostics);
 
         _heartbeatActionQuery ??= stepResult.HeartbeatActionQuery;
-        _manifestPayload ??= stepResult.ManifestPayload;
 
         if (stepResult.SourceTableInventory.Count > 0)
         {
@@ -282,7 +280,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
     {
         var outcome = DetermineOutcome();
 
-        return new CdcProviderSetupResult(
+        var result = new CdcProviderSetupResult(
             Provider: request.Provider,
             Mode: request.Mode,
             Outcome: outcome,
@@ -294,9 +292,16 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             ExpectedMessageKeyColumns: _expectedMessageKeyColumns,
             HeartbeatActionQuery: _heartbeatActionQuery,
             ProviderHistoryObservations: _providerHistoryObservations,
-            ManifestPayload: _manifestPayload,
+            ManifestPayload: null,
             Diagnostics: _diagnostics
         );
+
+        return request.ArtifactOutput.IncludeManifestPayload
+            ? result with
+            {
+                ManifestPayload = CdcProviderManifestEmitter.CreatePayload(result),
+            }
+            : result;
     }
 
     private CdcProviderSetupOutcome DetermineOutcome()

@@ -16,7 +16,8 @@ internal static class CdcProviderSetupContractTestData
 {
     internal static CdcProviderSetupRequest BuildPostgresqlRequest(
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
-        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
+        CdcProviderArtifactOutputRequest? artifactOutput = null
     ) =>
         new(
             provider: CdcProvider.Postgresql,
@@ -31,7 +32,8 @@ internal static class CdcProviderSetupContractTestData
                 new CdcSafeName("dms_binding_publication"),
                 new CdcSafeName("dms_binding_slot")
             ),
-            artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
+            artifactOutput: artifactOutput
+                ?? new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
             expectedSourceInventory: sourceInventory ?? BuildRequiredSourceInventory(),
             connectorPrincipalProbeFactory: new TestConnectorPrincipalProbeFactory()
         );
