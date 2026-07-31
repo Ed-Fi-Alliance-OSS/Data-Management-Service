@@ -1486,7 +1486,8 @@ function Move-EnvFileKeyBeforeAnotherKey {
     .SYNOPSIS
         Reorders a .env file in place so $KeyToMove's line appears immediately before $BeforeKey's
         line, if it does not already precede it. No-ops if either key is absent from the file, or if
-        the ordering already holds.
+        the ordering already holds. Throws instead of reordering when the move would change what
+        Docker Compose renders for any other declaration whose visibility the move changes.
 
     .DESCRIPTION
         Docker Compose's --env-file interpolation is order-dependent, like shell `source` semantics -
@@ -1505,6 +1506,26 @@ function Move-EnvFileKeyBeforeAnotherKey {
         empty at real Compose render time, not to the intended database name - this function repairs
         that ordering after the fact, rather than changing Write-DerivedEnvFile's own general-purpose,
         widely-shared append/replace contract.
+
+        The repair is not unconditional. Order-dependence cuts both ways: moving a key above the
+        destination also moves it above every declaration in between, which can make a reference
+        resolvable that previously resolved to nothing - firing a '-' or ':-' default branch that had
+        not fired - and silently change a variable this seam does not own. Measured: with
+        `FEATURE=${PASSWORD:-disabled}` between the connection string and a later `PASSWORD=secret`,
+        relocating PASSWORD repaired the connection string and changed FEATURE from "disabled" to
+        "secret". The connection-string postcondition downstream could not see it, because it only
+        checks the key the repair targets.
+
+        So every move must first PROVE it preserves the values it is not repairing, and the proof
+        lives here rather than at the call sites: this function is what physically performs the move,
+        so no caller - present or future - can perform an unproven one. The proof reuses
+        Resolve-DotenvFileSequentially, the existing Compose-semantics authority, rather than scanning
+        line text for references: a lexical scan cannot judge an escaped '$$', an operator branch that
+        never fired, nesting, or duplicates, and every previous attempt at one produced exactly those
+        defects. The reordered candidate is built entirely in memory, both versions are evaluated, and
+        the file is written only if every declaration whose visibility the move changes still resolves
+        to the same value. On disagreement this throws before writing anything, so the caller cannot
+        hand a silently-altered file to Docker.
     #>
     param(
         [Parameter(Mandatory)] [string]$Path,
@@ -1539,13 +1560,60 @@ function Move-EnvFileKeyBeforeAnotherKey {
         return
     }
 
+    # Built in memory and NOT written yet: the preservation proof below decides whether this candidate
+    # is allowed to become the file.
     $reordered = [System.Collections.Generic.List[string]]::new($lines)
     $lineToMove = $reordered[$moveIndex]
     $reordered.RemoveAt($moveIndex)
     # $beforeIndex is unaffected by removing an entry after it, so it still names the correct target.
     $reordered.Insert($beforeIndex, $lineToMove)
+    $candidateLines = $reordered.ToArray()
 
-    $content = ($reordered -join "`n") + "`n"
+    # Evaluate BOTH orderings the way Compose resolves an --env-file, and require the move to leave
+    # every declaration it did not target rendering exactly what it rendered before.
+    $currentEvaluation = Resolve-DotenvFileSequentially -Line $lines
+    $candidateEvaluation = Resolve-DotenvFileSequentially -Line $candidateLines
+
+    # Declarations are paired POSITIONALLY, never by key. The move maps an original line index j to
+    # itself for j < $beforeIndex, to $beforeIndex for j = $moveIndex, and to j + 1 for the lines in
+    # between. Pairing by name instead would be defeated by a duplicate declaration or a case-variant
+    # key - the two shapes this seam already had to learn to distinguish.
+    $candidateByLineIndex = [System.Collections.Generic.Dictionary[int, object]]::new()
+    foreach ($candidateDeclaration in $candidateEvaluation.Declarations) {
+        $candidateByLineIndex[[int]$candidateDeclaration.LineIndex] = $candidateDeclaration
+    }
+
+    foreach ($declaration in $currentEvaluation.Declarations) {
+        $originalIndex = [int]$declaration.LineIndex
+
+        # The affected window: everything strictly after the destination line, up to and including the
+        # moved line. Those are exactly the declarations whose position relative to $KeyToMove changes.
+        # The destination declaration itself is excluded - changing what IT renders is the intended
+        # repair - and so is everything outside the window, whose relative order is untouched. The whole
+        # final environment is deliberately NOT compared: an intended topology change legitimately moves
+        # downstream seam consumers, and comparing everything would reject the repair this exists for.
+        if ($originalIndex -le $beforeIndex -or $originalIndex -gt $moveIndex) { continue }
+
+        $candidateIndex = if ($originalIndex -eq $moveIndex) { $beforeIndex } else { $originalIndex + 1 }
+        if (-not $candidateByLineIndex.ContainsKey($candidateIndex)) {
+            throw "Move-EnvFileKeyBeforeAnotherKey: the reordered candidate for '$Path' does not carry a declaration at the position line $($originalIndex + 1) maps to, so the move cannot be proven safe and was not applied."
+        }
+
+        $candidateDeclarationAtIndex = $candidateByLineIndex[$candidateIndex]
+        if ([string]::Equals(
+                [string]$candidateDeclarationAtIndex.ResolvedValue,
+                [string]$declaration.ResolvedValue,
+                [System.StringComparison]::Ordinal)) {
+            continue
+        }
+
+        # NEVER render either value: an environment file carries credentials, and this message reaches
+        # terminals and CI logs. The moved key, the affected key, and its line number are what make the
+        # failure actionable anyway.
+        throw "CMS database topology: reordering '$KeyToMove' above '$BeforeKey' in '$Path' would change the value Docker Compose renders for '$($declaration.Key)' (line $($originalIndex + 1)), which the CMS database seam does not own. The reorder was not applied. Values are withheld because an environment file carries credentials. Declare '$KeyToMove' above '$BeforeKey' in the source environment file instead."
+    }
+
+    $content = ($candidateLines -join "`n") + "`n"
     [System.IO.File]::WriteAllText($Path, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
@@ -2375,40 +2443,61 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         $keyOverrides["DMS_CONFIG_DATABASE_CONNECTION_STRING"] = $intendedConnectionString
     }
 
+    # Captured BEFORE the write, so a failure below can tell a file this call created from one that
+    # was already there - including the re-derive shape where $derivedPath IS $BaseEnvironmentFile.
+    $derivedFileExistedBeforeThisCall = Test-Path -LiteralPath $derivedPath -PathType Leaf
+
     Write-DerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
         -TargetPath $derivedPath `
         -KeyOverrides $keyOverrides
 
-    # Docker Compose's --env-file interpolation is order-dependent: DMS_CONFIG_DATABASE_NAME must be
-    # defined before any line that references it via ${DMS_CONFIG_DATABASE_NAME}, or that reference
-    # resolves to empty at real Compose render time. See Move-EnvFileKeyBeforeAnotherKey.
-    Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove "DMS_CONFIG_DATABASE_NAME" -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+    try {
+        # Docker Compose's --env-file interpolation is order-dependent: DMS_CONFIG_DATABASE_NAME must be
+        # defined before any line that references it via ${DMS_CONFIG_DATABASE_NAME}, or that reference
+        # resolves to empty at real Compose render time. Move-EnvFileKeyBeforeAnotherKey performs the
+        # reorder only after proving it changes nothing else the file renders, and throws otherwise - so
+        # both calls below are covered by that one proof rather than by two checks here.
+        Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove "DMS_CONFIG_DATABASE_NAME" -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
 
-    # Heal the connection string's OTHER forward references the same way: each referenced key found
-    # declared below the connection string is moved ahead of it in the derived file. A key whose own
-    # value has unresolved dependencies was already rejected above as a transitive chain, so every key
-    # reaching this point is safe to relocate.
-    foreach ($referencedKey in $connectionStringForwardReferencedKeys) {
-        Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove $referencedKey -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
-    }
-
-    # Postcondition: re-evaluate the file that was actually written, the same sequential way Compose
-    # will, and require the COMPLETE connection string to match the target computed before writing.
-    # Without this, a repair that failed to move a line still returned a path, and the caller handed
-    # Compose a file whose credential or database segment rendered empty.
-    if ($null -ne $intendedEffectiveConnectionString) {
-        $derivedEvaluation = Resolve-DotenvFileSequentially -Path $derivedPath
-        $derivedEffectiveConnectionString = [string](Get-SequentialEffectiveValue -Evaluation $derivedEvaluation -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
-        if (-not [string]::Equals($derivedEffectiveConnectionString, $intendedEffectiveConnectionString, [System.StringComparison]::Ordinal)) {
-            # NEVER render either connection string: both carry a database password, and this message
-            # reaches terminals and CI logs. Name only the segments that disagree, which is what makes
-            # the failure actionable anyway.
-            $differingSegments = Get-ConnectionStringSegmentDifference `
-                -Expected $intendedEffectiveConnectionString `
-                -Actual $derivedEffectiveConnectionString
-            throw "CMS database topology: the derived environment file '$derivedPath' does not render the intended CMS connection string. Segment(s) that disagree: $differingSegments. Values are withheld because the connection string contains credentials. This is a repair failure, not a configuration error - please report it with the source environment file."
+        # Heal the connection string's OTHER forward references the same way: each referenced key found
+        # declared below the connection string is moved ahead of it in the derived file. A key whose own
+        # value has unresolved dependencies was already rejected above as a transitive chain; the
+        # remaining question - whether relocating it disturbs anything in between - is answered by the
+        # move itself.
+        foreach ($referencedKey in $connectionStringForwardReferencedKeys) {
+            Move-EnvFileKeyBeforeAnotherKey -Path $derivedPath -KeyToMove $referencedKey -BeforeKey "DMS_CONFIG_DATABASE_CONNECTION_STRING"
         }
+
+        # Postcondition, kept as an independent backstop to the per-move proof: re-evaluate the file that
+        # was actually written, the same sequential way Compose will, and require the COMPLETE connection
+        # string to match the target computed before writing. Without this, a repair that failed to move
+        # a line still returned a path, and the caller handed Compose a file whose credential or database
+        # segment rendered empty.
+        if ($null -ne $intendedEffectiveConnectionString) {
+            $derivedEvaluation = Resolve-DotenvFileSequentially -Path $derivedPath
+            $derivedEffectiveConnectionString = [string](Get-SequentialEffectiveValue -Evaluation $derivedEvaluation -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
+            if (-not [string]::Equals($derivedEffectiveConnectionString, $intendedEffectiveConnectionString, [System.StringComparison]::Ordinal)) {
+                # NEVER render either connection string: both carry a database password, and this message
+                # reaches terminals and CI logs. Name only the segments that disagree, which is what makes
+                # the failure actionable anyway.
+                $differingSegments = Get-ConnectionStringSegmentDifference `
+                    -Expected $intendedEffectiveConnectionString `
+                    -Actual $derivedEffectiveConnectionString
+                throw "CMS database topology: the derived environment file '$derivedPath' does not render the intended CMS connection string. Segment(s) that disagree: $differingSegments. Values are withheld because the connection string contains credentials. This is a repair failure, not a configuration error - please report it with the source environment file."
+            }
+        }
+    }
+    catch {
+        # The artifact on disk carries this run's topology writes without the reordering that makes them
+        # render, so it must not survive for a later run to pick up. Only a file THIS call created is
+        # removed; one that already existed is left as it was found rather than deleted out from under
+        # its owner. The source environment file is never touched either way - every write above targets
+        # the derived path.
+        if (-not $derivedFileExistedBeforeThisCall) {
+            Remove-Item -LiteralPath $derivedPath -Force -ErrorAction SilentlyContinue
+        }
+        throw
     }
 
     return $derivedPath
