@@ -44,8 +44,7 @@ namespace EdFi.DmsConfigurationService.Backend
                 return ValidateOptionsResult.Fail("Missing required DatabaseSettings value: EncryptionKey");
             }
 
-            // Checked before the known-default rule so the comparison below always has 32 characters
-            // to read.
+            // Checked before the rules below so each of them always has 32 characters to read.
             if (options.EncryptionKey.Length < RequiredEncryptionKeyLength)
             {
                 return ValidateOptionsResult.Fail(
@@ -53,12 +52,17 @@ namespace EdFi.DmsConfigurationService.Backend
                 );
             }
 
+            ReadOnlySpan<char> significantPrefix = options.EncryptionKey.AsSpan(
+                0,
+                RequiredEncryptionKeyLength
+            );
+
             // Compares significant prefixes, not whole strings: the known default truncated to 32
             // characters, or that prefix with any suffix, derives the same publicly known key.
             if (
-                options
-                    .EncryptionKey.AsSpan(0, RequiredEncryptionKeyLength)
-                    .SequenceEqual(ShippedDefaultEncryptionKey.AsSpan(0, RequiredEncryptionKeyLength))
+                significantPrefix.SequenceEqual(
+                    ShippedDefaultEncryptionKey.AsSpan(0, RequiredEncryptionKeyLength)
+                )
             )
             {
                 return ValidateOptionsResult.Fail(
@@ -66,11 +70,25 @@ namespace EdFi.DmsConfigurationService.Backend
                 );
             }
 
-            if (!Ascii.IsValid(options.EncryptionKey.AsSpan(0, RequiredEncryptionKeyLength)))
+            if (!Ascii.IsValid(significantPrefix))
             {
                 return ValidateOptionsResult.Fail(
                     "DatabaseSettings:EncryptionKey must use ASCII characters in its first 32 characters."
                 );
+            }
+
+            // Spaces and control characters carry no key material, so padding a short value out to 32
+            // characters by hand reaches the same weak key the minimum-length rule exists to prevent.
+            // Neither rule above catches it: IsNullOrWhiteSpace rejects only an entirely blank value,
+            // and both character classes are valid ASCII.
+            foreach (char character in significantPrefix)
+            {
+                if (char.IsWhiteSpace(character) || char.IsControl(character))
+                {
+                    return ValidateOptionsResult.Fail(
+                        "DatabaseSettings:EncryptionKey must not use spaces or control characters in its first 32 characters."
+                    );
+                }
             }
 
             return ValidateOptionsResult.Success;

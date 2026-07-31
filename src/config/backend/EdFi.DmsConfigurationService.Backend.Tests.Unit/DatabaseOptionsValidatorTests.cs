@@ -289,6 +289,84 @@ public class DatabaseOptionsValidatorTests
         public void It_succeeds_validation() => _result.Succeeded.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Reaching 32 characters by padding a short value with spaces derives a key with the entropy of
+    /// the short value, which is what the minimum-length rule exists to prevent. It is not caught by
+    /// the blank-value rule, because the value is not whitespace throughout.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_short_encryption_key_padded_with_spaces_to_32_characters
+    {
+        private const string SpacePaddedKey = "a                               ";
+
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Act() => _result = Validate(OptionsWithKey(SpacePaddedKey));
+
+        /// <summary>
+        /// Pins the shape the fixture depends on: exactly 32 characters, so it clears the length rule
+        /// and can only fail on the spaces rule.
+        /// </summary>
+        [Test]
+        public void It_is_a_32_character_key() => SpacePaddedKey.Length.Should().Be(32);
+
+        [Test]
+        public void It_fails_validation() => _result.Failed.Should().BeTrue();
+
+        [Test]
+        public void It_reports_the_spaces_and_control_characters_rule() =>
+            _result
+                .FailureMessage.Should()
+                .Contain("DatabaseSettings:EncryptionKey")
+                .And.Contain("spaces or control characters");
+
+        [Test]
+        public void It_does_not_report_the_minimum_length_rule() =>
+            _result.FailureMessage.Should().NotContain("at least 32");
+    }
+
+    /// <summary>
+    /// A control character is valid ASCII and occupies one UTF-8 byte, so it clears both the length
+    /// and ASCII rules while contributing no key material. Tab sits at index 31 here, the last
+    /// position the rules cover.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_control_character_within_the_first_32_characters
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Act() => _result = Validate(OptionsWithKey(ThirtyOneCharacterKey + '\t'));
+
+        [Test]
+        public void It_fails_validation() => _result.Failed.Should().BeTrue();
+
+        [Test]
+        public void It_reports_the_spaces_and_control_characters_rule() =>
+            _result
+                .FailureMessage.Should()
+                .Contain("DatabaseSettings:EncryptionKey")
+                .And.Contain("spaces or control characters");
+    }
+
+    /// <summary>
+    /// The rule is scoped to the significant prefix, so trailing whitespace — which configuration
+    /// files and environment variables pick up easily — leaves a working key working. Those
+    /// characters never reach the AES key.
+    /// </summary>
+    [TestFixture]
+    public class Given_whitespace_only_beyond_the_first_32_characters
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Act() => _result = Validate(OptionsWithKey(ThirtyTwoCharacterKey + "   "));
+
+        [Test]
+        public void It_succeeds_validation() => _result.Succeeded.Should().BeTrue();
+    }
+
     [TestFixture]
     public class Given_a_missing_database_connection
     {

@@ -40,6 +40,32 @@ different supported version, pass `-DataStandardVersion` (e.g. `6.1`) to
 [Data Standard Versions](./DATA-STANDARD-VERSIONS.md) for how version selection
 works and how to add or drop a version.
 
+## Running the Configuration Service
+
+The shipped `appsettings.json` for the Configuration Service leaves
+`DatabaseSettings:EncryptionKey`, `IdentitySettings:ClientSecret`, and
+`IdentitySettings:EncryptionKey` blank, so the service will not start until they
+are supplied. Copy the starter file and adjust it for your machine:
+
+```shell
+# From base directory
+cp src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsettings.Development.json.example `
+   src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsettings.Development.json
+./build-config.ps1 build
+./build-config.ps1 run
+```
+
+`appsettings.Development.json` is gitignored, so the values stay on your
+machine. `DatabaseSettings:EncryptionKey` must be at least 32 ASCII characters
+with no spaces or control characters; only the first 32 contribute to the
+AES-256 key that protects stored connection strings. The starter file uses the
+same value as the `eng/docker-compose` environment files, so a locally run
+Configuration Service and a Compose stack can read each other's encrypted
+connection strings. Replace it for any real deployment — see
+[Configuration](./CONFIGURATION.md#configurationservicesettings) for the full
+rules, and for what to do after changing a key that already has data encrypted
+under it.
+
 ## Running the EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 
 To run the integration tests locally, execute the following command in a PowerShell

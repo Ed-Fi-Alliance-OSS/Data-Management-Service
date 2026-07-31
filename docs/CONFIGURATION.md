@@ -181,6 +181,15 @@ These settings configure how the DMS API connects to the Configuration Service t
 > stores the value encrypted under the currently configured key. Until a
 > connection string has been re-submitted, DMS cannot decrypt it and reports a
 > decryption failure.
+>
+> This applies to local Docker Compose stacks as well, where the environment
+> files under `eng/docker-compose/` supply the key. Picking up an updated
+> environment file changes the derived key, so a database volume created before
+> the change still holds connection strings encrypted under the previous one.
+> `provision-dms-schema.ps1` then fails with a decryption error even though CMS
+> and DMS agree on the new value — the mismatch is with the stored data, not
+> between the services. Recreate the database volume, or apply the re-submission
+> procedure above.
 
 ## CacheSettings
 

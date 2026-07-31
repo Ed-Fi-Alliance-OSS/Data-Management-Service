@@ -5,6 +5,7 @@
 
 using System.Collections.Generic;
 using System.Net;
+using EdFi.DmsConfigurationService.Backend;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -205,5 +206,47 @@ public class DatabaseOptionsStartupTests
         [Test]
         public void It_starts_and_serves_the_endpoint() =>
             _response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// The value shipped in appsettings.json must be one the validator rejects, so a deployment that
+    /// never overrides it fails loudly instead of running on a key published in this repository.
+    /// Every other fixture here supplies its own key, and the running host reads the override in
+    /// appsettings.Test.json, so nothing else observes what is actually shipped. Reading the file from
+    /// the build output rather than through the host is what makes the shipped value visible; the copy
+    /// is produced from the application project on every build.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_shipped_application_settings
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Act()
+        {
+            IConfigurationRoot shippedConfiguration = new ConfigurationBuilder()
+                .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false)
+                .Build();
+
+            DatabaseOptions shippedOptions = new()
+            {
+                DatabaseConnection =
+                    shippedConfiguration["DatabaseSettings:DatabaseConnection"] ?? string.Empty,
+                EncryptionKey = shippedConfiguration["DatabaseSettings:EncryptionKey"] ?? string.Empty,
+            };
+
+            _result = new DatabaseOptionsValidator().Validate(Options.DefaultName, shippedOptions);
+        }
+
+        [Test]
+        public void It_is_rejected_by_the_validator() => _result.Failed.Should().BeTrue();
+
+        /// <summary>
+        /// DatabaseConnection is validated first, so naming EncryptionKey here also proves the shipped
+        /// connection string is intact and that the rejection is not coming from the wrong setting.
+        /// </summary>
+        [Test]
+        public void It_is_rejected_for_the_encryption_key() =>
+            _result.FailureMessage.Should().Contain("EncryptionKey");
     }
 }
