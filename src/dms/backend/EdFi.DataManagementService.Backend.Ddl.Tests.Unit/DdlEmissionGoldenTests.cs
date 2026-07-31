@@ -1544,6 +1544,7 @@ internal static class PolymorphicAbstractFixture
     {
         var schema = new DbSchemaName("edfi");
         var documentIdColumn = new DbColumnName("DocumentId");
+        var documentUuidColumn = new DbColumnName("DocumentUuid");
         var discriminatorColumn = new DbColumnName("Discriminator");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
 
@@ -1576,6 +1577,19 @@ internal static class PolymorphicAbstractFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
+                // The DocumentUuid carried from dms.Document by the abstract identity maintenance trigger,
+                // as derived by AbstractIdentityTableAndUnionViewDerivationPass.
+                new DbColumnModel(
+                    documentUuidColumn,
+                    ColumnKind.DocumentUuid,
+                    ScalarType: null,
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
                 new DbColumnModel(
                     organizationIdColumn,
                     ColumnKind.Scalar,
@@ -2991,6 +3005,7 @@ internal static class AuthEdOrgHierarchyFixture
     {
         var schema = new DbSchemaName("edfi");
         var documentIdColumn = new DbColumnName("DocumentId");
+        var documentUuidColumn = new DbColumnName("DocumentUuid");
         var discriminatorColumn = new DbColumnName("Discriminator");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
         var seaParentIdColumn = new DbColumnName("StateEducationAgency_EducationOrganizationId");
@@ -3024,6 +3039,19 @@ internal static class AuthEdOrgHierarchyFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
+                // The DocumentUuid carried from dms.Document by the abstract identity maintenance trigger,
+                // as derived by AbstractIdentityTableAndUnionViewDerivationPass.
+                new DbColumnModel(
+                    documentUuidColumn,
+                    ColumnKind.DocumentUuid,
+                    ScalarType: null,
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
                 new DbColumnModel(
                     organizationIdColumn,
                     ColumnKind.Scalar,

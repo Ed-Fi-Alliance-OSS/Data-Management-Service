@@ -2454,6 +2454,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(targetTable);
             writer.Append(" (");
             writer.Append(Quote(DocumentIdColumn));
+            writer.Append(", ");
+            writer.Append(Quote(DocumentUuidColumn));
             foreach (var mapping in mappings)
             {
                 writer.Append(", ");
@@ -2465,6 +2467,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
             writer.Append("VALUES (NEW.");
             writer.Append(Quote(DocumentIdColumn));
+            // DocumentUuid is read from dms.Document rather than NEW: PostgreSQL fires same-event BEFORE row
+            // triggers in name order, and TR_<R>_AbstractIdentity sorts before TR_<R>_Stamp, so the root row's
+            // own DocumentUuid mirror is not populated yet when this trigger runs. The dms.Document row always
+            // exists (the root's NOT NULL DocumentId is an FK to it), so the scalar subquery is
+            // order-independent and always finds exactly one row.
+            writer.Append(", (SELECT ");
+            writer.Append(Quote(DocumentUuidColumn));
+            writer.Append(" FROM ");
+            writer.Append(Quote(DmsTableNames.Document));
+            writer.Append(" WHERE ");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = NEW.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(")");
             foreach (var mapping in mappings)
             {
                 writer.Append(", NEW.");
@@ -2478,6 +2494,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(DocumentIdColumn));
             writer.AppendLine(")");
 
+            // DocumentUuid is immutable for the life of the document, so the conflict path deliberately
+            // leaves it alone and only refreshes the projected identity columns.
             writer.Append("DO UPDATE SET ");
             for (int i = 0; i < mappings.Count; i++)
             {
@@ -2575,7 +2593,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var targetTable = Quote(targetTableName);
         var documentIdCol = Quote(DocumentIdColumn);
 
-        // UPDATE existing rows first.
+        // UPDATE existing rows first. DocumentUuid is immutable for the life of the document, so the update
+        // branch deliberately touches only the projected identity columns.
         writer.AppendLine("UPDATE t");
         writer.Append("SET ");
         for (int i = 0; i < mappings.Count; i++)
@@ -2614,10 +2633,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(";");
 
         // INSERT only the rows that do not already exist in the target table.
+        // DocumentUuid comes from dms.Document rather than from inserted: this is an AFTER trigger, so the
+        // inserted image carries the root row as the triggering statement left it, before TR_<R>_Stamp
+        // mirrored the metadata onto it. The dms.Document row always exists (the root's NOT NULL DocumentId
+        // is an FK to it), so the INNER JOIN never drops a row.
         writer.Append("INSERT INTO ");
         writer.Append(targetTable);
         writer.Append(" (");
         writer.Append(documentIdCol);
+        writer.Append(", ");
+        writer.Append(Quote(DocumentUuidColumn));
         foreach (var mapping in mappings)
         {
             writer.Append(", ");
@@ -2628,6 +2653,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(")");
         writer.Append("SELECT s.");
         writer.Append(documentIdCol);
+        writer.Append(", d.");
+        writer.Append(Quote(DocumentUuidColumn));
         foreach (var mapping in mappings)
         {
             writer.Append(", s.");
@@ -2651,6 +2678,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(documentIdCol);
             writer.AppendLine(") AS s");
         }
+
+        writer.Append("INNER JOIN ");
+        writer.Append(Quote(DmsTableNames.Document));
+        writer.Append(" d ON d.");
+        writer.Append(documentIdCol);
+        writer.Append(" = s.");
+        writer.Append(documentIdCol);
+        writer.AppendLine();
 
         writer.Append("LEFT JOIN ");
         writer.Append(targetTable);

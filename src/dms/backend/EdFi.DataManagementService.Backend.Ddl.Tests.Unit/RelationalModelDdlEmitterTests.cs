@@ -395,6 +395,153 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
 }
 
 [TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Maintenance_Trigger
+{
+    private string _triggerBody = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = PolymorphicAbstractFixture.Build(dialect.Rules.Dialect);
+
+        _triggerBody = TriggerBodyExtractor.ExtractPgsqlFunctionBody(
+            emitter.Emit(modelSet),
+            "TF_TR_School_AbstractIdentity"
+        );
+    }
+
+    [Test]
+    public void It_should_read_document_uuid_from_dms_document_rather_than_the_new_row()
+    {
+        // Same-event BEFORE row triggers fire in name order, so TR_<R>_AbstractIdentity runs before
+        // TR_<R>_Stamp populates NEW."DocumentUuid". The scalar subquery is order-independent.
+        _triggerBody
+            .Should()
+            .Contain(
+                "INSERT INTO \"edfi\".\"EducationOrganizationIdentity\" (\"DocumentId\", \"DocumentUuid\", "
+                    + "\"EducationOrganizationId\", \"Discriminator\")"
+            )
+            .And.Contain(
+                "VALUES (NEW.\"DocumentId\", (SELECT \"DocumentUuid\" FROM \"dms\".\"Document\" "
+                    + "WHERE \"DocumentId\" = NEW.\"DocumentId\"), NEW.\"EducationOrganizationId\", "
+                    + "'Ed-Fi:School')"
+            );
+        _triggerBody.Should().NotContain("NEW.\"DocumentUuid\"");
+    }
+
+    [Test]
+    public void It_should_not_update_the_immutable_document_uuid_on_conflict()
+    {
+        _triggerBody
+            .Should()
+            .Contain("DO UPDATE SET \"EducationOrganizationId\" = EXCLUDED.\"EducationOrganizationId\";");
+        _triggerBody.Should().NotContain("EXCLUDED.\"DocumentUuid\"");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Maintenance_Trigger
+{
+    private string _triggerBody = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = PolymorphicAbstractFixture.Build(dialect.Rules.Dialect);
+
+        _triggerBody = TriggerBodyExtractor.ExtractMssqlTriggerBatch(
+            emitter.Emit(modelSet),
+            "[edfi].[TR_School_AbstractIdentity]"
+        );
+    }
+
+    [Test]
+    public void It_should_read_document_uuid_from_dms_document_rather_than_the_inserted_image()
+    {
+        // The inserted image is the root row as the triggering statement left it, before the AFTER
+        // stamping trigger mirrored DocumentUuid onto it, so the value must come from dms.Document.
+        _triggerBody
+            .Should()
+            .Contain(
+                "INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], "
+                    + "[EducationOrganizationId], [Discriminator])\n"
+                    + "        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], "
+                    + "N'Ed-Fi:School'\n"
+                    + "        FROM inserted s\n"
+                    + "        INNER JOIN [dms].[Document] d ON d.[DocumentId] = s.[DocumentId]\n"
+                    + "        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing "
+                    + "ON existing.[DocumentId] = s.[DocumentId]\n"
+                    + "        WHERE existing.[DocumentId] IS NULL;"
+            );
+        // The value is never read from the triggering row image, only from the dms.Document join.
+        _triggerBody.Should().NotContain("s.[DocumentUuid]");
+    }
+
+    [Test]
+    public void It_should_not_update_the_immutable_document_uuid()
+    {
+        _triggerBody.Should().Contain("SET t.[EducationOrganizationId] = s.[EducationOrganizationId]");
+        _triggerBody.Should().NotContain("t.[DocumentUuid]");
+    }
+}
+
+/// <summary>
+/// Extracts a single trigger's emitted text from a full DDL script so assertions about one trigger body
+/// cannot be satisfied (or broken) by text belonging to another trigger on the same table.
+/// </summary>
+internal static class TriggerBodyExtractor
+{
+    internal static string ExtractPgsqlFunctionBody(string ddl, string functionName)
+    {
+        var start = ddl.IndexOf(
+            $"CREATE OR REPLACE FUNCTION \"edfi\".\"{functionName}\"()",
+            StringComparison.Ordinal
+        );
+
+        if (start < 0)
+        {
+            throw new InvalidOperationException($"Function '{functionName}' was not emitted.");
+        }
+
+        const string Terminator = "$func$ LANGUAGE plpgsql;";
+        var end = ddl.IndexOf(Terminator, start, StringComparison.Ordinal);
+
+        if (end < 0)
+        {
+            throw new InvalidOperationException($"Function '{functionName}' body was not terminated.");
+        }
+
+        return ddl[start..(end + Terminator.Length)];
+    }
+
+    internal static string ExtractMssqlTriggerBatch(string ddl, string qualifiedTriggerName)
+    {
+        var start = ddl.IndexOf($"CREATE OR ALTER TRIGGER {qualifiedTriggerName}", StringComparison.Ordinal);
+
+        if (start < 0)
+        {
+            throw new InvalidOperationException($"Trigger '{qualifiedTriggerName}' was not emitted.");
+        }
+
+        const string Terminator = "\nGO\n";
+        var end = ddl.IndexOf(Terminator, start, StringComparison.Ordinal);
+
+        if (end < 0)
+        {
+            throw new InvalidOperationException(
+                $"Trigger '{qualifiedTriggerName}' batch was not terminated."
+            );
+        }
+
+        return ddl[start..end];
+    }
+}
+
+[TestFixture]
 public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Table
 {
     private string _ddl = default!;

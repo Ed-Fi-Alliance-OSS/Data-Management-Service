@@ -32,6 +32,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationIdentity]
 (
     [DocumentId] bigint NOT NULL,
+    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_EducationOrganizationIdentity_DocumentUuid] DEFAULT newid(),
     [EducationOrganizationId] int NOT NULL,
     [Discriminator] nvarchar(50) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId])
@@ -100,9 +101,10 @@ BEGIN
         SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
         FROM [edfi].[EducationOrganizationIdentity] t
         INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
         FROM inserted s
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = s.[DocumentId]
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
     END
@@ -117,9 +119,10 @@ BEGIN
         SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
         FROM [edfi].[EducationOrganizationIdentity] t
         INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
         FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = s.[DocumentId]
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
     END
@@ -383,9 +386,10 @@ BEGIN
         SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
         FROM [edfi].[EducationOrganizationIdentity] t
         INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
         FROM inserted s
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = s.[DocumentId]
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
     END
@@ -400,9 +404,10 @@ BEGIN
         SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
         FROM [edfi].[EducationOrganizationIdentity] t
         INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], d.[DocumentUuid], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
         FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = s.[DocumentId]
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
     END

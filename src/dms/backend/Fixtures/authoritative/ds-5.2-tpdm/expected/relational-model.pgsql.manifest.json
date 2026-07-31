@@ -2342,6 +2342,16 @@
             }
           },
           {
+            "name": "DocumentUuid",
+            "kind": "DocumentUuid",
+            "type": null,
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
             "name": "EducationOrganizationId",
             "kind": "Scalar",
             "type": {
@@ -2432,6 +2442,16 @@
             "type": {
               "kind": "Int64"
             },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "DocumentUuid",
+            "kind": "DocumentUuid",
+            "type": null,
             "is_nullable": false,
             "source_path": null,
             "storage": {

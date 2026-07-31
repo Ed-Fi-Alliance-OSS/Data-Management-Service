@@ -56,7 +56,69 @@ public class Given_Abstract_Identity_Table_Derivation
             .TableModel.Columns.Select(column => column.ColumnName.Value)
             .ToArray();
 
-        columns.Should().Equal("DocumentId", "EducationOrganizationId", "OrganizationName", "Discriminator");
+        columns
+            .Should()
+            .Equal(
+                "DocumentId",
+                "DocumentUuid",
+                "EducationOrganizationId",
+                "OrganizationName",
+                "Discriminator"
+            );
+    }
+
+    /// <summary>
+    /// It should include the DocumentUuid column carried from dms.Document.
+    /// </summary>
+    [Test]
+    public void It_should_include_document_uuid_column()
+    {
+        var documentUuid = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "DocumentUuid"
+        );
+
+        documentUuid.Kind.Should().Be(ColumnKind.DocumentUuid);
+        documentUuid.ScalarType.Should().BeNull();
+        documentUuid.IsNullable.Should().BeFalse();
+        documentUuid.SourceJsonPath.Should().BeNull();
+        documentUuid.TargetResource.Should().BeNull();
+        documentUuid.IsWritable.Should().BeFalse();
+        documentUuid.Storage.Should().BeOfType<ColumnStorage.Stored>();
+    }
+
+    /// <summary>
+    /// It should keep DocumentUuid out of the abstract identity table's keys and unique constraints; the
+    /// DocumentId primary key already keeps the value unique.
+    /// </summary>
+    [Test]
+    public void It_should_not_constrain_document_uuid()
+    {
+        var table = _abstractIdentityTable.TableModel;
+
+        table.Key.Columns.Select(column => column.ColumnName.Value).Should().NotContain("DocumentUuid");
+        table
+            .Constraints.OfType<TableConstraint.Unique>()
+            .SelectMany(constraint => constraint.Columns)
+            .Select(column => column.Value)
+            .Should()
+            .NotContain("DocumentUuid");
+    }
+
+    /// <summary>
+    /// It should keep DocumentUuid out of the abstract union view's output contract; the view projects only
+    /// the identity columns supplied by each concrete member.
+    /// </summary>
+    [Test]
+    public void It_should_not_project_document_uuid_into_the_union_view()
+    {
+        var unionView = _modelSet.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "EducationOrganization"
+        );
+
+        unionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal("DocumentId", "EducationOrganizationId", "OrganizationName", "Discriminator");
     }
 
     /// <summary>

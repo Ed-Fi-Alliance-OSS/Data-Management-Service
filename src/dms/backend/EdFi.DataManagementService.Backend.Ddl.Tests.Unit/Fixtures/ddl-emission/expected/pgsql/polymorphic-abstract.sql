@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
     "EducationOrganizationId" integer NOT NULL,
     "Discriminator" varchar(50) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId")
@@ -85,8 +86,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"(
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:LocalEducationAgency')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
+        VALUES (NEW."DocumentId", (SELECT "DocumentUuid" FROM "dms"."Document" WHERE "DocumentId" = NEW."DocumentId"), NEW."EducationOrganizationId", 'Ed-Fi:LocalEducationAgency')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -183,8 +184,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:School')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
+        VALUES (NEW."DocumentId", (SELECT "DocumentUuid" FROM "dms"."Document" WHERE "DocumentId" = NEW."DocumentId"), NEW."EducationOrganizationId", 'Ed-Fi:School')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;

@@ -77,9 +77,10 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 var identityColumns = identityDerivations
                     .Select(derivation => derivation.IdentityColumn)
                     .ToArray();
-                var columns = new List<DbColumnModel>(1 + identityColumns.Length + 1)
+                var columns = new List<DbColumnModel>(2 + identityColumns.Length + 1)
                 {
                     BuildDocumentIdColumn(),
+                    BuildDocumentUuidColumn(),
                 };
                 columns.AddRange(identityColumns);
                 columns.Add(BuildDiscriminatorColumn());
@@ -1087,6 +1088,32 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             SourceJsonPath: null,
             TargetResource: null
         );
+    }
+
+    /// <summary>
+    /// Builds the <c>DocumentUuid</c> column that carries the target document's public API id onto the
+    /// abstract identity row, so a polymorphic reference can resolve the referenced document's UUID from the
+    /// abstract identity table alone. It is maintained solely by the per-concrete-resource abstract identity
+    /// maintenance trigger (which reads it from <c>dms.Document</c>), so it is not writable by write-plan
+    /// compilation. No scalar type is carried because <c>uuid</c>/<c>uniqueidentifier</c> has no
+    /// dialect-neutral <see cref="ScalarKind"/>; the DDL emitter renders it from
+    /// <see cref="ColumnKind.DocumentUuid"/>. No unique constraint is added: the <c>DocumentId</c> primary
+    /// key already keeps the value unique, because <c>dms.Document</c> owns the uniqueness of
+    /// <c>DocumentUuid</c> per document.
+    /// </summary>
+    private static DbColumnModel BuildDocumentUuidColumn()
+    {
+        return new DbColumnModel(
+            RelationalNameConventions.DocumentUuidColumnName,
+            ColumnKind.DocumentUuid,
+            ScalarType: null,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        )
+        {
+            IsWritable = false,
+        };
     }
 
     /// <summary>

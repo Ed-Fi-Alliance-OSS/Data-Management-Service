@@ -806,6 +806,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
+    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
     "EducationOrganizationId" integer NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
@@ -2070,8 +2071,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."SchoolId", 'Ed-Fi:School')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "Discriminator")
+        VALUES (NEW."DocumentId", (SELECT "DocumentUuid" FROM "dms"."Document" WHERE "DocumentId" = NEW."DocumentId"), NEW."SchoolId", 'Ed-Fi:School')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
