@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
@@ -18,7 +19,8 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 internal sealed class MssqlDocumentCacheWriter(
     IDocumentCacheWriterRetryAdapter retryAdapter,
     ILogger<MssqlDocumentCacheWriter> logger,
-    ITransactionFaultInjectionObserver? faultInjectionObserver = null
+    ITransactionFaultInjectionObserver? faultInjectionObserver = null,
+    IDocumentCacheWriterTelemetry? telemetry = null
 ) : IDocumentCacheWriter
 {
     private const int ForeignKeyConstraintViolationNumber = 547;
@@ -30,8 +32,10 @@ internal sealed class MssqlDocumentCacheWriter(
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ITransactionFaultInjectionObserver _faultInjectionObserver =
         faultInjectionObserver ?? NoOpTransactionFaultInjectionObserver.Instance;
+    private readonly IDocumentCacheWriterTelemetry _telemetry =
+        telemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
 
-    public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
+    public async Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         string connectionString = RequireTargetConnectionString(request);
@@ -42,15 +46,29 @@ internal sealed class MssqlDocumentCacheWriter(
             request.Purpose
         );
 
-        return _retryAdapter.ExecuteAsync(
-            new DocumentCacheWriterRetryRequest(
+        DocumentCacheWriterResult result = await _retryAdapter
+            .ExecuteAsync(
+                new DocumentCacheWriterRetryRequest(
+                    RelationalProviderToken.SqlServer,
+                    request.TargetContext.TargetKey,
+                    request.Purpose,
+                    request.CancellationToken
+                ),
+                (_, cancellationToken) => ExecuteAttemptAsync(request, connectionString, cancellationToken)
+            )
+            .ConfigureAwait(false);
+
+        _telemetry.RecordOutcome(
+            DocumentCacheWriterMetricContext.ForCacheWriter(
                 RelationalProviderToken.SqlServer,
                 request.TargetContext.TargetKey,
                 request.Purpose,
-                request.CancellationToken
-            ),
-            (_, cancellationToken) => ExecuteAttemptAsync(request, connectionString, cancellationToken)
+                DocumentCacheWriterTelemetry.TryGetLifecycle(result),
+                result.Outcome
+            )
         );
+
+        return result;
     }
 
     private async Task<DocumentCacheWriterResult> ExecuteAttemptAsync(
@@ -67,6 +85,10 @@ internal sealed class MssqlDocumentCacheWriter(
                 .ConfigureAwait(false);
 
         var transactionCompleted = false;
+        var transactionTelemetryRecorded = false;
+        long transactionStartTimestamp = Stopwatch.GetTimestamp();
+        DocumentCacheLifecycleState? telemetryLifecycleState = null;
+        DocumentCacheWriterOutcome? telemetryOutcome = null;
 
         try
         {
@@ -76,6 +98,7 @@ internal sealed class MssqlDocumentCacheWriter(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
 
             DocumentCacheWriterResult? lifecycleFence = SelectLifecycleFence(
                 request.Purpose,
@@ -83,6 +106,7 @@ internal sealed class MssqlDocumentCacheWriter(
             );
             if (lifecycleFence is not null)
             {
+                telemetryOutcome = lifecycleFence.Outcome;
                 await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
@@ -113,6 +137,7 @@ internal sealed class MssqlDocumentCacheWriter(
 
             if (!selection.RequiresProviderCompletion)
             {
+                telemetryOutcome = selection.TerminalResult!.Outcome;
                 await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return selection.TerminalResult!;
@@ -120,8 +145,16 @@ internal sealed class MssqlDocumentCacheWriter(
 
             if (selection.RequestsCacheAheadLatchFlow)
             {
+                telemetryOutcome = selection.Outcome;
                 await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
+                RecordTransactionDuration(
+                    request,
+                    telemetryLifecycleState,
+                    telemetryOutcome.Value,
+                    transactionStartTimestamp
+                );
+                transactionTelemetryRecorded = true;
                 return await DocumentCacheWriterCacheAheadIncidentFlow
                     .ExecuteAsync(
                         new DocumentCacheWriterCacheAheadIncidentRequest(
@@ -158,6 +191,7 @@ internal sealed class MssqlDocumentCacheWriter(
                     )
                     .ConfigureAwait(false);
 
+            telemetryOutcome = result.Outcome;
             if (result is DocumentCacheWriterResult.RacingWriterLost)
             {
                 await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
@@ -180,6 +214,18 @@ internal sealed class MssqlDocumentCacheWriter(
             await RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw;
+        }
+        finally
+        {
+            if (!transactionTelemetryRecorded && telemetryOutcome is not null)
+            {
+                RecordTransactionDuration(
+                    request,
+                    telemetryLifecycleState,
+                    telemetryOutcome.Value,
+                    transactionStartTimestamp
+                );
+            }
         }
     }
 
@@ -209,8 +255,15 @@ internal sealed class MssqlDocumentCacheWriter(
             )
             .ConfigureAwait(false);
 
+        long cacheDmlStartTimestamp = Stopwatch.GetTimestamp();
         int cacheRows = await ExecuteCacheWriteAsync(connection, transaction, candidate, cancellationToken)
             .ConfigureAwait(false);
+        RecordCacheDmlDuration(
+            request,
+            lifecycleReadResult.Lifecycle?.State,
+            selection.Outcome,
+            cacheDmlStartTimestamp
+        );
 
         await ObserveFaultInjectionAsync(
                 DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement,
@@ -226,6 +279,7 @@ internal sealed class MssqlDocumentCacheWriter(
             )
             .ConfigureAwait(false);
 
+        long acknowledgementStartTimestamp = Stopwatch.GetTimestamp();
         int acknowledgedRows = await ExecuteAcknowledgementAsync(
                 connection,
                 transaction,
@@ -234,6 +288,12 @@ internal sealed class MssqlDocumentCacheWriter(
                 cancellationToken
             )
             .ConfigureAwait(false);
+        RecordAcknowledgementDuration(
+            request,
+            lifecycleReadResult.Lifecycle?.State,
+            acknowledgedRows == 1 ? selection.Outcome : DocumentCacheWriterOutcome.RacingWriterLost,
+            acknowledgementStartTimestamp
+        );
 
         if (acknowledgedRows == 1)
         {
@@ -272,6 +332,7 @@ internal sealed class MssqlDocumentCacheWriter(
         CancellationToken cancellationToken
     )
     {
+        long acknowledgementStartTimestamp = Stopwatch.GetTimestamp();
         int acknowledgedRows = await ExecuteAcknowledgementAsync(
                 connection,
                 transaction,
@@ -280,6 +341,14 @@ internal sealed class MssqlDocumentCacheWriter(
                 cancellationToken
             )
             .ConfigureAwait(false);
+        RecordAcknowledgementDuration(
+            request,
+            lifecycleReadResult.Lifecycle?.State,
+            acknowledgedRows == 1
+                ? DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged
+                : DocumentCacheWriterOutcome.RacingWriterLost,
+            acknowledgementStartTimestamp
+        );
 
         if (acknowledgedRows == 1)
         {
@@ -317,6 +386,9 @@ internal sealed class MssqlDocumentCacheWriter(
                 .ConfigureAwait(false);
 
         var transactionCompleted = false;
+        long transactionStartTimestamp = Stopwatch.GetTimestamp();
+        DocumentCacheLifecycleState? telemetryLifecycleState = null;
+        DocumentCacheWriterOutcome? telemetryOutcome = null;
 
         try
         {
@@ -326,12 +398,14 @@ internal sealed class MssqlDocumentCacheWriter(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            telemetryLifecycleState = lifecycleReadResult.Lifecycle?.State;
             DocumentCacheWriterResult? lifecycleFence = SelectLifecycleFence(
                 request.Purpose,
                 lifecycleReadResult
             );
             if (lifecycleFence is not null)
             {
+                telemetryOutcome = lifecycleFence.Outcome;
                 await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
@@ -354,6 +428,7 @@ internal sealed class MssqlDocumentCacheWriter(
 
             if (recheckDecision.TerminalResult is not null)
             {
+                telemetryOutcome = recheckDecision.TerminalResult.Outcome;
                 await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return recheckDecision.TerminalResult;
@@ -379,13 +454,30 @@ internal sealed class MssqlDocumentCacheWriter(
             await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
-            return DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(recheckDecision, latchRows);
+            DocumentCacheWriterResult result = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
+                recheckDecision,
+                latchRows
+            );
+            telemetryOutcome = result.Outcome;
+            return result;
         }
         catch
         {
             await RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw;
+        }
+        finally
+        {
+            if (telemetryOutcome is not null)
+            {
+                RecordTransactionDuration(
+                    request,
+                    telemetryLifecycleState,
+                    telemetryOutcome.Value,
+                    transactionStartTimestamp
+                );
+            }
         }
     }
 
@@ -811,6 +903,68 @@ internal sealed class MssqlDocumentCacheWriter(
             )
             .ConfigureAwait(false);
     }
+
+    private void RecordTransactionDuration(
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleState? lifecycleState,
+        DocumentCacheWriterOutcome outcome,
+        long startTimestamp
+    )
+    {
+        _telemetry.RecordTransactionDuration(
+            CreateMetricContext(request, lifecycleState, outcome),
+            DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
+        );
+    }
+
+    private void RecordCacheDmlDuration(
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleState? lifecycleState,
+        DocumentCacheWriterOutcome outcome,
+        long startTimestamp
+    )
+    {
+        TimeSpan duration = DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp);
+        DocumentCacheWriterMetricContext context = CreateMetricContext(request, lifecycleState, outcome);
+        _telemetry.RecordCacheDmlDuration(context, duration);
+        _telemetry.RecordSameDocumentWait(
+            context,
+            DocumentCacheWriterContentionParticipant.CacheWriter,
+            DocumentCacheWriterContentionPhase.CacheDml,
+            duration
+        );
+    }
+
+    private void RecordAcknowledgementDuration(
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleState? lifecycleState,
+        DocumentCacheWriterOutcome outcome,
+        long startTimestamp
+    )
+    {
+        TimeSpan duration = DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp);
+        DocumentCacheWriterMetricContext context = CreateMetricContext(request, lifecycleState, outcome);
+        _telemetry.RecordAcknowledgementDuration(context, duration);
+        _telemetry.RecordSameDocumentWait(
+            context,
+            DocumentCacheWriterContentionParticipant.CacheWriter,
+            DocumentCacheWriterContentionPhase.Acknowledgement,
+            duration
+        );
+    }
+
+    private static DocumentCacheWriterMetricContext CreateMetricContext(
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleState? lifecycleState,
+        DocumentCacheWriterOutcome outcome
+    ) =>
+        DocumentCacheWriterMetricContext.ForCacheWriter(
+            RelationalProviderToken.SqlServer,
+            request.TargetContext.TargetKey,
+            request.Purpose,
+            lifecycleState,
+            outcome
+        );
 
     private static DocumentCacheWriterResult? SelectLifecycleFence(
         DocumentCacheWriterPurpose purpose,

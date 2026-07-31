@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -93,12 +94,14 @@ internal sealed class DocumentCacheWriterRetryAdapter : IDocumentCacheWriterRetr
     private readonly DeadlockRetrySettings _settings;
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier;
     private readonly ILogger<DocumentCacheWriterRetryAdapter> _logger;
+    private readonly IDocumentCacheWriterTelemetry _telemetry;
     private readonly ResiliencePipeline<DocumentCacheWriterResult> _pipeline;
 
     public DocumentCacheWriterRetryAdapter(
         DeadlockRetrySettings settings,
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
-        ILogger<DocumentCacheWriterRetryAdapter> logger
+        ILogger<DocumentCacheWriterRetryAdapter> logger,
+        IDocumentCacheWriterTelemetry? telemetry = null
     )
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -106,6 +109,7 @@ internal sealed class DocumentCacheWriterRetryAdapter : IDocumentCacheWriterRetr
         _writeExceptionClassifier =
             writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _telemetry = telemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
         _pipeline = BuildPipeline();
     }
 
@@ -122,6 +126,7 @@ internal sealed class DocumentCacheWriterRetryAdapter : IDocumentCacheWriterRetr
         ArgumentNullException.ThrowIfNull(attempt);
 
         int attemptCount = 0;
+        long retryStartTimestamp = Stopwatch.GetTimestamp();
         ResilienceContext context = ResilienceContextPool.Shared.Get(request.CancellationToken);
         context.Properties.Set(ProviderKey, request.SanitizedProvider);
         context.Properties.Set(TargetKey, request.SanitizedTargetKey);
@@ -154,6 +159,7 @@ internal sealed class DocumentCacheWriterRetryAdapter : IDocumentCacheWriterRetr
                 );
             }
 
+            RecordRetry(request, result, attemptCount, retryStartTimestamp);
             return result;
         }
         catch (OperationCanceledException exception) when (request.CancellationToken.IsCancellationRequested)
@@ -169,21 +175,27 @@ internal sealed class DocumentCacheWriterRetryAdapter : IDocumentCacheWriterRetr
                 request.Purpose
             );
 
-            return new DocumentCacheWriterResult.CallerAbortedRetry(observedAttempts);
+            var result = new DocumentCacheWriterResult.CallerAbortedRetry(observedAttempts);
+            RecordRetry(request, result, observedAttempts, retryStartTimestamp);
+            return result;
         }
         catch (DocumentCacheWriterRetryableDeleteRaceException)
         {
             int observedAttempts = ObservedAttemptCount(attemptCount);
             LogRetryBudgetExhausted(request, observedAttempts, "DeleteRace");
 
-            return new DocumentCacheWriterResult.DeleteRaceRetryExhausted(observedAttempts);
+            var result = new DocumentCacheWriterResult.DeleteRaceRetryExhausted(observedAttempts);
+            RecordRetry(request, result, observedAttempts, retryStartTimestamp);
+            return result;
         }
         catch (DbException exception) when (_writeExceptionClassifier.IsTransientFailure(exception))
         {
             int observedAttempts = ObservedAttemptCount(attemptCount);
             LogRetryBudgetExhausted(request, observedAttempts, "ProviderTransient");
 
-            return new DocumentCacheWriterResult.RetryBudgetExhausted(observedAttempts);
+            var result = new DocumentCacheWriterResult.RetryBudgetExhausted(observedAttempts);
+            RecordRetry(request, result, observedAttempts, retryStartTimestamp);
+            return result;
         }
         finally
         {
@@ -257,6 +269,24 @@ internal sealed class DocumentCacheWriterRetryAdapter : IDocumentCacheWriterRetr
     }
 
     private static int ObservedAttemptCount(int attemptCount) => Math.Max(1, attemptCount);
+
+    private void RecordRetry(
+        DocumentCacheWriterRetryRequest request,
+        DocumentCacheWriterResult result,
+        int attemptCount,
+        long retryStartTimestamp
+    )
+    {
+        _telemetry.RecordRetry(
+            DocumentCacheWriterMetricContext.ForCacheWriter(
+                request,
+                DocumentCacheWriterTelemetry.TryGetLifecycle(result),
+                result.Outcome
+            ),
+            DocumentCacheWriterTelemetry.GetElapsedTime(retryStartTimestamp),
+            ObservedAttemptCount(attemptCount)
+        );
+    }
 
     private static string ReadContextProperty(ResilienceContext context, ResiliencePropertyKey<string> key) =>
         context.Properties.TryGetValue(key, out string? value) ? value : "unknown";

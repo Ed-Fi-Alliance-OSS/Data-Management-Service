@@ -143,7 +143,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DeadlockRetry.",
       "Review metric definitions and log templates for sanitized bounded labels only."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "canonical-write-integration",
