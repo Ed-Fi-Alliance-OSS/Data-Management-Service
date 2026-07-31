@@ -66,7 +66,7 @@ namespace EdFi.DmsConfigurationService.Backend
             )
             {
                 return ValidateOptionsResult.Fail(
-                    "DatabaseSettings:EncryptionKey must not be the known default value; provide a unique key."
+                    "DatabaseSettings:EncryptionKey must not derive the known default encryption key; provide a unique key."
                 );
             }
 
@@ -75,20 +75,6 @@ namespace EdFi.DmsConfigurationService.Backend
                 return ValidateOptionsResult.Fail(
                     "DatabaseSettings:EncryptionKey must use ASCII characters in its first 32 characters."
                 );
-            }
-
-            // Spaces and control characters carry no key material, so padding a short value out to 32
-            // characters by hand reaches the same weak key the minimum-length rule exists to prevent.
-            // Neither rule above catches it: IsNullOrWhiteSpace rejects only an entirely blank value,
-            // and both character classes are valid ASCII.
-            foreach (char character in significantPrefix)
-            {
-                if (char.IsWhiteSpace(character) || char.IsControl(character))
-                {
-                    return ValidateOptionsResult.Fail(
-                        "DatabaseSettings:EncryptionKey must not use spaces or control characters in its first 32 characters."
-                    );
-                }
             }
 
             return ValidateOptionsResult.Success;

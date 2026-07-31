@@ -56,10 +56,10 @@ cp src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsetti
 ```
 
 `appsettings.Development.json` is gitignored, so the values stay on your
-machine. `DatabaseSettings:EncryptionKey` must be at least 32 ASCII characters
-with no spaces or control characters; only the first 32 contribute to the
-AES-256 key that protects stored connection strings. The starter file uses the
-same value as the `eng/docker-compose` environment files, so a locally run
+machine. `DatabaseSettings:EncryptionKey` must be at least 32 ASCII characters;
+only the first 32 contribute to the AES-256 key that protects stored connection
+strings. The starter file uses the same value as the `eng/docker-compose`
+environment files, so a locally run
 Configuration Service and a Compose stack can read each other's encrypted
 connection strings. Replace it for any real deployment — see
 [Configuration](./CONFIGURATION.md#configurationservicesettings) for the full

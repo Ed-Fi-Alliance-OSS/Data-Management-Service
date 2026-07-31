@@ -5,11 +5,11 @@
     "DatabaseSettings": {
         // Must match the PostgreSQL instance started for local development.
         "DatabaseConnection": "host=localhost;port=5432;username=postgres;database=edfi_configurationservice;",
-        // At least 32 ASCII characters, no spaces or control characters, and not the former shipped
-        // default. Only the first 32 characters contribute to the AES-256 key. This is the same
-        // local-development value the eng/docker-compose environment files use, so connection
-        // strings encrypted here stay readable from a Compose stack and vice versa. Change it for
-        // any deployment: it is public in this repository.
+        // At least 32 ASCII characters, and not the former shipped default. Only the first 32
+        // characters contribute to the AES-256 key. This is the same local-development value the
+        // eng/docker-compose environment files use, so connection strings encrypted here stay
+        // readable from a Compose stack and vice versa. Change it for any deployment: it is
+        // public in this repository.
         "EncryptionKey": "secret!_32_chars_xxxxxxxxxxxxxxx"
     },
     "IdentitySettings": {
