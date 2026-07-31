@@ -547,6 +547,7 @@ internal sealed class RecordingStep
     private readonly IReadOnlyList<CdcGrantObservation> _grantInventory;
     private readonly IReadOnlyList<CdcExpectedMessageKeyColumns> _expectedMessageKeyColumns;
     private readonly CdcHeartbeatActionQuery? _heartbeatActionQuery;
+    private readonly IReadOnlyList<CdcProviderHistoryObservation> _providerHistoryObservations;
     private readonly IReadOnlyList<CdcProviderDiagnostic> _diagnostics;
     private readonly CdcSafeName _safeName;
 
@@ -558,6 +559,7 @@ internal sealed class RecordingStep
         IReadOnlyList<CdcGrantObservation>? grantInventory = null,
         IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
         CdcHeartbeatActionQuery? heartbeatActionQuery = null,
+        IReadOnlyList<CdcProviderHistoryObservation>? providerHistoryObservations = null,
         IReadOnlyList<CdcProviderDiagnostic>? diagnostics = null
     )
     {
@@ -567,6 +569,7 @@ internal sealed class RecordingStep
         _grantInventory = grantInventory ?? [];
         _expectedMessageKeyColumns = expectedMessageKeyColumns ?? [];
         _heartbeatActionQuery = heartbeatActionQuery;
+        _providerHistoryObservations = providerHistoryObservations ?? [];
         _diagnostics = diagnostics ?? [];
         _safeName = safeName ?? new CdcSafeName(DefaultSafeName);
     }
@@ -587,6 +590,7 @@ internal sealed class RecordingStep
         IReadOnlyList<CdcGrantObservation>? grantInventory = null,
         IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
         CdcHeartbeatActionQuery? heartbeatActionQuery = null,
+        IReadOnlyList<CdcProviderHistoryObservation>? providerHistoryObservations = null,
         IReadOnlyList<CdcProviderDiagnostic>? diagnostics = null
     ) =>
         new RecordingStep(
@@ -597,6 +601,7 @@ internal sealed class RecordingStep
             grantInventory,
             expectedMessageKeyColumns,
             heartbeatActionQuery,
+            providerHistoryObservations,
             diagnostics
         ).ToSetupStep(artifactKind, canCreateInInitialSetup);
 
@@ -627,6 +632,7 @@ internal sealed class RecordingStep
                         sourceTableInventory: _sourceTableInventory,
                         expectedMessageKeyColumns: _expectedMessageKeyColumns,
                         heartbeatActionQuery: _heartbeatActionQuery,
+                        providerHistoryObservations: _providerHistoryObservations,
                         diagnostics: _diagnostics
                     )
                 );

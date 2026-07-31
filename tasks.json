@@ -254,7 +254,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcProviderRetryContract",
       "Review contract fixtures to ensure provider-specific live database cases remain in the PostgreSQL and SQL Server DB-apply access/retry tasks."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "artifact-name-integration",

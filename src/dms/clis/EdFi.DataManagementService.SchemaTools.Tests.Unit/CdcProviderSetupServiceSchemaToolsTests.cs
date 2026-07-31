@@ -70,3 +70,37 @@ public class Given_SchemaTools_DdlCommands_For_CdcProviderSetupService
     private static EffectiveSchemaSetBuilder CreateSchemaSetBuilder() =>
         new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>());
 }
+
+[TestFixture]
+public class Given_SchemaTools_CdcProviderRetryContract
+{
+    [Test]
+    public void It_should_not_expose_retry_repair_or_offset_reset_options_on_ordinary_ddl_commands()
+    {
+        var commands = new[]
+        {
+            DdlEmitCommand.Create(
+                A.Fake<ILogger>(),
+                A.Fake<IApiSchemaFileLoader>(),
+                CreateSchemaSetBuilder()
+            ),
+            DdlProvisionCommand.Create(
+                A.Fake<ILogger>(),
+                A.Fake<IApiSchemaFileLoader>(),
+                CreateSchemaSetBuilder()
+            ),
+        };
+
+        var optionNames = commands.SelectMany(command => command.Options).Select(option => option.Name);
+
+        optionNames.Should().NotContain("cdc-setup-mode");
+        optionNames.Should().NotContain("cdc-validate-only");
+        optionNames.Should().NotContain("cdc-repair");
+        optionNames.Should().NotContain("cdc-reset-offset");
+        optionNames.Should().NotContain("drop-replication-slot");
+        optionNames.Should().NotContain("drop-capture-instance");
+    }
+
+    private static EffectiveSchemaSetBuilder CreateSchemaSetBuilder() =>
+        new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>());
+}
