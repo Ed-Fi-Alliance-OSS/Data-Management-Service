@@ -491,6 +491,58 @@ public class Given_A_Mssql_DocumentCacheWriter
     }
 
     [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_holds_cache_ahead_source_locks_until_latch_commit()
+    {
+        await SetReadCommittedSnapshotAsync(enabled: true);
+
+        try
+        {
+            await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+            SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+            await InsertCacheRowAsync(source, contentVersion: 11);
+            PausingFaultInjectionObserver observer = new(
+                DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit
+            );
+            MssqlDocumentCacheWriter pausedWriter = CreateWriter(observer);
+
+            Task<DocumentCacheWriterResult> writeTask = pausedWriter.WriteAsync(
+                CreateRequest(source, candidate: null)
+            );
+
+            await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+
+            SqlException exception = (
+                await FluentActions
+                    .Awaiting(() =>
+                        AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                            source.DocumentId,
+                            contentVersion: 11
+                        )
+                    )
+                    .Should()
+                    .ThrowAsync<SqlException>()
+            ).Which;
+
+            exception.Number.Should().Be(1222);
+            (await ReadSourceContentVersionAsync(source.DocumentId)).Should().Be(10);
+            (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+
+            observer.Release();
+
+            DocumentCacheWriterResult result = await writeTask.WaitAsync(TimeSpan.FromSeconds(30));
+
+            result.Should().BeOfType<DocumentCacheWriterResult.CacheAheadLatchSet>();
+            (await ReadCacheAheadLatchAsync()).Should().BeTrue();
+            (await ReadSourceContentVersionAsync(source.DocumentId)).Should().Be(10);
+        }
+        finally
+        {
+            await SetReadCommittedSnapshotAsync(enabled: false);
+        }
+    }
+
+    [Test]
     public async Task It_does_not_set_the_cache_ahead_latch_for_non_cache_ahead_anomalies()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
@@ -1388,7 +1440,7 @@ public class Given_A_Mssql_DocumentCacheWriter
                   AND requests.session_id <> @@SPID
                   AND requests.wait_type LIKE 'LCK_M_%'
                   AND sql_text.text LIKE '%CacheAheadRecoveryRequired%'
-                  AND sql_text.text LIKE '%READCOMMITTEDLOCK%';
+                  AND sql_text.text LIKE '%HOLDLOCK%';
                 """
             );
 

@@ -899,8 +899,8 @@ internal sealed class MssqlDocumentCacheWriter(
               AND [state].[CacheAheadRecoveryRequired] = CAST(0 AS bit)
               AND EXISTS (
                   SELECT 1
-                  FROM [dms].[Document] AS [document] WITH (READCOMMITTEDLOCK)
-                  INNER JOIN [dms].[DocumentCache] AS [cache] WITH (READCOMMITTEDLOCK)
+                  FROM [dms].[Document] AS [document] WITH (HOLDLOCK)
+                  INNER JOIN [dms].[DocumentCache] AS [cache] WITH (HOLDLOCK)
                       ON [cache].[DocumentId] = [document].[DocumentId]
                   WHERE [document].[DocumentId] = @documentId
                     AND [cache].[ContentVersion] > [document].[ContentVersion]

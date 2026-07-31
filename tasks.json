@@ -371,5 +371,76 @@
       "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
     ],
     "completed": true
+  },
+  {
+    "category": "cache-ahead",
+    "description": "High / before merge: Hold SQL Server cache-ahead incident source/cache locks through the latch transaction commit. This is a DMS-1313 correctness fix, not optional evidence. The SQL Server latch UPDATE currently rechecks C greater than S with READCOMMITTEDLOCK, which can release Document and DocumentCache shared locks at statement end and allow a concurrent canonical write to advance the source before the incident transaction commits the CacheAheadRecoveryRequired latch. PostgreSQL already uses transaction-held source/cache locks in the equivalent latch path.",
+    "acceptance-criteria": [
+      "The SQL Server cache-ahead latch mutation holds locks on the observed dms.Document and dms.DocumentCache rows through the incident transaction commit whenever it sets CacheAheadRecoveryRequired.",
+      "A concurrent canonical write cannot advance the same DocumentId from behind-cache to current or ahead after the latch statement observes C greater than S and before the latch transaction commits.",
+      "If the source/cache relationship is no longer C greater than S before the protected observation, the writer returns CacheAheadDisappeared and leaves CacheAheadRecoveryRequired false.",
+      "PostgreSQL behavior remains unchanged unless a provider-equivalence review identifies the same lock-lifetime issue there.",
+      "Focused SQL Server concurrency evidence covers a source advance attempt racing between cache-ahead latch observation and incident commit."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlDocumentCacheWriter.cs to confirm SetCacheAheadLatchAsync uses transaction-duration locks such as HOLDLOCK on the dms.Document and dms.DocumentCache rows involved in the C greater than S observation.",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter.",
+      "Review the SQL Server concurrency test to confirm the competing canonical update blocks or loses until after the incident latch transaction commits."
+    ],
+    "completed": true
+  },
+  {
+    "category": "telemetry",
+    "description": "Medium / acceptance-evidence decision: Descriptor same-document contention telemetry is a real DMS-1313 evidence gap only if this story owns the complete canonical-writer wait metric surface. Descriptor writes insert or update dms.Document and run the projection enqueue triggers through DescriptorWriteHandler, but the current canonical wait metric is only recorded around DefaultRelationalWriteExecutor resource PersistAsync. This is not a monotonic cache-write correctness blocker; either implement the narrow applied-descriptor write instrumentation here or explicitly move it to a follow-up telemetry/instrumentation item.",
+    "acceptance-criteria": [
+      "The disposition is explicit: either DMS-1313 implements descriptor same-document contention telemetry before merge, or the item is moved to a named follow-up owner and not treated as a monotonic writer correctness blocker.",
+      "Descriptor POST insert, descriptor POST-as-update, and descriptor PUT update paths record same-document canonical-writer wait metrics around the descriptor SQL that can block on cache-writer acknowledgement transactions.",
+      "No-op descriptor writes that roll back before modifying dms.Document do not emit misleading applied-write contention measurements.",
+      "Descriptor telemetry uses the existing DocumentCacheWriterTelemetry metric family with bounded provider, target key, purpose, lifecycle, outcome, participant, and phase labels.",
+      "The change does not add a second retry layer or alter descriptor handler result semantics.",
+      "Focused unit or provider evidence proves descriptor canonical writes contribute to the same sanitized same-document contention metric family as resource canonical writes."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs to confirm descriptor insert/update SQL paths are instrumented.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs to confirm resource canonical writer instrumentation remains unchanged.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterTelemetry.",
+      "Run provider descriptor-write telemetry or contention evidence for PostgreSQL and SQL Server if covered at integration level."
+    ],
+    "completed": false
+  },
+  {
+    "category": "target-resolution-follow-up",
+    "description": "Recommended deferral: Validate the dms.ResourceKey ProjectName/ResourceName uniqueness artifact in DocumentCache target inventory as a DMS-1311/target-inventory completeness follow-up, not as a DMS-1313 monotonic writer merge blocker. The exact physical contract defines UX_ResourceKey_ProjectName_ResourceName, and the inventory definition exposes that name, but DocumentCacheInventoryValidatorSupport currently validates only the ResourceKey primary key before moving on to Document foreign keys. The cache writer itself relies on ResourceKeyId plus EffectiveSchema/ResourceKey seed validation, so this is exact-inventory contract coverage rather than core upsert/delete fencing.",
+    "acceptance-criteria": [
+      "The item is tracked as target-inventory completeness rather than required DMS-1313 cache-writer correctness work unless the branch owner explicitly chooses to keep all exact-inventory cleanup in this branch.",
+      "DocumentCacheInventoryValidatorSupport requires UX_ResourceKey_ProjectName_ResourceName on dms.ResourceKey with key columns ProjectName and ResourceName in that order.",
+      "The validator rejects missing, unusable, filtered or partial, expression-key, included-column, or wrong-column variants of the ResourceKey uniqueness artifact.",
+      "The validation is provider-equivalent for PostgreSQL and SQL Server and reuses existing index or constraint metadata helpers where practical.",
+      "Target eligibility fails with sanitized inventory diagnostics when the ResourceKey uniqueness artifact is missing or malformed.",
+      "Focused tests cover missing and wrong-shape ResourceKey uniqueness validation."
+    ],
+    "steps-to-verify": [
+      "Review reference/design/backend-redesign/design-docs/data-model.md for the dms.ResourceKey UX_ResourceKey_ProjectName_ResourceName contract.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheInventoryValidatorSupport.cs and src/dms/backend/EdFi.DataManagementService.Backend.External/DocumentCacheInventoryDefinition.cs for the new validation call.",
+      "Run provider inventory validation tests that intentionally remove or alter UX_ResourceKey_ProjectName_ResourceName for PostgreSQL and SQL Server.",
+      "Run dotnet csharpier format on modified validator and test files."
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-sqlserver",
+    "description": "Low / before merge: Bind SQL Server cache-writer ResourceKey metadata parameters as NVarChar. This is a small provider-equivalence correctness cleanup, not gold-plating. The SQL Server dms.ResourceKey and dms.DocumentCache ProjectName, ResourceName, and ResourceVersion columns are nvarchar, but MssqlDocumentCacheWriter currently binds the candidate metadata predicates as VarChar, which can make valid non-ASCII metadata fail exact source/candidate comparisons.",
+    "acceptance-criteria": [
+      "MssqlDocumentCacheWriter binds @projectName, @resourceName, and @resourceVersion as SqlDbType.NVarChar with the existing lengths.",
+      "The SQL Server cache write predicates still repeat DocumentUuid, ContentVersion, ProjectName, ResourceName, ResourceVersion, and work-version checks exactly.",
+      "No PostgreSQL behavior changes.",
+      "Focused SQL Server writer evidence covers or directly asserts Unicode metadata parameter binding."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlDocumentCacheWriter.cs AddCandidateParameters for NVarChar ResourceKey metadata parameters.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriter.",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter."
+    ],
+    "completed": false
   }
 ]
