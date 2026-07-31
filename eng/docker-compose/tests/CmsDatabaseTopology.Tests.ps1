@@ -2947,6 +2947,112 @@ Describe "CMS database creation ownership (DMS-1270)" {
             })
         }
 
+        # Runs one creation-ownership cell and reports whether setup-openiddict.ps1 -InitDb was actually
+        # invoked. BEHAVIOURAL, because the structural check below cannot model the real control flow:
+        # one correct -InitDb call sits inside `if ($InfraOnly)`, and another is reached only because
+        # that branch RETURNS, which lexical ancestry cannot see.
+        #
+        # The start script runs from a staged copy, because it does Push-Location $PSScriptRoot and then
+        # calls its siblings as ./setup-openiddict.ps1 - so the only way to intercept those without
+        # running the real ones is for the script to live beside recording stubs. The stubs write to a
+        # file rather than a closure because they are invoked as separate scripts.
+        #
+        # Cells run on PostgreSQL deliberately: engine is not one of the contract's dimensions, and
+        # PostgreSQL is the one path that reaches the decision point without Wait-MssqlReady, which is
+        # defined INSIDE the start scripts and so cannot be stubbed from a module.
+        function script:Invoke-CreationOwnershipCell {
+            param(
+                [Parameter(Mandatory)] [string]$StartScript,
+                [Parameter(Mandatory)] [string]$IdentityProvider,
+                [switch]$InfraOnly,
+                [switch]$SeparateConfigDatabase
+            )
+
+            $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-ownership-" + [Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $stage -Force | Out-Null
+
+            # The compose .yml files are deliberately NOT staged: the file set is assembled without
+            # Test-Path and docker is intercepted, so their absence cannot affect the decision. It also
+            # exercises the alias reader's missing-file narrowing, which is why the connection string
+            # below uses the canonical container name.
+            foreach ($name in @(
+                $StartScript, 'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1',
+                'env-utility.psm1', 'database-safety.psm1'
+            )) {
+                Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $name) -Destination (Join-Path $stage $name)
+            }
+            foreach ($stub in @('setup-openiddict.ps1', 'setup-keycloak.ps1')) {
+                Set-Content -LiteralPath (Join-Path $stage $stub) -Value @"
+Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'sibling-invocations.log') -Value ("$stub " + (`$args -join ' '))
+"@
+            }
+
+            $envFile = Join-Path $stage '.env.ownership'
+            Set-Content -LiteralPath $envFile -NoNewline -Value (@(
+                'POSTGRES_PASSWORD=abcdefgh1!',
+                'POSTGRES_DB_NAME=edfi_datamanagementservice',
+                "DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider"
+            ) -join "`n")
+
+            $recorded = [System.Collections.Generic.List[string]]::new()
+            $hadRealDocker = $null -ne (Get-Command docker -CommandType Application -ErrorAction SilentlyContinue)
+            $locationBefore = (Get-Location).Path
+            $caught = $null
+            try {
+                # Succeed for the database and Keycloak bring-ups, fail at the next compose up - the
+                # Configuration Service under -InfraOnly, the full stack otherwise. That is a
+                # deterministic stop just past the -InitDb decision under both identity providers, and
+                # the resulting error is asserted per shape so a cell that died EARLIER cannot pass by
+                # reporting zero invocations.
+                Set-Item -Path Function:\global:docker -Value {
+                    $flattened = @($args | ForEach-Object { $_ })
+                    $recorded.Add(($flattened -join ' '))
+                    if ($flattened -contains 'up' -and -not ($flattened -contains 'db' -or $flattened -contains 'keycloak')) {
+                        $global:LASTEXITCODE = 1
+                    }
+                    else {
+                        $global:LASTEXITCODE = 0
+                    }
+                }.GetNewClosure()
+                # The start scripts sleep 20-30 seconds waiting for containers that do not exist here.
+                Set-Item -Path Function:\global:Start-Sleep -Value { }
+
+                $scriptArgs = @{
+                    EnvironmentFile  = $envFile
+                    IdentityProvider = $IdentityProvider
+                    DatabaseEngine   = 'postgresql'
+                }
+                if ($InfraOnly) { $scriptArgs['InfraOnly'] = $true }
+                if ($SeparateConfigDatabase) { $scriptArgs['SeparateConfigDatabase'] = $true }
+
+                & (Join-Path $stage $StartScript) @scriptArgs *>$null
+            }
+            catch { $caught = $_ }
+            finally {
+                Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+                Remove-Item Function:\Start-Sleep -Force -ErrorAction SilentlyContinue
+                # Both start scripts Pop-Location in their own finally, so this restores rather than
+                # pops - an extra Pop-Location here would corrupt the location for later tests.
+                Set-Location -LiteralPath $locationBefore
+            }
+
+            if ($hadRealDocker -and (Get-Command docker -CommandType Function -ErrorAction SilentlyContinue)) {
+                throw "The docker stand-in outlived the run; refusing to continue with a live docker on PATH."
+            }
+
+            $log = Join-Path $stage 'sibling-invocations.log'
+            $siblings = if (Test-Path -LiteralPath $log) { @(Get-Content -LiteralPath $log) } else { @() }
+            Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+
+            return [PSCustomObject]@{
+                InitDbCount   = @($siblings | Where-Object { $_ -like 'setup-openiddict.ps1 *-InitDb*' }).Count
+                KeycloakCount = @($siblings | Where-Object { $_ -like 'setup-keycloak.ps1 *' }).Count
+                Siblings      = $siblings
+                DockerCommand = @($recorded)
+                ErrorMessage  = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
+            }
+        }
+
         # Evaluates a guard condition with $IdentityProvider bound to the given value. The condition
         # must depend on nothing else, so the result is a deterministic function of the provider.
         function script:Test-GuardConditionForProvider {
@@ -2985,12 +3091,16 @@ Describe "CMS database creation ownership (DMS-1270)" {
             Should -Be @('keycloak', 'self-contained')
     }
 
-    It "runs setup-openiddict.ps1 -InitDb for self-contained identity and never for Keycloak: <_>" -ForEach @(
+    # A NARROW STRUCTURAL SAFEGUARD, not a reachability proof. It asserts only that every -InitDb call
+    # site sits behind some identity-provider condition that admits self-contained and excludes Keycloak.
+    # It deliberately does NOT claim the call is reached, or that it is reached in the right shapes: it
+    # discards every enclosing condition that does not mention $IdentityProvider, so nesting a call
+    # inside `if ($SeparateConfigDatabase)` leaves it silent. The behavioural matrix below is what
+    # proves ownership; this exists to catch an inverted or Keycloak-widened comparison at the call site
+    # even if the matrix were ever narrowed.
+    It "keeps every -InitDb call site behind an identity-provider condition that excludes Keycloak: <_>" -ForEach @(
         'start-local-dms.ps1', 'start-published-dms.ps1'
     ) {
-        # Ownership is asserted by EVALUATING each call site's real guard under both providers, so an
-        # inverted comparison or a guard widened to include Keycloak fails here: under Keycloak, CMS's
-        # own EnsureDatabase deploy owns creation, and a second creator would be a duplicate owner.
         $invocations = Get-InitDbInvocationGuard -ScriptPath (Join-Path $script:dockerComposeRoot $_)
 
         $invocations.Count | Should -BeGreaterThan 0 -Because "the self-contained flow must bootstrap the identity store"
@@ -2998,17 +3108,64 @@ Describe "CMS database creation ownership (DMS-1270)" {
             $invocation.Conditions.Count | Should -BeGreaterThan 0 -Because "the -InitDb call at line $($invocation.Line) must sit behind an identity-provider decision"
 
             foreach ($provider in @('self-contained', 'keycloak')) {
-                # The call runs only when EVERY enclosing identity-provider condition holds.
+                # Whether EVERY identity-provider condition enclosing this call site admits the provider.
+                # Conditions on other variables are not modelled here - see the note above.
                 $runs = @($invocation.Conditions | ForEach-Object { Test-GuardConditionForProvider -Condition $_ -IdentityProviderValue $provider })
-                $reached = @($runs | Where-Object { -not $_ }).Count -eq 0
+                $admits = @($runs | Where-Object { -not $_ }).Count -eq 0
 
                 if ($provider -eq 'self-contained') {
-                    $reached | Should -BeTrue -Because "the -InitDb call at line $($invocation.Line) creates the self-contained identity store"
+                    $admits | Should -BeTrue -Because "the -InitDb call at line $($invocation.Line) creates the self-contained identity store"
                 }
                 else {
-                    $reached | Should -BeFalse -Because "the -InitDb call at line $($invocation.Line) must not run under Keycloak, where CMS owns database creation"
+                    $admits | Should -BeFalse -Because "the -InitDb call at line $($invocation.Line) must not run under Keycloak, where CMS owns database creation"
                 }
             }
+        }
+    }
+
+    # The authoritative ownership coverage: 16 cells over both start scripts, both startup shapes, both
+    # topologies, and both identity providers, each asserting whether setup-openiddict.ps1 -InitDb is
+    # ACTUALLY invoked. Creation must happen in every self-contained cell, never in a Keycloak cell
+    # (where CMS's own EnsureDatabase deploy owns it, and a second creator would duplicate ownership),
+    # and must be independent of topology - the -SeparateConfigDatabase switch redirects WHICH database
+    # CMS uses, never WHO creates it.
+    It "invokes setup-openiddict.ps1 -InitDb exactly per the ownership contract: <Script> <Shape> <Topology> <Provider>" -ForEach @(
+        foreach ($cellScript in @('start-local-dms.ps1', 'start-published-dms.ps1')) {
+            foreach ($cellShape in @('ordinary', 'InfraOnly')) {
+                foreach ($cellTopology in @('shared', 'separate')) {
+                    foreach ($cellProvider in @('self-contained', 'keycloak')) {
+                        @{
+                            Script   = $cellScript
+                            Shape    = $cellShape
+                            Topology = $cellTopology
+                            Provider = $cellProvider
+                        }
+                    }
+                }
+            }
+        }
+    ) {
+        $cellArgs = @{ StartScript = $Script; IdentityProvider = $Provider }
+        if ($Shape -eq 'InfraOnly') { $cellArgs['InfraOnly'] = $true }
+        if ($Topology -eq 'separate') { $cellArgs['SeparateConfigDatabase'] = $true }
+
+        $cell = Invoke-CreationOwnershipCell @cellArgs
+
+        # Proof the cell actually traversed the decision point. Without this, a cell that failed earlier
+        # would report zero -InitDb invocations and a Keycloak expectation would pass for the wrong
+        # reason.
+        $expectedStop =
+            if ($Shape -eq 'InfraOnly') { "*Failed to start Configuration Service*" }
+            else { "*Docker environment*" }
+        $cell.ErrorMessage | Should -BeLike $expectedStop -Because "the cell must stop at the intercepted bring-up just past the -InitDb decision, not earlier"
+
+        if ($Provider -eq 'self-contained') {
+            $cell.InitDbCount | Should -Be 1 -Because "self-contained creation belongs to the OpenIddict bootstrap, in $Shape/$Topology"
+            $cell.KeycloakCount | Should -Be 0 -Because "no Keycloak client setup runs under self-contained identity"
+        }
+        else {
+            $cell.InitDbCount | Should -Be 0 -Because "under Keycloak, CMS owns creation through its own startup deploy, in $Shape/$Topology"
+            $cell.KeycloakCount | Should -BeGreaterThan 0 -Because "the cell must have reached the Keycloak identity branch, or its zero -InitDb count proves nothing"
         }
     }
 
