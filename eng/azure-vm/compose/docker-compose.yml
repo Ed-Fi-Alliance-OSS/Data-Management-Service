@@ -38,6 +38,9 @@ x-dms-common-env: &dms-common-env
   Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
   AppSettings__MaskRequestBodyInLogs: "true"
   AppSettings__MaximumPageSize: "500"
+  RateLimit__PermitLimit: "${DMS_RATE_LIMIT_PERMIT_LIMIT:-20000}"
+  RateLimit__QueueLimit: "${DMS_RATE_LIMIT_QUEUE_LIMIT:-0}"
+  RateLimit__Window: "${DMS_RATE_LIMIT_WINDOW:-10}"
   # Forwarded headers are honored only from the trusted sources below (DMS-1067). Trust the
   # Docker container address pools: the dms-sec network subnet is assigned dynamically, and the
   # gateway is this stack's only published ingress, so in-network spoofing is not part of the

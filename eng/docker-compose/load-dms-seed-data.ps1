@@ -1555,7 +1555,7 @@ function Invoke-BulkLoadClient {
     (FailureRatio=0.01, MinimumThroughput=2, 10s sampling window, 30s break) trips almost
     immediately under the BulkLoadClient's unbounded default concurrency, causing all
     subsequent requests to 500 (BrokenCircuit) and retry-storming the rate limiter
-    (PermitLimit=5000/10s, QueueLimit=0) into a flood of 429s. The reference values used
+    (PermitLimit=20000/10s, QueueLimit=0) into a flood of 429s. The reference values used
     by the CI bulk-load path (eng/bulkLoad/modules/BulkLoad.psm1 -c 100 -l 500 -t 50)
     prove the approach; bootstrap seed delivery uses conservative equivalents for the
     relational backend.
@@ -1573,14 +1573,19 @@ function Invoke-BulkLoadClient {
     )
 
     # Conservative tuning for the relational backend's circuit-breaker sensitivity and
-    # rate-limiter headroom (PermitLimit=5000/10s, QueueLimit=0):
+    # rate-limiter headroom (PermitLimit=20000/10s, QueueLimit=0):
     # -c  max concurrent HTTP connections
     # -l  max simultaneous API requests (same as -c but guards a different internal queue)
     # -t  task buffer capacity
     # -r  per-resource retry count (tolerate transient 500s before a circuit trip)
-    # Low concurrency prevents exhausting the 5000/10s rate-limit window on large files
-    # such as StudentTranscript.xml (~15k CourseTranscript records). Reference CI values
-    # in eng/bulkLoad/modules/BulkLoad.psm1 use -c 100 -l 500 for non-rate-limited paths.
+    # This conservative tuning predates the 20000/10s default: it was sized so that
+    # large files such as StudentTranscript.xml (~15k CourseTranscript records) could
+    # not exhaust the old 5000/10s window. Reference CI values in
+    # eng/bulkLoad/modules/BulkLoad.psm1 use -c 100 -l 500 against the same default
+    # rate limit over the same corpus; the higher concurrency makes that path burstier
+    # per window, and both profiles' measured peak 10-second demand fits under the
+    # shipped default. The low tuning here is retained for the relational backend's
+    # circuit-breaker sensitivity, which the CI path tolerates differently.
     $connectionLimit  = 10
     $maxRequests      = 10
     $taskCapacity     = 5

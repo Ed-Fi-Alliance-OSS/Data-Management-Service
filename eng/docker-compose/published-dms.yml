@@ -33,6 +33,9 @@ services:
       CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-10}
       CircuitBreaker__MinimumThroughput: ${MINIMUM_THROUGHPUT:-2}
       CircuitBreaker__BreakDurationSeconds: ${BREAK_DURATION_SECONDS:-30}
+      RateLimit__PermitLimit: ${DMS_RATE_LIMIT_PERMIT_LIMIT:-20000}
+      RateLimit__QueueLimit: ${DMS_RATE_LIMIT_QUEUE_LIMIT:-0}
+      RateLimit__Window: ${DMS_RATE_LIMIT_WINDOW:-10}
       ConfigurationServiceSettings__BaseUrl: ${CONFIG_SERVICE_URL:-http://ed-fi-api-config:8081}
       ConfigurationServiceSettings__ClientId: ${CONFIG_SERVICE_CLIENT_ID:-CMSReadOnlyAccess}
       ConfigurationServiceSettings__Scope: ${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}
