@@ -1090,13 +1090,13 @@ internal sealed class MssqlDocumentCacheWriter(
             new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = candidate.ContentVersion }
         );
         command.Parameters.Add(
-            new SqlParameter("@projectName", SqlDbType.VarChar, 256) { Value = candidate.ProjectName }
+            new SqlParameter("@projectName", SqlDbType.NVarChar, 256) { Value = candidate.ProjectName }
         );
         command.Parameters.Add(
-            new SqlParameter("@resourceName", SqlDbType.VarChar, 256) { Value = candidate.ResourceName }
+            new SqlParameter("@resourceName", SqlDbType.NVarChar, 256) { Value = candidate.ResourceName }
         );
         command.Parameters.Add(
-            new SqlParameter("@resourceVersion", SqlDbType.VarChar, 32) { Value = candidate.ResourceVersion }
+            new SqlParameter("@resourceVersion", SqlDbType.NVarChar, 32) { Value = candidate.ResourceVersion }
         );
         command.Parameters.Add(
             new SqlParameter("@streamEtag", SqlDbType.VarChar, 128) { Value = candidate.StreamEtag }
