@@ -143,3 +143,36 @@ public class Given_SchemaTools_CdcArtifactNames
     private static EffectiveSchemaSetBuilder CreateSchemaSetBuilder() =>
         new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>());
 }
+
+[TestFixture]
+public class Given_SchemaTools_CdcProviderArtifactOutput
+{
+    [Test]
+    public void It_should_not_expose_cdc_provider_artifact_output_options_on_ordinary_ddl_commands()
+    {
+        var commands = new[]
+        {
+            DdlEmitCommand.Create(
+                A.Fake<ILogger>(),
+                A.Fake<IApiSchemaFileLoader>(),
+                CreateSchemaSetBuilder()
+            ),
+            DdlProvisionCommand.Create(
+                A.Fake<ILogger>(),
+                A.Fake<IApiSchemaFileLoader>(),
+                CreateSchemaSetBuilder()
+            ),
+        };
+
+        var optionNames = commands.SelectMany(command => command.Options).Select(option => option.Name);
+
+        optionNames.Should().NotContain("cdc-provider-artifact-output");
+        optionNames.Should().NotContain("cdc-provider-output");
+        optionNames.Should().NotContain("cdc-provider-manifest");
+        optionNames.Should().NotContain("cdc-provider-artifact-directory");
+        optionNames.Should().NotContain("cdc-manifest-output");
+    }
+
+    private static EffectiveSchemaSetBuilder CreateSchemaSetBuilder() =>
+        new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>());
+}

@@ -320,12 +320,38 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             Diagnostics: _diagnostics
         );
 
-        return request.ArtifactOutput.IncludeManifestPayload
-            ? result with
-            {
-                ManifestPayload = CdcProviderManifestEmitter.CreatePayload(result),
-            }
-            : result;
+        if (!request.ArtifactOutput.ShouldCreateManifestPayload)
+        {
+            return result;
+        }
+
+        var manifestPayload = CdcProviderManifestEmitter.CreatePayload(result);
+        result = result with { ManifestPayload = manifestPayload };
+
+        if (request.ArtifactOutput.ManifestOutputDirectoryPath is null)
+        {
+            return result;
+        }
+
+        var outputFailure = CdcProviderArtifactOutputWriter.WriteManifestPayload(
+            request.ArtifactOutput.ManifestOutputDirectoryPath,
+            manifestPayload
+        );
+        if (outputFailure is null)
+        {
+            return result;
+        }
+
+        var failedResult = result with
+        {
+            Outcome = CdcProviderSetupOutcome.Failed,
+            Diagnostics = [.. result.Diagnostics, outputFailure],
+        };
+
+        return failedResult with
+        {
+            ManifestPayload = CdcProviderManifestEmitter.CreatePayload(failedResult),
+        };
     }
 
     private CdcProviderSetupOutcome DetermineOutcome()

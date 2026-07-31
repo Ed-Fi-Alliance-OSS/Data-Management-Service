@@ -119,7 +119,33 @@ internal sealed record CdcConnectorPrincipalProbeResult(
         : this([], []) { }
 }
 
-internal sealed record CdcProviderArtifactOutputRequest(bool IncludeManifestPayload);
+internal sealed record CdcProviderArtifactOutputRequest
+{
+    public CdcProviderArtifactOutputRequest(
+        bool IncludeManifestPayload,
+        string? ManifestOutputDirectoryPath = null
+    )
+    {
+        if (ManifestOutputDirectoryPath is not null && string.IsNullOrWhiteSpace(ManifestOutputDirectoryPath))
+        {
+            throw new ArgumentException(
+                "CDC provider manifest output directory must not be empty when supplied.",
+                nameof(ManifestOutputDirectoryPath)
+            );
+        }
+
+        this.IncludeManifestPayload = IncludeManifestPayload || ManifestOutputDirectoryPath is not null;
+        this.ManifestOutputDirectoryPath = ManifestOutputDirectoryPath;
+    }
+
+    public bool IncludeManifestPayload { get; }
+
+    [JsonIgnore]
+    public string? ManifestOutputDirectoryPath { get; }
+
+    internal bool ShouldCreateManifestPayload =>
+        IncludeManifestPayload || ManifestOutputDirectoryPath is not null;
+}
 
 internal sealed record CdcPostgresqlProviderArtifactNames(
     CdcSafeName PublicationName,

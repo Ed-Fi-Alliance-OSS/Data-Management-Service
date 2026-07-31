@@ -288,7 +288,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcProviderArtifactOutput",
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcProviderArtifactOutput"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql-db-apply-artifacts-tests",
