@@ -24,13 +24,11 @@ internal sealed class MssqlDocumentCacheWriter(
     string? sessionInitializationCommandText = null
 ) : IDocumentCacheWriter
 {
-    private const int ForeignKeyConstraintViolationNumber = 547;
     private const int InvalidObjectNameNumber = 208;
-    private const int ThrowStatementNumber = 50000;
 
     private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
         DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Mssql);
-    private static readonly MssqlRelationalWriteExceptionClassifier LifecycleReadExceptionClassifier = new();
+    private static readonly MssqlRelationalWriteExceptionClassifier WriteExceptionClassifier = new();
 
     private readonly IDocumentCacheWriterRetryAdapter _retryAdapter =
         retryAdapter ?? throw new ArgumentNullException(nameof(retryAdapter));
@@ -215,7 +213,8 @@ internal sealed class MssqlDocumentCacheWriter(
             transactionCompleted = true;
             return result;
         }
-        catch (SqlException exception) when (IsRetryableDeleteRace(exception))
+        catch (SqlException exception)
+            when (MssqlDocumentCacheWriterDeleteRaceClassifier.IsRetryableDeleteRace(exception))
         {
             await RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
@@ -576,7 +575,7 @@ internal sealed class MssqlDocumentCacheWriter(
                 "DocumentCache lifecycle state table is missing."
             );
         }
-        catch (DbException exception) when (!LifecycleReadExceptionClassifier.IsTransientFailure(exception))
+        catch (DbException exception) when (!WriteExceptionClassifier.IsTransientFailure(exception))
         {
             return DocumentCacheLifecycleReadResult.Failure(
                 DocumentCacheLifecycleReadStatus.Unreadable,
@@ -1150,16 +1149,6 @@ internal sealed class MssqlDocumentCacheWriter(
             _ = exception;
         }
     }
-
-    private static bool IsRetryableDeleteRace(SqlException exception) =>
-        exception.Number == ForeignKeyConstraintViolationNumber
-        || (
-            exception.Number == ThrowStatementNumber
-            && exception.Message.StartsWith(
-                "dms.DocumentCache.DocumentUuid diverges from the owning dms.Document row",
-                StringComparison.Ordinal
-            )
-        );
 
     private static string RequireTargetConnectionString(DocumentCacheWriterRequest request)
     {
