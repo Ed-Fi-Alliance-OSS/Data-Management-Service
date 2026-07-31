@@ -23,7 +23,10 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// The keyset batch emits result sets in a deterministic sequence:
 /// <list type="number">
 /// <item>Optional <c>TotalCount</c> (single row, single column)</item>
-/// <item><c>dms.Document</c> metadata joined to the page keyset</item>
+/// <item>
+/// Document metadata joined to the page keyset, read from the source selected by
+/// <see cref="HydrationExecutionOptions.DocumentMetadataSource"/>
+/// </item>
 /// <item>Root table rows (from <c>TablePlansInDependencyOrder[0]</c>)</item>
 /// <item>Child table rows (from <c>TablePlansInDependencyOrder[1..n]</c>)</item>
 /// <item>Descriptor URI rows (from <c>DescriptorProjectionPlansInOrder[0..n]</c>)</item>
@@ -38,15 +41,26 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </remarks>
 public static class HydrationBatchBuilder
 {
+    /// <summary>
+    /// The authoritative document metadata table, used unless a caller opts into
+    /// <see cref="DocumentMetadataSource.RootTable"/>.
+    /// </summary>
+    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
+
     private static readonly ConditionalWeakTable<
         ResourceReadPlan,
         ConcurrentDictionary<SingleDocumentBatchCacheKey, Lazy<string>>
     > _singleDocumentBatchCache = new();
 
+    /// <remarks>
+    /// Every execution option that changes the emitted batch text must appear here — the memoized
+    /// batch is keyed by this value, so an omitted option would serve another caller's SQL.
+    /// </remarks>
     private readonly record struct SingleDocumentBatchCacheKey(
         SqlDialect Dialect,
         bool IncludeDescriptorProjection,
-        bool IncludeDocumentReferenceLookup
+        bool IncludeDocumentReferenceLookup,
+        DocumentMetadataSource DocumentMetadataSource
     )
     {
         public static SingleDocumentBatchCacheKey From(
@@ -56,7 +70,8 @@ public static class HydrationBatchBuilder
             new(
                 planDialect.Dialect,
                 executionOptions.IncludeDescriptorProjection,
-                executionOptions.IncludeDocumentReferenceLookup
+                executionOptions.IncludeDocumentReferenceLookup,
+                executionOptions.DocumentMetadataSource
             );
     }
 
@@ -173,7 +188,11 @@ public static class HydrationBatchBuilder
         }
 
         // 4. Document metadata select
-        planDialect.AppendDocumentMetadataSelect(writer, plan.KeysetTable);
+        planDialect.AppendDocumentMetadataSelect(
+            writer,
+            plan.KeysetTable,
+            ResolveMetadataTable(plan, executionOptions.DocumentMetadataSource)
+        );
         writer.AppendLine();
 
         // 5. Table hydration selects in dependency order
@@ -217,7 +236,8 @@ public static class HydrationBatchBuilder
         // 1. Document metadata select
         planDialect.AppendSingleDocumentMetadataSelect(
             writer,
-            HydrationSqlConventions.SingleDocumentIdParameterName
+            HydrationSqlConventions.SingleDocumentIdParameterName,
+            ResolveMetadataTable(plan, cacheKey.DocumentMetadataSource)
         );
         writer.AppendLine();
 
@@ -286,6 +306,26 @@ public static class HydrationBatchBuilder
 
         return writer.ToString();
     }
+
+    /// <summary>
+    /// Resolves the table the document metadata result set reads from. The read path sources the
+    /// root table's trigger-maintained mirror columns; the write path keeps reading the
+    /// <c>dms.Document</c> row it locked.
+    /// </summary>
+    private static DbTableName ResolveMetadataTable(
+        ResourceReadPlan plan,
+        DocumentMetadataSource documentMetadataSource
+    ) =>
+        documentMetadataSource switch
+        {
+            DocumentMetadataSource.DocumentTable => _documentTable,
+            DocumentMetadataSource.RootTable => plan.Model.Root.Table,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(documentMetadataSource),
+                documentMetadataSource,
+                "Unexpected DocumentMetadataSource variant."
+            ),
+        };
 
     private static string RequireSingleDocumentSql(
         IPlanSqlDialect planDialect,

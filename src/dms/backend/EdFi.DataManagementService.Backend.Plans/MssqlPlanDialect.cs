@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 internal sealed class MssqlPlanDialect : IPlanSqlDialect
 {
-    private static readonly DbTableName DocumentTable = new(new DbSchemaName("dms"), "Document");
     private const string BinaryStringEqualityCollation = "Latin1_General_100_BIN2";
 
     /// <inheritdoc />
@@ -68,16 +67,24 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
-    public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendDocumentMetadataSelect(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        DbTableName metadataTable
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
+        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, metadataTable);
     }
 
     /// <inheritdoc />
-    public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
+    public void AppendSingleDocumentMetadataSelect(
+        SqlWriter writer,
+        string documentIdParameterName,
+        DbTableName metadataTable
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(documentIdParameterName);

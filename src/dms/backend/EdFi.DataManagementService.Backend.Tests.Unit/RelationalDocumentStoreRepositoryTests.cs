@@ -260,6 +260,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedExecutionOptions!
             .UseSingleDocumentFastPath.Should()
             .BeTrue("GET-by-id hydrates a single known document and should bypass temp-table hydration");
+        capturedExecutionOptions
+            .DocumentMetadataSource.Should()
+            .Be(
+                DocumentMetadataSource.RootTable,
+                "GET reads document metadata from the resource root table's mirror columns"
+            );
         A.CallTo(() =>
                 _descriptorReadHandler.HandleGetByIdAsync(
                     A<DescriptorGetByIdRequest>._,
@@ -2521,6 +2527,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             []
         );
         PageKeysetSpec.Query capturedKeyset = null!;
+        HydrationExecutionOptions? capturedExecutionOptions = null;
         RelationalReadPageMaterializationRequest capturedReadRequest = null!;
 
         A.CallTo(() =>
@@ -2538,6 +2545,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     ?? throw new AssertionException(
                         "Relational query execution should hydrate through PageKeysetSpec.Query."
                     );
+                capturedExecutionOptions = call.GetArgument<HydrationExecutionOptions>(2);
             })
             .Returns(hydratedPage);
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
@@ -2570,6 +2578,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedKeyset.ParameterValues["offset"].Should().Be(0L);
         capturedKeyset.ParameterValues["limit"].Should().Be(25L);
         capturedKeyset.Plan.TotalCountSql.Should().NotBeNull();
+        capturedExecutionOptions.Should().NotBeNull();
+        capturedExecutionOptions!
+            .DocumentMetadataSource.Should()
+            .Be(
+                DocumentMetadataSource.RootTable,
+                "GET-by-query reads document metadata from the resource root table's mirror columns"
+            );
         capturedReadRequest.ReadPlan.Should().BeSameAs(readPlan);
         capturedReadRequest.HydratedPage.Should().BeSameAs(hydratedPage);
         capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);

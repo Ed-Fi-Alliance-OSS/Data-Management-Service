@@ -15,6 +15,9 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_PgsqlPlanDialect
 {
+    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
+    private static readonly DbTableName _rootTable = new(new DbSchemaName("edfi"), "Student");
+
     private PgsqlPlanDialect _dialect = null!;
     private SqlWriter _writer = null!;
     private KeysetTableContract _keyset = null!;
@@ -55,7 +58,7 @@ public class Given_PgsqlPlanDialect
     [Test]
     public void It_should_emit_canonical_document_metadata_select()
     {
-        _dialect.AppendDocumentMetadataSelect(_writer, _keyset);
+        _dialect.AppendDocumentMetadataSelect(_writer, _keyset, _documentTable);
 
         _writer
             .ToString()
@@ -82,7 +85,8 @@ public class Given_PgsqlPlanDialect
     {
         _dialect.AppendSingleDocumentMetadataSelect(
             _writer,
-            HydrationSqlConventions.SingleDocumentIdParameterName
+            HydrationSqlConventions.SingleDocumentIdParameterName,
+            _documentTable
         );
 
         _writer
@@ -98,6 +102,60 @@ public class Given_PgsqlPlanDialect
                     d."ContentLastModifiedAt",
                     d."IdentityLastModifiedAt"
                 FROM "dms"."Document" d
+                WHERE d."DocumentId" = @DocumentId
+                ORDER BY d."DocumentId";
+
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_emit_document_metadata_select_from_a_root_table()
+    {
+        _dialect.AppendDocumentMetadataSelect(_writer, _keyset, _rootTable);
+
+        _writer
+            .ToString()
+            .Should()
+            .Be(
+                """
+                SELECT
+                    d."DocumentId",
+                    d."DocumentUuid",
+                    d."ContentVersion",
+                    d."IdentityVersion",
+                    d."ContentLastModifiedAt",
+                    d."IdentityLastModifiedAt"
+                FROM "edfi"."Student" d
+                INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
+                ORDER BY d."DocumentId";
+
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_emit_single_document_metadata_select_from_a_root_table()
+    {
+        _dialect.AppendSingleDocumentMetadataSelect(
+            _writer,
+            HydrationSqlConventions.SingleDocumentIdParameterName,
+            _rootTable
+        );
+
+        _writer
+            .ToString()
+            .Should()
+            .Be(
+                """
+                SELECT
+                    d."DocumentId",
+                    d."DocumentUuid",
+                    d."ContentVersion",
+                    d."IdentityVersion",
+                    d."ContentLastModifiedAt",
+                    d."IdentityLastModifiedAt"
+                FROM "edfi"."Student" d
                 WHERE d."DocumentId" = @DocumentId
                 ORDER BY d."DocumentId";
 

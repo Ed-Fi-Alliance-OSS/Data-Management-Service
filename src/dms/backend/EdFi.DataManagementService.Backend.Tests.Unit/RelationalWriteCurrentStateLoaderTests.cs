@@ -184,6 +184,12 @@ public class Given_Relational_Write_Current_State_Loader
         recordingHydrator.CapturedExecutionOptions!.IncludeDescriptorProjection.Should().BeFalse();
         recordingHydrator.CapturedExecutionOptions.IncludeDocumentReferenceLookup.Should().BeFalse();
         recordingHydrator.CapturedExecutionOptions.UseSingleDocumentFastPath.Should().BeTrue();
+        recordingHydrator
+            .CapturedExecutionOptions.DocumentMetadataSource.Should()
+            .Be(
+                DocumentMetadataSource.DocumentTable,
+                "the current-state loader must read the dms.Document row it locked"
+            );
     }
 
     [Test]
@@ -219,6 +225,12 @@ public class Given_Relational_Write_Current_State_Loader
         recordingHydrator.CapturedExecutionOptions!.IncludeDescriptorProjection.Should().BeTrue();
         recordingHydrator.CapturedExecutionOptions.IncludeDocumentReferenceLookup.Should().BeFalse();
         recordingHydrator.CapturedExecutionOptions.UseSingleDocumentFastPath.Should().BeTrue();
+        recordingHydrator
+            .CapturedExecutionOptions.DocumentMetadataSource.Should()
+            .Be(
+                DocumentMetadataSource.DocumentTable,
+                "the current-state loader must read the dms.Document row it locked"
+            );
     }
 
     private static RelationalWriteCurrentStateLoadRequest CreateLoadRequest(

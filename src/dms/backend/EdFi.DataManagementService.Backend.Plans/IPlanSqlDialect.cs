@@ -46,20 +46,36 @@ internal interface IPlanSqlDialect
     void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset);
 
     /// <summary>
-    /// Appends a <c>SELECT</c> statement that joins <c>dms.Document</c> metadata to the
-    /// materialized keyset table, returning document metadata columns for the page,
-    /// ordered deterministically by <c>DocumentId</c>.
+    /// Appends a <c>SELECT</c> statement that joins document metadata to the materialized keyset
+    /// table, returning document metadata columns for the page, ordered deterministically by
+    /// <c>DocumentId</c>.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset);
+    /// <param name="metadataTable">
+    /// The table the metadata columns are read from — <c>dms.Document</c> or a resource root table
+    /// carrying the mirror columns.
+    /// </param>
+    void AppendDocumentMetadataSelect(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        DbTableName metadataTable
+    );
 
     /// <summary>
     /// Appends a <c>SELECT</c> statement that returns metadata for a single document id parameter.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="documentIdParameterName">The bare document id parameter name.</param>
-    void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName);
+    /// <param name="metadataTable">
+    /// The table the metadata columns are read from — <c>dms.Document</c> or a resource root table
+    /// carrying the mirror columns.
+    /// </param>
+    void AppendSingleDocumentMetadataSelect(
+        SqlWriter writer,
+        string documentIdParameterName,
+        DbTableName metadataTable
+    );
 
     /// <summary>
     /// Appends a predicate comparison against the supplied table alias and column.

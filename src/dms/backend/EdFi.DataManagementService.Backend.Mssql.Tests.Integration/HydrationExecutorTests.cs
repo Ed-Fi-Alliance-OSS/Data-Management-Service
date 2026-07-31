@@ -21,6 +21,7 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
     private string _databaseName = null!;
     private string _connectionString = null!;
     private HydratedPage _result = null!;
+    private HydratedPage _rootSourcedResult = null!;
 
     private const string TestSchema = "hydtest";
 
@@ -57,9 +58,15 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
                 CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
+            -- Root tables carry trigger-maintained mirrors of the dms.Document metadata columns.
             CREATE TABLE hydtest.School (
                 DocumentId bigint PRIMARY KEY,
-                SchoolId int NOT NULL
+                SchoolId int NOT NULL,
+                DocumentUuid uniqueidentifier NULL,
+                ContentVersion bigint NULL,
+                IdentityVersion bigint NULL,
+                ContentLastModifiedAt datetimeoffset NULL,
+                IdentityLastModifiedAt datetimeoffset NULL
             );
 
             CREATE TABLE hydtest.SchoolAddress (
@@ -105,6 +112,16 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
                 (5002, 101, 1001, 1, '2021-06-15'),
                 (5003, 101, 1002, 0, '2022-09-01'),
                 (5004, 102, 1003, 0, '2023-03-01');
+
+            -- Stand in for the generated dual-write trigger: the root row mirrors dms.Document.
+            UPDATE s
+            SET s.DocumentUuid = d.DocumentUuid,
+                s.ContentVersion = d.ContentVersion,
+                s.IdentityVersion = d.IdentityVersion,
+                s.ContentLastModifiedAt = d.ContentLastModifiedAt,
+                s.IdentityLastModifiedAt = d.IdentityLastModifiedAt
+            FROM hydtest.School s
+            INNER JOIN dms.Document d ON d.DocumentId = s.DocumentId;
             """
         );
 
@@ -138,6 +155,18 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
             plan,
             keyset,
             SqlDialect.Mssql,
+            CancellationToken.None
+        );
+
+        await using var rootSourcedConnection = new SqlConnection(_connectionString);
+        await rootSourcedConnection.OpenAsync();
+
+        _rootSourcedResult = await HydrationExecutor.ExecuteAsync(
+            rootSourcedConnection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
             CancellationToken.None
         );
     }
@@ -272,6 +301,45 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
         _result.TotalCount.Should().BeNull();
     }
 
+    [Test]
+    public void It_returns_the_same_document_metadata_from_the_root_table_mirrors()
+    {
+        _rootSourcedResult.DocumentMetadata.Should().Equal(_result.DocumentMetadata);
+    }
+
+    [Test]
+    public void It_returns_root_sourced_metadata_values_matching_the_document_rows()
+    {
+        _rootSourcedResult.DocumentMetadata.Should().HaveCount(2);
+        _rootSourcedResult.DocumentMetadata[0].DocumentId.Should().Be(101);
+        _rootSourcedResult
+            .DocumentMetadata[0]
+            .DocumentUuid.Should()
+            .Be(Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"));
+        _rootSourcedResult.DocumentMetadata[0].ContentVersion.Should().Be(10);
+        _rootSourcedResult.DocumentMetadata[0].IdentityVersion.Should().Be(10);
+        _rootSourcedResult.DocumentMetadata[1].DocumentId.Should().Be(102);
+        _rootSourcedResult
+            .DocumentMetadata[1]
+            .DocumentUuid.Should()
+            .Be(Guid.Parse("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"));
+        _rootSourcedResult.DocumentMetadata[1].ContentVersion.Should().Be(20);
+    }
+
+    [Test]
+    public void It_reads_root_sourced_metadata_without_touching_the_document_table()
+    {
+        var batchSql = HydrationBatchBuilder.Build(
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Mssql),
+            new PageKeysetSpec.Single(101L),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+        );
+
+        batchSql.Should().Contain("FROM [hydtest].[School] d");
+        batchSql.Should().NotContain("[dms].[Document]");
+    }
+
     private static async Task ExecuteSql(SqlConnection connection, string sql)
     {
         await using var cmd = new SqlCommand(sql, connection);
@@ -286,6 +354,7 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
     private string _databaseName = null!;
     private string _connectionString = null!;
     private HydratedPage _result = null!;
+    private HydratedPage _rootSourcedResult = null!;
 
     private const string TestSchema = "hydsingle";
 
@@ -321,9 +390,15 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
                 CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
+            -- Root tables carry trigger-maintained mirrors of the dms.Document metadata columns.
             CREATE TABLE hydsingle.School (
                 DocumentId bigint PRIMARY KEY,
-                SchoolId int NOT NULL
+                SchoolId int NOT NULL,
+                DocumentUuid uniqueidentifier NULL,
+                ContentVersion bigint NULL,
+                IdentityVersion bigint NULL,
+                ContentLastModifiedAt datetimeoffset NULL,
+                IdentityLastModifiedAt datetimeoffset NULL
             );
 
             CREATE TABLE hydsingle.SchoolAddress (
@@ -359,6 +434,16 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
 
             INSERT INTO hydsingle.SchoolAddressPeriod (CollectionItemId, School_DocumentId, ParentCollectionItemId, Ordinal, BeginDate)
             VALUES (6001, 201, 2001, 0, '2020-01-01'), (6002, 202, 2002, 0, '2023-03-01');
+
+            -- Stand in for the generated dual-write trigger: the root row mirrors dms.Document.
+            UPDATE s
+            SET s.DocumentUuid = d.DocumentUuid,
+                s.ContentVersion = d.ContentVersion,
+                s.IdentityVersion = d.IdentityVersion,
+                s.ContentLastModifiedAt = d.ContentLastModifiedAt,
+                s.IdentityLastModifiedAt = d.IdentityLastModifiedAt
+            FROM hydsingle.School s
+            INNER JOIN dms.Document d ON d.DocumentId = s.DocumentId;
             """
         );
 
@@ -374,6 +459,18 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
             plan,
             keyset,
             SqlDialect.Mssql,
+            CancellationToken.None
+        );
+
+        await using var rootSourcedConnection = new SqlConnection(_connectionString);
+        await rootSourcedConnection.OpenAsync();
+
+        _rootSourcedResult = await HydrationExecutor.ExecuteAsync(
+            rootSourcedConnection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
             CancellationToken.None
         );
     }
@@ -423,6 +520,32 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
         ((long)nestedRows.Rows[0][1]!).Should().Be(201);
         ((long)nestedRows.Rows[0][2]!).Should().Be(2001);
         ((string)nestedRows.Rows[0][4]!).Should().Be("2020-01-01");
+    }
+
+    [Test]
+    public void It_returns_the_same_single_document_metadata_from_the_root_table_mirrors()
+    {
+        _rootSourcedResult.DocumentMetadata.Should().Equal(_result.DocumentMetadata);
+        _rootSourcedResult.DocumentMetadata.Should().ContainSingle();
+        _rootSourcedResult.DocumentMetadata[0].DocumentId.Should().Be(201);
+        _rootSourcedResult
+            .DocumentMetadata[0]
+            .DocumentUuid.Should()
+            .Be(Guid.Parse("cccccccc-3333-3333-3333-cccccccccccc"));
+    }
+
+    [Test]
+    public void It_reads_root_sourced_metadata_without_touching_the_document_table()
+    {
+        var batchSql = HydrationBatchBuilder.Build(
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Mssql),
+            new PageKeysetSpec.Single(201L),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+        );
+
+        batchSql.Should().Contain("FROM [hydsingle].[School] d");
+        batchSql.Should().NotContain("[dms].[Document]");
     }
 
     private static async Task ExecuteSql(SqlConnection connection, string sql)

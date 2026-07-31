@@ -567,6 +567,179 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
 }
 
 [TestFixture]
+public class Given_HydrationBatchBuilder_With_Root_Table_Document_Metadata_Source
+{
+    private const string PgsqlRootSourcedKeysetMetadataSelect = """
+        SELECT
+            d."DocumentId",
+            d."DocumentUuid",
+            d."ContentVersion",
+            d."IdentityVersion",
+            d."ContentLastModifiedAt",
+            d."IdentityLastModifiedAt"
+        FROM "edfi"."School" d
+        INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
+        ORDER BY d."DocumentId";
+        """;
+
+    private const string PgsqlDocumentSourcedKeysetMetadataSelect = """
+        SELECT
+            d."DocumentId",
+            d."DocumentUuid",
+            d."ContentVersion",
+            d."IdentityVersion",
+            d."ContentLastModifiedAt",
+            d."IdentityLastModifiedAt"
+        FROM "dms"."Document" d
+        INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
+        ORDER BY d."DocumentId";
+        """;
+
+    private const string MssqlRootSourcedKeysetMetadataSelect = """
+        SELECT
+            d.[DocumentId],
+            d.[DocumentUuid],
+            d.[ContentVersion],
+            d.[IdentityVersion],
+            d.[ContentLastModifiedAt],
+            d.[IdentityLastModifiedAt]
+        FROM [edfi].[School] d
+        INNER JOIN [#page] k ON d.[DocumentId] = k.[DocumentId]
+        ORDER BY d.[DocumentId];
+        """;
+
+    private const string PgsqlRootSourcedSingleDocumentMetadataSelect = """
+        SELECT
+            d."DocumentId",
+            d."DocumentUuid",
+            d."ContentVersion",
+            d."IdentityVersion",
+            d."ContentLastModifiedAt",
+            d."IdentityLastModifiedAt"
+        FROM "edfi"."School" d
+        WHERE d."DocumentId" = @DocumentId
+        ORDER BY d."DocumentId";
+        """;
+
+    private const string PgsqlDocumentSourcedSingleDocumentMetadataSelect = """
+        SELECT
+            d."DocumentId",
+            d."DocumentUuid",
+            d."ContentVersion",
+            d."IdentityVersion",
+            d."ContentLastModifiedAt",
+            d."IdentityLastModifiedAt"
+        FROM "dms"."Document" d
+        WHERE d."DocumentId" = @DocumentId
+        ORDER BY d."DocumentId";
+        """;
+
+    [Test]
+    public void It_should_emit_the_pgsql_keyset_metadata_select_from_the_root_table()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+        );
+
+        batch.Should().Contain(PgsqlRootSourcedKeysetMetadataSelect);
+        batch.Should().NotContain("\"dms\".\"Document\"");
+    }
+
+    [Test]
+    public void It_should_emit_the_mssql_keyset_metadata_select_from_the_root_table()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Mssql),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+        );
+
+        batch.Should().Contain(MssqlRootSourcedKeysetMetadataSelect);
+        batch.Should().NotContain("[dms].[Document]");
+    }
+
+    [Test]
+    public void It_should_emit_the_pgsql_single_document_metadata_select_from_the_root_table()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, includeSingleDocumentSql: true),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+            {
+                DocumentMetadataSource = DocumentMetadataSource.RootTable,
+            }
+        );
+
+        batch.Should().StartWith(PgsqlRootSourcedSingleDocumentMetadataSelect);
+        batch.Should().NotContain("\"dms\".\"Document\"");
+    }
+
+    [Test]
+    public void It_should_keep_emitting_the_document_table_metadata_select_for_the_default_source()
+    {
+        var keysetBatch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions()
+        );
+        var fastPathBatch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, includeSingleDocumentSql: true),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+        );
+
+        keysetBatch.Should().Contain(PgsqlDocumentSourcedKeysetMetadataSelect);
+        keysetBatch.Should().NotContain("\"edfi\".\"School\" d");
+        fastPathBatch.Should().StartWith(PgsqlDocumentSourcedSingleDocumentMetadataSelect);
+        fastPathBatch.Should().NotContain("\"edfi\".\"School\" d");
+    }
+
+    [Test]
+    public void It_should_cache_distinct_single_document_batches_per_document_metadata_source()
+    {
+        var readPlan = BuildTestReadPlan(SqlDialect.Pgsql, includeSingleDocumentSql: true);
+        var keyset = new PageKeysetSpec.Single(42L);
+
+        var documentSourcedBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+        );
+        var rootSourcedBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+            {
+                DocumentMetadataSource = DocumentMetadataSource.RootTable,
+            }
+        );
+        var repeatedRootSourcedBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+            {
+                DocumentMetadataSource = DocumentMetadataSource.RootTable,
+            }
+        );
+
+        documentSourcedBatch.Should().NotBe(rootSourcedBatch);
+        documentSourcedBatch.Should().StartWith(PgsqlDocumentSourcedSingleDocumentMetadataSelect);
+        rootSourcedBatch.Should().StartWith(PgsqlRootSourcedSingleDocumentMetadataSelect);
+        ReferenceEquals(rootSourcedBatch, repeatedRootSourcedBatch).Should().BeTrue();
+    }
+}
+
+[TestFixture]
 public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path_Missing_Sql
 {
     [Test]

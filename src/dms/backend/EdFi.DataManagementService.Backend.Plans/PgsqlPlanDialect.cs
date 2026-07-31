@@ -14,8 +14,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 internal sealed class PgsqlPlanDialect : IPlanSqlDialect
 {
-    private static readonly DbTableName DocumentTable = new(new DbSchemaName("dms"), "Document");
-
     /// <inheritdoc />
     public SqlDialect Dialect => SqlDialect.Pgsql;
 
@@ -61,23 +59,31 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
-    public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendDocumentMetadataSelect(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        DbTableName metadataTable
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
+        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, metadataTable);
     }
 
     /// <inheritdoc />
-    public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
+    public void AppendSingleDocumentMetadataSelect(
+        SqlWriter writer,
+        string documentIdParameterName,
+        DbTableName metadataTable
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(documentIdParameterName);
 
         DocumentMetadataColumns.AppendSingleDocumentMetadataSelectBody(
             writer,
-            DocumentTable,
+            metadataTable,
             documentIdParameterName
         );
     }

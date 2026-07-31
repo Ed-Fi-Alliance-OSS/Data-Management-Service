@@ -26,6 +26,7 @@ public class Given_A_Page_With_Multiple_Documents
 {
     private NpgsqlDataSource _dataSource = null!;
     private HydratedPage _result = null!;
+    private HydratedPage _rootSourcedResult = null!;
 
     private const string TestSchema = "hydtest";
 
@@ -55,9 +56,15 @@ public class Given_A_Page_With_Multiple_Documents
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
+            -- Root tables carry trigger-maintained mirrors of the dms."Document" metadata columns.
             CREATE TABLE hydtest."School" (
                 "DocumentId" bigint PRIMARY KEY,
-                "SchoolId" integer NOT NULL
+                "SchoolId" integer NOT NULL,
+                "DocumentUuid" uuid NULL,
+                "ContentVersion" bigint NULL,
+                "IdentityVersion" bigint NULL,
+                "ContentLastModifiedAt" timestamptz NULL,
+                "IdentityLastModifiedAt" timestamptz NULL
             );
 
             CREATE TABLE hydtest."SchoolAddress" (
@@ -105,6 +112,16 @@ public class Given_A_Page_With_Multiple_Documents
                 (5002, 101, 1001, 1, '2021-06-15'),
                 (5003, 101, 1002, 0, '2022-09-01'),
                 (5004, 102, 1003, 0, '2023-03-01');
+
+            -- Stand in for the generated dual-write trigger: the root row mirrors dms."Document".
+            UPDATE hydtest."School" s
+            SET "DocumentUuid" = d."DocumentUuid",
+                "ContentVersion" = d."ContentVersion",
+                "IdentityVersion" = d."IdentityVersion",
+                "ContentLastModifiedAt" = d."ContentLastModifiedAt",
+                "IdentityLastModifiedAt" = d."IdentityLastModifiedAt"
+            FROM dms."Document" d
+            WHERE d."DocumentId" = s."DocumentId";
             """
         );
 
@@ -136,6 +153,16 @@ public class Given_A_Page_With_Multiple_Documents
             plan,
             keyset,
             SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+
+        await using var rootSourcedConnection = await _dataSource.OpenConnectionAsync();
+        _rootSourcedResult = await HydrationExecutor.ExecuteAsync(
+            rootSourcedConnection,
+            plan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
             CancellationToken.None
         );
     }
@@ -276,6 +303,45 @@ public class Given_A_Page_With_Multiple_Documents
     public void It_returns_no_total_count_when_not_requested()
     {
         _result.TotalCount.Should().BeNull();
+    }
+
+    [Test]
+    public void It_returns_the_same_document_metadata_from_the_root_table_mirrors()
+    {
+        _rootSourcedResult.DocumentMetadata.Should().Equal(_result.DocumentMetadata);
+    }
+
+    [Test]
+    public void It_returns_root_sourced_metadata_values_matching_the_document_rows()
+    {
+        _rootSourcedResult.DocumentMetadata.Should().HaveCount(2);
+        _rootSourcedResult.DocumentMetadata[0].DocumentId.Should().Be(101);
+        _rootSourcedResult
+            .DocumentMetadata[0]
+            .DocumentUuid.Should()
+            .Be(Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"));
+        _rootSourcedResult.DocumentMetadata[0].ContentVersion.Should().Be(10);
+        _rootSourcedResult.DocumentMetadata[0].IdentityVersion.Should().Be(10);
+        _rootSourcedResult.DocumentMetadata[1].DocumentId.Should().Be(102);
+        _rootSourcedResult
+            .DocumentMetadata[1]
+            .DocumentUuid.Should()
+            .Be(Guid.Parse("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"));
+        _rootSourcedResult.DocumentMetadata[1].ContentVersion.Should().Be(20);
+    }
+
+    [Test]
+    public void It_reads_root_sourced_metadata_without_touching_the_document_table()
+    {
+        var batchSql = HydrationBatchBuilder.Build(
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql),
+            new PageKeysetSpec.Single(101L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable }
+        );
+
+        batchSql.Should().Contain("FROM \"hydtest\".\"School\" d");
+        batchSql.Should().NotContain("\"dms\".\"Document\"");
     }
 
     private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
@@ -455,12 +521,22 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
         IncludeDocumentReferenceLookup: true,
         UseSingleDocumentFastPath: true
     );
+    private static readonly HydrationExecutionOptions _rootSourcedFastPathOptions = new(
+        IncludeDescriptorProjection: true,
+        IncludeDocumentReferenceLookup: true,
+        UseSingleDocumentFastPath: true
+    )
+    {
+        DocumentMetadataSource = DocumentMetadataSource.RootTable,
+    };
 
     private NpgsqlDataSource _dataSource = null!;
     private ResourceReadPlan _plan = null!;
     private HydratedPage _keysetResult = null!;
     private HydratedPage _fastPathResult = null!;
+    private HydratedPage _rootSourcedFastPathResult = null!;
     private string _fastPathBatchSql = null!;
+    private string _rootSourcedFastPathBatchSql = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -499,11 +575,17 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 "Uri" varchar(306) NOT NULL
             );
 
+            -- Root tables carry trigger-maintained mirrors of the dms."Document" metadata columns.
             CREATE TABLE hydfastpath."StudentSchoolAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
                 "School_DocumentId" bigint NULL,
                 "School_SchoolId" bigint NULL,
-                "EntryGradeLevelDescriptor_DescriptorId" bigint NULL
+                "EntryGradeLevelDescriptor_DescriptorId" bigint NULL,
+                "DocumentUuid" uuid NULL,
+                "ContentVersion" bigint NULL,
+                "IdentityVersion" bigint NULL,
+                "ContentLastModifiedAt" timestamptz NULL,
+                "IdentityLastModifiedAt" timestamptz NULL
             );
 
             CREATE TABLE hydfastpath."StudentSchoolAssociationProgram" (
@@ -552,11 +634,27 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 (20001, 10001, 0, 11002, 'Gifted', 12002),
                 (20002, 10001, 1, NULL, NULL, NULL),
                 (20003, 10002, 0, 11003, 'Other', 12003);
+
+            -- Stand in for the generated dual-write trigger: the root row mirrors dms."Document".
+            UPDATE hydfastpath."StudentSchoolAssociation" r
+            SET "DocumentUuid" = d."DocumentUuid",
+                "ContentVersion" = d."ContentVersion",
+                "IdentityVersion" = d."IdentityVersion",
+                "ContentLastModifiedAt" = d."ContentLastModifiedAt",
+                "IdentityLastModifiedAt" = d."IdentityLastModifiedAt"
+            FROM dms."Document" d
+            WHERE d."DocumentId" = r."DocumentId";
             """
         );
 
         _plan = BuildReadPlan();
         _fastPathBatchSql = HydrationBatchBuilder.Build(_plan, _keyset, SqlDialect.Pgsql, _fastPathOptions);
+        _rootSourcedFastPathBatchSql = HydrationBatchBuilder.Build(
+            _plan,
+            _keyset,
+            SqlDialect.Pgsql,
+            _rootSourcedFastPathOptions
+        );
 
         await using var keysetConnection = await _dataSource.OpenConnectionAsync();
         _keysetResult = await HydrationExecutor.ExecuteAsync(
@@ -575,6 +673,16 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             _keyset,
             SqlDialect.Pgsql,
             _fastPathOptions,
+            CancellationToken.None
+        );
+
+        await using var rootSourcedFastPathConnection = await _dataSource.OpenConnectionAsync();
+        _rootSourcedFastPathResult = await HydrationExecutor.ExecuteAsync(
+            rootSourcedFastPathConnection,
+            _plan,
+            _keyset,
+            SqlDialect.Pgsql,
+            _rootSourcedFastPathOptions,
             CancellationToken.None
         );
     }
@@ -609,6 +717,46 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
     public void It_matches_the_existing_keyset_hydration_result()
     {
         AssertHydratedPagesMatch(_keysetResult, _fastPathResult);
+    }
+
+    [Test]
+    public void It_reads_root_sourced_single_document_metadata_from_the_root_table()
+    {
+        // The metadata SELECT is the first statement and is the only one aliased "d"; the
+        // document-reference lookup still joins dms."Document" (alias "doc") for referenced
+        // documents, which this task does not change.
+        _rootSourcedFastPathBatchSql
+            .Should()
+            .StartWith(
+                """
+                SELECT
+                    d."DocumentId",
+                    d."DocumentUuid",
+                    d."ContentVersion",
+                    d."IdentityVersion",
+                    d."ContentLastModifiedAt",
+                    d."IdentityLastModifiedAt"
+                FROM "hydfastpath"."StudentSchoolAssociation" d
+                WHERE d."DocumentId" = @DocumentId
+                ORDER BY d."DocumentId";
+                """
+            );
+        _rootSourcedFastPathBatchSql.Should().NotContain("FROM \"dms\".\"Document\" d");
+        _fastPathBatchSql.Should().Contain("FROM \"dms\".\"Document\" d");
+    }
+
+    [Test]
+    public void It_matches_the_document_table_hydration_result_when_reading_root_table_mirrors()
+    {
+        AssertHydratedPagesMatch(_fastPathResult, _rootSourcedFastPathResult);
+        _rootSourcedFastPathResult.DocumentMetadata.Should().ContainSingle();
+        _rootSourcedFastPathResult.DocumentMetadata[0].DocumentId.Should().Be(ResourceDocumentId);
+        _rootSourcedFastPathResult
+            .DocumentMetadata[0]
+            .DocumentUuid.Should()
+            .Be(Guid.Parse("00000000-0000-0000-0000-000000010001"));
+        _rootSourcedFastPathResult.DocumentMetadata[0].ContentVersion.Should().Be(11);
+        _rootSourcedFastPathResult.DocumentMetadata[0].IdentityVersion.Should().Be(11);
     }
 
     [Test]

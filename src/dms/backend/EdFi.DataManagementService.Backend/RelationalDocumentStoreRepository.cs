@@ -1188,7 +1188,14 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         var hydratedPage = await _documentHydrator
-            .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
+            .HydrateAsync(
+                readPlan,
+                plannedQuery,
+                // Read paths source document metadata from the root table's mirror columns; only the
+                // write path's current-state load stays on the dms.Document row it locked.
+                new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
+                default
+            )
             .ConfigureAwait(false);
 
         return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
@@ -2448,7 +2455,12 @@ public sealed class RelationalDocumentStoreRepository(
                 IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
                     == RelationalGetRequestReadMode.ExternalResponse,
                 UseSingleDocumentFastPath: true
-            );
+            )
+            {
+                // Read paths source document metadata from the root table's mirror columns; only the
+                // write path's current-state load stays on the dms.Document row it locked.
+                DocumentMetadataSource = DocumentMetadataSource.RootTable,
+            };
             var hydratedPage = await _documentHydrator
                 .HydrateAsync(
                     readPlan,
