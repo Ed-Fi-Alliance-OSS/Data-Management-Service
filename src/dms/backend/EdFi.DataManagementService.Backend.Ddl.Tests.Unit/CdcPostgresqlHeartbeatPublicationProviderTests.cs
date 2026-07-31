@@ -165,20 +165,242 @@ public class Given_PostgresqlCdcHeartbeatPublication_ValidateOnly
     }
 }
 
+[TestFixture]
+public class Given_PostgresqlCdcSlotHistory_Initial_Setup
+{
+    [Test]
+    public async Task It_should_create_one_permanent_pgoutput_slot_and_return_retained_history_observation()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor();
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result.Diagnostics.Should().BeEmpty();
+        executor
+            .ExecutedSql.Should()
+            .ContainSingle(sql => sql.Contains("pg_create_logical_replication_slot"));
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["plugin"] == "pgoutput"
+                && observation.SafeObservedValues["slot_type"] == "logical"
+                && observation.SafeObservedValues["temporary"] == "False"
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.SafeArtifactName.Value == "dms_binding_slot"
+                && observation.Classification == CdcProviderRetryContinuityClassification.None
+                && observation.SafeObservedValues["restart_lsn"] == "0_16B6C50"
+                && observation.SafeObservedValues["confirmed_flush_lsn"] == "0_16B6C50"
+            );
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_an_existing_initial_slot_is_active()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(slotActive: true);
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_HISTORY_UNPROVABLE"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_should_return_retained_positions_without_classifying_offset_gaps_when_no_committed_offset_is_supplied()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(
+            slotConfirmedFlushLsn: "0/16B6D00"
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        result.Diagnostics.Should().BeEmpty();
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.SafeObservedValues["confirmed_flush_lsn"] == "0_16B6D00"
+                && observation.SafeObservedValues["retained_position_gap_evaluation"]
+                    == "not_evaluated_without_committed_offset"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PostgresqlCdcSlotHistory_ValidateOnly
+{
+    [Test]
+    public async Task It_should_report_active_slot_as_observation_without_creating_or_repairing()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(slotActive: true);
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        result.Diagnostics.Should().BeEmpty();
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.SafeObservedValues["active"] == "True"
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_should_report_missing_slot_as_source_history_loss()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(slotExists: false);
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.State == CdcProviderArtifactState.Missing
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_slot_shape_does_not_exact_match()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(
+            slotPlugin: "test_decoding"
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+            );
+    }
+
+    [Test]
+    public async Task It_should_map_lost_wal_or_invalidated_history_to_source_history_lost()
+    {
+        var executor = RecordingPostgresqlCdcExecutor.WithExistingProviderArtifacts(
+            slotWalStatus: "lost",
+            slotInvalidationReason: "wal_removed"
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_POSTGRESQL_REPLICATION_SLOT_HISTORY_LOST"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.Classification == CdcProviderRetryContinuityClassification.SourceHistoryLost
+            );
+    }
+}
+
 internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecutor
 {
+    private const string CurrentDatabaseName = "dms_test";
+
     private bool _heartbeatTableExists;
     private bool _heartbeatSingletonExists;
     private bool _documentReplicaIdentityFull;
     private bool _publicationExists;
     private readonly bool _publicationCapturesWorkTable;
+    private bool _slotExists;
+    private readonly string _slotPlugin;
+    private readonly string _slotType;
+    private readonly string _slotDatabase;
+    private readonly bool _slotTemporary;
+    private readonly bool _slotActive;
+    private readonly string _slotTwoPhase;
+    private readonly string _slotRestartLsn;
+    private readonly string _slotConfirmedFlushLsn;
+    private readonly string _slotWalStatus;
+    private readonly string _slotInvalidationReason;
 
     public RecordingPostgresqlCdcExecutor(
         bool heartbeatTableExists = false,
         bool heartbeatSingletonExists = false,
         bool documentReplicaIdentityFull = false,
         bool publicationExists = false,
-        bool publicationCapturesWorkTable = false
+        bool publicationCapturesWorkTable = false,
+        bool slotExists = false,
+        string slotPlugin = "pgoutput",
+        string slotType = "logical",
+        string slotDatabase = CurrentDatabaseName,
+        bool slotTemporary = false,
+        bool slotActive = false,
+        string slotTwoPhase = "false",
+        string slotRestartLsn = "0/16B6C50",
+        string slotConfirmedFlushLsn = "0/16B6C50",
+        string slotWalStatus = "reserved",
+        string slotInvalidationReason = ""
     )
     {
         _heartbeatTableExists = heartbeatTableExists;
@@ -186,9 +408,51 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _documentReplicaIdentityFull = documentReplicaIdentityFull;
         _publicationExists = publicationExists;
         _publicationCapturesWorkTable = publicationCapturesWorkTable;
+        _slotExists = slotExists;
+        _slotPlugin = slotPlugin;
+        _slotType = slotType;
+        _slotDatabase = slotDatabase;
+        _slotTemporary = slotTemporary;
+        _slotActive = slotActive;
+        _slotTwoPhase = slotTwoPhase;
+        _slotRestartLsn = slotRestartLsn;
+        _slotConfirmedFlushLsn = slotConfirmedFlushLsn;
+        _slotWalStatus = slotWalStatus;
+        _slotInvalidationReason = slotInvalidationReason;
     }
 
     public List<string> ExecutedSql { get; } = [];
+
+    public static RecordingPostgresqlCdcExecutor WithExistingProviderArtifacts(
+        bool slotExists = true,
+        string slotPlugin = "pgoutput",
+        string slotType = "logical",
+        string slotDatabase = CurrentDatabaseName,
+        bool slotTemporary = false,
+        bool slotActive = false,
+        string slotTwoPhase = "false",
+        string slotRestartLsn = "0/16B6C50",
+        string slotConfirmedFlushLsn = "0/16B6C50",
+        string slotWalStatus = "reserved",
+        string slotInvalidationReason = ""
+    ) =>
+        new(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            documentReplicaIdentityFull: true,
+            publicationExists: true,
+            slotExists: slotExists,
+            slotPlugin: slotPlugin,
+            slotType: slotType,
+            slotDatabase: slotDatabase,
+            slotTemporary: slotTemporary,
+            slotActive: slotActive,
+            slotTwoPhase: slotTwoPhase,
+            slotRestartLsn: slotRestartLsn,
+            slotConfirmedFlushLsn: slotConfirmedFlushLsn,
+            slotWalStatus: slotWalStatus,
+            slotInvalidationReason: slotInvalidationReason
+        );
 
     public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
     {
@@ -213,6 +477,11 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         if (sql.Contains("CREATE PUBLICATION \"dms_binding_publication\""))
         {
             _publicationExists = true;
+        }
+
+        if (sql.Contains("pg_create_logical_replication_slot"))
+        {
+            _slotExists = true;
         }
 
         return Task.CompletedTask;
@@ -270,6 +539,25 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
                 : [],
             var text when text.Contains("cdc:postgresql:publication-tables") => _publicationExists
                 ? PublicationTableRows()
+                : [],
+            var text when text.Contains("cdc:postgresql:replication-slot") => _slotExists
+                ?
+                [
+                    Row(
+                        ("slot_name", "dms_binding_slot"),
+                        ("plugin", _slotPlugin),
+                        ("slot_type", _slotType),
+                        ("database", _slotDatabase),
+                        ("expected_database", CurrentDatabaseName),
+                        ("temporary", _slotTemporary.ToString()),
+                        ("active", _slotActive.ToString()),
+                        ("two_phase", _slotTwoPhase),
+                        ("restart_lsn", _slotRestartLsn),
+                        ("confirmed_flush_lsn", _slotConfirmedFlushLsn),
+                        ("wal_status", _slotWalStatus),
+                        ("invalidation_reason", _slotInvalidationReason)
+                    ),
+                ]
                 : [],
             _ => throw new InvalidOperationException($"Unexpected PostgreSQL CDC query: {sql}"),
         };

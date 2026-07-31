@@ -104,7 +104,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcSlotHistory",
       "Inspect pg_replication_slots in a provisioned PostgreSQL test database when diagnosing slot mismatch or history-loss fixtures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql-security",

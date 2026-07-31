@@ -23,6 +23,8 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     [SetUp]
     public void SetUp()
     {
+        AssumePostgresqlLogicalReplicationAvailable();
+
         _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
         _connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
 
@@ -37,7 +39,11 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     [TearDown]
     public void TearDown()
     {
-        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        if (!string.IsNullOrWhiteSpace(_databaseName))
+        {
+            DropReplicationSlotIfExists();
+            PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
     }
 
     [Test]
@@ -76,6 +82,57 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         AssertDocumentReplicaIdentityFull(connection);
         AssertPublication(connection);
         AssertDocumentCacheKeepsPrimaryKeyShape(connection);
+    }
+
+    [Test]
+    public async Task PostgresqlCdcSlotHistory_should_create_validate_and_report_retained_history()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        ReadReplicationSlotSnapshot(connection)
+            .Should()
+            .BeNull("ordinary provisioning must not create slots");
+
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        setupResult.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        setupResult.Diagnostics.Should().BeEmpty();
+        setupResult
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.SafeArtifactName.Value == ReplicationSlotName
+                && observation.State == CdcProviderArtifactState.Created
+            );
+        setupResult
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.SafeArtifactName.Value == ReplicationSlotName
+                && observation.SafeObservedValues["plugin"] == "pgoutput"
+                && observation.SafeObservedValues["slot_type"] == "logical"
+                && observation.Classification == CdcProviderRetryContinuityClassification.None
+            );
+
+        var setupSnapshot = ReadReplicationSlotSnapshot(connection);
+        setupSnapshot.Should().NotBeNull();
+        setupSnapshot!.Plugin.Should().Be("pgoutput");
+        setupSnapshot.SlotType.Should().Be("logical");
+        setupSnapshot.Database.Should().Be(_databaseName);
+        setupSnapshot.Temporary.Should().BeFalse();
+        setupSnapshot.Active.Should().BeFalse();
+        setupSnapshot.TwoPhase.Should().BeOneOf("false", "unsupported");
+        setupSnapshot.RestartLsn.Should().NotBeNullOrWhiteSpace();
+        setupSnapshot.ConfirmedFlushLsn.Should().NotBeNullOrWhiteSpace();
+        setupSnapshot.WalStatus.Should().NotBe("lost");
+        setupSnapshot.InvalidationReason.Should().BeEmpty();
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        validateResult.Diagnostics.Should().BeEmpty();
+        ReadReplicationSlotSnapshot(connection).Should().Be(setupSnapshot);
     }
 
     [Test]
@@ -128,6 +185,36 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
 
         return await service.SetupAsync(BuildRequest(executor, mode));
+    }
+
+    private static void AssumePostgresqlLogicalReplicationAvailable()
+    {
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+        connection.Open();
+
+        var walLevel = ExecuteScalarText(connection, "SHOW wal_level;");
+        var maxReplicationSlots = int.Parse(ExecuteScalarText(connection, "SHOW max_replication_slots;"));
+
+        if (!string.Equals(walLevel, "logical", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Ignore(
+                $"PostgreSQL logical replication tests require wal_level=logical; observed wal_level={walLevel}."
+            );
+        }
+
+        if (maxReplicationSlots < 1)
+        {
+            Assert.Ignore(
+                $"PostgreSQL logical replication tests require max_replication_slots >= 1; observed {maxReplicationSlots}."
+            );
+        }
+    }
+
+    private static string ExecuteScalarText(NpgsqlConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return command.ExecuteScalar()!.ToString()!;
     }
 
     private static bool TableExists(NpgsqlConnection connection, string tableName)
@@ -320,5 +407,87 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         }
     }
 
+    private void DropReplicationSlotIfExists()
+    {
+        try
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT pg_catalog.pg_drop_replication_slot(slot.slot_name)
+                FROM pg_catalog.pg_replication_slots slot
+                WHERE slot.slot_name = @slot_name
+                AND slot.active = false;
+                """;
+            command.Parameters.AddWithValue("slot_name", ReplicationSlotName);
+            command.ExecuteNonQuery();
+        }
+        catch (PostgresException)
+        {
+            // The database drop helper still performs final cleanup for cases where the database no longer exists.
+        }
+        catch (NpgsqlException)
+        {
+            // The database drop helper still performs final cleanup for cases where the database no longer exists.
+        }
+    }
+
+    private static ReplicationSlotSnapshot? ReadReplicationSlotSnapshot(NpgsqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                slot.plugin,
+                slot.slot_type,
+                slot.database,
+                slot.temporary,
+                slot.active,
+                COALESCE(to_jsonb(slot)->>'two_phase', 'unsupported') AS two_phase,
+                COALESCE(slot.restart_lsn::text, '') AS restart_lsn,
+                COALESCE(slot.confirmed_flush_lsn::text, '') AS confirmed_flush_lsn,
+                COALESCE(to_jsonb(slot)->>'wal_status', 'unavailable') AS wal_status,
+                COALESCE(to_jsonb(slot)->>'invalidation_reason', '') AS invalidation_reason
+            FROM pg_catalog.pg_replication_slots slot
+            WHERE slot.slot_name = @slot_name;
+            """;
+        command.Parameters.AddWithValue("slot_name", ReplicationSlotName);
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        var snapshot = new ReplicationSlotSnapshot(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetBoolean(3),
+            reader.GetBoolean(4),
+            reader.GetString(5),
+            reader.GetString(6),
+            reader.GetString(7),
+            reader.GetString(8),
+            reader.GetString(9)
+        );
+        reader.Read().Should().BeFalse();
+        return snapshot;
+    }
+
     private sealed record HeartbeatSnapshot(short HeartbeatId, long HeartbeatSequence);
+
+    private sealed record ReplicationSlotSnapshot(
+        string Plugin,
+        string SlotType,
+        string Database,
+        bool Temporary,
+        bool Active,
+        string TwoPhase,
+        string RestartLsn,
+        string ConfirmedFlushLsn,
+        string WalStatus,
+        string InvalidationReason
+    );
 }

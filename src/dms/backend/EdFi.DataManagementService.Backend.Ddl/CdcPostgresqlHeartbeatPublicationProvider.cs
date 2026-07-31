@@ -57,6 +57,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 canCreateInInitialSetup: true,
                 ExecutePublicationAsync
             ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                postgresqlNames.ReplicationSlotName,
+                canCreateInInitialSetup: true,
+                ExecuteReplicationSlotAsync
+            ),
         ];
     }
 
@@ -421,6 +427,121 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         }
     }
 
+    private static async Task<CdcProviderSetupStepResult> ExecuteReplicationSlotAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        var replicationSlotName = context.Request.ArtifactNames.Postgresql!.ReplicationSlotName;
+
+        try
+        {
+            var slot = await InspectReplicationSlotAsync(
+                    executor,
+                    replicationSlotName,
+                    context.Mode,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            var state = CdcProviderArtifactState.Matched;
+
+            if (!slot.Exists)
+            {
+                if (context.Mode == CdcProviderSetupStepMode.ExactMatchOnly)
+                {
+                    return ReplicationSlotResult(
+                        replicationSlotName,
+                        CdcProviderArtifactState.Missing,
+                        slot.ObservedValues,
+                        slot.Classification,
+                        diagnostics:
+                        [
+                            ProviderHistoryLossEvidence(
+                                replicationSlotName,
+                                "CDC_POSTGRESQL_REPLICATION_SLOT_MISSING",
+                                expectedValue: "permanent-pgoutput-slot",
+                                observedValue: "missing"
+                            ),
+                        ]
+                    );
+                }
+
+                try
+                {
+                    await executor
+                        .ExecuteNonQueryAsync(
+                            CreateReplicationSlotSql(replicationSlotName),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+                catch (DbException exception)
+                {
+                    return SetupPrincipalFailure(
+                        CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                        replicationSlotName,
+                        exception
+                    );
+                }
+
+                state = CdcProviderArtifactState.Created;
+                slot = await InspectReplicationSlotAsync(
+                        executor,
+                        replicationSlotName,
+                        context.Mode,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            if (!slot.IsExactMatch)
+            {
+                return ReplicationSlotResult(
+                    replicationSlotName,
+                    CdcProviderArtifactState.Mismatched,
+                    slot.ObservedValues,
+                    slot.Classification,
+                    slot.Diagnostics
+                );
+            }
+
+            return ReplicationSlotResult(
+                replicationSlotName,
+                state,
+                slot.ObservedValues,
+                slot.Classification
+            );
+        }
+        catch (DbException exception)
+        {
+            return ProviderHistoryUnavailable(
+                replicationSlotName,
+                "CDC_POSTGRESQL_REPLICATION_SLOT_HISTORY_UNAVAILABLE",
+                providerErrorClass: exception.GetType().Name
+            );
+        }
+        catch (InvalidOperationException exception)
+        {
+            return ProviderHistoryUnavailable(
+                replicationSlotName,
+                "CDC_POSTGRESQL_REPLICATION_SLOT_HISTORY_UNAVAILABLE",
+                providerErrorClass: exception.GetType().Name
+            );
+        }
+    }
+
     internal static CdcHeartbeatActionQuery BuildHeartbeatActionQuery(CdcProviderSetupRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -452,6 +573,17 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         );
 
         return $"CREATE PUBLICATION {_dialect.QuoteIdentifier(publicationName.Value)} FOR TABLE {tableList} {publicationOptions};";
+    }
+
+    internal static string CreateReplicationSlotSql(CdcSafeName replicationSlotName)
+    {
+        return $"""
+            /* cdc:postgresql:create-replication-slot */
+            SELECT slot_name, lsn::text
+            FROM pg_catalog.pg_create_logical_replication_slot('{EscapeSqlLiteral(
+                replicationSlotName.Value
+            )}', 'pgoutput');
+            """;
     }
 
     private static string CreateHeartbeatTableSql(CdcProviderSetupRequest request)
@@ -889,6 +1021,120 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ORDER BY namespace_info.nspname, table_info.relname;
             """;
 
+    private static async Task<ReplicationSlotInspection> InspectReplicationSlotAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CdcSafeName replicationSlotName,
+        CdcProviderSetupStepMode mode,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(ReplicationSlotSql(replicationSlotName), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Count == 0)
+        {
+            return new ReplicationSlotInspection(
+                Exists: false,
+                IsExactMatch: false,
+                ObservedValues: new Dictionary<string, string> { ["slot"] = "missing" },
+                Classification: CdcProviderRetryContinuityClassification.SourceHistoryLost,
+                Diagnostics: []
+            );
+        }
+
+        var row = rows[0];
+        var plugin = ReadRequired(row, "plugin");
+        var slotType = ReadRequired(row, "slot_type");
+        var database = ReadRequired(row, "database");
+        var expectedDatabase = ReadRequired(row, "expected_database");
+        var temporary = ReadBool(row, "temporary");
+        var active = ReadBool(row, "active");
+        var twoPhase = ReadRequired(row, "two_phase");
+        var restartLsn = ReadRequired(row, "restart_lsn");
+        var confirmedFlushLsn = ReadRequired(row, "confirmed_flush_lsn");
+        var walStatus = ReadRequired(row, "wal_status");
+        var invalidationReason = ReadRequired(row, "invalidation_reason");
+        var activeAllowed = mode == CdcProviderSetupStepMode.ExactMatchOnly || !active;
+        var retainedPositionsReadable =
+            !string.IsNullOrWhiteSpace(restartLsn) && !string.IsNullOrWhiteSpace(confirmedFlushLsn);
+        var noLostHistory =
+            retainedPositionsReadable
+            && !string.Equals(walStatus, "lost", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(invalidationReason);
+        var exactShape =
+            string.Equals(plugin, "pgoutput", StringComparison.Ordinal)
+            && string.Equals(slotType, "logical", StringComparison.Ordinal)
+            && string.Equals(database, expectedDatabase, StringComparison.Ordinal)
+            && !temporary
+            && (
+                string.Equals(twoPhase, "unsupported", StringComparison.Ordinal)
+                || string.Equals(twoPhase, "false", StringComparison.OrdinalIgnoreCase)
+            );
+
+        var observedValues = new Dictionary<string, string>
+        {
+            ["plugin"] = SafeText(plugin),
+            ["slot_type"] = SafeText(slotType),
+            ["database"] = SafeText(database),
+            ["expected_database"] = SafeText(expectedDatabase),
+            ["temporary"] = temporary.ToString(),
+            ["active"] = active.ToString(),
+            ["two_phase"] = SafeText(twoPhase),
+            ["restart_lsn"] = SafeText(restartLsn),
+            ["confirmed_flush_lsn"] = SafeText(confirmedFlushLsn),
+            ["wal_status"] = SafeText(walStatus),
+            ["invalidation_reason"] = SafeText(invalidationReason),
+            ["retained_position_gap_evaluation"] = "not_evaluated_without_committed_offset",
+        };
+
+        var diagnostics = ReplicationSlotDiagnostics(
+            replicationSlotName,
+            exactShape,
+            retainedPositionsReadable,
+            noLostHistory,
+            activeAllowed,
+            observedValues
+        );
+
+        var classification =
+            diagnostics
+                .FirstOrDefault(diagnostic =>
+                    diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+                    || diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                )
+                ?.Classification
+            ?? CdcProviderRetryContinuityClassification.None;
+
+        return new ReplicationSlotInspection(
+            Exists: true,
+            IsExactMatch: exactShape && noLostHistory && activeAllowed,
+            ObservedValues: observedValues,
+            Classification: classification,
+            Diagnostics: diagnostics
+        );
+    }
+
+    private static string ReplicationSlotSql(CdcSafeName replicationSlotName) =>
+        $"""
+            /* cdc:postgresql:replication-slot */
+            SELECT
+                slot.slot_name AS slot_name,
+                COALESCE(slot.plugin, '') AS plugin,
+                slot.slot_type AS slot_type,
+                COALESCE(slot.database, '') AS database,
+                current_database() AS expected_database,
+                slot.temporary::text AS temporary,
+                slot.active::text AS active,
+                COALESCE(to_jsonb(slot)->>'two_phase', 'unsupported') AS two_phase,
+                COALESCE(slot.restart_lsn::text, '') AS restart_lsn,
+                COALESCE(slot.confirmed_flush_lsn::text, '') AS confirmed_flush_lsn,
+                COALESCE(to_jsonb(slot)->>'wal_status', 'unavailable') AS wal_status,
+                COALESCE(to_jsonb(slot)->>'invalidation_reason', '') AS invalidation_reason
+            FROM pg_catalog.pg_replication_slots slot
+            WHERE slot.slot_name = '{EscapeSqlLiteral(replicationSlotName.Value)}';
+            """;
+
     private static bool TryGetExecutor(
         CdcProviderSetupStepContext context,
         CdcProviderArtifactKind artifactKind,
@@ -947,6 +1193,76 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             ]
         );
 
+    private static CdcProviderSetupStepResult ProviderHistoryUnavailable(
+        CdcSafeName replicationSlotName,
+        string code,
+        string? providerErrorClass
+    ) =>
+        new(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    replicationSlotName,
+                    CdcProviderArtifactState.Unavailable,
+                    new Dictionary<string, string> { ["history"] = "unavailable" }
+                ),
+            ],
+            providerHistoryObservations:
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    replicationSlotName,
+                    new Dictionary<string, string> { ["history"] = "unavailable" },
+                    CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+                ),
+            ],
+            diagnostics:
+            [
+                new CdcProviderDiagnostic(
+                    Code: code,
+                    Category: CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.SetupPrincipal,
+                    ArtifactKind: CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    SafeName: replicationSlotName,
+                    ExpectedValue: "readable-provider-history",
+                    ObservedValue: "unavailable",
+                    ProviderErrorClass: providerErrorClass,
+                    Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+                ),
+            ]
+        );
+
+    private static CdcProviderSetupStepResult ReplicationSlotResult(
+        CdcSafeName replicationSlotName,
+        CdcProviderArtifactState state,
+        IReadOnlyDictionary<string, string> observedValues,
+        CdcProviderRetryContinuityClassification classification,
+        IReadOnlyList<CdcProviderDiagnostic>? diagnostics = null
+    ) =>
+        new(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    replicationSlotName,
+                    state,
+                    observedValues
+                ),
+            ],
+            providerHistoryObservations:
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    replicationSlotName,
+                    observedValues,
+                    classification
+                ),
+            ],
+            diagnostics: diagnostics
+        );
+
     private static CdcProviderSetupStepResult ArtifactOnly(
         CdcProviderArtifactKind artifactKind,
         CdcSafeName safeName,
@@ -958,6 +1274,96 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
             [
                 new CdcProviderArtifactObservation(artifactKind, safeName, state, observedValues),
             ]
+        );
+
+    private static IReadOnlyList<CdcProviderDiagnostic> ReplicationSlotDiagnostics(
+        CdcSafeName replicationSlotName,
+        bool exactShape,
+        bool retainedPositionsReadable,
+        bool noLostHistory,
+        bool activeAllowed,
+        IReadOnlyDictionary<string, string> observedValues
+    )
+    {
+        List<CdcProviderDiagnostic> diagnostics = [];
+
+        if (!exactShape)
+        {
+            diagnostics.Add(
+                new CdcProviderDiagnostic(
+                    Code: "CDC_POSTGRESQL_REPLICATION_SLOT_MISMATCH",
+                    Category: CdcProviderDiagnosticCategory.ValidationMismatch,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.None,
+                    ArtifactKind: CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    SafeName: replicationSlotName,
+                    ExpectedValue: "logical-pgoutput-permanent-current-database-slot",
+                    ObservedValue: string.Join(
+                        ";",
+                        observedValues.Select(value => $"{value.Key}={value.Value}")
+                    ),
+                    ProviderErrorClass: null,
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                )
+            );
+        }
+
+        if (!retainedPositionsReadable || !noLostHistory)
+        {
+            diagnostics.Add(
+                ProviderHistoryLossEvidence(
+                    replicationSlotName,
+                    "CDC_POSTGRESQL_REPLICATION_SLOT_HISTORY_LOST",
+                    expectedValue: "readable-retained-positions-without-loss",
+                    observedValue: string.Join(
+                        ";",
+                        observedValues.Select(value => $"{value.Key}={value.Value}")
+                    )
+                )
+            );
+        }
+
+        if (!activeAllowed)
+        {
+            diagnostics.Add(
+                new CdcProviderDiagnostic(
+                    Code: "CDC_POSTGRESQL_REPLICATION_SLOT_HISTORY_UNPROVABLE",
+                    Category: CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.None,
+                    ArtifactKind: CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    SafeName: replicationSlotName,
+                    ExpectedValue: "inactive-unadvanced-initial-slot",
+                    ObservedValue: string.Join(
+                        ";",
+                        observedValues.Select(value => $"{value.Key}={value.Value}")
+                    ),
+                    ProviderErrorClass: null,
+                    Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+                )
+            );
+        }
+
+        return diagnostics;
+    }
+
+    private static CdcProviderDiagnostic ProviderHistoryLossEvidence(
+        CdcSafeName replicationSlotName,
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: CdcProviderArtifactKind.PostgresqlReplicationSlot,
+            SafeName: replicationSlotName,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.SourceHistoryLost
         );
 
     private static IReadOnlyDictionary<string, string> ReplicaIdentityObservedValues(
@@ -1053,5 +1459,13 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         bool Exists,
         bool IsExactMatch,
         IReadOnlyDictionary<string, string> ObservedValues
+    );
+
+    private sealed record ReplicationSlotInspection(
+        bool Exists,
+        bool IsExactMatch,
+        IReadOnlyDictionary<string, string> ObservedValues,
+        CdcProviderRetryContinuityClassification Classification,
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
     );
 }
