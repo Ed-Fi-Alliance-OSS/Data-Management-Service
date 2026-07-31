@@ -211,11 +211,12 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
                 EndpointName: "schools",
                 ResourceName: "School"
             ),
-            [$"{ClassPeriodResource.ProjectName}:{ClassPeriodResource.ResourceName}"] = new DocumentLinkSlugTriple(
-                ProjectEndpointName: "ed-fi",
-                EndpointName: "classPeriods",
-                ResourceName: "ClassPeriod"
-            ),
+            [$"{ClassPeriodResource.ProjectName}:{ClassPeriodResource.ResourceName}"] =
+                new DocumentLinkSlugTriple(
+                    ProjectEndpointName: "ed-fi",
+                    EndpointName: "classPeriods",
+                    ResourceName: "ClassPeriod"
+                ),
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(

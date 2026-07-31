@@ -65,11 +65,7 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
             return null;
         }
 
-        var deduplicatedSources = CompileDeduplicatedSources(
-            resourceModel,
-            tablesByName,
-            targetsByResource
-        );
+        var deduplicatedSources = CompileDeduplicatedSources(resourceModel, tablesByName, targetsByResource);
 
         var compiledSources = deduplicatedSources
             .Select(source => new DocumentReferenceLookupSource(

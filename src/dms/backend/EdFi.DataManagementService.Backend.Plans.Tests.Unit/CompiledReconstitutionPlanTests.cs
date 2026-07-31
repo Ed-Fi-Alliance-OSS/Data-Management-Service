@@ -562,7 +562,10 @@ file static class CompiledReconstitutionPlanTestData
 
     public static ResourceReadPlan CreateDescriptorProjectionReadPlan()
     {
-        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, CreateDescriptorProjectionModel());
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(
+            SqlDialect.Pgsql,
+            CreateDescriptorProjectionModel()
+        );
         var descriptorSources = readPlan
             .DescriptorProjectionPlansInOrder.SelectMany(static plan => plan.SourcesInOrder)
             .ToArray();

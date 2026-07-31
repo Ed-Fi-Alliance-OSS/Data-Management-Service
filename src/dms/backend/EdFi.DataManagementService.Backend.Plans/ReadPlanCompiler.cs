@@ -47,7 +47,10 @@ public sealed class ReadPlanCompiler
 
     internal ReadPlanCompiler(
         SqlDialect dialect,
-        IReadOnlyDictionary<QualifiedResourceName, DocumentReferenceLookupTarget> documentReferenceLookupTargets
+        IReadOnlyDictionary<
+            QualifiedResourceName,
+            DocumentReferenceLookupTarget
+        > documentReferenceLookupTargets
     )
     {
         ArgumentNullException.ThrowIfNull(documentReferenceLookupTargets);

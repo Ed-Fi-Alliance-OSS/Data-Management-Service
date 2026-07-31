@@ -206,11 +206,12 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
                 EndpointName: "schools",
                 ResourceName: "School"
             ),
-            [$"{ClassPeriodResource.ProjectName}:{ClassPeriodResource.ResourceName}"] = new DocumentLinkSlugTriple(
-                ProjectEndpointName: "ed-fi",
-                EndpointName: "classPeriods",
-                ResourceName: "ClassPeriod"
-            ),
+            [$"{ClassPeriodResource.ProjectName}:{ClassPeriodResource.ResourceName}"] =
+                new DocumentLinkSlugTriple(
+                    ProjectEndpointName: "ed-fi",
+                    EndpointName: "classPeriods",
+                    ResourceName: "ClassPeriod"
+                ),
         };
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentLinkSlugResolver>(

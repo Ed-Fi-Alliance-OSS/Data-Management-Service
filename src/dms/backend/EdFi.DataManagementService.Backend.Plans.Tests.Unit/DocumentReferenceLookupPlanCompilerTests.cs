@@ -308,7 +308,7 @@ public class Given_DocumentReferenceLookupPlanCompiler
                     static table => table.Table,
                     static table => table
                 ),
-            targetsByResource ?? DefaultTargetsByResource
+            targetsByResource ?? _defaultTargetsByResource
         );
     }
 
@@ -317,18 +317,16 @@ public class Given_DocumentReferenceLookupPlanCompiler
     /// lookup compiler resolves targets by literal name from this map — never against the
     /// hydration-projected <c>tablesByName</c>, which carries only the OWNING tables.
     /// </summary>
-    private static IReadOnlyDictionary<
+    private static readonly IReadOnlyDictionary<
         QualifiedResourceName,
         DocumentReferenceLookupTarget
-    > DefaultTargetsByResource
-    { get; } =
-        new Dictionary<QualifiedResourceName, DocumentReferenceLookupTarget>
-        {
-            [_schoolResource] = new(
-                LookupTable: new DbTableName(_edfiSchema, "School"),
-                DiscriminatorLiteral: "Ed-Fi:School"
-            ),
-        };
+    > _defaultTargetsByResource = new Dictionary<QualifiedResourceName, DocumentReferenceLookupTarget>
+    {
+        [_schoolResource] = new(
+            LookupTable: new DbTableName(_edfiSchema, "School"),
+            DiscriminatorLiteral: "Ed-Fi:School"
+        ),
+    };
 
     private static RelationalResourceModel BuildModelWithAbstractTargetBinding()
     {

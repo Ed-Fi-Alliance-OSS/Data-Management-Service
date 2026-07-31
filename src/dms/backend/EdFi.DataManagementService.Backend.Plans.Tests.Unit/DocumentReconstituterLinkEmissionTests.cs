@@ -152,9 +152,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
     [Test]
     public void It_propagates_exceptions_from_the_resolver_unchanged()
     {
-        var resolver = new ThrowingSlugResolver(
-            new InvalidOperationException("boom: unknown discriminator")
-        );
+        var resolver = new ThrowingSlugResolver(new InvalidOperationException("boom: unknown discriminator"));
         var readPlan = BuildReadPlan();
         var hydratedPage = BuildHydratedPage(
             schoolDocumentIdFk: SchoolDocumentId,
@@ -514,7 +512,6 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
 
     private sealed class ThrowingSlugResolver(Exception exception) : IDocumentLinkSlugResolver
     {
-        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
-            throw exception;
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) => throw exception;
     }
 }

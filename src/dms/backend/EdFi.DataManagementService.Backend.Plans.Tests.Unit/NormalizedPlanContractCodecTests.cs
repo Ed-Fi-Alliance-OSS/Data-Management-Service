@@ -518,7 +518,10 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_roundtrip_multiple_reference_projection_table_plans_without_collapsing_dependency_order()
     {
         var multiTableModel = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
-        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, multiTableModel);
+        var readPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(
+            SqlDialect.Pgsql,
+            multiTableModel
+        );
         var encoded = NormalizedPlanContractCodec.Encode(readPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, multiTableModel);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
@@ -592,7 +595,10 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     public void It_should_roundtrip_multi_table_resource_read_plan_through_normalized_dto_without_collapsing_story_05_shape()
     {
         var multiTableModel = CreateSupportedMultiTableModel();
-        var multiTableReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(SqlDialect.Pgsql, multiTableModel);
+        var multiTableReadPlan = DocumentReferenceLookupTargetTestMap.CompileReadPlan(
+            SqlDialect.Pgsql,
+            multiTableModel
+        );
         var encoded = NormalizedPlanContractCodec.Encode(multiTableReadPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, multiTableModel);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);

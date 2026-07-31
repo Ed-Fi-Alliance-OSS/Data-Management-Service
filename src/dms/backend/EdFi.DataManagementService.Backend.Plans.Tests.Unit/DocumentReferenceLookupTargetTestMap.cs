@@ -42,8 +42,7 @@ internal static class DocumentReferenceLookupTargetTestMap
                 binding.TargetResource,
                 new DocumentReferenceLookupTarget(
                     LookupTable: new DbTableName(model.PhysicalSchema, binding.TargetResource.ResourceName),
-                    DiscriminatorLiteral:
-                        $"{binding.TargetResource.ProjectName}:{binding.TargetResource.ResourceName}"
+                    DiscriminatorLiteral: $"{binding.TargetResource.ProjectName}:{binding.TargetResource.ResourceName}"
                 )
             );
         }
