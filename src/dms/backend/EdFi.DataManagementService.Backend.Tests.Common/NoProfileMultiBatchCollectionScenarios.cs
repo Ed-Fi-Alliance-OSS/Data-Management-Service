@@ -217,9 +217,11 @@ public static class NoProfileMultiBatchCollectionScenarios
     }
 
     /// <summary>
-    /// Asserts the id-reservation and base-collection insert commands were partitioned into exactly two
-    /// batches at the compiled limit: reservation row counts <c>[maxRowsPerBatch, 2]</c> and insert
-    /// parameter counts <c>[maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow]</c>.
+    /// Asserts the base-collection insert commands were still partitioned into exactly two batches at the
+    /// compiled row limit, and that neither batch paid an id-reservation round trip. No other table
+    /// consumes these rows' collection keys, so each insert produces its own key from the sequence
+    /// instead of binding a reserved one — which is also why each row binds one fewer parameter than the
+    /// compiled per-row count.
     /// </summary>
     public static void AssertCreateBatchPartitions(
         IReadOnlyList<int> reservationRowCounts,
@@ -228,8 +230,12 @@ public static class NoProfileMultiBatchCollectionScenarios
         int parametersPerRow
     )
     {
-        reservationRowCounts.Should().Equal(maxRowsPerBatch, 2);
-        insertParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow);
+        var boundParametersPerRow = parametersPerRow - 1;
+
+        reservationRowCounts.Should().BeEmpty();
+        insertParameterCounts
+            .Should()
+            .Equal(maxRowsPerBatch * boundParametersPerRow, 2 * boundParametersPerRow);
     }
 
     /// <summary>

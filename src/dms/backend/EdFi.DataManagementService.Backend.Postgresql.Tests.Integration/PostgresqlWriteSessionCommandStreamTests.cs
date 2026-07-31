@@ -289,7 +289,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_Create
     public void It_observes_the_in_session_target_lookup_that_the_recorder_previously_could_not_see() =>
         WriteSessionCommandStreamScenarios.AssertCreateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 6
+            expectedTotalCommandCount: 5
         );
 }
 
@@ -385,7 +385,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Put_Update
     public void It_observes_the_hydration_batch_and_the_in_session_put_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 4
+            expectedTotalCommandCount: 3
         );
 }
 
@@ -440,7 +440,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_As_Updat
     public void It_observes_the_hydration_batch_and_the_single_in_session_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertPostAsUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 4
+            expectedTotalCommandCount: 3
         );
 }
 

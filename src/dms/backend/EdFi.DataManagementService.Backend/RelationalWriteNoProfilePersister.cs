@@ -72,13 +72,16 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
             .ConfigureAwait(false);
 
-        Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds = [];
+        var collectionItemIdBindings = RelationalWriteCollectionItemIdBindings.Create(
+            request.MappingSet.Key.Dialect,
+            mergeResult
+        );
 
         await ExecuteDeletesAsync(
                 request.MappingSet.Key.Dialect,
                 mergeResult,
                 rootDocumentId,
-                reservedCollectionItemIds,
+                collectionItemIdBindings,
                 writeSession,
                 cancellationToken
             )
@@ -87,7 +90,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 request.MappingSet.Key.Dialect,
                 mergeResult,
                 rootDocumentId,
-                reservedCollectionItemIds,
+                collectionItemIdBindings,
                 writeSession,
                 cancellationToken
             )
@@ -165,7 +168,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         SqlDialect dialect,
         RelationalWriteMergeResult mergeResult,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -178,7 +181,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                         dialect,
                         tableState,
                         rootDocumentId,
-                        reservedCollectionItemIds,
+                        collectionItemIdBindings,
                         writeSession,
                         cancellationToken
                     )
@@ -201,7 +204,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                         dialect,
                         tableState,
                         rootDocumentId,
-                        reservedCollectionItemIds,
+                        collectionItemIdBindings,
                         writeSession,
                         cancellationToken
                     )
@@ -213,7 +216,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             await DeleteOmittedNonCollectionRowAsync(
                     tableState,
                     rootDocumentId,
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -225,7 +228,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         SqlDialect dialect,
         RelationalWriteMergeResult mergeResult,
         long rootDocumentId,
-        Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -240,7 +243,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
             foreach (var tableState in pendingTableStates)
             {
-                if (HasBlockingUnresolvedCollectionItemIds(tableState, reservedCollectionItemIds))
+                if (HasBlockingUnresolvedCollectionItemIds(tableState, collectionItemIdBindings))
                 {
                     deferredTableStates.Add(tableState);
                     continue;
@@ -252,7 +255,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                             dialect,
                             tableState,
                             rootDocumentId,
-                            reservedCollectionItemIds,
+                            collectionItemIdBindings,
                             writeSession,
                             cancellationToken
                         )
@@ -277,7 +280,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                             dialect,
                             tableState,
                             rootDocumentId,
-                            reservedCollectionItemIds,
+                            collectionItemIdBindings,
                             writeSession,
                             cancellationToken
                         )
@@ -290,7 +293,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 await UpsertNonCollectionRowAsync(
                         tableState,
                         rootDocumentId,
-                        reservedCollectionItemIds,
+                        collectionItemIdBindings,
                         writeSession,
                         cancellationToken
                     )
@@ -321,7 +324,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private static bool HasBlockingUnresolvedCollectionItemIds(
         RelationalWriteMergedTableState tableState,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings
     )
     {
         var selfReservedBindingIndex = tableState.TableWritePlan.CollectionKeyPreallocationPlan?.BindingIndex;
@@ -339,9 +342,12 @@ internal sealed class RelationalWriteNoProfilePersister(
                     continue;
                 }
 
+                // An inlined key is produced by the row that carries it, so it can never be the value
+                // a dependent table is still waiting on.
                 if (
                     value is FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId
-                    && !reservedCollectionItemIds.ContainsKey(unresolvedCollectionItemId)
+                    && !collectionItemIdBindings.HasReservedValue(unresolvedCollectionItemId)
+                    && !collectionItemIdBindings.IsInlined(unresolvedCollectionItemId)
                 )
                 {
                     return true;
@@ -568,7 +574,7 @@ internal sealed class RelationalWriteNoProfilePersister(
     private static async Task DeleteOmittedNonCollectionRowAsync(
         RelationalWriteMergedTableState tableState,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -595,7 +601,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     tableState.TableWritePlan.DeleteByParentSql,
                     currentRow,
                     rootDocumentId,
-                    reservedCollectionItemIds
+                    collectionItemIdBindings
                 ),
                 cancellationToken
             )
@@ -605,7 +611,7 @@ internal sealed class RelationalWriteNoProfilePersister(
     private static async Task UpsertNonCollectionRowAsync(
         RelationalWriteMergedTableState tableState,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -627,7 +633,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                         tableState.TableWritePlan.InsertSql,
                         mergedRow,
                         rootDocumentId,
-                        reservedCollectionItemIds
+                        collectionItemIdBindings
                     ),
                     cancellationToken
                 )
@@ -655,7 +661,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     tableState.TableWritePlan.UpdateSql,
                     mergedRow,
                     rootDocumentId,
-                    reservedCollectionItemIds
+                    collectionItemIdBindings
                 ),
                 cancellationToken
             )
@@ -666,7 +672,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         SqlDialect dialect,
         RelationalWriteMergedTableState tableState,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -706,7 +712,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     batchSqlEmitter.EmitDeleteByParentBatch(tableState.TableWritePlan, rowCount),
                 rowsToDelete,
                 rootDocumentId,
-                reservedCollectionItemIds,
+                collectionItemIdBindings,
                 writeSession,
                 cancellationToken
             )
@@ -717,7 +723,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         SqlDialect dialect,
         RelationalWriteMergedTableState tableState,
         long rootDocumentId,
-        Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -763,7 +769,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     batchSqlEmitter.EmitUpdateBatch(tableState.TableWritePlan, rowCount),
                 rowsToUpdate,
                 rootDocumentId,
-                reservedCollectionItemIds,
+                collectionItemIdBindings,
                 writeSession,
                 cancellationToken
             )
@@ -790,7 +796,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             await ReserveCollectionItemIdsAsync(
                     dialect,
                     GetUnresolvedCollectionItemIds(rowsToInsert, batchStart, batchCount),
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -803,7 +809,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     batchStart,
                     batchCount,
                     rootDocumentId,
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -815,7 +821,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         SqlDialect dialect,
         RelationalWriteMergedTableState tableState,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -854,7 +860,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     ),
                 rowsToDelete,
                 rootDocumentId,
-                reservedCollectionItemIds,
+                collectionItemIdBindings,
                 writeSession,
                 cancellationToken
             )
@@ -865,7 +871,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         SqlDialect dialect,
         RelationalWriteMergedTableState tableState,
         long rootDocumentId,
-        Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -951,7 +957,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                         ),
                     CreateTemporaryOrdinalRows(rowsToUpdate, mergePlan.OrdinalBindingIndex),
                     rootDocumentId,
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -969,7 +975,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     ),
                 rowsToUpdate,
                 rootDocumentId,
-                reservedCollectionItemIds,
+                collectionItemIdBindings,
                 writeSession,
                 cancellationToken
             )
@@ -1001,7 +1007,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                         batchCount,
                         mergePlan.StableRowIdentityBindingIndex
                     ),
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -1014,7 +1020,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     batchStart,
                     batchCount,
                     rootDocumentId,
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -1065,12 +1071,12 @@ internal sealed class RelationalWriteNoProfilePersister(
     private static async Task ReserveCollectionItemIdAsync(
         SqlDialect dialect,
         FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId,
-        IDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
-        if (reservedCollectionItemIds.ContainsKey(unresolvedCollectionItemId))
+        if (collectionItemIdBindings.HasReservedValue(unresolvedCollectionItemId))
         {
             return;
         }
@@ -1087,7 +1093,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             );
         }
 
-        reservedCollectionItemIds.Add(
+        collectionItemIdBindings.AddReservedValue(
             unresolvedCollectionItemId,
             Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture)
         );
@@ -1096,7 +1102,7 @@ internal sealed class RelationalWriteNoProfilePersister(
     private static async Task ReserveCollectionItemIdsAsync(
         SqlDialect dialect,
         IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds,
-        IDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -1114,7 +1120,10 @@ internal sealed class RelationalWriteNoProfilePersister(
 
         foreach (var unresolvedCollectionItemId in unresolvedCollectionItemIds)
         {
-            if (!reservedCollectionItemIds.ContainsKey(unresolvedCollectionItemId))
+            if (
+                !collectionItemIdBindings.HasReservedValue(unresolvedCollectionItemId)
+                && !collectionItemIdBindings.IsInlined(unresolvedCollectionItemId)
+            )
             {
                 missingCollectionItemIds.Add(unresolvedCollectionItemId);
             }
@@ -1130,7 +1139,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             await ReserveCollectionItemIdAsync(
                     dialect,
                     missingCollectionItemIds[0],
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -1151,7 +1160,10 @@ internal sealed class RelationalWriteNoProfilePersister(
 
         for (var index = 0; index < missingCollectionItemIds.Count; index++)
         {
-            reservedCollectionItemIds.Add(missingCollectionItemIds[index], reservedValuesInOrder[index]);
+            collectionItemIdBindings.AddReservedValue(
+                missingCollectionItemIds[index],
+                reservedValuesInOrder[index]
+            );
         }
     }
 
@@ -1288,7 +1300,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         int rowOffset,
         int rowCount,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -1307,7 +1319,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                         sql,
                         rows[rowOffset],
                         rootDocumentId,
-                        reservedCollectionItemIds
+                        collectionItemIdBindings
                     ),
                     cancellationToken
                 )
@@ -1324,7 +1336,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     rowOffset,
                     rowCount,
                     rootDocumentId,
-                    reservedCollectionItemIds
+                    collectionItemIdBindings
                 ),
                 cancellationToken
             )
@@ -1338,7 +1350,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         Func<WritePlanBatchSqlEmitter, int, string> emitBatchSql,
         IReadOnlyList<RelationalWriteMergedTableRow> rows,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -1365,7 +1377,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     batchStart,
                     batchCount,
                     rootDocumentId,
-                    reservedCollectionItemIds,
+                    collectionItemIdBindings,
                     writeSession,
                     cancellationToken
                 )
@@ -1380,7 +1392,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         int rowOffset,
         int rowCount,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -1399,7 +1411,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                         tableWritePlan.InsertSql,
                         rows[rowOffset],
                         rootDocumentId,
-                        reservedCollectionItemIds
+                        collectionItemIdBindings
                     ),
                     cancellationToken
                 )
@@ -1416,7 +1428,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     rowOffset,
                     rowCount,
                     rootDocumentId,
-                    reservedCollectionItemIds
+                    collectionItemIdBindings
                 ),
                 cancellationToken
             )
@@ -1529,32 +1541,103 @@ internal sealed class RelationalWriteNoProfilePersister(
         return capacity;
     }
 
+    /// <summary>
+    /// Collects one statement's parameter substitutions, so a collection key the sequence produces
+    /// server-side is emitted as an expression where the bind marker stood instead of being bound.
+    /// </summary>
+    private sealed class InlinedSequenceSubstitutions(TableWritePlan tableWritePlan)
+    {
+        private readonly Dictionary<string, string> _replacementsByBareName = new(
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        /// <summary>
+        /// Only a table that preallocates its own collection key can have an inlinable value, so every
+        /// other statement — root rows, updates, deletes — skips recording altogether rather than
+        /// building a replacement map its SQL will never be rewritten with.
+        /// </summary>
+        private readonly bool _tableHasPreallocatedCollectionKey =
+            tableWritePlan.CollectionKeyPreallocationPlan is not null;
+
+        private bool _hasInlinedParameter;
+
+        /// <summary>
+        /// Records how <paramref name="parameterName"/> is emitted and reports whether the caller should
+        /// skip binding it. Every parameter is recorded, including the ones that stay bound, because the
+        /// rewrite must be able to explain every token it meets.
+        /// </summary>
+        public bool TryInline(
+            string parameterName,
+            FlattenedWriteValue value,
+            RelationalWriteCollectionItemIdBindings collectionItemIdBindings
+        )
+        {
+            if (!_tableHasPreallocatedCollectionKey)
+            {
+                return false;
+            }
+
+            var bareName = RelationalParameterTokenRewriter.BareName(parameterName);
+
+            if (
+                value is FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId
+                && collectionItemIdBindings.IsInlined(unresolvedCollectionItemId)
+            )
+            {
+                _replacementsByBareName[bareName] = collectionItemIdBindings.SequenceExpression;
+                _hasInlinedParameter = true;
+
+                return true;
+            }
+
+            _replacementsByBareName[bareName] = parameterName;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Rewrites the statement only when something was inlined, so a statement that binds every one of
+        /// its parameters keeps the plan-compiled SQL byte for byte.
+        /// </summary>
+        public string Apply(string sql) =>
+            _hasInlinedParameter
+                ? RelationalParameterTokenRewriter.Rewrite(sql, _replacementsByBareName)
+                : sql;
+    }
+
     private static RelationalCommand BuildRowCommand(
         TableWritePlan tableWritePlan,
         string sql,
         RelationalWriteMergedTableRow row,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings
     )
     {
         List<RelationalParameter> parameters = new(tableWritePlan.ColumnBindings.Length);
+        InlinedSequenceSubstitutions substitutions = new(tableWritePlan);
 
         for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
         {
             var parameterName = NormalizeParameterName(
                 tableWritePlan.ColumnBindings[bindingIndex].ParameterName
             );
+
+            if (substitutions.TryInline(parameterName, row.Values[bindingIndex], collectionItemIdBindings))
+            {
+                continue;
+            }
+
             var parameterValue = ResolveParameterValue(
                 tableWritePlan,
                 row.Values[bindingIndex],
                 rootDocumentId,
-                reservedCollectionItemIds
+                collectionItemIdBindings
             );
 
             parameters.Add(new RelationalParameter(parameterName, parameterValue));
         }
 
-        return new RelationalCommand(sql, parameters);
+        return new RelationalCommand(substitutions.Apply(sql), parameters);
     }
 
     private static RelationalCommand BuildBatchCommand(
@@ -1564,10 +1647,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         int rowOffset,
         int rowCount,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings
     )
     {
         List<RelationalParameter> parameters = new(rowCount * tableWritePlan.ColumnBindings.Length);
+        InlinedSequenceSubstitutions substitutions = new(tableWritePlan);
 
         for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
         {
@@ -1581,18 +1665,26 @@ internal sealed class RelationalWriteNoProfilePersister(
                         rowIndex
                     )
                 );
+
+                if (
+                    substitutions.TryInline(parameterName, row.Values[bindingIndex], collectionItemIdBindings)
+                )
+                {
+                    continue;
+                }
+
                 var parameterValue = ResolveParameterValue(
                     tableWritePlan,
                     row.Values[bindingIndex],
                     rootDocumentId,
-                    reservedCollectionItemIds
+                    collectionItemIdBindings
                 );
 
                 parameters.Add(new RelationalParameter(parameterName, parameterValue));
             }
         }
 
-        return new RelationalCommand(sql, parameters);
+        return new RelationalCommand(substitutions.Apply(sql), parameters);
     }
 
     private static IReadOnlyList<RelationalWriteMergedTableRow> CreateTemporaryOrdinalRows(
@@ -1673,7 +1765,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         TableWritePlan tableWritePlan,
         FlattenedWriteValue value,
         long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings
     )
     {
         return value switch
@@ -1681,7 +1773,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             FlattenedWriteValue.Literal(var literalValue) => literalValue,
             FlattenedWriteValue.UnresolvedRootDocumentId => rootDocumentId,
             FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId
-                when reservedCollectionItemIds.TryGetValue(
+                when collectionItemIdBindings.TryGetReservedValue(
                     unresolvedCollectionItemId,
                     out var reservedCollectionItemId
                 ) => reservedCollectionItemId,

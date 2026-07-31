@@ -25,6 +25,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Relational_Write_No_Profile_Persister
 {
+    private const string PgsqlCollectionItemIdSequenceExpression =
+        """nextval('"dms"."CollectionItemIdSequence"')""";
+
+    private const string MssqlCollectionItemIdSequenceExpression =
+        "NEXT VALUE FOR [dms].[CollectionItemIdSequence]";
+
     private RelationalWriteNoProfilePersister _sut = null!;
     private RecordingLogger<RelationalWriteNoProfilePersister> _logger = null!;
 
@@ -937,13 +943,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
-            new CommandResponse(ScalarResult: 91L),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(5);
+        writeSession.Commands.Should().HaveCount(4);
 
         writeSession
             .Commands[0]
@@ -960,15 +965,20 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
         GetParameterValue(writeSession.Commands[1], "@AddressType").Should().Be("Home");
 
-        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
-        writeSession.Commands[3].CommandText.Should().Be(collectionPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(91L);
-        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
-        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
-        GetParameterValue(writeSession.Commands[3], "@AddressType").Should().Be("Physical");
+        // No other table consumes the inserted row's key, so it costs no reservation round trip.
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[2],
+            collectionPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 1,
+            batchedParameterNames: false
+        );
+        GetParameterValue(writeSession.Commands[2], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[2], "@Ordinal").Should().Be(1);
+        GetParameterValue(writeSession.Commands[2], "@AddressType").Should().Be("Physical");
 
-        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1004,13 +1014,15 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
-            new CommandResponse(ScalarResult: 911L),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(5);
+        writeSession.Commands.Should().HaveCount(4);
+
+        // The address key is reserved because the period row binds it; the period's own key is not,
+        // because nothing reads it back.
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
@@ -1018,16 +1030,20 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
         GetParameterValue(writeSession.Commands[1], "@AddressType").Should().Be("Home");
 
-        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
-        writeSession.Commands[3].CommandText.Should().Be(periodPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(911L);
-        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
-        GetParameterValue(writeSession.Commands[3], "@ParentCollectionItemId").Should().Be(910L);
-        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(0);
-        GetParameterValue(writeSession.Commands[3], "@BeginDate").Should().Be("2026-09-01");
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[2],
+            periodPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 1,
+            batchedParameterNames: false
+        );
+        GetParameterValue(writeSession.Commands[2], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[2], "@ParentCollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[2], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[2], "@BeginDate").Should().Be("2026-09-01");
 
-        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1058,13 +1074,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
-            new CommandResponse(ScalarResult: 91L),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(5);
+        writeSession.Commands.Should().HaveCount(4);
 
         writeSession
             .Commands[0]
@@ -1081,15 +1096,19 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
         GetParameterValue(writeSession.Commands[1], "@InterventionCode").Should().Be("Mentor Updated");
 
-        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
-        writeSession.Commands[3].CommandText.Should().Be(extensionCollectionPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(91L);
-        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
-        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
-        GetParameterValue(writeSession.Commands[3], "@InterventionCode").Should().Be("Coach");
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[2],
+            extensionCollectionPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 1,
+            batchedParameterNames: false
+        );
+        GetParameterValue(writeSession.Commands[2], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[2], "@Ordinal").Should().Be(1);
+        GetParameterValue(writeSession.Commands[2], "@InterventionCode").Should().Be("Coach");
 
-        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1126,13 +1145,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
-            new CommandResponse(ScalarResult: 91L),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(5);
+        writeSession.Commands.Should().HaveCount(4);
 
         writeSession
             .Commands[0]
@@ -1150,16 +1168,20 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
         GetParameterValue(writeSession.Commands[1], "@ServiceName").Should().Be("Meal Updated");
 
-        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
-        writeSession.Commands[3].CommandText.Should().Be(collectionAlignedExtensionChildPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(91L);
-        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
-        GetParameterValue(writeSession.Commands[3], "@BaseCollectionItemId").Should().Be(44L);
-        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
-        GetParameterValue(writeSession.Commands[3], "@ServiceName").Should().Be("Tutor");
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[2],
+            collectionAlignedExtensionChildPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 1,
+            batchedParameterNames: false
+        );
+        GetParameterValue(writeSession.Commands[2], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[2], "@BaseCollectionItemId").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[2], "@Ordinal").Should().Be(1);
+        GetParameterValue(writeSession.Commands[2], "@ServiceName").Should().Be("Tutor");
 
-        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1195,13 +1217,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
-            new CommandResponse(ScalarResult: 911L),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(5);
+        writeSession.Commands.Should().HaveCount(4);
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
@@ -1209,16 +1230,20 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
         GetParameterValue(writeSession.Commands[1], "@AddressType").Should().Be("Home");
 
-        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
-        writeSession.Commands[3].CommandText.Should().Be(collectionAlignedExtensionChildPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(911L);
-        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
-        GetParameterValue(writeSession.Commands[3], "@BaseCollectionItemId").Should().Be(910L);
-        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(0);
-        GetParameterValue(writeSession.Commands[3], "@ServiceName").Should().Be("Bus");
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[2],
+            collectionAlignedExtensionChildPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 1,
+            batchedParameterNames: false
+        );
+        GetParameterValue(writeSession.Commands[2], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[2], "@BaseCollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[2], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[2], "@ServiceName").Should().Be("Bus");
 
-        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1505,7 +1530,7 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
-    public async Task It_batches_collection_id_reservations_and_insert_commands_for_large_collection_inserts()
+    public async Task It_batches_large_collection_inserts_without_any_reservation_command()
     {
         var rootPlan = CreateRootPlan();
         var collectionPlan = CreateCollectionPlan() with
@@ -1540,60 +1565,46 @@ public class Given_Relational_Write_No_Profile_Persister
             supportsGuardedNoOp: true
         );
         var writeSession = new RecordingRelationalWriteSession([
-            new CommandResponse(
-                ReservationRows:
-                [
-                    new ReservedCollectionItemIdRow(1, 910L),
-                    new ReservedCollectionItemIdRow(2, 911L),
-                ]
-            ),
             new CommandResponse(),
-            new CommandResponse(
-                ReservationRows:
-                [
-                    new ReservedCollectionItemIdRow(1, 912L),
-                    new ReservedCollectionItemIdRow(2, 913L),
-                ]
-            ),
             new CommandResponse(),
-            new CommandResponse(ScalarResult: 914L),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
-        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(7);
 
-        writeSession.Commands[0].CommandText.Should().Contain("generate_series");
-        GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
+        // Row-cap batching is unchanged; what is gone is the reservation command each batch used to pay.
+        writeSession.Commands.Should().HaveCount(4);
 
-        writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
-        writeSession.Commands[1].Parameters.Should().HaveCount(8);
-        AssertBatchedParameterNames(writeSession.Commands[1], collectionPlan, 2);
-        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
-        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[0],
+            collectionPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 2,
+            batchedParameterNames: true
+        );
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[1],
+            collectionPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 2,
+            batchedParameterNames: true
+        );
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[2],
+            collectionPlan,
+            PgsqlCollectionItemIdSequenceExpression,
+            rowCount: 1,
+            batchedParameterNames: false
+        );
+        GetParameterValue(writeSession.Commands[2], "@AddressType").Should().Be("Shipping");
 
-        writeSession.Commands[2].CommandText.Should().Contain("generate_series");
-        GetParameterValue(writeSession.Commands[2], "@count").Should().Be(2);
-
-        writeSession.Commands[3].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
-        writeSession.Commands[3].Parameters.Should().HaveCount(8);
-        AssertBatchedParameterNames(writeSession.Commands[3], collectionPlan, 2);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
-
-        writeSession.Commands[4].CommandText.Should().Contain("CollectionItemIdSequence");
-        writeSession.Commands[5].CommandText.Should().Be(collectionPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[5], "@CollectionItemId").Should().Be(914L);
-        GetParameterValue(writeSession.Commands[5], "@AddressType").Should().Be("Shipping");
-
-        writeSession.Commands[6].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[6], "@documentId").Should().Be(345L);
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
-    public async Task It_uses_sql_server_batch_reservation_and_insert_sql_for_multi_row_collection_inserts()
+    public async Task It_uses_sql_server_batch_insert_sql_for_multi_row_collection_inserts()
     {
         var rootPlan = CreateRootPlan();
         var collectionPlan = CreateMssqlCollectionPlan() with
@@ -1625,36 +1636,29 @@ public class Given_Relational_Write_No_Profile_Persister
             supportsGuardedNoOp: true
         );
         var writeSession = new RecordingRelationalWriteSession([
-            new CommandResponse(
-                ReservationRows:
-                [
-                    new ReservedCollectionItemIdRow(1, 910L),
-                    new ReservedCollectionItemIdRow(2, 911L),
-                ]
-            ),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
-        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(3);
-        writeSession
-            .Commands[0]
-            .CommandText.Should()
-            .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
-        GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
-        writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
-        AssertBatchedParameterNames(writeSession.Commands[1], collectionPlan, 2);
-        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
-        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
+        writeSession.Commands.Should().HaveCount(2);
 
-        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(345L);
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[0],
+            collectionPlan,
+            MssqlCollectionItemIdSequenceExpression,
+            rowCount: 2,
+            batchedParameterNames: true
+        );
+        GetParameterValue(writeSession.Commands[0], "@AddressType_0").Should().Be("Mailing");
+        GetParameterValue(writeSession.Commands[0], "@AddressType_1").Should().Be("Home");
+
+        writeSession.Commands[1].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[1], "@documentId").Should().Be(345L);
     }
 
     [Test]
-    public async Task It_uses_sql_server_multi_batch_collection_id_reservations_when_insert_batches_cross_the_limit()
+    public async Task It_uses_sql_server_multi_batch_collection_inserts_when_batches_cross_the_limit()
     {
         var rootPlan = CreateRootPlan();
         var collectionPlan = CreateMssqlCollectionPlan() with
@@ -1689,65 +1693,153 @@ public class Given_Relational_Write_No_Profile_Persister
             supportsGuardedNoOp: true
         );
         var writeSession = new RecordingRelationalWriteSession([
-            new CommandResponse(
-                ReservationRows:
-                [
-                    new ReservedCollectionItemIdRow(1, 910L),
-                    new ReservedCollectionItemIdRow(2, 911L),
-                ]
-            ),
             new CommandResponse(),
-            new CommandResponse(
-                ReservationRows:
-                [
-                    new ReservedCollectionItemIdRow(1, 912L),
-                    new ReservedCollectionItemIdRow(2, 913L),
-                ]
-            ),
             new CommandResponse(),
-            new CommandResponse(ScalarResult: 914L),
             new CommandResponse(),
             new CommandResponse(ScalarResult: 77L),
         ]);
-        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(7);
+        writeSession.Commands.Should().HaveCount(4);
 
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[0],
+            collectionPlan,
+            MssqlCollectionItemIdSequenceExpression,
+            rowCount: 2,
+            batchedParameterNames: true
+        );
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[1],
+            collectionPlan,
+            MssqlCollectionItemIdSequenceExpression,
+            rowCount: 2,
+            batchedParameterNames: true
+        );
+        AssertInlinedCollectionInsert(
+            writeSession.Commands[2],
+            collectionPlan,
+            MssqlCollectionItemIdSequenceExpression,
+            rowCount: 1,
+            batchedParameterNames: false
+        );
+        GetParameterValue(writeSession.Commands[2], "@AddressType").Should().Be("Shipping");
+
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
+    }
+
+    [Test]
+    public async Task It_inlines_the_sequence_for_a_collection_item_id_no_other_table_consumes()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan();
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [CreateRow(NewCollectionItemId(), 345L, 0, "Home")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        // The reservation round trip is gone: the value is produced by the insert itself.
+        writeSession.Commands.Should().HaveCount(2);
         writeSession
             .Commands[0]
             .CommandText.Should()
-            .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
-        GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
-
-        writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
-        writeSession.Commands[1].Parameters.Should().HaveCount(8);
-        AssertBatchedParameterNames(writeSession.Commands[1], collectionPlan, 2);
-        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
-        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
-
+            .Be(
+                """
+                insert into edfi."SchoolAddress" values (nextval('"dms"."CollectionItemIdSequence"'), @School_DocumentId, @Ordinal, @AddressType)
+                """
+            );
         writeSession
-            .Commands[2]
-            .CommandText.Should()
-            .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
-        GetParameterValue(writeSession.Commands[2], "@count").Should().Be(2);
+            .Commands[0]
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .Equal("@School_DocumentId", "@Ordinal", "@AddressType");
 
-        writeSession.Commands[3].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
-        writeSession.Commands[3].Parameters.Should().HaveCount(8);
-        AssertBatchedParameterNames(writeSession.Commands[3], collectionPlan, 2);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
-        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
+        writeSession.Commands[1].CommandText.Should().Contain("ContentVersion");
+    }
 
-        writeSession
-            .Commands[4]
-            .CommandText.Should()
-            .Contain("SELECT NEXT VALUE FOR [dms].[CollectionItemIdSequence];");
-        writeSession.Commands[5].CommandText.Should().Be(collectionPlan.InsertSql);
-        GetParameterValue(writeSession.Commands[5], "@CollectionItemId").Should().Be(914L);
-        GetParameterValue(writeSession.Commands[5], "@AddressType").Should().Be("Shipping");
+    [Test]
+    public async Task It_inlines_the_sequence_once_per_row_of_a_batched_collection_insert()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateMssqlCollectionPlan();
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [
+                        CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
+                        CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
+                        CreateRow(NewCollectionItemId(), 345L, 2, "Physical"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
 
-        writeSession.Commands[6].CommandText.Should().Contain("ContentVersion");
-        GetParameterValue(writeSession.Commands[6], "@documentId").Should().Be(345L);
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        writeSession.Commands.Should().HaveCount(2);
+
+        var insertCommand = writeSession.Commands[0];
+        CountOccurrences(insertCommand.CommandText, "NEXT VALUE FOR [dms].[CollectionItemIdSequence]")
+            .Should()
+            .Be(3);
+        insertCommand.CommandText.Should().NotContain("@CollectionItemId");
+        insertCommand
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .NotContain(name => name.StartsWith("@CollectionItemId", StringComparison.Ordinal));
+        insertCommand.Parameters.Should().HaveCount(9);
+
+        writeSession.Commands[1].CommandText.Should().Contain("ContentVersion");
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+
+        for (
+            var index = text.IndexOf(value, StringComparison.Ordinal);
+            index >= 0;
+            index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal)
+        )
+        {
+            count++;
+        }
+
+        return count;
     }
 
     private static object? GetParameterValue(RelationalCommand command, string parameterName)
@@ -1755,23 +1847,38 @@ public class Given_Relational_Write_No_Profile_Persister
         return command.Parameters.Single(parameter => parameter.Name == parameterName).Value;
     }
 
-    private static void AssertBatchedParameterNames(
+    /// <summary>
+    /// Asserts a collection insert whose own key column is produced by the sequence: the expression
+    /// appears once per row, no bind marker for the key survives, and every other binding is still bound.
+    /// </summary>
+    private static void AssertInlinedCollectionInsert(
         RelationalCommand command,
         TableWritePlan tableWritePlan,
-        int rowCount
+        string sequenceExpression,
+        int rowCount,
+        bool batchedParameterNames
     )
     {
+        var keyBindingIndex = tableWritePlan.CollectionKeyPreallocationPlan!.BindingIndex;
+        var keyParameterName = tableWritePlan.ColumnBindings[keyBindingIndex].ParameterName.TrimStart('@');
+
+        CountOccurrences(command.CommandText, sequenceExpression).Should().Be(rowCount);
+        command.CommandText.Should().NotContain("@" + keyParameterName);
+
         var expectedParameterNames = Enumerable
             .Range(0, rowCount)
             .SelectMany(rowIndex =>
-                tableWritePlan.ColumnBindings.Select(binding =>
-                    $"@{binding.ParameterName.TrimStart('@')}_{rowIndex}"
-                )
+                tableWritePlan
+                    .ColumnBindings.Where((_, bindingIndex) => bindingIndex != keyBindingIndex)
+                    .Select(binding =>
+                        batchedParameterNames
+                            ? $"@{binding.ParameterName.TrimStart('@')}_{rowIndex}"
+                            : $"@{binding.ParameterName.TrimStart('@')}"
+                    )
             )
             .ToArray();
 
         command.Parameters.Select(static parameter => parameter.Name).Should().Equal(expectedParameterNames);
-        command.Parameters.Select(static parameter => parameter.Name).Should().OnlyHaveUniqueItems();
     }
 
     private static DataTable CreateSingleValueResultSet(string columnName, Type columnType, object value)

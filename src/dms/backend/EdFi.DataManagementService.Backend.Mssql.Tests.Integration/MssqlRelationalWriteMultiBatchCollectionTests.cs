@@ -338,11 +338,19 @@ file static class MultiBatchCollectionsIntegrationTestSupport
     public static IReadOnlyList<int> SchoolAddressUpdateParameterCounts(MultiBatchCommandRecorder recorder) =>
         recorder
             .Commands.Where(command =>
-                command.CommandText.Contains("update", StringComparison.OrdinalIgnoreCase)
+                StartsWithStatement(command.CommandText, "update")
                 && command.CommandText.Contains("[edfi].[SchoolAddress]", StringComparison.Ordinal)
             )
             .Select(command => command.ParametersByName.Count)
             .ToArray();
+
+    /// <summary>
+    /// Classifies a recorded command by the statement it begins with. Matching the keyword anywhere in the
+    /// text is not sound: the first phase's capture command holds <c>UPDLOCK</c> and hydrates the same
+    /// table, so it would be counted as a collection update batch.
+    /// </summary>
+    private static bool StartsWithStatement(string commandText, string statementKeyword) =>
+        commandText.TrimStart().StartsWith(statementKeyword, StringComparison.OrdinalIgnoreCase);
 
     // --- Changed-descriptor multi-batch update scenario support (NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions) ---
 
