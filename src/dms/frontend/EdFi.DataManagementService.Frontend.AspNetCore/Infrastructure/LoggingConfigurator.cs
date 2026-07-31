@@ -29,6 +29,9 @@ public static class LoggingConfigurator
     /// <summary>
     /// Adds the OTLP sink to the given logger configuration when enabled. Returns whether the
     /// sink was applied, providing a test-observable seam without reflecting into Serilog internals.
+    /// Enabled without an Endpoint is a misconfiguration: a warning is written to stderr and the
+    /// sink is not applied, because the sink's built-in default endpoint assumes gRPC conventions
+    /// and would silently mismatch the configured protocol.
     /// </summary>
     public static bool ApplyOtlpSink(LoggerConfiguration loggerConfiguration, OtlpLoggingOptions options)
     {
@@ -37,22 +40,31 @@ public static class LoggingConfigurator
             return false;
         }
 
+        if (string.IsNullOrEmpty(options.Endpoint))
+        {
+            Console.Error.WriteLine(
+                "OtlpLogging is enabled but no Endpoint is configured; OTLP export is not applied."
+            );
+            return false;
+        }
+
         // Exporter failures (for example, an unreachable collector) would otherwise fail silently.
         // Enabling SelfLog ensures they are diagnosable on stderr.
         Serilog.Debugging.SelfLog.Enable(Console.Error);
 
-        loggerConfiguration.WriteTo.OpenTelemetry(o =>
-        {
-            if (!string.IsNullOrEmpty(options.Endpoint))
+        // ignoreEnvironment: true keeps the OtlpLogging section authoritative; otherwise the sink
+        // lets OTEL_EXPORTER_OTLP_* environment variables silently override these values.
+        loggerConfiguration.WriteTo.OpenTelemetry(
+            o =>
             {
                 o.Endpoint = options.Endpoint;
-            }
-
-            o.Protocol = options.Protocol;
-            o.ResourceAttributes = options
-                .ToResourceAttributes()
-                .ToDictionary(attribute => attribute.Key, attribute => attribute.Value);
-        });
+                o.Protocol = options.Protocol;
+                o.ResourceAttributes = options
+                    .ToResourceAttributes()
+                    .ToDictionary(attribute => attribute.Key, attribute => attribute.Value);
+            },
+            ignoreEnvironment: true
+        );
 
         return true;
     }

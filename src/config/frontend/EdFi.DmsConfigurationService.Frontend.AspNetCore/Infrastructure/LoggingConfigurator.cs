@@ -28,7 +28,10 @@ public static class LoggingConfigurator
     /// <summary>
     /// Adds the OTLP sink to <paramref name="loggerConfiguration"/> when <paramref name="options"/>
     /// is enabled. Returns whether the sink was applied, providing a test-observable seam without
-    /// requiring reflection into Serilog internals.
+    /// requiring reflection into Serilog internals. Enabled without an Endpoint is a
+    /// misconfiguration: a warning is written to stderr and the sink is not applied, because the
+    /// sink's built-in default endpoint assumes gRPC conventions and would silently mismatch the
+    /// configured protocol.
     /// </summary>
     public static bool ApplyOtlpSink(LoggerConfiguration loggerConfiguration, OtlpLoggingOptions options)
     {
@@ -37,20 +40,29 @@ public static class LoggingConfigurator
             return false;
         }
 
+        if (string.IsNullOrEmpty(options.Endpoint))
+        {
+            Console.Error.WriteLine(
+                "OtlpLogging is enabled but no Endpoint is configured; OTLP export is not applied."
+            );
+            return false;
+        }
+
         // Exporter failures (e.g. an unreachable collector) do not throw and are otherwise silent.
         // Wire SelfLog to stderr so they remain diagnosable.
         Serilog.Debugging.SelfLog.Enable(Console.Error);
 
-        loggerConfiguration.WriteTo.OpenTelemetry(o =>
-        {
-            if (!string.IsNullOrEmpty(options.Endpoint))
+        // ignoreEnvironment: true keeps the OtlpLogging section authoritative; otherwise the sink
+        // lets OTEL_EXPORTER_OTLP_* environment variables silently override these values.
+        loggerConfiguration.WriteTo.OpenTelemetry(
+            o =>
             {
                 o.Endpoint = options.Endpoint;
-            }
-
-            o.Protocol = options.Protocol;
-            o.ResourceAttributes = new Dictionary<string, object>(options.ToResourceAttributes());
-        });
+                o.Protocol = options.Protocol;
+                o.ResourceAttributes = new Dictionary<string, object>(options.ToResourceAttributes());
+            },
+            ignoreEnvironment: true
+        );
 
         return true;
     }

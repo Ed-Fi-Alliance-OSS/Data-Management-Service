@@ -236,7 +236,8 @@ The `OtlpLogging` section supports these keys:
 * `Enabled`: when `true`, log events are also exported over OTLP. Default:
   `false`.
 * `Endpoint`: the OTLP collector endpoint, for example
-  `http://collector:4318`.
+  `http://collector:4318`. Required when `Enabled` is `true`: if it is
+  omitted, OTLP export is not applied and a warning is written to stderr.
 * `Protocol`: the OTLP wire protocol, either `Grpc` or `HttpProtobuf`.
 * `ServiceName`: the `service.name` resource attribute. Defaults to
   `EdFi.DataManagementService` for DMS and `EdFi.DmsConfigurationService` for
@@ -260,7 +261,9 @@ The `OtlpLogging` section supports these keys:
 > `Serilog:WriteTo` configuration is unsupported, even though it is
 > technically reachable because both applications use
 > `ReadFrom.Configuration`. The `OtlpLogging` section is the only supported
-> surface for enabling OTLP export.
+> surface for enabling OTLP export. The standard `OTEL_EXPORTER_OTLP_*`
+> environment variables are likewise ignored by the exporter, so they cannot
+> silently override the configured endpoint, protocol, or resource identity.
 
 Vendor-specific integrations belong outside the CMS and DMS processes: send
 OTLP directly to a compatible service, or through an OpenTelemetry Collector,
@@ -288,7 +291,9 @@ Enable OTLP export through environment variables passed to the container, for
 example `OtlpLogging__Enabled=true` and
 `OtlpLogging__Endpoint=http://collector:4318`. Compose operators must pass
 these variables through to the container environment (for example, via the
-`environment` key or an `.env` file); they are not set automatically.
+service's `environment` key or an `env_file:` entry); they are not set
+automatically. A top-level `.env` file only provides values for compose-file
+interpolation; it does not reach the container environment by itself.
 
 #### Windows Services
 

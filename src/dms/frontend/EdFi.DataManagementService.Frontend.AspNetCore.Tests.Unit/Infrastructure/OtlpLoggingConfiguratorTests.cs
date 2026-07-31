@@ -96,6 +96,27 @@ public class Given_OtlpLogging_Enabled_Via_Configuration
 
 [TestFixture]
 [Parallelizable]
+public class Given_OtlpLogging_Enabled_Without_An_Endpoint
+{
+    [Test]
+    public void It_does_not_apply_the_otlp_sink()
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["OtlpLogging:Enabled"] = "true" })
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // Without an Endpoint the sink's built-in gRPC-convention default endpoint would silently
+        // mismatch the HttpProtobuf protocol default, so the configurator refuses to apply the sink.
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        sinkApplied.Should().BeFalse();
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public class Given_OtlpLogging_Keys_Are_Fully_Configured
 {
     private static IConfigurationRoot BuildConfiguration(string protocol) =>

@@ -112,7 +112,9 @@ public static class WebApplicationBuilderExtensions
         {
             var configureLogging = LoggingConfigurator.ConfigureLogging(webAppBuilder.Configuration);
             webAppBuilder.Logging.ClearProviders();
-            webAppBuilder.Logging.AddSerilog(configureLogging);
+            // dispose: true so host shutdown disposes the logger and flushes the OTLP sink's
+            // pending batch; without it, buffered events are dropped on exit.
+            webAppBuilder.Logging.AddSerilog(configureLogging, dispose: true);
 
             return configureLogging;
         }

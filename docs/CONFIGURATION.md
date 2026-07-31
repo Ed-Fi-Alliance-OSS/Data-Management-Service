@@ -241,7 +241,7 @@ log routing paths, including OTLP export and deployment recipes.
 | Parameter              | Description                                                                                                                                                              |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Enabled                | When `true`, log events are also exported over OTLP. Default: `false`.                                                                                                   |
-| Endpoint                | The OTLP collector endpoint. Example: `http://collector:4318`.                                                                                                           |
+| Endpoint                | The OTLP collector endpoint. Required when `Enabled` is `true`: if omitted, OTLP export is not applied and a warning is written to stderr. Example: `http://collector:4318`. |
 | Protocol                | The OTLP wire protocol. Valid values are `Grpc` and `HttpProtobuf`. Default: `HttpProtobuf`.                                                                             |
 | ServiceName             | The `service.name` resource attribute. Default: `EdFi.DataManagementService` (DMS) or `EdFi.DmsConfigurationService` (CMS).                                              |
 | ServiceVersion          | The `service.version` resource attribute. Default: the application's informational version.                                                                             |

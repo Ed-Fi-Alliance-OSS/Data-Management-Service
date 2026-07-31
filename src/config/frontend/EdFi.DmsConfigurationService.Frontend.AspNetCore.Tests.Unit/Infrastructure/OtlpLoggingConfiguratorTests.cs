@@ -109,6 +109,25 @@ public class OtlpLoggingConfiguratorTests
         sinkApplied.Should().BeTrue();
     }
 
+    [Test]
+    public void ApplyOtlpSink_Returns_False_When_Enabled_Without_An_Endpoint()
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["OtlpLogging:Enabled"] = "true" })
+            .Build();
+        var options = LoggingConfigurator.BindOtlpLoggingOptions(configuration);
+        var loggerConfiguration = new LoggerConfiguration();
+
+        // Act
+        // Without an Endpoint the sink's built-in gRPC-convention default endpoint would silently
+        // mismatch the HttpProtobuf protocol default, so the configurator refuses to apply the sink.
+        var sinkApplied = LoggingConfigurator.ApplyOtlpSink(loggerConfiguration, options);
+
+        // Assert
+        sinkApplied.Should().BeFalse();
+    }
+
     [TestCase("Grpc", OtlpProtocol.Grpc)]
     [TestCase("HttpProtobuf", OtlpProtocol.HttpProtobuf)]
     public void Binding_Maps_Every_OtlpLogging_Key_From_Configuration(
@@ -197,7 +216,7 @@ public class OtlpLoggingConfiguratorTests
 }
 
 /// <summary>
-/// AC 5's resilience proof: an OTLP collector that cannot be reached must not block application
+/// Resilience proof: an OTLP collector that cannot be reached must not block application
 /// startup or request handling. <see cref="LoggingConfigurator.ConfigureLogging"/> runs inside
 /// <c>AddServices()</c>, ahead of <c>WebApplicationBuilder.Build()</c>, so - exactly like
 /// AppSettings:ReverseProxy in <c>ForwardedHeadersTests</c>' <c>Given_A_Reverse_Proxy_Configuration</c> -
