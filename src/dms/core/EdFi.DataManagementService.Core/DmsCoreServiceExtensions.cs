@@ -284,14 +284,8 @@ public static class DmsCoreServiceExtensions
 
     internal static void ValidateDeadlockRetrySettings(DeadlockRetrySettings settings)
     {
-        if (settings.MaxRetryAttempts < 0)
-        {
-            throw new InvalidOperationException("DeadlockRetry:MaxRetryAttempts must be >= 0");
-        }
+        ArgumentNullException.ThrowIfNull(settings);
 
-        if (settings.BaseDelayMilliseconds < 1)
-        {
-            throw new InvalidOperationException("DeadlockRetry:BaseDelayMilliseconds must be >= 1");
-        }
+        settings.Validate();
     }
 }

@@ -39,7 +39,9 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
                     constraintName
                 )
             ),
-            PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure => null,
+            PostgresErrorCodes.DeadlockDetected
+            or PostgresErrorCodes.SerializationFailure
+            or PostgresErrorCodes.LockNotAvailable => null,
             _ => RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance,
         };
 
@@ -69,7 +71,10 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
         ArgumentNullException.ThrowIfNull(exception);
 
         return exception is PostgresException { SqlState: var sqlState }
-            && sqlState is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure;
+            && sqlState
+                is PostgresErrorCodes.DeadlockDetected
+                    or PostgresErrorCodes.SerializationFailure
+                    or PostgresErrorCodes.LockNotAvailable;
     }
 
     private static RelationalWriteExceptionClassification BuildConstraintClassification(
