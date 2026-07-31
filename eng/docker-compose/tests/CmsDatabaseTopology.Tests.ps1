@@ -2834,6 +2834,40 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     }
 
     BeforeEach {
+        # Ambient hermeticity, which this Describe previously had none of - unlike the other three, it
+        # relied on the start scripts reading their env FILE. That stopped being enough: the topology
+        # resolver treats a declaration whose own key the ambient environment supplies as inert (Compose
+        # ignores the file's value for it entirely), so an ambient value for any name a fixture declares
+        # now changes which branch the run takes. Measured against the unsafe-reorder fixture: with
+        # ambient CMS_MOVE_PROOF_FEATURE or CMS_MOVE_PROOF_PW set, the reorder was permitted, the run
+        # reached the recording docker boundary, and the test failed on "Failed to start Postgresql".
+        #
+        # The inventory is every name the fixtures below declare, not just the two that exposed the gap -
+        # each one is behaviourally significant for the same reason. Presence is captured separately from
+        # value, because "absent" and "present and empty" are different states, and restoring uses
+        # Remove-Item for the absent case: SetEnvironmentVariable(name, $null) leaves a present-but-blank
+        # variable in this environment rather than removing it.
+        #
+        # DMS_CONFIG_IDENTITY_PROVIDER appears here as a name the fixtures declare. Invoke-StartScript
+        # separately snapshots it (with four siblings) because the start scripts WRITE it; the two compose
+        # cleanly - the inner restore returns it to whatever it was when the script was invoked, and this
+        # outer restore returns it to the developer's own value.
+        $script:wiringAmbientKeys = @(
+            "POSTGRES_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_DB_NAME", "MSSQL_SA_PASSWORD",
+            "DMS_DATASTORE", "DMS_CONFIG_DATASTORE", "DMS_CONFIG_IDENTITY_PROVIDER",
+            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING",
+            "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE",
+            "CMS_MOVE_PROOF_FEATURE", "CMS_MOVE_PROOF_PW"
+        )
+        $script:wiringAmbientSnapshot = @{}
+        foreach ($key in $script:wiringAmbientKeys) {
+            $script:wiringAmbientSnapshot[$key] = @{
+                Present = (Test-Path -LiteralPath "Env:\$key")
+                Value   = [System.Environment]::GetEnvironmentVariable($key)
+            }
+            Remove-Item -LiteralPath "Env:\$key" -Force -ErrorAction SilentlyContinue
+        }
+
         $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-startscript-wiring-$([Guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $script:work -Force | Out-Null
         $derivedDir = Join-Path $script:dockerComposeRoot ".derived"
@@ -2844,6 +2878,16 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     }
 
     AfterEach {
+        foreach ($key in $script:wiringAmbientKeys) {
+            $saved = $script:wiringAmbientSnapshot[$key]
+            if ($saved.Present) {
+                [System.Environment]::SetEnvironmentVariable($key, $saved.Value)
+            }
+            else {
+                Remove-Item -LiteralPath "Env:\$key" -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         if (Test-Path -LiteralPath $script:work) {
             Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
         }
