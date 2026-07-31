@@ -1,0 +1,289 @@
+[
+  {
+    "category": "contracts",
+    "description": "Add the shared DocumentCache cache-write/conditional-acknowledgement contract in the DMS backend/core boundary near the existing DocumentCache materializer and target-context contracts. Define the request model with resolved target context, DocumentId, optional selected RequiredContentVersion for diagnostics, caller purpose values for DurableWorkProjection and DirectFill, optional DocumentCacheMaterializationCandidate, and cancellation. Define a bounded result/outcome model that represents already-current acknowledgement, candidate-written acknowledgement, needs-materialization, lifecycle or latch fence, source missing/deleted, stale-candidate suppression, missing-work or work-mismatch anomalies with Tracking versus Rebuilding distinction, cache-ahead latch set, cache-ahead disappeared, racing-writer lost, exhausted retry budget, caller-aborted retry, delete-race retry exhaustion, and deterministic invariant/target failure. Add guard logic for invalid enum values, nonpositive versions, candidate DocumentId mismatch as a programming error, and matching-version candidate metadata mismatch as an invariant/target failure.",
+    "acceptance-criteria": [
+      "One shared writer interface is available for later 18-04 projector and 18-05 direct-fill integrations without exposing a cache-only write API.",
+      "The writer request treats selected RequiredContentVersion as diagnostic context only and does not let it authorize cache DML or work acknowledgement.",
+      "The outcome model is bounded, typed, and covers every story-listed outcome including direct-fill use of the same result model.",
+      "Candidate DocumentId mismatch is rejected as a programming error before provider work; ContentVersion mismatch is represented as stale suppression; matching-version UUID or resource metadata mismatch is represented as deterministic invariant/target failure.",
+      "Contracts reuse the existing resolved target context and DocumentCacheMaterializationCandidate types instead of duplicating materializer-owned data."
+    ],
+    "steps-to-verify": [
+      "Review the new contract files against reference/design/backend-redesign/epics/18-document-cache/03-monotonic-cache-upsert-and-delete-fencing.md sections 'Inputs and Outcomes' and 'Answers 3'.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterContract.",
+      "Run dotnet csharpier format on each new or modified contract/test file."
+    ],
+    "completed": true
+  },
+  {
+    "category": "classification",
+    "description": "Implement a provider-independent pure classification/action selector for current source/cache/work observations. The selector should consume the durable S/C/W classification plus lifecycle state, cache-ahead latch, caller purpose, candidate metadata comparison, and whether the writer is operating in Tracking or Rebuilding. It should choose only abstract actions and outcomes; it must not perform DML, target resolution, materialization, lifecycle administration, repair, or logging side effects.",
+    "acceptance-criteria": [
+      "The selector maps source missing, C greater than S, S equals C equals W, C equals S with W absent, W equals S with cache absent/behind and current candidate, W equals S with cache absent/behind and no candidate, W equals S with stale candidate, W not equal S, and cache absent/behind with W absent to the story-required actions.",
+      "Cache-ahead is the only relationship that requests the incident latch flow; stale candidates, work mismatches, missing work, missing source rows, lifecycle fences, and duplicate writers do not request latch mutation.",
+      "Tracking missing-work anomalies and possible unseeded Rebuilding baseline rows are represented distinctly while both avoid cache DML and acknowledgement.",
+      "For both DurableWorkProjection and DirectFill purposes, cache absent or behind with no current matching work selects no cache DML even when a current candidate is supplied.",
+      "Equal-version acknowledgement is selected even when the supplied candidate is absent or stale.",
+      "The selector carries an expectedContentVersion for later acknowledgement when an action depends on a current S observation."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterClassification.",
+      "Review classification tests against the action table in reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#current-sourcecachework-classification.",
+      "Run dotnet csharpier format on the classification implementation and tests."
+    ],
+    "completed": true
+  },
+  {
+    "category": "retry",
+    "description": "Add a cache-writer retry adapter that reuses the existing DeadlockRetry settings and semantics without routing through API handler result unions. The adapter should classify provider deadlock, serialization, lock-timeout, and equivalent transient failures for both PostgreSQL and SQL Server, replay the complete cache-write/conditional-acknowledgement transaction attempt on each retry, honor cancellation, surface exhausted-budget and caller-aborted writer outcomes, and emit sanitized retry diagnostics.",
+    "acceptance-criteria": [
+      "DeadlockRetry MaxRetryAttempts, BaseDelayMilliseconds, jitter, retry-disabled behavior, transient-provider classification, and logging semantics are reused for cache writer attempts.",
+      "Every retry executes the complete writer attempt including state-row lock, S/C/W classification, cache DML when applicable, acknowledgement, and cache-ahead reclassification when applicable.",
+      "The writer does not retry only the final acknowledgement statement, enqueue trigger, or any post-commit fragment.",
+      "Non-transient provider failures and deterministic invariant failures are not retried as provider concurrency events.",
+      "Retry logs and metrics omit DocumentId, DocumentUuid, DocumentJson, request body content, authorization data, and unbounded resource labels."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DeadlockRetry.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterRetry.",
+      "Review retry tests to confirm a scripted transient failure increments a complete-attempt counter rather than a statement-only counter."
+    ],
+    "completed": true
+  },
+  {
+    "category": "provider-postgresql",
+    "description": "Implement the PostgreSQL cache-writer transaction adapter. Each main attempt should open a short transaction, acquire the DocumentCacheState singleton with FOR SHARE through commit, verify lifecycle Tracking or Rebuilding with a clear CacheAheadRecoveryRequired latch, classify current Document, ResourceKey, DocumentCache, and DocumentProjectionWork for the input DocumentId in one provider-consistent statement, and execute parameterized cache and acknowledgement DML based only on the current classification and candidate predicates.",
+    "acceptance-criteria": [
+      "Classification is anchored on the input DocumentId and left joins dms.Document, dms.ResourceKey, dms.DocumentCache, and dms.DocumentProjectionWork in one statement.",
+      "The transaction does not deliberately lock DocumentProjectionWork before accessing dms.DocumentCache and the parent dms.Document/ResourceKey rows needed by foreign-key and UUID/resource validation, and the adapter documents the PostgreSQL lock order used for duplicate writers and enqueue/acknowledge races.",
+      "Healthy candidate writes use one application-issued INSERT ... SELECT ... ON CONFLICT (DocumentId) DO UPDATE statement that repeats current source, ResourceKey, work, candidate UUID, candidate ContentVersion, ProjectName, ResourceName, and ResourceVersion predicates.",
+      "Accepted candidate writes populate StreamEtag, LastModifiedAt, and DocumentJson from the materializer candidate as cache payload values, with LastModifiedAt remaining diagnostic/payload metadata rather than a freshness or ordering predicate.",
+      "The conflict update only advances lower cache ContentVersion rows and updates ComputedAt with a provider UTC timestamp only when cache content changes.",
+      "Final acknowledgement is a separate DELETE from dms.DocumentProjectionWork that binds DocumentId and expectedContentVersion and requires current source, cache, and work all still equal that expected version.",
+      "If this attempt writes cache but the final conditional acknowledgement affects zero rows, the whole transaction rolls back and returns a race-lost or retryable outcome.",
+      "Equal-version acknowledgement performs no cache DML and does not refresh ComputedAt.",
+      "Post-delete FK or UUID validation failures are treated as retryable delete races under the writer retry policy."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DocumentCacheWriter.",
+      "Inspect the adapter SQL to confirm it uses parameters and does not add stored procedures, generated programmable objects, or a cache-only write method.",
+      "Run dotnet csharpier format on the PostgreSQL adapter and related tests."
+    ],
+    "completed": true
+  },
+  {
+    "category": "provider-sqlserver",
+    "description": "Implement the SQL Server cache-writer transaction adapter with behavior equivalent to the PostgreSQL adapter. Each main attempt should use a short transaction, take an exact-key shared HOLDLOCK on dms.DocumentCacheState through commit, verify lifecycle Tracking or Rebuilding with a clear latch, classify source/cache/work through one current statement, and apply SQL Server specific parameterized cache and acknowledgement DML.",
+    "acceptance-criteria": [
+      "Classification is anchored on the input DocumentId and joins current dms.Document, dms.ResourceKey, dms.DocumentCache, and dms.DocumentProjectionWork in one provider-consistent statement.",
+      "The transaction does not deliberately lock DocumentProjectionWork before accessing dms.DocumentCache and the parent dms.Document/ResourceKey rows needed by foreign-key and UUID/resource validation, and the adapter documents the SQL Server lock order used for duplicate writers and enqueue/acknowledge races.",
+      "Healthy candidate writes use application-issued UPDATE then INSERT statements for a single DocumentId rather than MERGE.",
+      "The insert path takes an exact-key UPDLOCK, HOLDLOCK probe on dms.DocumentCache before inserting to serialize duplicate absent-row writers.",
+      "UPDATE and INSERT sources repeat current source, ResourceKey, work, candidate UUID, candidate ContentVersion, ProjectName, ResourceName, and ResourceVersion predicates.",
+      "Accepted candidate writes populate StreamEtag, LastModifiedAt, and DocumentJson from the materializer candidate as cache payload values, with LastModifiedAt remaining diagnostic/payload metadata rather than a freshness or ordering predicate.",
+      "ComputedAt uses sysutcdatetime() only when cache content changes; equal-version acknowledgement performs no cache update.",
+      "Final acknowledgement deletes only matching DocumentProjectionWork where current source, cache, and work all still equal the expectedContentVersion.",
+      "Cache DML and acknowledgement commit together or roll back together under all acknowledgement race outcomes and delete races."
+    ],
+    "steps-to-verify": [
+      "Start or verify a SQL Server 2025 test instance using the repository MSSQL integration-test instructions.",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter.",
+      "Inspect the adapter SQL to confirm it does not use MERGE, stored procedures, or generated programmable objects.",
+      "Run dotnet csharpier format on the SQL Server adapter and related tests."
+    ],
+    "completed": true
+  },
+  {
+    "category": "cache-ahead",
+    "description": "Implement the cache-ahead incident flow shared by both provider adapters. When the main transaction classifies current C greater than S, it should commit or roll back with no cache write and no acknowledgement, then start a short incident transaction that obtains the state row exclusively, revalidates lifecycle Tracking or Rebuilding with the latch still clear, re-runs current S/C/W classification, and sets CacheAheadRecoveryRequired only if C greater than S remains current.",
+    "acceptance-criteria": [
+      "The incident transaction sets the latch only after exclusive state-row lock, lifecycle revalidation, clear-latch revalidation, and one current S/C/W reclassification.",
+      "Lifecycle changes, missing/unreadable state, or an already-set latch between the main transaction and incident transaction return a lifecycle/latch-fenced outcome without cache DML or acknowledgement.",
+      "If C greater than S disappears on recheck, the writer returns a cache-ahead-disappeared outcome and leaves lifecycle, latch, cache, and work unchanged.",
+      "The incident flow is a bounded safety continuation after C greater than S, using a short incident timeout rather than ordinary work-item or direct-fill timeout.",
+      "If shutdown or provider cancellation prevents the incident flow from starting or finishing after C greater than S, the result distinguishes cache-ahead-unconfirmed caller abort from ordinary caller abort."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterCacheAhead.",
+      "Run provider integration tests for both PostgreSQL and SQL Server with filters matching cache-ahead latch behavior.",
+      "Review tests to confirm stale candidates, missing work, work mismatch, missing source rows, and duplicate writers never set CacheAheadRecoveryRequired."
+    ],
+    "completed": false
+  },
+  {
+    "category": "fault-injection",
+    "description": "Add a production-safe, test-disabled-by-default transaction fault-injection observer for the cache writer. Provide named hook points after main state lock and S/C/W classification before cache DML, after successful cache DML before acknowledgement, after successful acknowledgement before commit, and after cache-ahead latch update before the incident transaction commits. The observer must be injectable in tests, absent or no-op in production by default, and must not create after-commit hooks or process-local durable correctness latches.",
+    "acceptance-criteria": [
+      "All four story-required hook points are available with stable names and bounded context that excludes document identifiers and payloads.",
+      "Tests can close the provider connection or force rollback at each hook point to exercise crash-window behavior.",
+      "Default production registration is no-op and cannot alter writer behavior unless a test explicitly supplies an observer.",
+      "Hook context labels are sanitized and bounded to provider, normalized target key, caller purpose, lifecycle, and outcome-style data.",
+      "No after-commit hook or process-local durable latch is added as correctness evidence."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterFaultInjection.",
+      "Run PostgreSQL and SQL Server provider crash-window tests that use the observer to interrupt each hook point.",
+      "Review dependency injection registration to confirm the observer is no-op unless tests replace it."
+    ],
+    "completed": false
+  },
+  {
+    "category": "telemetry",
+    "description": "Add sanitized cache-writer metrics and minimal same-document enqueue/acknowledgement contention instrumentation. The writer should emit counters for bounded outcomes and histograms for full transaction duration, cache DML duration, acknowledgement duration, retry duration or attempts, and writer-side wait on same-document canonical writers. Add or wire minimal canonical write/enqueue-path instrumentation so canonical writers blocked by acknowledgement transactions contribute to the same sanitized contention metric family.",
+    "acceptance-criteria": [
+      "Metrics labels are bounded to provider, normalized target key, caller purpose, lifecycle, and outcome where applicable.",
+      "Metrics and logs never include DocumentId, DocumentUuid, DocumentJson, request body content, authorization data, or unbounded resource labels.",
+      "Writer-side histograms measure transaction duration, cache DML duration, acknowledgement duration, and same-document canonical-writer wait.",
+      "Canonical write/enqueue instrumentation records same-document contention caused by acknowledgement transactions without adding a second retry layer around canonical writes.",
+      "Outcome counters distinguish successful acknowledgements, candidate writes, stale suppression, anomalies, lifecycle fences, cache-ahead flows, race-lost results, retry exhaustion, caller abort, and invariant failures."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriterTelemetry.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DeadlockRetry.",
+      "Review metric definitions and log templates for sanitized bounded labels only."
+    ],
+    "completed": false
+  },
+  {
+    "category": "canonical-write-integration",
+    "description": "Verify and, if needed, wire canonical write transaction retry and instrumentation for enqueue-related deadlock, serialization, and configured lock-timeout failures. Reuse the existing full repository-call DeadlockRetry pipeline when it already wraps canonical writes, and add focused evidence or missing transient classification so the complete canonical transaction is replayed when projection enqueue participates in the conflict.",
+    "acceptance-criteria": [
+      "Canonical insert, update, and delete repository calls that hit enqueue-related provider deadlock, serialization, or lock-timeout failures replay the complete canonical transaction under the existing DeadlockRetry policy.",
+      "No code retries only the projection enqueue trigger, only the work-table upsert, or any fragment after canonical commit.",
+      "Existing covered cases receive focused evidence rather than a duplicate retry layer.",
+      "Missing transient classification for enqueue-related SQL errors is added for PostgreSQL and SQL Server when required.",
+      "Canonical writer contention instrumentation required by the story is wired without changing public API handler result semantics."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DeadlockRetryPolicy.",
+      "Run provider integration tests for canonical write/enqueue retry cases in the PostgreSQL and SQL Server backend integration projects.",
+      "Review write-path retry boundaries to confirm retries wrap repository calls and not trigger-specific fragments."
+    ],
+    "completed": false
+  },
+  {
+    "category": "service-registration",
+    "description": "Register the shared cache writer and provider-specific transaction adapters in the existing DMS dependency injection flow. Keep the shared component available for future 18-04 hosted projector and 18-05 direct-fill read-path integrations, but do not add those production call sites in this story. Ensure provider-specific registrations select the PostgreSQL or SQL Server adapter consistently with existing materializer and target-resolution registrations.",
+    "acceptance-criteria": [
+      "The shared writer service resolves from application service providers for PostgreSQL and SQL Server configurations.",
+      "Provider adapters are registered in provider-specific backend extension points and reuse the existing resolved target context/data-store binding conventions.",
+      "No hosted projector loop, direct-fill read-path wrapper, cache-backed read path, queue paging, lifecycle administration, scrub, rebuild, or recovery orchestration is added.",
+      "Registration tests prove 18-04 and 18-05 can consume the same writer abstraction later without creating separate cache writers.",
+      "Default fault-injection observer and telemetry dependencies are registered safely."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter ServiceRegistration.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter Startup.",
+      "Review registrations to confirm no background service or read-path call site was introduced."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused NUnit and FluentAssertions unit tests for the cache-writer contracts, guards, pure classification/action mapping, result shaping, retry adapter behavior with scripted attempts, fault-injection observer defaults, telemetry label sanitization, and direct-fill result propagation at the shared writer boundary. Use FakeItEasy for mocks only where needed and follow the existing Given_/It_ style.",
+    "acceptance-criteria": [
+      "Unit tests cover every pure classification row and every bounded outcome without requiring a live database.",
+      "Guard tests cover invalid request values, candidate DocumentId mismatch, stale candidate version, and matching-version metadata invariant failure.",
+      "Retry tests prove successful retry, exhausted budget, retry disabled, caller cancellation, non-transient failure, and complete transaction delegate replay.",
+      "Telemetry unit tests prove bounded labels and absence of document identifiers or payloads.",
+      "DirectFill purpose tests prove the shared writer surfaces the same typed outcomes and exceptions rather than swallowing failures."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriter.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DocumentCache.",
+      "Run dotnet csharpier format on all modified unit-test files."
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-tests-postgresql",
+    "description": "Add PostgreSQL provider integration tests for the cache writer using the generated DocumentCache schema and existing materializer fixtures where useful. Cover the action table, conditional cache DML predicates, equal-version fast acknowledgement, stale-candidate suppression, candidate metadata invariant failure, missing source/delete behavior, lifecycle fences, cache-ahead reclassification, duplicate writer races, enqueue-versus-acknowledge races, rollback between cache DML and acknowledgement, delete-race retry, and complete-transaction provider retry.",
+    "acceptance-criteria": [
+      "PostgreSQL tests prove cache writes and matching work acknowledgement are atomic and monotonic for the healthy pending path.",
+      "Tests prove equal-version acknowledgement deletes matching work without updating cache or ComputedAt.",
+      "Tests prove stale candidates and matching-version metadata mismatches perform no cache DML or acknowledgement and leave work visible.",
+      "Tests prove lifecycle Disabled, Resetting, Rebuilding with allowed write, Tracking with allowed write, missing state, unreadable/invalid state, and set latch outcomes behave as specified.",
+      "Tests prove duplicate writers and enqueue-versus-acknowledge interleavings preserve newer work and cannot acknowledge an N+1 requirement from an N attempt.",
+      "Tests prove only current C greater than S sets CacheAheadRecoveryRequired after reclassification."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DocumentCacheWriter.",
+      "Inspect failed test database state, if any, to confirm dms.DocumentCache and dms.DocumentProjectionWork are either both changed or both unchanged for each atomicity scenario.",
+      "Run dotnet csharpier format on all modified PostgreSQL integration-test files."
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-tests-sqlserver",
+    "description": "Add SQL Server provider integration tests for the cache writer equivalent to the PostgreSQL matrix. Include SQL Server specific evidence for UPDATE-then-INSERT behavior, exact-key UPDLOCK/HOLDLOCK absent-row serialization, HOLDLOCK shared state-row fencing, RCSI-compatible observations, duplicate absent-row writers, provider transient classification, and delete-race FK/UUID validation retry.",
+    "acceptance-criteria": [
+      "SQL Server tests prove cache writes and matching work acknowledgement are atomic and monotonic for the healthy pending path.",
+      "Tests prove no MERGE behavior is required and duplicate absent-row writers serialize correctly through exact-key locking.",
+      "Tests prove final acknowledgement binds expectedContentVersion and cannot delete newly advanced work.",
+      "Tests prove lifecycle fences, set latch, cache-ahead reclassification, stale candidates, invariant failures, and Rebuilding missing-work distinctions match the shared contract.",
+      "Tests prove provider deadlock, serialization, lock timeout, and delete-race transient failures replay complete writer attempts until success or budget exhaustion.",
+      "Tests record evidence for same-document canonical enqueue/acknowledgement contention without blocking unrelated documents."
+    ],
+    "steps-to-verify": [
+      "Start SQL Server 2025 locally if needed: docker run --name dms-mssql-integration-2025 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2025-latest.",
+      "Run ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter.",
+      "Run dotnet csharpier format on all modified SQL Server integration-test files."
+    ],
+    "completed": false
+  },
+  {
+    "category": "crash-and-concurrency-tests",
+    "description": "Add provider crash-window and concurrency tests that use the fault-injection observer and coordinated database sessions to prove story-owned safety boundaries. The tests should interrupt after main state lock/classification before cache DML, after successful cache DML before acknowledgement, after successful acknowledgement before commit, and after cache-ahead latch update before the incident transaction commits. Also prove materialization, backoff, cancellation, and external I/O hold no work-row lock by exercising writer entry after materialization rather than during it.",
+    "acceptance-criteria": [
+      "For both providers, closing the connection or forcing rollback before acknowledgement leaves neither a committed cache write nor a deleted work row.",
+      "For both providers, interruption after acknowledgement before commit leaves either both cache and acknowledgement committed or neither committed; no partial state is visible.",
+      "For both providers, interruption before cache-ahead incident commit leaves no partial latch mutation.",
+      "Tests prove stale candidates never write, duplicate writers cannot leave a newly written cache row without acknowledging matching work, and post-delete races do not require manual cache deletion.",
+      "Tests prove no work-row lock is held across materialization, backoff, cancellation, or external I/O owned by 18-02 or later callers."
+    ],
+    "steps-to-verify": [
+      "Run PostgreSQL crash/concurrency tests with the DocumentCacheWriterCrash or DocumentCacheWriterConcurrency filter.",
+      "Run SQL Server crash/concurrency tests with the DocumentCacheWriterCrash or DocumentCacheWriterConcurrency filter.",
+      "Review each test to confirm it uses transaction hook points rather than after-commit hooks or process-local durable latches."
+    ],
+    "completed": false
+  },
+  {
+    "category": "performance-evidence",
+    "description": "Add component-level performance evidence for the shared writer in both DurableWorkProjection and DirectFill caller-purpose modes. The evidence should invoke the writer directly against representative current-state classifications, candidate and no-candidate paths, duplicate writers, canonical enqueue/acknowledgement contention, provider retries, and cache-ahead incident handling. Keep this evidence component-level because 18-04 owns end-to-end hosted-projector throughput and 18-05 owns read-path direct-fill latency.",
+    "acceptance-criteria": [
+      "Performance fixtures exercise both caller purposes through the same writer component and result model.",
+      "Evidence records transaction, cache DML, acknowledgement, retry, outcome, and same-document wait metrics with bounded sanitized labels.",
+      "Representative tests include equal-version acknowledgement, healthy candidate write, needs-materialization no-candidate path, stale-candidate suppression, duplicate writers, canonical contention, retry, and cache-ahead incident handling.",
+      "The evidence does not claim queue-drain throughput, cache-read fallback behavior, full direct-fill request latency, or operational workload qualification assigned to 18-04, 18-05, and 18-07.",
+      "Performance evidence is documented or named so reviewers can trace it to DMS-1313 story-owned acceptance evidence."
+    ],
+    "steps-to-verify": [
+      "Run the component-level performance test command or benchmark documented by the implementation for PostgreSQL.",
+      "Run the component-level performance test command or benchmark documented by the implementation for SQL Server.",
+      "Review emitted metrics or benchmark output to confirm labels are bounded and include both DurableWorkProjection and DirectFill purpose modes."
+    ],
+    "completed": false
+  },
+  {
+    "category": "final-validation",
+    "description": "Perform the final DMS-1313 validation pass after implementation tasks complete. Confirm the writer remains within story scope, uses application-issued parameterized SQL only, registers one shared component, preserves later 18-04 and 18-05 integration boundaries, keeps logs and metrics sanitized, and has provider evidence for monotonicity, atomicity, duplicate safety, delete fencing, lifecycle fencing, cache-ahead latching, retry, crash windows, and performance.",
+    "acceptance-criteria": [
+      "The implementation introduces no database stored procedures, generated programmable objects, cache-only write API, projector queue paging loop, production direct-fill read-path call site, lifecycle administration, scrub, rebuild, recovery orchestration, or Kafka message shaping.",
+      "PostgreSQL and SQL Server provider tests pass for the cache-writer matrix and prove provider-equivalent behavior.",
+      "Unit tests pass for contracts, classification, retry, telemetry, fault injection, and registration.",
+      "The DMS solution builds and all changed C# files are formatted with csharpier.",
+      "Review evidence maps back to the DMS-1313 story acceptance evidence and relevant CDC design sections."
+    ],
+    "steps-to-verify": [
+      "dotnet build src/dms/EdFi.DataManagementService.sln",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DocumentCacheWriter",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DocumentCacheWriter",
+      "ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DocumentCacheWriter",
+      "Review provider adapter SQL and tests to confirm the documented lock order avoids work-row-first locking and retries complete transactions after enqueue/acknowledgement deadlocks.",
+      "dotnet csharpier format src/dms/backend src/dms/core"
+    ],
+    "completed": false
+  }
+]
