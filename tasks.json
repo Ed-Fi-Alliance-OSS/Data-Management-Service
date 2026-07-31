@@ -126,7 +126,7 @@
       "Run PostgreSQL and SQL Server provider crash-window tests that use the observer to interrupt each hook point.",
       "Review dependency injection registration to confirm the observer is no-op unless tests replace it."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "telemetry",

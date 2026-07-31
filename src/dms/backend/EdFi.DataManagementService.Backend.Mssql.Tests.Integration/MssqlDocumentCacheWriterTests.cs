@@ -56,7 +56,13 @@ public class Given_A_Mssql_DocumentCacheWriter
     {
         _lease = await _baseline.AcquireRestoredDatabaseAsync();
         _database = _lease.Database;
-        _writer = new MssqlDocumentCacheWriter(
+        _writer = CreateWriter();
+    }
+
+    private MssqlDocumentCacheWriter CreateWriter(
+        ITransactionFaultInjectionObserver? faultInjectionObserver = null
+    ) =>
+        new(
             new DocumentCacheWriterRetryAdapter(
                 new DeadlockRetrySettings
                 {
@@ -67,9 +73,9 @@ public class Given_A_Mssql_DocumentCacheWriter
                 new MssqlRelationalWriteExceptionClassifier(),
                 NullLogger<DocumentCacheWriterRetryAdapter>.Instance
             ),
-            NullLogger<MssqlDocumentCacheWriter>.Instance
+            NullLogger<MssqlDocumentCacheWriter>.Instance,
+            faultInjectionObserver
         );
-    }
 
     [TearDown]
     public async Task TearDown()
@@ -252,6 +258,72 @@ public class Given_A_Mssql_DocumentCacheWriter
 
         missingSource.Should().BeSameAs(DocumentCacheWriterResult.SourceMissingOrDeleted.Instance);
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [TestCaseSource(nameof(CrashHookCases))]
+    [Category("DocumentCacheWriterCrash")]
+    public async Task DocumentCacheWriterCrash_it_interrupts_each_hook_without_committing_partial_state(
+        string hookName,
+        string interruptionName
+    )
+    {
+        DocumentCacheWriterFaultInjectionHook hook = Enum.Parse<DocumentCacheWriterFaultInjectionHook>(
+            hookName
+        );
+        FaultInjectionInterruption interruption = Enum.Parse<FaultInjectionInterruption>(interruptionName);
+
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate? candidate = CreateCandidate(source, "candidate-current");
+
+        if (hook == DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit)
+        {
+            await InsertCacheRowAsync(source, contentVersion: 11);
+            candidate = null;
+        }
+
+        InterruptingFaultInjectionObserver observer = new(hook, interruption);
+        MssqlDocumentCacheWriter writer = CreateWriter(observer);
+
+        Func<Task> act = async () =>
+        {
+            _ = await writer.WriteAsync(
+                new DocumentCacheWriterRequest(
+                    CreateTargetContext(),
+                    source.DocumentId,
+                    selectedRequiredContentVersion: source.ContentVersion,
+                    DocumentCacheWriterPurpose.DurableWorkProjection,
+                    candidate,
+                    CancellationToken.None
+                )
+            );
+        };
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Injected DocumentCache writer fault*");
+
+        DocumentCacheWriterFaultInjectionContext interruptedContext = observer.Contexts[^1];
+        interruptedContext.Hook.Should().Be(hook);
+        interruptedContext.Provider.Should().Be(RelationalProviderToken.SqlServerValue);
+        interruptedContext.TargetKey.Should().Be("tenant-cache-writer:7");
+        interruptedContext.Purpose.Should().Be(DocumentCacheWriterPurpose.DurableWorkProjection);
+        interruptedContext.LifecycleState.Should().Be(DocumentCacheLifecycleState.Tracking);
+
+        if (hook == DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit)
+        {
+            interruptedContext.CacheAheadLatchRowCount.Should().Be(1);
+            (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+            (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
+            (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(11);
+        }
+        else
+        {
+            (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+            (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        }
+
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
     }
 
     private async Task<DocumentCacheWriterResult> WriteAsync(
@@ -502,4 +574,66 @@ public class Given_A_Mssql_DocumentCacheWriter
     private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
 
     private sealed record CacheRow(long ContentVersion, string StreamEtag, string DocumentJson);
+
+    private static IEnumerable<TestCaseData> CrashHookCases()
+    {
+        yield return new TestCaseData(
+            nameof(DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml),
+            nameof(FaultInjectionInterruption.CloseConnection)
+        ).SetName("DocumentCacheWriterCrash_Mssql_before_cache_dml");
+        yield return new TestCaseData(
+            nameof(DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement),
+            nameof(FaultInjectionInterruption.RollbackTransaction)
+        ).SetName("DocumentCacheWriterCrash_Mssql_after_cache_dml");
+        yield return new TestCaseData(
+            nameof(DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit),
+            nameof(FaultInjectionInterruption.CloseConnection)
+        ).SetName("DocumentCacheWriterCrash_Mssql_after_acknowledgement");
+        yield return new TestCaseData(
+            nameof(DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit),
+            nameof(FaultInjectionInterruption.RollbackTransaction)
+        ).SetName("DocumentCacheWriterCrash_Mssql_after_cache_ahead_latch");
+    }
+
+    private enum FaultInjectionInterruption
+    {
+        CloseConnection = 1,
+        RollbackTransaction = 2,
+    }
+
+    private sealed class InterruptingFaultInjectionObserver(
+        DocumentCacheWriterFaultInjectionHook hookToInterrupt,
+        FaultInjectionInterruption interruption
+    ) : ITransactionFaultInjectionObserver
+    {
+        public List<DocumentCacheWriterFaultInjectionContext> Contexts { get; } = [];
+
+        public async ValueTask ObserveAsync(
+            DocumentCacheWriterFaultInjectionContext context,
+            DocumentCacheWriterFaultInjectionControl control,
+            CancellationToken cancellationToken
+        )
+        {
+            Contexts.Add(context);
+
+            if (context.Hook != hookToInterrupt)
+            {
+                return;
+            }
+
+            switch (interruption)
+            {
+                case FaultInjectionInterruption.CloseConnection:
+                    await control.CloseConnectionAsync(cancellationToken).ConfigureAwait(false);
+                    break;
+                case FaultInjectionInterruption.RollbackTransaction:
+                    await control.RollbackTransactionAsync(cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(interruption), interruption, null);
+            }
+
+            throw new InvalidOperationException($"Injected DocumentCache writer fault at {context.Hook}.");
+        }
+    }
 }

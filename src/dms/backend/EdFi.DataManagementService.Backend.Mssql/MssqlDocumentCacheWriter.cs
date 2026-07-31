@@ -17,7 +17,8 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 
 internal sealed class MssqlDocumentCacheWriter(
     IDocumentCacheWriterRetryAdapter retryAdapter,
-    ILogger<MssqlDocumentCacheWriter> logger
+    ILogger<MssqlDocumentCacheWriter> logger,
+    ITransactionFaultInjectionObserver? faultInjectionObserver = null
 ) : IDocumentCacheWriter
 {
     private const int ForeignKeyConstraintViolationNumber = 547;
@@ -27,6 +28,8 @@ internal sealed class MssqlDocumentCacheWriter(
         retryAdapter ?? throw new ArgumentNullException(nameof(retryAdapter));
     private readonly ILogger<MssqlDocumentCacheWriter> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ITransactionFaultInjectionObserver _faultInjectionObserver =
+        faultInjectionObserver ?? NoOpTransactionFaultInjectionObserver.Instance;
 
     public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
     {
@@ -138,6 +141,8 @@ internal sealed class MssqlDocumentCacheWriter(
                 ? await WriteCandidateAndAcknowledgeAsync(
                         connection,
                         transaction,
+                        request,
+                        lifecycleReadResult,
                         selection,
                         cancellationToken
                     )
@@ -145,6 +150,8 @@ internal sealed class MssqlDocumentCacheWriter(
                 : await AcknowledgeAlreadyCurrentAsync(
                         connection,
                         transaction,
+                        request,
+                        lifecycleReadResult,
                         request.DocumentId,
                         selection.ExpectedContentVersion!.Value,
                         cancellationToken
@@ -176,9 +183,11 @@ internal sealed class MssqlDocumentCacheWriter(
         }
     }
 
-    private static async Task<DocumentCacheWriterResult> WriteCandidateAndAcknowledgeAsync(
+    private async Task<DocumentCacheWriterResult> WriteCandidateAndAcknowledgeAsync(
         SqlConnection connection,
         SqlTransaction transaction,
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleReadResult lifecycleReadResult,
         DocumentCacheWriterClassificationSelection selection,
         CancellationToken cancellationToken
     )
@@ -186,8 +195,37 @@ internal sealed class MssqlDocumentCacheWriter(
         DocumentCacheMaterializationCandidate candidate = selection.Candidate!;
         long expectedContentVersion = selection.ExpectedContentVersion!.Value;
 
+        await ObserveFaultInjectionAsync(
+                DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml,
+                request,
+                lifecycleReadResult,
+                selection.Outcome,
+                connection,
+                transaction,
+                cacheDmlRowCount: null,
+                acknowledgementRowCount: null,
+                cacheAheadLatchRowCount: null,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
         int cacheRows = await ExecuteCacheWriteAsync(connection, transaction, candidate, cancellationToken)
             .ConfigureAwait(false);
+
+        await ObserveFaultInjectionAsync(
+                DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement,
+                request,
+                lifecycleReadResult,
+                selection.Outcome,
+                connection,
+                transaction,
+                cacheRows,
+                acknowledgementRowCount: null,
+                cacheAheadLatchRowCount: null,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
         int acknowledgedRows = await ExecuteAcknowledgementAsync(
                 connection,
                 transaction,
@@ -199,6 +237,20 @@ internal sealed class MssqlDocumentCacheWriter(
 
         if (acknowledgedRows == 1)
         {
+            await ObserveFaultInjectionAsync(
+                    DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
+                    request,
+                    lifecycleReadResult,
+                    selection.Outcome,
+                    connection,
+                    transaction,
+                    cacheRows,
+                    acknowledgedRows,
+                    cacheAheadLatchRowCount: null,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
             return cacheRows > 0
                 ? new DocumentCacheWriterResult.CandidateWrittenAcknowledged(
                     candidate,
@@ -210,9 +262,11 @@ internal sealed class MssqlDocumentCacheWriter(
         return DocumentCacheWriterResult.RacingWriterLost.Instance;
     }
 
-    private static async Task<DocumentCacheWriterResult> AcknowledgeAlreadyCurrentAsync(
+    private async Task<DocumentCacheWriterResult> AcknowledgeAlreadyCurrentAsync(
         SqlConnection connection,
         SqlTransaction transaction,
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleReadResult lifecycleReadResult,
         long documentId,
         long expectedContentVersion,
         CancellationToken cancellationToken
@@ -227,12 +281,29 @@ internal sealed class MssqlDocumentCacheWriter(
             )
             .ConfigureAwait(false);
 
+        if (acknowledgedRows == 1)
+        {
+            await ObserveFaultInjectionAsync(
+                    DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
+                    request,
+                    lifecycleReadResult,
+                    DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                    connection,
+                    transaction,
+                    cacheDmlRowCount: null,
+                    acknowledgementRowCount: acknowledgedRows,
+                    cacheAheadLatchRowCount: null,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
         return acknowledgedRows == 1
             ? new DocumentCacheWriterResult.AlreadyCurrentAcknowledged(expectedContentVersion)
             : DocumentCacheWriterResult.RacingWriterLost.Instance;
     }
 
-    private static async Task<DocumentCacheWriterResult> ConfirmCacheAheadAsync(
+    private async Task<DocumentCacheWriterResult> ConfirmCacheAheadAsync(
         DocumentCacheWriterRequest request,
         string connectionString,
         CancellationToken cancellationToken
@@ -289,6 +360,20 @@ internal sealed class MssqlDocumentCacheWriter(
             }
 
             int latchRows = await SetCacheAheadLatchAsync(connection, transaction, cancellationToken)
+                .ConfigureAwait(false);
+
+            await ObserveFaultInjectionAsync(
+                    DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
+                    request,
+                    lifecycleReadResult,
+                    DocumentCacheWriterOutcome.CacheAheadLatchSet,
+                    connection,
+                    transaction,
+                    cacheDmlRowCount: null,
+                    acknowledgementRowCount: null,
+                    cacheAheadLatchRowCount: latchRows,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
 
             await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
@@ -692,6 +777,39 @@ internal sealed class MssqlDocumentCacheWriter(
             """;
 
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask ObserveFaultInjectionAsync(
+        DocumentCacheWriterFaultInjectionHook hook,
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleReadResult lifecycleReadResult,
+        DocumentCacheWriterOutcome outcome,
+        SqlConnection connection,
+        SqlTransaction transaction,
+        int? cacheDmlRowCount,
+        int? acknowledgementRowCount,
+        int? cacheAheadLatchRowCount,
+        CancellationToken cancellationToken
+    )
+    {
+        await _faultInjectionObserver
+            .ObserveAsync(
+                new DocumentCacheWriterFaultInjectionContext(
+                    hook,
+                    RelationalProviderToken.SqlServer,
+                    request.TargetContext.TargetKey,
+                    request.Purpose,
+                    lifecycleReadResult.Lifecycle?.State,
+                    lifecycleReadResult.Lifecycle?.CacheAheadRecoveryRequired,
+                    outcome,
+                    cacheDmlRowCount,
+                    acknowledgementRowCount,
+                    cacheAheadLatchRowCount
+                ),
+                new DocumentCacheWriterFaultInjectionControl(connection, transaction),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private static DocumentCacheWriterResult? SelectLifecycleFence(

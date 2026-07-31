@@ -19,7 +19,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 internal sealed class PostgresqlDocumentCacheWriter(
     NpgsqlDataSourceCache dataSourceCache,
     IDocumentCacheWriterRetryAdapter retryAdapter,
-    ILogger<PostgresqlDocumentCacheWriter> logger
+    ILogger<PostgresqlDocumentCacheWriter> logger,
+    ITransactionFaultInjectionObserver? faultInjectionObserver = null
 ) : IDocumentCacheWriter
 {
     private readonly NpgsqlDataSourceCache _dataSourceCache =
@@ -28,6 +29,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
         retryAdapter ?? throw new ArgumentNullException(nameof(retryAdapter));
     private readonly ILogger<PostgresqlDocumentCacheWriter> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ITransactionFaultInjectionObserver _faultInjectionObserver =
+        faultInjectionObserver ?? NoOpTransactionFaultInjectionObserver.Instance;
 
     public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
     {
@@ -141,6 +144,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 ? await WriteCandidateAndAcknowledgeAsync(
                         connection,
                         transaction,
+                        request,
+                        lifecycleReadResult,
                         selection,
                         cancellationToken
                     )
@@ -148,6 +153,8 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 : await AcknowledgeAlreadyCurrentAsync(
                         connection,
                         transaction,
+                        request,
+                        lifecycleReadResult,
                         request.DocumentId,
                         selection.ExpectedContentVersion!.Value,
                         cancellationToken
@@ -179,9 +186,11 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
     }
 
-    private static async Task<DocumentCacheWriterResult> WriteCandidateAndAcknowledgeAsync(
+    private async Task<DocumentCacheWriterResult> WriteCandidateAndAcknowledgeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleReadResult lifecycleReadResult,
         DocumentCacheWriterClassificationSelection selection,
         CancellationToken cancellationToken
     )
@@ -189,8 +198,37 @@ internal sealed class PostgresqlDocumentCacheWriter(
         DocumentCacheMaterializationCandidate candidate = selection.Candidate!;
         long expectedContentVersion = selection.ExpectedContentVersion!.Value;
 
+        await ObserveFaultInjectionAsync(
+                DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml,
+                request,
+                lifecycleReadResult,
+                selection.Outcome,
+                connection,
+                transaction,
+                cacheDmlRowCount: null,
+                acknowledgementRowCount: null,
+                cacheAheadLatchRowCount: null,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
         int cacheRows = await ExecuteCacheWriteAsync(connection, transaction, candidate, cancellationToken)
             .ConfigureAwait(false);
+
+        await ObserveFaultInjectionAsync(
+                DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement,
+                request,
+                lifecycleReadResult,
+                selection.Outcome,
+                connection,
+                transaction,
+                cacheRows,
+                acknowledgementRowCount: null,
+                cacheAheadLatchRowCount: null,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
         int acknowledgedRows = await ExecuteAcknowledgementAsync(
                 connection,
                 transaction,
@@ -202,6 +240,20 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
         if (acknowledgedRows == 1)
         {
+            await ObserveFaultInjectionAsync(
+                    DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
+                    request,
+                    lifecycleReadResult,
+                    selection.Outcome,
+                    connection,
+                    transaction,
+                    cacheRows,
+                    acknowledgedRows,
+                    cacheAheadLatchRowCount: null,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
             return cacheRows > 0
                 ? new DocumentCacheWriterResult.CandidateWrittenAcknowledged(
                     candidate,
@@ -213,9 +265,11 @@ internal sealed class PostgresqlDocumentCacheWriter(
         return DocumentCacheWriterResult.RacingWriterLost.Instance;
     }
 
-    private static async Task<DocumentCacheWriterResult> AcknowledgeAlreadyCurrentAsync(
+    private async Task<DocumentCacheWriterResult> AcknowledgeAlreadyCurrentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleReadResult lifecycleReadResult,
         long documentId,
         long expectedContentVersion,
         CancellationToken cancellationToken
@@ -229,6 +283,23 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if (acknowledgedRows == 1)
+        {
+            await ObserveFaultInjectionAsync(
+                    DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit,
+                    request,
+                    lifecycleReadResult,
+                    DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                    connection,
+                    transaction,
+                    cacheDmlRowCount: null,
+                    acknowledgementRowCount: acknowledgedRows,
+                    cacheAheadLatchRowCount: null,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
 
         return acknowledgedRows == 1
             ? new DocumentCacheWriterResult.AlreadyCurrentAcknowledged(expectedContentVersion)
@@ -294,6 +365,20 @@ internal sealed class PostgresqlDocumentCacheWriter(
             }
 
             int latchRows = await SetCacheAheadLatchAsync(connection, transaction, cancellationToken)
+                .ConfigureAwait(false);
+
+            await ObserveFaultInjectionAsync(
+                    DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
+                    request,
+                    lifecycleReadResult,
+                    DocumentCacheWriterOutcome.CacheAheadLatchSet,
+                    connection,
+                    transaction,
+                    cacheDmlRowCount: null,
+                    acknowledgementRowCount: null,
+                    cacheAheadLatchRowCount: latchRows,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
 
             await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
@@ -645,6 +730,39 @@ internal sealed class PostgresqlDocumentCacheWriter(
             """;
 
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask ObserveFaultInjectionAsync(
+        DocumentCacheWriterFaultInjectionHook hook,
+        DocumentCacheWriterRequest request,
+        DocumentCacheLifecycleReadResult lifecycleReadResult,
+        DocumentCacheWriterOutcome outcome,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int? cacheDmlRowCount,
+        int? acknowledgementRowCount,
+        int? cacheAheadLatchRowCount,
+        CancellationToken cancellationToken
+    )
+    {
+        await _faultInjectionObserver
+            .ObserveAsync(
+                new DocumentCacheWriterFaultInjectionContext(
+                    hook,
+                    RelationalProviderToken.Postgresql,
+                    request.TargetContext.TargetKey,
+                    request.Purpose,
+                    lifecycleReadResult.Lifecycle?.State,
+                    lifecycleReadResult.Lifecycle?.CacheAheadRecoveryRequired,
+                    outcome,
+                    cacheDmlRowCount,
+                    acknowledgementRowCount,
+                    cacheAheadLatchRowCount
+                ),
+                new DocumentCacheWriterFaultInjectionControl(connection, transaction),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private static DocumentCacheWriterResult? SelectLifecycleFence(

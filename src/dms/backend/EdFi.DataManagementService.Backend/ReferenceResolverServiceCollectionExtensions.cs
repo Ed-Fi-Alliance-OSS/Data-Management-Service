@@ -82,6 +82,11 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheMaterializer, DocumentCacheMaterializer>());
         services.TryAdd(
+            ServiceDescriptor.Singleton<ITransactionFaultInjectionObserver>(
+                NoOpTransactionFaultInjectionObserver.Instance
+            )
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
         );
         services.TryAdd(
