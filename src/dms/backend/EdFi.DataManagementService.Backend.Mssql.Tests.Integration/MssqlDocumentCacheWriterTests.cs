@@ -386,6 +386,47 @@ public class Given_A_Mssql_DocumentCacheWriter
     }
 
     [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_returns_cache_ahead_disappeared_when_source_catches_cache_before_latch_mutation()
+    {
+        await SetReadCommittedSnapshotAsync(enabled: true);
+
+        try
+        {
+            await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+            SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+            await InsertCacheRowAsync(source, contentVersion: 11);
+
+            await using SqlConnection sourceAdvanceConnection = new(_database.ConnectionString);
+            await sourceAdvanceConnection.OpenAsync();
+            await using SqlTransaction sourceAdvanceTransaction = (SqlTransaction)
+                await sourceAdvanceConnection.BeginTransactionAsync();
+            await AdvanceSourceAndWorkVersionAsync(
+                sourceAdvanceConnection,
+                sourceAdvanceTransaction,
+                source.DocumentId,
+                contentVersion: 11
+            );
+
+            Task<DocumentCacheWriterResult> writeTask = WriteAsync(source, candidate: null);
+
+            await WaitForMssqlLatchUpdateToWaitOnSourceRowAsync(writeTask);
+            await sourceAdvanceTransaction.CommitAsync();
+
+            DocumentCacheWriterResult result = await writeTask.WaitAsync(TimeSpan.FromSeconds(30));
+
+            result.Should().BeSameAs(DocumentCacheWriterResult.CacheAheadDisappeared.Instance);
+            (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+            (await ReadSourceContentVersionAsync(source.DocumentId)).Should().Be(11);
+            (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(11);
+        }
+        finally
+        {
+            await SetReadCommittedSnapshotAsync(enabled: false);
+        }
+    }
+
+    [Test]
     public async Task It_does_not_set_the_cache_ahead_latch_for_non_cache_ahead_anomalies()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
@@ -931,8 +972,32 @@ public class Given_A_Mssql_DocumentCacheWriter
 
     private async Task AdvanceSourceAndWorkVersionAsync(long documentId, long contentVersion)
     {
-        await _database.ExecuteNonQueryAsync(
-            """
+        await using SqlConnection connection = new(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using SqlTransaction transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            await AdvanceSourceAndWorkVersionAsync(connection, transaction, documentId, contentVersion);
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task AdvanceSourceAndWorkVersionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long documentId,
+        long contentVersion
+    )
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
             UPDATE [dms].[Document]
             SET [ContentVersion] = @contentVersion,
                 [ContentLastModifiedAt] = @lastModifiedAt
@@ -941,14 +1006,19 @@ public class Given_A_Mssql_DocumentCacheWriter
             UPDATE [dms].[DocumentProjectionWork]
             SET [RequiredContentVersion] = @contentVersion
             WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
+            """;
+        command.Parameters.Add(new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId });
+        command.Parameters.Add(
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
+        );
+        command.Parameters.Add(
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
             {
                 Value = new DateTime(2026, 7, 31, 12, 5, 0, DateTimeKind.Utc),
             }
         );
+
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
@@ -1193,6 +1263,57 @@ public class Given_A_Mssql_DocumentCacheWriter
             WHERE [StateId] = 1;
             """
         );
+
+    private async Task SetReadCommittedSnapshotAsync(bool enabled)
+    {
+        SqlConnection.ClearAllPools();
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"""
+            ALTER DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(_database.DatabaseName)}
+            SET READ_COMMITTED_SNAPSHOT {(enabled ? "ON" : "OFF")} WITH ROLLBACK IMMEDIATE;
+            """
+        );
+    }
+
+    private async Task WaitForMssqlLatchUpdateToWaitOnSourceRowAsync(
+        Task<DocumentCacheWriterResult> writeTask
+    )
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (writeTask.IsCompleted)
+            {
+                throw new AssertionException(
+                    "DocumentCache writer completed before waiting on the current cache-ahead latch predicate."
+                );
+            }
+
+            long waitingSessionCount = await _database.ExecuteScalarAsync<long>(
+                """
+                SELECT COUNT_BIG(*)
+                FROM sys.dm_exec_requests AS requests
+                CROSS APPLY sys.dm_exec_sql_text(requests.sql_handle) AS sql_text
+                WHERE requests.database_id = DB_ID()
+                  AND requests.session_id <> @@SPID
+                  AND requests.wait_type LIKE 'LCK_M_%'
+                  AND sql_text.text LIKE '%CacheAheadRecoveryRequired%'
+                  AND sql_text.text LIKE '%READCOMMITTEDLOCK%';
+                """
+            );
+
+            if (waitingSessionCount > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25));
+        }
+
+        throw new AssertionException(
+            "Timed out waiting for DocumentCache writer latch update to wait on the source row."
+        );
+    }
 
     private static DocumentCacheWriterResult.LifecycleOrLatchFenced AssertLifecycleFence(
         DocumentCacheWriterResult result,

@@ -186,11 +186,16 @@ public class Given_DocumentCacheWriterCacheAhead
 
         DocumentCacheWriterResult latchSet = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
             decision,
-            affectedRows: 1
+            DocumentCacheWriterCacheAheadLatchUpdateResult.LatchSet()
         );
-        DocumentCacheWriterResult latchLost = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
+        DocumentCacheWriterResult lifecycleOrLatchFence =
+            DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
+                decision,
+                DocumentCacheWriterCacheAheadLatchUpdateResult.LifecycleOrLatchFenced()
+            );
+        DocumentCacheWriterResult disappeared = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
             decision,
-            affectedRows: 0
+            DocumentCacheWriterCacheAheadLatchUpdateResult.CacheAheadDisappeared()
         );
 
         latchSet
@@ -198,11 +203,12 @@ public class Given_DocumentCacheWriterCacheAhead
             .BeOfType<DocumentCacheWriterResult.CacheAheadLatchSet>()
             .Which.CacheContentVersion.Should()
             .Be(11);
-        latchLost
+        lifecycleOrLatchFence
             .Should()
             .BeOfType<DocumentCacheWriterResult.LifecycleOrLatchFenced>()
             .Which.Reason.Should()
             .Be(DocumentCacheWriterFenceReason.CacheAheadRecoveryRequired);
+        disappeared.Should().BeSameAs(DocumentCacheWriterResult.CacheAheadDisappeared.Instance);
     }
 
     private static DocumentCacheWriterCacheAheadIncidentRequest CreateRequest(TimeSpan? timeout = null) =>

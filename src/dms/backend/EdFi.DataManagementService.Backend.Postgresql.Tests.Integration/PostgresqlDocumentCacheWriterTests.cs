@@ -381,6 +381,38 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_returns_cache_ahead_disappeared_when_source_catches_cache_before_latch_mutation()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 11);
+
+        await using NpgsqlConnection sourceAdvanceConnection = new(_database.ConnectionString);
+        await sourceAdvanceConnection.OpenAsync();
+        await using NpgsqlTransaction sourceAdvanceTransaction =
+            await sourceAdvanceConnection.BeginTransactionAsync();
+        await AdvanceSourceAndWorkVersionAsync(
+            sourceAdvanceConnection,
+            sourceAdvanceTransaction,
+            source.DocumentId,
+            contentVersion: 11
+        );
+
+        Task<DocumentCacheWriterResult> writeTask = WriteAsync(source, candidate: null);
+
+        await WaitForPostgresqlLatchUpdateToWaitOnSourceRowAsync(writeTask);
+        await sourceAdvanceTransaction.CommitAsync();
+
+        DocumentCacheWriterResult result = await writeTask.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result.Should().BeSameAs(DocumentCacheWriterResult.CacheAheadDisappeared.Instance);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+        (await ReadSourceContentVersionAsync(source.DocumentId)).Should().Be(11);
+        (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(11);
+    }
+
+    [Test]
     public async Task It_does_not_set_the_cache_ahead_latch_for_non_cache_ahead_anomalies()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
@@ -866,8 +898,32 @@ public class Given_A_Postgresql_DocumentCacheWriter
 
     private async Task AdvanceSourceAndWorkVersionAsync(long documentId, long contentVersion)
     {
-        await _database.ExecuteNonQueryAsync(
-            """
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            await AdvanceSourceAndWorkVersionAsync(connection, transaction, documentId, contentVersion);
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task AdvanceSourceAndWorkVersionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long documentId,
+        long contentVersion
+    )
+    {
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
             UPDATE "dms"."Document"
             SET "ContentVersion" = @contentVersion,
                 "ContentLastModifiedAt" = @lastModifiedAt
@@ -876,14 +932,19 @@ public class Given_A_Postgresql_DocumentCacheWriter
             UPDATE "dms"."DocumentProjectionWork"
             SET "RequiredContentVersion" = @contentVersion
             WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
+            """;
+        command.Parameters.Add(new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId });
+        command.Parameters.Add(
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
+        );
+        command.Parameters.Add(
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
             {
                 Value = new DateTimeOffset(2026, 7, 31, 12, 5, 0, TimeSpan.Zero),
             }
         );
+
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
@@ -1134,6 +1195,44 @@ public class Given_A_Postgresql_DocumentCacheWriter
             WHERE "StateId" = 1;
             """
         );
+
+    private async Task WaitForPostgresqlLatchUpdateToWaitOnSourceRowAsync(
+        Task<DocumentCacheWriterResult> writeTask
+    )
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (writeTask.IsCompleted)
+            {
+                throw new AssertionException(
+                    "DocumentCache writer completed before waiting on the current cache-ahead latch predicate."
+                );
+            }
+
+            long waitingSessionCount = await _database.ExecuteScalarAsync<long>(
+                """
+                SELECT COUNT(*)
+                FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND wait_event_type = 'Lock'
+                  AND query LIKE '%DocumentCacheState%'
+                  AND query LIKE '%FOR SHARE OF document, cache%';
+                """
+            );
+
+            if (waitingSessionCount > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25));
+        }
+
+        throw new AssertionException(
+            "Timed out waiting for DocumentCache writer latch update to wait on the source row."
+        );
+    }
 
     private static DocumentCacheWriterResult.LifecycleOrLatchFenced AssertLifecycleFence(
         DocumentCacheWriterResult result,

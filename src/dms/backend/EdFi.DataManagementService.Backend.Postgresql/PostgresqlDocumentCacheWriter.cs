@@ -439,29 +439,37 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 return recheckDecision.TerminalResult;
             }
 
-            int latchRows = await SetCacheAheadLatchAsync(connection, transaction, cancellationToken)
-                .ConfigureAwait(false);
-
-            await ObserveFaultInjectionAsync(
-                    DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
-                    request,
-                    lifecycleReadResult,
-                    DocumentCacheWriterOutcome.CacheAheadLatchSet,
+            DocumentCacheWriterCacheAheadLatchUpdateResult latchUpdateResult = await SetCacheAheadLatchAsync(
                     connection,
                     transaction,
-                    cacheDmlRowCount: null,
-                    acknowledgementRowCount: null,
-                    cacheAheadLatchRowCount: latchRows,
-                    cancellationToken: cancellationToken
+                    request.DocumentId,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            if (latchUpdateResult.Outcome == DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet)
+            {
+                await ObserveFaultInjectionAsync(
+                        DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
+                        request,
+                        lifecycleReadResult,
+                        DocumentCacheWriterOutcome.CacheAheadLatchSet,
+                        connection,
+                        transaction,
+                        cacheDmlRowCount: null,
+                        acknowledgementRowCount: null,
+                        cacheAheadLatchRowCount: latchUpdateResult.AffectedRows,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
 
             await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
             DocumentCacheWriterResult result = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
                 recheckDecision,
-                latchRows
+                latchUpdateResult
             );
             telemetryOutcome = result.Outcome;
             return result;
@@ -805,23 +813,79 @@ internal sealed class PostgresqlDocumentCacheWriter(
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<int> SetCacheAheadLatchAsync(
+    private static async Task<DocumentCacheWriterCacheAheadLatchUpdateResult> SetCacheAheadLatchAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        long documentId,
         CancellationToken cancellationToken
     )
     {
         await using NpgsqlCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            UPDATE "dms"."DocumentCacheState"
-            SET "CacheAheadRecoveryRequired" = true
-            WHERE "StateId" = 1
-              AND "ProjectionLifecycleState" IN ('Tracking', 'Rebuilding')
-              AND "CacheAheadRecoveryRequired" = false;
+            WITH current_cache_ahead AS (
+                SELECT 1
+                FROM "dms"."Document" document
+                INNER JOIN "dms"."DocumentCache" cache
+                    ON cache."DocumentId" = document."DocumentId"
+                WHERE document."DocumentId" = @documentId
+                  AND cache."ContentVersion" > document."ContentVersion"
+                FOR SHARE OF document, cache
+            ),
+            latch_update AS (
+                UPDATE "dms"."DocumentCacheState"
+                SET "CacheAheadRecoveryRequired" = true
+                WHERE "StateId" = 1
+                  AND "ProjectionLifecycleState" IN ('Tracking', 'Rebuilding')
+                  AND "CacheAheadRecoveryRequired" = false
+                  AND EXISTS (SELECT 1 FROM current_cache_ahead)
+                RETURNING 1
+            )
+            SELECT CASE
+                WHEN EXISTS (SELECT 1 FROM latch_update) THEN @latchSet
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM "dms"."DocumentCacheState"
+                    WHERE "StateId" = 1
+                      AND "ProjectionLifecycleState" IN ('Tracking', 'Rebuilding')
+                      AND "CacheAheadRecoveryRequired" = false
+                ) THEN @cacheAheadDisappeared
+                ELSE @lifecycleOrLatchFenced
+            END;
             """;
+        command.Parameters.Add(new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId });
+        command.Parameters.Add(
+            new NpgsqlParameter("latchSet", NpgsqlDbType.Integer)
+            {
+                Value = (int)DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet,
+            }
+        );
+        command.Parameters.Add(
+            new NpgsqlParameter("cacheAheadDisappeared", NpgsqlDbType.Integer)
+            {
+                Value = (int)DocumentCacheWriterCacheAheadLatchUpdateOutcome.CacheAheadDisappeared,
+            }
+        );
+        command.Parameters.Add(
+            new NpgsqlParameter("lifecycleOrLatchFenced", NpgsqlDbType.Integer)
+            {
+                Value = (int)DocumentCacheWriterCacheAheadLatchUpdateOutcome.LifecycleOrLatchFenced,
+            }
+        );
 
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        object? outcomeValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var outcome = (DocumentCacheWriterCacheAheadLatchUpdateOutcome)Convert.ToInt32(outcomeValue);
+
+        return outcome switch
+        {
+            DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet =>
+                DocumentCacheWriterCacheAheadLatchUpdateResult.LatchSet(),
+            DocumentCacheWriterCacheAheadLatchUpdateOutcome.CacheAheadDisappeared =>
+                DocumentCacheWriterCacheAheadLatchUpdateResult.CacheAheadDisappeared(),
+            DocumentCacheWriterCacheAheadLatchUpdateOutcome.LifecycleOrLatchFenced =>
+                DocumentCacheWriterCacheAheadLatchUpdateResult.LifecycleOrLatchFenced(),
+            _ => throw new InvalidOperationException("Unsupported cache-ahead latch update outcome."),
+        };
     }
 
     private async ValueTask ObserveFaultInjectionAsync(

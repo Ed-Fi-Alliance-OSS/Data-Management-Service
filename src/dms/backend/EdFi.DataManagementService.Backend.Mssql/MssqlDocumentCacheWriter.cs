@@ -434,29 +434,37 @@ internal sealed class MssqlDocumentCacheWriter(
                 return recheckDecision.TerminalResult;
             }
 
-            int latchRows = await SetCacheAheadLatchAsync(connection, transaction, cancellationToken)
-                .ConfigureAwait(false);
-
-            await ObserveFaultInjectionAsync(
-                    DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
-                    request,
-                    lifecycleReadResult,
-                    DocumentCacheWriterOutcome.CacheAheadLatchSet,
+            DocumentCacheWriterCacheAheadLatchUpdateResult latchUpdateResult = await SetCacheAheadLatchAsync(
                     connection,
                     transaction,
-                    cacheDmlRowCount: null,
-                    acknowledgementRowCount: null,
-                    cacheAheadLatchRowCount: latchRows,
-                    cancellationToken: cancellationToken
+                    request.DocumentId,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            if (latchUpdateResult.Outcome == DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet)
+            {
+                await ObserveFaultInjectionAsync(
+                        DocumentCacheWriterFaultInjectionHook.AfterCacheAheadLatchUpdateBeforeIncidentCommit,
+                        request,
+                        lifecycleReadResult,
+                        DocumentCacheWriterOutcome.CacheAheadLatchSet,
+                        connection,
+                        transaction,
+                        cacheDmlRowCount: null,
+                        acknowledgementRowCount: null,
+                        cacheAheadLatchRowCount: latchUpdateResult.AffectedRows,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
 
             await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
             DocumentCacheWriterResult result = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
                 recheckDecision,
-                latchRows
+                latchUpdateResult
             );
             telemetryOutcome = result.Outcome;
             return result;
@@ -852,23 +860,79 @@ internal sealed class MssqlDocumentCacheWriter(
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<int> SetCacheAheadLatchAsync(
+    private static async Task<DocumentCacheWriterCacheAheadLatchUpdateResult> SetCacheAheadLatchAsync(
         SqlConnection connection,
         SqlTransaction transaction,
+        long documentId,
         CancellationToken cancellationToken
     )
     {
         await using SqlCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            UPDATE [dms].[DocumentCacheState]
-            SET [CacheAheadRecoveryRequired] = CAST(1 AS bit)
-            WHERE [StateId] = 1
-              AND [ProjectionLifecycleState] IN ('Tracking', 'Rebuilding')
-              AND [CacheAheadRecoveryRequired] = CAST(0 AS bit);
-            """;
+            DECLARE @latchUpdate TABLE ([AffectedRows] int NOT NULL);
 
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            UPDATE [state]
+            SET [CacheAheadRecoveryRequired] = CAST(1 AS bit)
+            OUTPUT 1 INTO @latchUpdate
+            FROM [dms].[DocumentCacheState] AS [state]
+            WHERE [state].[StateId] = 1
+              AND [state].[ProjectionLifecycleState] IN ('Tracking', 'Rebuilding')
+              AND [state].[CacheAheadRecoveryRequired] = CAST(0 AS bit)
+              AND EXISTS (
+                  SELECT 1
+                  FROM [dms].[Document] AS [document] WITH (READCOMMITTEDLOCK)
+                  INNER JOIN [dms].[DocumentCache] AS [cache] WITH (READCOMMITTEDLOCK)
+                      ON [cache].[DocumentId] = [document].[DocumentId]
+                  WHERE [document].[DocumentId] = @documentId
+                    AND [cache].[ContentVersion] > [document].[ContentVersion]
+              );
+
+            SELECT CASE
+                WHEN EXISTS (SELECT 1 FROM @latchUpdate) THEN @latchSet
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM [dms].[DocumentCacheState] WITH (HOLDLOCK)
+                    WHERE [StateId] = 1
+                      AND [ProjectionLifecycleState] IN ('Tracking', 'Rebuilding')
+                      AND [CacheAheadRecoveryRequired] = CAST(0 AS bit)
+                ) THEN @cacheAheadDisappeared
+                ELSE @lifecycleOrLatchFenced
+            END;
+            """;
+        command.Parameters.Add(new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId });
+        command.Parameters.Add(
+            new SqlParameter("@latchSet", SqlDbType.Int)
+            {
+                Value = (int)DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet,
+            }
+        );
+        command.Parameters.Add(
+            new SqlParameter("@cacheAheadDisappeared", SqlDbType.Int)
+            {
+                Value = (int)DocumentCacheWriterCacheAheadLatchUpdateOutcome.CacheAheadDisappeared,
+            }
+        );
+        command.Parameters.Add(
+            new SqlParameter("@lifecycleOrLatchFenced", SqlDbType.Int)
+            {
+                Value = (int)DocumentCacheWriterCacheAheadLatchUpdateOutcome.LifecycleOrLatchFenced,
+            }
+        );
+
+        object? outcomeValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var outcome = (DocumentCacheWriterCacheAheadLatchUpdateOutcome)Convert.ToInt32(outcomeValue);
+
+        return outcome switch
+        {
+            DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet =>
+                DocumentCacheWriterCacheAheadLatchUpdateResult.LatchSet(),
+            DocumentCacheWriterCacheAheadLatchUpdateOutcome.CacheAheadDisappeared =>
+                DocumentCacheWriterCacheAheadLatchUpdateResult.CacheAheadDisappeared(),
+            DocumentCacheWriterCacheAheadLatchUpdateOutcome.LifecycleOrLatchFenced =>
+                DocumentCacheWriterCacheAheadLatchUpdateResult.LifecycleOrLatchFenced(),
+            _ => throw new InvalidOperationException("Unsupported cache-ahead latch update outcome."),
+        };
     }
 
     private async ValueTask ObserveFaultInjectionAsync(

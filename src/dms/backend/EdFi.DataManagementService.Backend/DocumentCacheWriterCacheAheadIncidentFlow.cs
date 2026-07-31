@@ -61,6 +61,63 @@ internal enum DocumentCacheWriterCacheAheadIncidentAction
     SetCacheAheadLatch = 3,
 }
 
+internal enum DocumentCacheWriterCacheAheadLatchUpdateOutcome
+{
+    LatchSet = 1,
+    LifecycleOrLatchFenced = 2,
+    CacheAheadDisappeared = 3,
+}
+
+internal sealed record DocumentCacheWriterCacheAheadLatchUpdateResult
+{
+    private DocumentCacheWriterCacheAheadLatchUpdateResult(
+        DocumentCacheWriterCacheAheadLatchUpdateOutcome outcome,
+        int affectedRows
+    )
+    {
+        DocumentCacheWriterCacheAheadLatchUpdateOutcome validatedOutcome =
+            DocumentCacheMaterializerGuards.RequireDefined(
+                outcome,
+                nameof(outcome),
+                "Unsupported cache-ahead latch update outcome."
+            );
+        if (affectedRows is not 0 and not 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(affectedRows),
+                affectedRows,
+                "Cache-ahead latch update affected rows must be zero or one."
+            );
+        }
+
+        if (
+            (validatedOutcome == DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet)
+            != (affectedRows == 1)
+        )
+        {
+            throw new ArgumentException(
+                "Cache-ahead latch-set outcomes must report exactly one affected row."
+            );
+        }
+
+        Outcome = validatedOutcome;
+        AffectedRows = affectedRows;
+    }
+
+    public DocumentCacheWriterCacheAheadLatchUpdateOutcome Outcome { get; }
+
+    public int AffectedRows { get; }
+
+    public static DocumentCacheWriterCacheAheadLatchUpdateResult LatchSet() =>
+        new(DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet, affectedRows: 1);
+
+    public static DocumentCacheWriterCacheAheadLatchUpdateResult LifecycleOrLatchFenced() =>
+        new(DocumentCacheWriterCacheAheadLatchUpdateOutcome.LifecycleOrLatchFenced, affectedRows: 0);
+
+    public static DocumentCacheWriterCacheAheadLatchUpdateResult CacheAheadDisappeared() =>
+        new(DocumentCacheWriterCacheAheadLatchUpdateOutcome.CacheAheadDisappeared, affectedRows: 0);
+}
+
 internal sealed record DocumentCacheWriterCacheAheadIncidentDecision
 {
     private DocumentCacheWriterCacheAheadIncidentDecision(
@@ -232,10 +289,11 @@ internal static class DocumentCacheWriterCacheAheadIncidentFlow
 
     public static DocumentCacheWriterResult CompleteLatchUpdate(
         DocumentCacheWriterCacheAheadIncidentDecision decision,
-        int affectedRows
+        DocumentCacheWriterCacheAheadLatchUpdateResult latchUpdateResult
     )
     {
         ArgumentNullException.ThrowIfNull(decision);
+        ArgumentNullException.ThrowIfNull(latchUpdateResult);
         if (decision.Action != DocumentCacheWriterCacheAheadIncidentAction.SetCacheAheadLatch)
         {
             throw new ArgumentException(
@@ -244,12 +302,19 @@ internal static class DocumentCacheWriterCacheAheadIncidentFlow
             );
         }
 
-        if (affectedRows == 1)
+        if (latchUpdateResult.Outcome == DocumentCacheWriterCacheAheadLatchUpdateOutcome.LatchSet)
         {
             return new DocumentCacheWriterResult.CacheAheadLatchSet(
                 decision.SourceContentVersion!.Value,
                 decision.CacheContentVersion!.Value
             );
+        }
+
+        if (
+            latchUpdateResult.Outcome == DocumentCacheWriterCacheAheadLatchUpdateOutcome.CacheAheadDisappeared
+        )
+        {
+            return DocumentCacheWriterResult.CacheAheadDisappeared.Instance;
         }
 
         return new DocumentCacheWriterResult.LifecycleOrLatchFenced(
