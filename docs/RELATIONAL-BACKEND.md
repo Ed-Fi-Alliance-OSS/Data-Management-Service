@@ -231,6 +231,7 @@ endpoints, which are still a placeholder shim (see the note below).
 
 - [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the mirrored `ContentVersion` / `ContentLastModifiedAt` columns on root resource tables (descriptor mirror columns live on the shared `dms.Descriptor` table from the core DDL pass)
 - [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
+- [`DescriptorQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorQueryPageKeysetPlanner.cs) — the descriptor equivalent. Descriptor pages now root on `dms.Descriptor` itself, so the range predicate reads the descriptor row's own mirrored `ContentVersion` with no `dms.Document` join
 
 #### Document-metadata mirror columns (dual-write)
 
@@ -238,17 +239,58 @@ Alongside the two change-version mirrors, every resource **root** table now carr
 `dms.Document` metadata columns — `DocumentUuid`, `IdentityVersion`, `IdentityLastModifiedAt`,
 `CreatedAt`, and `CreatedByOwnershipTokenId` — plus a `UX_<Table>_DocumentUuid` unique constraint. The
 shared `dms.Descriptor` table carries the same set — plus one mirror no root table needs,
-`ResourceKeyId`, the project-qualified descriptor type descriptor reads filter by (nullable, no
-default, and no FK to `dms.ResourceKey`, so an out-of-band insert cannot fabricate a type) — and each
+`ResourceKeyId`, the project-qualified descriptor type that descriptor reads filter by — and each
 `<AbstractResource>Identity` table carries `DocumentUuid`. They are **not** client content: nothing in
-a write plan can set them (`IsWritable=false`), and hydration does not read them. The stamping
-triggers write the root and descriptor copies; the `TR_<Root>_AbstractIdentity` triggers write the
-abstract-identity copy.
+a write plan can set them (`IsWritable=false`). The stamping triggers write the root and descriptor
+copies; the `TR_<Root>_AbstractIdentity` triggers write the abstract-identity copy.
+
+Where a mirror has **no column default**, that is what keeps an out-of-band insert from fabricating a
+value the triggers never produced. `<AbstractResource>Identity.DocumentUuid` is `NOT NULL` with no
+default, so an insert that bypasses the triggers fails loudly instead of quietly acquiring a random
+UUID that belongs to no document — and link injection reads that column. `dms.Descriptor.ResourceKeyId`
+likewise has no default, so such a row cannot invent a descriptor type; it is nullable and carries no
+FK to `dms.ResourceKey`, following the other mirror columns' precedent, with its permanent shape left
+to the phase that makes these columns authoritative.
 
 - [`DeriveDocumentMetadataColumnsPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveDocumentMetadataColumnsPass.cs) — derives the five metadata columns onto root tables, including their non-writable classification
+- [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) — the `dms.Descriptor` copies, including `ResourceKeyId` and the `IX_Descriptor_ResourceKeyId_DocumentId` index that serves the descriptor page keyset
 
-This is a **dual-write**: `dms.Document` remains authoritative in this phase, and these columns are a
-row-local mirror of it. Two caveats when debugging a mismatch:
+This is a **dual-write**, but the two sides no longer serve the same traffic. `dms.Document` remains
+the **write** path's anchor — writes lock its row, load current state from it, and detect insert versus
+update there — while the **read** path has moved off it: each read below now takes its metadata from a
+row it was already reading, so a wrong served value points at the mirror, not at `dms.Document`.
+
+- **GET metadata** (`id`, `_etag`, `_lastModifiedDate`) — the hydration batch's metadata `SELECT` reads
+  the root table when the caller asks for it, per
+  [`HydrationExecutionOptions.DocumentMetadataSource`](../src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/HydrationExecutionOptions.cs):
+  the GET path passes `RootTable`, while the write path's current-state loader keeps the default
+  `DocumentTable` and reads the `dms.Document` row it just locked
+  ([`HydrationBatchBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs)).
+- **GET-by-id target resolution** — probes the root table's `UX_<Root>_DocumentUuid` unique index.
+  Resource scoping is now structural (a uuid belonging to another resource is simply absent from this
+  root table), so a miss is a plain **404**
+  ([`RelationalDocumentUuidLookup.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentUuidLookup.cs),
+  [`RelationalReadTargetLookupService.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadTargetLookupService.cs)).
+- **The `?id=` query filter** — compiles to a predicate on the root's own `DocumentUuid`, so page SQL
+  carries no `dms.Document` join
+  ([`PageDocumentIdSqlCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs)).
+- **Descriptor reads** — GET-by-id, the page keyset, and the page rows are single-table on
+  `dms.Descriptor`, discriminated by its mirrored `ResourceKeyId`
+  ([`DescriptorReadHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs),
+  [`DescriptorReadRowReader.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadRowReader.cs)).
+- **Reference link injection** (`link.rel` / `link.href`) — the auxiliary lookup joins each target's
+  root table, or its `<AbstractResource>Identity` table for a polymorphic target, for the target's
+  `DocumentUuid`; the owning `'Project:Resource'` discriminator is emitted per branch as a compile-time
+  literal, and the resource slug the href needs is resolved from that discriminator
+  ([`DocumentReferenceLookupPlanCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReferenceLookupPlanCompiler.cs),
+  [`DocumentLinkSlugResolver.cs`](../src/dms/core/EdFi.DataManagementService.Core/DocumentLinkSlugResolver.cs)).
+- **Tracked-change trigger bodies** — take old/new values from the root row image (`OLD` / `NEW` in
+  PostgreSQL, the `deleted` / `inserted` pseudo-tables in SQL Server) and the `ContentVersion` the
+  stamping step just captured, so writing a tracked-change row reads `dms.Document` zero times
+  ([`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs)).
+
+Caveats when debugging a mismatch — all of them concern rows written **out of band**, since the
+generated triggers are the only legitimate writers of these columns:
 
 - `CreatedByOwnershipTokenId` is a forward-compatible placeholder and is **permanently NULL** — this
   schema base has no `dms.Document.CreatedByOwnershipTokenId` to copy from, so no trigger writes it.
@@ -256,6 +298,22 @@ row-local mirror of it. Two caveats when debugging a mismatch:
 - Tamper repair differs by dialect: PostgreSQL's `BEFORE` trigger assigns `DocumentUuid` / `CreatedAt`
   only on `INSERT` and does **not** self-heal a later out-of-band change to them, while SQL Server's
   `AFTER` trigger re-mirrors all six from the post-update `dms.Document` row image on every stamp.
+- Reads **fail closed rather than loudly**: the mirror predicates are equality comparisons and NULL
+  matches nothing, so a trigger-bypassed `dms.Descriptor` row whose `ResourceKeyId` is NULL is invisible
+  to descriptor reads — a **404**, not an error. `DescriptorReadRowReader`'s "must not be null"
+  invariant throw sits behind that filter as defense in depth and is unreachable through the normal
+  read path.
+- Link injection compares mirrors **across** branches: a polymorphic reference can resolve through the
+  concrete root table and through its `<AbstractResource>Identity` row, and if those two `DocumentUuid`
+  values ever disagreed the GET fails with a conflicting-rows exception rather than serving a wrong
+  link ([`PageReconstitutionContext.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs)).
+  A divergence there means the database was written to behind the triggers' back.
+- An out-of-band **document-first delete** — removing the `dms.Document` row while the root row still
+  exists and letting the FK cascade take the root row with it — no longer behaves the same in both
+  dialects: PostgreSQL fails loudly (the trigger's `RETURNING … INTO STRICT` finds no stamp row for the
+  vanished root row) while SQL Server silently writes no tombstone. Production deletes remove the root
+  row first and are unaffected; this is the same family of out-of-band asymmetry as the tamper-repair
+  difference above.
 
 > [!IMPORTANT]
 > **Re-provision only.** Re-applying the generated DDL over a database provisioned before these
@@ -268,9 +326,10 @@ row-local mirror of it. Two caveats when debugging a mismatch:
 > [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use) turns any leftover
 > drift into an **HTTP 503**.
 
-These columns are the first phase of the planned removal of `dms.Document` and
-`dms.ReferentialIdentity` as the read/write path's central tables; for the design context on why that
-removal is hard, see
+These columns, and the read-path re-point above, are the first two phases of the planned removal of
+`dms.Document` and `dms.ReferentialIdentity` as the read/write path's central tables: the reads have
+moved, the writes have not, and the mirrors' permanent shape (defaults, foreign keys, indexes) is
+settled by the phase that drops the originals. For the design context on why that removal is hard, see
 [`the-problem-with-removing-referentialids.md`](../reference/design/backend-redesign/design-docs/the-problem-with-removing-referentialids.md).
 
 > [!NOTE]
