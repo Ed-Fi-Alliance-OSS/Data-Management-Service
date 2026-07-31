@@ -1494,6 +1494,45 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
                 ForEach-Object { $_.ValidValues }) | Should -Be @('postgresql', 'mssql')
         }
 
+        It "routes both MSSQL branches through the one SQL Server physical-name authority" {
+            # The sharing is legitimate only because both MSSQL inputs end at the same server lookup, and
+            # it has to be real rather than duplicated: two copies of a collation rule are what let the two
+            # paths drift before. Asserted on the parsed AST so a comment cannot satisfy it, and required
+            # of BOTH predicates so neither can quietly grow its own copy.
+            $modulePath = Join-Path $script:dockerComposeRoot "env-utility.psm1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$null, [ref]$null)
+
+            foreach ($predicateName in @(
+                'Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase',
+                'Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase'
+            )) {
+                $predicate = $ast.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $predicateName
+                }, $true) | Select-Object -First 1
+                $predicate | Should -Not -BeNullOrEmpty -Because "$predicateName must exist to be checked"
+
+                $authorityCalls = @($predicate.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    $node.GetCommandName() -eq 'Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase'
+                }, $true))
+                $authorityCalls.Count | Should -Be 1 -Because "$predicateName must delegate its MSSQL answer exactly once"
+            }
+        }
+
+        It "keeps the SQL Server authority out of the PostgreSQL branches" {
+            # The counterpart guard: the shared rule is shared between the two MSSQL paths and nowhere
+            # else. If a PostgreSQL branch ever reached it, the trailing-space rule measured for SQL Server
+            # would silently start governing an engine where it is wrong at both ends.
+            Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName 'edfi_configurationservice ' |
+                Should -BeTrue
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'edfi_configurationservice ' |
+                Should -BeFalse -Because "on PostgreSQL that trailing space survives the transport and names another database"
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName ' edfi_configurationservice' |
+                Should -BeTrue -Because "PostgreSQL's unquoted lexer discards LEADING whitespace, which SQL Server does not"
+        }
+
         It "leaves no engine-neutral collision predicate for a call site to pick up again" {
             # The engine-neutral helper is what let one call site answer for a creation mechanism it
             # could not see. Any future sibling has to declare the engine too.
@@ -1542,14 +1581,43 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
         It "mssql treats <Label> as the reserved CMS database, under its default collation" -ForEach @(
             @{ Label = 'the reserved name itself'; Name = 'edfi_configurationservice' }
             @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
+            @{ Label = 'one trailing space'; Name = 'edfi_configurationservice ' }
+            @{ Label = 'two trailing spaces'; Name = 'edfi_configurationservice  ' }
+            @{ Label = 'five trailing spaces'; Name = 'edfi_configurationservice     ' }
+            @{ Label = 'a case variant with trailing spaces'; Name = 'EDFI_ConfigurationService  ' }
         ) {
+            # Measured on the pinned SQL Server 2025 image under its default collation, two independent
+            # ways per case: CREATE DATABASE reports error 1801 (duplicate) and DB_ID() resolves to the
+            # same database_id. The trailing spaces are STORED (sys.databases name hex ends 0020 0020),
+            # so this is the collation's comparison semantics, not storage trimming.
             Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
                 Should -BeTrue
         }
 
-        It "mssql accepts an unrelated datastore name" {
-            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName 'edfi_datamanagementservice' |
+        It "mssql does NOT treat <Label> as the reserved CMS database" -ForEach @(
+            @{ Label = 'a LEADING space, which is significant on this engine'; Name = ' edfi_configurationservice' }
+            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
+            @{ Label = 'a trailing line feed'; Name = "edfi_configurationservice`n" }
+            @{ Label = 'a trailing carriage return'; Name = "edfi_configurationservice`r" }
+            @{ Label = 'a trailing vertical tab'; Name = "edfi_configurationservice$([char]0x0B)" }
+            @{ Label = 'a trailing form feed'; Name = "edfi_configurationservice$([char]0x0C)" }
+            @{ Label = 'a trailing no-break space'; Name = "edfi_configurationservice$([char]0x00A0)" }
+            @{ Label = 'an unrelated datastore name'; Name = 'edfi_datamanagementservice' }
+        ) {
+            # Each of the six trailing characters CREATED a distinct database on the real server and
+            # DB_ID() did not match; a leading space did not match either and CREATE failed with 1802.
+            # This is why the rule is TrimEnd with an explicit set: TrimEnd() with no argument would strip
+            # all six and turn one fixed false negative into six false positives.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
                 Should -BeFalse
+        }
+
+        It "mssql treats a trailing ideographic space as the reserved CMS database" {
+            # Measured SAME on the pinned image: this collation's code page folds U+3000 onto a space, so
+            # DB_ID() resolves it to the baseline and CREATE reports 1801. Encoded because erring toward
+            # refusing a name is the safe direction for a switch whose promise is two distinct databases.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName "edfi_configurationservice$([char]0x3000)" |
+                Should -BeTrue
         }
     }
 
@@ -1582,14 +1650,39 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
         It "mssql treats <Label> as a collision" -ForEach @(
             @{ Label = 'the reserved name itself'; Name = 'edfi_configurationservice' }
             @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
+            @{ Label = 'one trailing space'; Name = 'edfi_configurationservice ' }
+            @{ Label = 'two trailing spaces'; Name = 'edfi_configurationservice  ' }
+            @{ Label = 'a case variant with trailing spaces'; Name = 'EDFI_ConfigurationService  ' }
+            @{ Label = 'a trailing ideographic space'; Name = "edfi_configurationservice$([char]0x3000)" }
         ) {
+            # The same SQL Server authority the initialized path uses - both MSSQL inputs end at the same
+            # server-side lookup, so the answer must not depend on which one supplied the name.
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
                 Should -BeTrue
         }
 
-        It "mssql accepts an unrelated name" {
-            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName 'edfi_datamanagementservice' |
+        It "mssql does NOT treat <Label> as a collision" -ForEach @(
+            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
+            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
+            @{ Label = 'a trailing no-break space'; Name = "edfi_configurationservice$([char]0x00A0)" }
+            @{ Label = 'an unrelated name'; Name = 'edfi_datamanagementservice' }
+        ) {
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
                 Should -BeFalse
+        }
+
+        It "mssql and the initialized path agree for every shape except one the TRANSPORT changes" {
+            # The shared authority is the server lookup, applied to each path's OWN input - so the two
+            # MSSQL paths agree wherever the transport is faithful, and are allowed to differ where it is
+            # not. Exactly one measured shape differs: a trailing line feed is dropped by
+            # connection-string serialization/parsing, so the registered path hands the server the bare
+            # reserved name while the initialization path hands it a genuinely distinct one.
+            $lineFeedName = "edfi_configurationservice`n"
+
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $lineFeedName |
+                Should -BeFalse -Because "the server created a distinct database for this name"
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $lineFeedName |
+                Should -BeTrue -Because "the transport drops the trailing line feed before the server sees the name"
         }
     }
 
@@ -1711,6 +1804,23 @@ Describe "the registered datastore database name survives the transport that car
 
             Get-ParsedDatabaseValue -ConnectionString $connectionString |
                 Should -BeExactly $Name -Because "the collision guard compares this value, so it must be the registered name"
+        }
+
+        It "drops a TRAILING LINE FEED, the one measured shape the transport does not preserve" {
+            # Stated as its own case so the round-trip claim above is precise rather than accidentally
+            # silent. Both the ADO.NET reader and Npgsql return the value without the trailing 0x0A, while
+            # a trailing CR, tab, vertical tab, form feed and space all survive. This is also the clearest
+            # demonstration of why the guard must read the parsed value: judged as raw text this name looks
+            # distinct, and the provider is handed the reserved database.
+            $withLineFeed = "edfi_configurationservice`n"
+            $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
+                -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
+                -DatabaseName $withLineFeed
+
+            Get-ParsedDatabaseValue -ConnectionString $connectionString |
+                Should -BeExactly 'edfi_configurationservice'
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $withLineFeed |
+                Should -BeTrue -Because "the provider receives the reserved database, whatever the parameter text says"
         }
 
         It "introduces no second database segment for a semicolon-bearing name" {
@@ -1952,6 +2062,63 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
                 Should -Throw "*physically distinct*"
+        }
+
+        It "rejects a file-authored MSSQL_DB_NAME whose only difference is trailing spaces" {
+            # The MSSQL counterpart of the PostgreSQL trailing-space defect, and it was open for the same
+            # reason: the comparison modelled letter case only. Measured on the pinned SQL Server 2025
+            # image, DB_ID() resolves this to the dedicated CMS database and CREATE reports 1801, so
+            # separate mode would have promised two databases and delivered one.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                "MSSQL_DB_NAME='EDFI_ConfigurationService  '",
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*physically distinct*" -PassThru
+
+            $thrown.Exception.Message | Should -BeLike "*MSSQL_DB_NAME*"
+            # BeLikeExactly, because -like would match the lower-cased reserved literal the message
+            # legitimately names and assert nothing.
+            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "the diagnostic names the key, never the resolved value"
+            $thrown.Exception.Message | Should -BeLike "*trailing spaces*" -Because "the reason has to name the rule that actually fired"
+        }
+
+        It "rejects the same MSSQL trailing-space collision when ambient precedence supplies MSSQL_DB_NAME" {
+            # Compose ignores the file declaration once the name is set ambiently, so the ambient value is
+            # the one that moves the running datastore and must reach the same authority.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                'MSSQL_DB_NAME=edfi_datamanagementservice',
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", "EDFI_ConfigurationService ")
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*physically distinct*" -PassThru
+
+            $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "an ambient value is caller-authored too"
+        }
+
+        It "still accepts an MSSQL datastore name whose difference SQL Server treats as significant" {
+            # The other side of the narrow rule: a LEADING space is significant on this engine (DB_ID did
+            # not match and CREATE failed with 1802), so this configuration really is two databases and
+            # must not be refused. This is the case an unrestricted Trim would have broken.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                "MSSQL_DB_NAME=' edfi_configurationservice'",
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Not -Throw
         }
 
         It "rejects a case-variant datastore collision on PostgreSQL: the unquoted CREATE DATABASE folds it" {
@@ -3607,6 +3774,27 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+        }
+
+        It "rejects a trailing-space -DataStoreDatabaseName on MSSQL, which the server resolves to the reserved database" {
+            # The explicit-override half of the MSSQL trailing-space rule. Both MSSQL inputs reach the same
+            # server lookup, so this shape has to be refused here exactly as it is in the env-file path.
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice  ' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
+            $run.ErrorMessage | Should -BeLike "*trailing spaces*"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+        }
+
+        It "accepts a leading-space -DataStoreDatabaseName on MSSQL, which is a genuinely different database" {
+            # Measured significant on the real server, so refusing it would block a working configuration.
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName ' edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
         }
 
         It "accepts -DataStoreDatabaseName EDFI_ConfigurationService on PostgreSQL and proceeds to the docker boundary" {
