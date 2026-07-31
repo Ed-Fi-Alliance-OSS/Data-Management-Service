@@ -247,7 +247,7 @@
       "Run SQL Server crash/concurrency tests with the DocumentCacheWriterCrash or DocumentCacheWriterConcurrency filter.",
       "Review each test to confirm it uses transaction hook points rather than after-commit hooks or process-local durable latches."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "performance-evidence",

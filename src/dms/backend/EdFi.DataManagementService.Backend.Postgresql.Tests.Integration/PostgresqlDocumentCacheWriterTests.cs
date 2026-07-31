@@ -323,19 +323,109 @@ public class Given_A_Postgresql_DocumentCacheWriter
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
     }
 
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_reclassifies_after_materialization_and_preserves_newer_work()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate staleAfterMaterializationCandidate = CreateCandidate(
+            source,
+            "candidate-before-backoff"
+        );
+
+        await AdvanceSourceAndWorkVersionAsync(source.DocumentId, contentVersion: 11);
+
+        DocumentCacheWriterResult result = await WriteAsync(source, staleAfterMaterializationCandidate);
+
+        var stale = result.Should().BeOfType<DocumentCacheWriterResult.StaleCandidateSuppressed>().Subject;
+        stale.CurrentContentVersion.Should().Be(11);
+        stale.CandidateContentVersion.Should().Be(10);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(11);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_fences_post_delete_materialized_candidates_without_manual_cache_delete()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidateMaterializedBeforeDelete = CreateCandidate(
+            source,
+            "candidate-before-delete"
+        );
+
+        await DeleteSourceDocumentAsync(source.DocumentId);
+
+        DocumentCacheWriterResult result = await WriteAsync(source, candidateMaterializedBeforeDelete);
+
+        result.Should().BeSameAs(DocumentCacheWriterResult.SourceMissingOrDeleted.Instance);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_serializes_duplicate_absent_cache_writers_without_partial_cache_acknowledgement()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-current");
+        PausingFaultInjectionObserver observer = new(
+            DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement
+        );
+        PostgresqlDocumentCacheWriter pausedWriter = CreateWriter(observer);
+
+        Task<DocumentCacheWriterResult> firstWrite = pausedWriter.WriteAsync(
+            CreateRequest(source, candidate)
+        );
+
+        await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+
+        Task<DocumentCacheWriterResult> duplicateWrite = _writer.WriteAsync(CreateRequest(source, candidate));
+
+        observer.Release();
+
+        DocumentCacheWriterResult[] results = await Task.WhenAll(firstWrite, duplicateWrite)
+            .WaitAsync(TimeSpan.FromSeconds(30));
+        DocumentCacheWriterOutcome[] outcomes = results.Select(result => result.Outcome).ToArray();
+
+        outcomes
+            .Count(outcome => outcome == DocumentCacheWriterOutcome.CandidateWrittenAcknowledged)
+            .Should()
+            .Be(1);
+        outcomes
+            .Should()
+            .BeSubsetOf([
+                DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
+                DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                DocumentCacheWriterOutcome.RacingWriterLost,
+            ]);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
+        (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
     private async Task<DocumentCacheWriterResult> WriteAsync(
         SourceDocument source,
         DocumentCacheMaterializationCandidate? candidate
+    ) => await _writer.WriteAsync(CreateRequest(source, candidate));
+
+    private DocumentCacheWriterRequest CreateRequest(
+        SourceDocument source,
+        DocumentCacheMaterializationCandidate? candidate
     ) =>
-        await _writer.WriteAsync(
-            new DocumentCacheWriterRequest(
-                CreateTargetContext(),
-                source.DocumentId,
-                selectedRequiredContentVersion: source.ContentVersion,
-                DocumentCacheWriterPurpose.DurableWorkProjection,
-                candidate,
-                CancellationToken.None
-            )
+        new(
+            CreateTargetContext(),
+            source.DocumentId,
+            selectedRequiredContentVersion: source.ContentVersion,
+            DocumentCacheWriterPurpose.DurableWorkProjection,
+            candidate,
+            CancellationToken.None
         );
 
     private DocumentCacheMaterializationTargetContext CreateTargetContext() =>
@@ -374,6 +464,17 @@ public class Given_A_Postgresql_DocumentCacheWriter
         );
     }
 
+    private async Task DeleteSourceDocumentAsync(long documentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM "dms"."Document"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+        );
+    }
+
     private async Task SetWorkRequiredContentVersionAsync(long documentId, long requiredContentVersion)
     {
         await _database.ExecuteNonQueryAsync(
@@ -386,6 +487,28 @@ public class Given_A_Postgresql_DocumentCacheWriter
             new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint)
             {
                 Value = requiredContentVersion,
+            }
+        );
+    }
+
+    private async Task AdvanceSourceAndWorkVersionAsync(long documentId, long contentVersion)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "dms"."Document"
+            SET "ContentVersion" = @contentVersion,
+                "ContentLastModifiedAt" = @lastModifiedAt
+            WHERE "DocumentId" = @documentId;
+
+            UPDATE "dms"."DocumentProjectionWork"
+            SET "RequiredContentVersion" = @contentVersion
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId },
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
+            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = new DateTimeOffset(2026, 7, 31, 12, 5, 0, TimeSpan.Zero),
             }
         );
     }
@@ -518,6 +641,16 @@ public class Given_A_Postgresql_DocumentCacheWriter
             new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
         );
 
+    private async Task<long> ReadWorkRequiredContentVersionAsync(long documentId) =>
+        await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT "RequiredContentVersion"
+            FROM "dms"."DocumentProjectionWork"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+        );
+
     private async Task<long> ReadCacheCountAsync(long documentId) =>
         await _database.ExecuteScalarAsync<long>(
             """
@@ -635,6 +768,42 @@ public class Given_A_Postgresql_DocumentCacheWriter
             }
 
             throw new InvalidOperationException($"Injected DocumentCache writer fault at {context.Hook}.");
+        }
+    }
+
+    private sealed class PausingFaultInjectionObserver(DocumentCacheWriterFaultInjectionHook hookToPause)
+        : ITransactionFaultInjectionObserver
+    {
+        private readonly TaskCompletionSource _reached = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public async ValueTask ObserveAsync(
+            DocumentCacheWriterFaultInjectionContext context,
+            DocumentCacheWriterFaultInjectionControl control,
+            CancellationToken cancellationToken
+        )
+        {
+            if (context.Hook != hookToPause)
+            {
+                return;
+            }
+
+            _reached.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task WaitUntilReachedAsync(TimeSpan timeout)
+        {
+            await _reached.Task.WaitAsync(timeout).ConfigureAwait(false);
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult();
         }
     }
 }
