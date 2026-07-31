@@ -377,8 +377,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a <c>CREATE TABLE IF NOT EXISTS</c> statement including columns, key, and table constraints.
+    /// <paramref name="emitDocumentMetadataDefaults"/> is <c>false</c> only for abstract identity tables —
+    /// see <see cref="TryResolveMirrorNamedDefault"/>.
     /// </summary>
-    private void EmitCreateTable(SqlWriter writer, DbTableModel table)
+    private void EmitCreateTable(
+        SqlWriter writer,
+        DbTableModel table,
+        bool emitDocumentMetadataDefaults = true
+    )
     {
         writer.AppendLine(_dialect.CreateTableHeader(table.Table));
         writer.AppendLine("(");
@@ -387,7 +393,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         foreach (var column in table.Columns)
         {
-            definitions.Add(RenderColumnDefinition(table, column));
+            definitions.Add(RenderColumnDefinition(table, column, emitDocumentMetadataDefaults));
         }
 
         if (table.Key.Columns.Count > 0)
@@ -430,8 +436,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Renders a column definition based on its storage type.
     /// Stored columns emit a normal column definition; UnifiedAlias columns emit a computed column.
+    /// <paramref name="emitDocumentMetadataDefaults"/> is <c>false</c> only for abstract identity tables —
+    /// see <see cref="TryResolveMirrorNamedDefault"/>.
     /// </summary>
-    private string RenderColumnDefinition(DbTableModel table, DbColumnModel column)
+    private string RenderColumnDefinition(
+        DbTableModel table,
+        DbColumnModel column,
+        bool emitDocumentMetadataDefaults = true
+    )
     {
         var type = ResolveColumnType(column);
 
@@ -445,7 +457,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
-        if (TryResolveMirrorNamedDefault(table, column, out var mirrorConstraintName, out var mirrorDefault))
+        if (
+            emitDocumentMetadataDefaults
+            && TryResolveMirrorNamedDefault(
+                table,
+                column,
+                out var mirrorConstraintName,
+                out var mirrorDefault
+            )
+        )
         {
             return _dialect.RenderColumnDefinitionWithNamedDefault(
                 column.ColumnName,
@@ -480,6 +500,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// matching the <c>dms.Document</c> convention. The trigger overwrites these defaults at write time.
     /// The nullable <c>CreatedByOwnershipTokenId</c> mirror has no default.
     /// </summary>
+    /// <remarks>
+    /// Abstract identity tables suppress these defaults: their single <c>INSERT</c> from the maintenance
+    /// trigger supplies <c>DocumentUuid</c>, and an out-of-band insert must fail rather than acquire a random
+    /// UUID (Phase 2 reads this column for link injection).
+    /// </remarks>
     private bool TryResolveMirrorNamedDefault(
         DbTableModel table,
         DbColumnModel column,
@@ -591,14 +616,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits <c>CREATE TABLE IF NOT EXISTS</c> statements for abstract identity tables.
+    /// Emits <c>CREATE TABLE IF NOT EXISTS</c> statements for abstract identity tables. Their copied
+    /// <c>DocumentUuid</c> gets no default, so an insert that bypasses the maintenance trigger fails on
+    /// <c>NOT NULL</c> instead of storing a random UUID that link injection would then serve.
     /// </summary>
     private void EmitAbstractIdentityTables(SqlWriter writer, IReadOnlyList<AbstractIdentityTableInfo> tables)
     {
         foreach (var tableInfo in tables)
         {
             // Reuse existing EmitCreateTable - it already handles all table types
-            EmitCreateTable(writer, tableInfo.TableModel);
+            EmitCreateTable(writer, tableInfo.TableModel, emitDocumentMetadataDefaults: false);
         }
     }
 

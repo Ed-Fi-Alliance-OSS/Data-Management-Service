@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
-    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "DocumentUuid" uuid NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
     "Discriminator" varchar(50) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId")

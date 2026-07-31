@@ -280,6 +280,22 @@ public class PostgresqlDocumentMetadataDualWriteTests
         ((Guid)row["IdentityDocumentUuid"]!).Should().Be((Guid)row["RootDocumentUuid"]!);
     }
 
+    [Test]
+    public async Task Abstract_identity_document_uuid_has_no_default_but_root_and_descriptor_keep_theirs()
+    {
+        (await _database.GetColumnDefaultAsync("edfi", "EducationOrganizationIdentity", "DocumentUuid"))
+            .Should()
+            .BeNull(
+                "m23: an out-of-band abstract-identity insert must fail loudly, not acquire a random UUID"
+            );
+        (await _database.GetColumnDefaultAsync("edfi", "School", "DocumentUuid"))
+            .Should()
+            .NotBeNull("root tables keep the default (MSSQL AFTER-trigger mirroring needs it)");
+        (await _database.GetColumnDefaultAsync("dms", "Descriptor", "DocumentUuid"))
+            .Should()
+            .NotBeNull("dms.Descriptor keeps the default (AFTER-trigger mirroring on both dialects)");
+    }
+
     // ---------------------------------------------------------------------------------------------
     // dms.Descriptor
     // ---------------------------------------------------------------------------------------------

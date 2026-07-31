@@ -21,7 +21,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationIdentity]
 (
     [DocumentId] bigint NOT NULL,
-    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_EducationOrganizationIdentity_DocumentUuid] DEFAULT newid(),
+    [DocumentUuid] uniqueidentifier NOT NULL,
     [EducationOrganizationId] int NOT NULL,
     [Discriminator] nvarchar(50) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId])

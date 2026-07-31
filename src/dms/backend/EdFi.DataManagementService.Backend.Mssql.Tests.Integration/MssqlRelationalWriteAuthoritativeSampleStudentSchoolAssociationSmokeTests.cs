@@ -1347,14 +1347,19 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         string discriminator
     )
     {
+        // DocumentUuid has no default (m23), so this out-of-band insert must carry the seeded
+        // dms.Document row's value — the same value the maintenance trigger would have copied.
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[EducationOrganizationIdentity] (
                 [DocumentId],
+                [DocumentUuid],
                 [EducationOrganizationId],
                 [Discriminator]
             )
-            VALUES (@documentId, @educationOrganizationId, @discriminator);
+            SELECT @documentId, d.[DocumentUuid], @educationOrganizationId, @discriminator
+            FROM [dms].[Document] d
+            WHERE d.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),

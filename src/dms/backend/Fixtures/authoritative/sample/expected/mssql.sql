@@ -12907,7 +12907,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationIdentity]
 (
     [DocumentId] bigint NOT NULL,
-    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_EducationOrganizationIdentity_DocumentUuid] DEFAULT newid(),
+    [DocumentUuid] uniqueidentifier NOT NULL,
     [EducationOrganizationId] bigint NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId]),
@@ -12919,7 +12919,7 @@ IF OBJECT_ID(N'edfi.GeneralStudentProgramAssociationIdentity', N'U') IS NULL
 CREATE TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
 (
     [DocumentId] bigint NOT NULL,
-    [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_GeneralStudentProgramAssociationIdentity_DocumentUuid] DEFAULT newid(),
+    [DocumentUuid] uniqueidentifier NOT NULL,
     [BeginDate] date NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Program_EducationOrganizationId] bigint NOT NULL,

@@ -1691,10 +1691,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         string studentUniqueId
     )
     {
+        // DocumentUuid has no default (m23), so this out-of-band insert must carry the seeded
+        // dms.Document row's value — the same value the maintenance trigger would have copied.
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" (
                 "DocumentId",
+                "DocumentUuid",
                 "BeginDate",
                 "EducationOrganization_EducationOrganizationId",
                 "Program_EducationOrganizationId",
@@ -1705,6 +1708,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             )
             VALUES (
                 @documentId,
+                (SELECT "DocumentUuid" FROM "dms"."Document" WHERE "DocumentId" = @documentId),
                 @beginDate,
                 @educationOrganizationId,
                 @programEducationOrganizationId,

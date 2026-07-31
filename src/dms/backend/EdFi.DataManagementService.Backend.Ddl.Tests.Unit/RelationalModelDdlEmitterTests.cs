@@ -392,6 +392,15 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
         // Discriminator column must be NOT NULL to ensure every row identifies its concrete type.
         _ddl.Should().MatchRegex(@"""Discriminator""\s+\w+.*NOT NULL");
     }
+
+    [Test]
+    public void It_should_not_default_the_abstract_identity_document_uuid()
+    {
+        // The maintenance trigger's single INSERT supplies DocumentUuid, so an out-of-band insert must
+        // fail loudly rather than acquire a random UUID that link injection would then serve (m23).
+        _ddl.Should().Contain("\"DocumentUuid\" uuid NOT NULL,");
+        _ddl.Should().NotContain("DEFAULT gen_random_uuid()");
+    }
 }
 
 [TestFixture]
@@ -581,6 +590,15 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     {
         // Discriminator column must be NOT NULL to ensure every row identifies its concrete type.
         _ddl.Should().MatchRegex(@"\[Discriminator\]\s+\w+.*NOT NULL");
+    }
+
+    [Test]
+    public void It_should_not_default_the_abstract_identity_document_uuid()
+    {
+        // The maintenance trigger's single INSERT supplies DocumentUuid, so an out-of-band insert must
+        // fail loudly rather than acquire a random UUID that link injection would then serve (m23).
+        _ddl.Should().Contain("[DocumentUuid] uniqueidentifier NOT NULL,");
+        _ddl.Should().NotContain("DF_EducationOrganizationIdentity_DocumentUuid");
     }
 }
 
@@ -2440,6 +2458,7 @@ internal static class AbstractIdentityTableFixture
         var schema = new DbSchemaName("edfi");
         var identityTableName = new DbTableName(schema, "EducationOrganizationIdentity");
         var documentIdColumn = new DbColumnName("DocumentId");
+        var documentUuidColumn = new DbColumnName("DocumentUuid");
         var discriminatorColumn = new DbColumnName("Discriminator");
         var resource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", true); // Abstract
@@ -2460,6 +2479,19 @@ internal static class AbstractIdentityTableFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
+                // The DocumentUuid carried from dms.Document by the abstract identity maintenance trigger,
+                // as derived by AbstractIdentityTableAndUnionViewDerivationPass.
+                new DbColumnModel(
+                    documentUuidColumn,
+                    ColumnKind.DocumentUuid,
+                    ScalarType: null,
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
                 new DbColumnModel(
                     discriminatorColumn,
                     ColumnKind.Scalar,

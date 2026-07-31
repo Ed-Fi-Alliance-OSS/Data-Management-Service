@@ -12766,7 +12766,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_tpdm"."SurveySectionResponsePersonTa
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
-    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "DocumentUuid" uuid NOT NULL,
     "EducationOrganizationId" bigint NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
@@ -12777,7 +12777,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 CREATE TABLE IF NOT EXISTS "edfi"."GeneralStudentProgramAssociationIdentity"
 (
     "DocumentId" bigint NOT NULL,
-    "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
+    "DocumentUuid" uuid NOT NULL,
     "BeginDate" date NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
