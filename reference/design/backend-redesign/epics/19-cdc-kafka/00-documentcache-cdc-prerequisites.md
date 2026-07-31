@@ -38,6 +38,11 @@ observations.
 
 - Add CDC target input and validation models.
 - Add binding and incident state abstractions plus the local state-store implementation.
+- Add the shared deterministic CDC artifact-name helper with the binding model. Given the
+  deployment key, opaque instance key, generation, provider, and binding record, it returns
+  the provider artifact names consumed by 19-01 and the connector/topic names consumed by
+  19-02/19-04. It must not derive names from tenant display names, connection strings,
+  server names, database names, or connector JSON.
 - Add guarded binding lifecycle operations used by bootstrap and teardown.
 - Add provider source-position and source-history adapters.
 - Add per-target and aggregate status evaluation with sanitized diagnostics and telemetry.
@@ -53,6 +58,9 @@ observations.
 
 - State-store and lifecycle tests cover the binding and incident transitions in the
   referenced design sections.
+- Artifact-name helper tests cover deterministic output, provider-specific identifier
+  limits/sanitization, generation isolation, and the complete name inventory consumed by
+  19-01, 19-02, and 19-04.
 - PostgreSQL and SQL Server adapter tests cover position, continuity, and failure
   classifications.
 - Status tests cover the complete design-owned readiness input matrix and aggregation.
