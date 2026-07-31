@@ -170,6 +170,39 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
     }
 
+    [Test]
+    public void It_builds_an_embeddable_sql_server_small_list_reference_lookup_command()
+    {
+        var factory = new MssqlReferenceResolverAdapterFactory(A.Fake<IRelationalCommandExecutor>());
+
+        var command = factory.TryBuildSessionLookupCommand(
+            CreateLookupRequest(MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold - 1)
+        );
+
+        command.Should().NotBeNull();
+        command!.Parameters.Should().HaveCount(1999);
+        command
+            .Parameters.Should()
+            .AllSatisfy(parameter => parameter.ConfigureParameter.Should().NotBeNull());
+    }
+
+    [Test]
+    public void It_selects_the_sql_server_table_valued_fallback_at_the_bulk_threshold()
+    {
+        var factory = new MssqlReferenceResolverAdapterFactory(A.Fake<IRelationalCommandExecutor>());
+
+        var command = factory.TryBuildSessionLookupCommand(
+            CreateLookupRequest(MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold)
+        );
+
+        command.Should().BeNull();
+        var bulkCommand = MssqlReferenceLookupBulkStrategy.BuildCommand(
+            CreateLookupRequest(MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold)
+        );
+        bulkCommand.Parameters.Should().ContainSingle();
+        bulkCommand.Parameters[0].ConfigureParameter.Should().NotBeNull();
+    }
+
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
         services.TryAddSingleton(new DeadlockRetrySettings());
@@ -178,6 +211,30 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+    }
+
+    private static ReferenceLookupRequest CreateLookupRequest(int count)
+    {
+        var requestResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = RelationalAccessTestData.CreateMappingSet(requestResource) with
+        {
+            Key = new MappingSetKey("test-hash", SqlDialect.Mssql, "v1"),
+        };
+
+        return new ReferenceLookupRequest(
+            mappingSet,
+            requestResource,
+            Enumerable
+                .Range(1, count)
+                .Select(index =>
+                    RelationalAccessTestData.CreateSchoolLookup(
+                        new ReferentialId(
+                            Guid.ParseExact($"{index:x8}000000000000000000000000", "N")
+                        )
+                    )
+                )
+                .ToArray()
         );
     }
 

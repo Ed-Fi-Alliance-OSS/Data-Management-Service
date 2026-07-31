@@ -116,6 +116,50 @@ file static class WriteSessionCommandStreamTestSupport
             DocumentUuid: documentUuid
         );
 
+    public static UpsertRequest CreateBulkReferenceUpsertRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid,
+        int referenceCount
+    )
+    {
+        var documentInfo = CreateSchoolDocumentInfo();
+        var programResourceInfo = new ResourceInfo(
+            ProjectName: new ProjectName("Ed-Fi"),
+            ResourceName: new ResourceName("Program"),
+            IsDescriptor: false,
+            ResourceVersion: new SemVer("1.0.0"),
+            AllowIdentityUpdates: false
+        );
+        var documentReferences = Enumerable
+            .Range(0, referenceCount)
+            .Select(index =>
+            {
+                var identity = new DocumentIdentity([
+                    new DocumentIdentityElement(new JsonPath("$.programName"), $"missing-{index}"),
+                ]);
+
+                return new DocumentReference(
+                    programResourceInfo,
+                    identity,
+                    ReferentialIdCalculator.ReferentialIdFrom(programResourceInfo, identity),
+                    new JsonPath(
+                        $"$._ext.sample.addresses[0]._ext.sample.sponsorReferences[{index}].programReference"
+                    )
+                );
+            })
+            .ToArray();
+
+        return new UpsertRequest(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: documentInfo with { DocumentReferences = documentReferences },
+            MappingSet: mappingSet,
+            EdfiDoc: CreateRequestBody(0),
+            Headers: [],
+            TraceId: new TraceId("mssql-write-session-tvp-reference-fallback"),
+            DocumentUuid: documentUuid
+        );
+    }
+
     /// <summary>
     /// Classifies recorded SQL Server command text into the provider-neutral summary the shared
     /// contract asserts over. Dialect text stays in this adapter, never in Tests.Common.
@@ -140,13 +184,12 @@ file static class WriteSessionCommandStreamTestSupport
                 command.CommandText.Contains("[edfi].[School]", StringComparison.Ordinal)
                 && command.CommandText.Contains("[edfi].[SchoolAddress]", StringComparison.Ordinal)
             ),
-            // The PUT target lookup is the only command that filters dms.Document on the external
-            // DocumentUuid; the POST lookup reaches the same table through ReferentialIdentity.
+            // The PUT capture predicate is the only place the aliased dms.Document row filters on the
+            // external DocumentUuid; the POST capture reaches the same table through
+            // ReferentialIdentity. The parameter suffix is allocator-issued, so the match is on the
+            // stable prefix.
             DocumentUuidLookupCount: recorder.Commands.Count(command =>
-                command.CommandText.Contains(
-                    "document.[DocumentUuid] = @documentUuid",
-                    StringComparison.Ordinal
-                )
+                command.CommandText.Contains("d.[DocumentUuid] = @documentUuid", StringComparison.Ordinal)
             )
         );
 }
@@ -269,6 +312,94 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Post_Create
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard4)]
+public class Given_A_Mssql_Production_First_Phase_With_A_Tvp_Reference_Lookup
+    : MssqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("2b2b2b2b-0000-0000-0000-000000000099")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateBulkReferenceUpsertRequest(
+                _mappingSet,
+                _schoolDocumentUuid,
+                MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold
+            )
+        );
+    }
+
+    [Test]
+    public void It_executes_capture_then_the_standalone_table_valued_lookup_in_the_same_transaction()
+    {
+        _result.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+        _recorder.ShouldHaveCommandCount(2);
+        _recorder.Commands[0]
+            .CommandText.Should()
+            .Contain("[dms].[ReferentialIdentity]")
+            .And.NotContain("JOIN @referentialIds");
+        _recorder.Commands[1].CommandText.Should().Contain("FROM @referentialIds");
+        _recorder.Commands[1].Parameters.Should().ContainSingle();
+        _recorder.ShouldHaveTransactionBoundary(
+            expectedBeginCount: 1,
+            expectedCommitCount: 0,
+            expectedRollbackCount: 1
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+public class Given_A_Mssql_Production_First_Phase_With_A_Small_Reference_Lookup
+    : MssqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("2b2b2b2b-0000-0000-0000-000000000098")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateBulkReferenceUpsertRequest(
+                _mappingSet,
+                _schoolDocumentUuid,
+                referenceCount: 1
+            )
+        );
+    }
+
+    [Test]
+    public void It_embeds_capture_and_the_scalar_reference_lookup_in_one_production_command()
+    {
+        _result.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+        _recorder.ShouldHaveCommandCount(1);
+        _recorder.Commands[0].CommandText.Should().Contain("[dms].[ReferentialIdentity]");
+        _recorder.Commands[0].Parameters.Should().HaveCount(3);
+        _recorder.ShouldHaveTransactionBoundary(
+            expectedBeginCount: 1,
+            expectedCommitCount: 0,
+            expectedRollbackCount: 1
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Put_Update
     : MssqlWriteSessionCommandStreamFixtureTestBase
 {
@@ -318,7 +449,7 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Put_Update
     public void It_observes_the_hydration_batch_and_the_in_session_put_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 5
+            expectedTotalCommandCount: 4
         );
 }
 
@@ -374,7 +505,7 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Post_As_Update
     public void It_observes_the_hydration_batch_and_the_single_in_session_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertPostAsUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 5
+            expectedTotalCommandCount: 4
         );
 }
 

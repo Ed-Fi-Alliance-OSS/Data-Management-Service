@@ -55,6 +55,40 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         return BuildResolvedReferenceSet(request);
     }
 
+    /// <summary>
+    /// Builds the deduped lookup request a fresh resolver would issue for <paramref name="request"/>,
+    /// or <see langword="null"/> when nothing needs a database lookup. Composite emission uses this to
+    /// co-batch the lookup statement, while classification of the decoded results still runs through
+    /// <see cref="ResolveAsync"/>, so the dedup logic and the request shape cannot drift apart.
+    /// </summary>
+    internal static ReferenceLookupRequest? TryBuildLookupRequest(ReferenceResolverRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var uncachedLookups = new ReferenceResolver(
+            UnreachableReferenceResolverAdapter.Instance
+        ).GetUncachedLookups(request);
+
+        return uncachedLookups.Count == 0
+            ? null
+            : new ReferenceLookupRequest(request.MappingSet, request.RequestResource, uncachedLookups);
+    }
+
+    private sealed class UnreachableReferenceResolverAdapter : IReferenceResolverAdapter
+    {
+        public static readonly UnreachableReferenceResolverAdapter Instance = new();
+
+        private UnreachableReferenceResolverAdapter() { }
+
+        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
+            ReferenceLookupRequest request,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new InvalidOperationException(
+                "Building a lookup request must not resolve anything; no adapter call is expected."
+            );
+    }
+
     private List<ReferenceLookupRequestEntry> GetUncachedLookups(ReferenceResolverRequest request)
     {
         Dictionary<ReferentialId, ReferenceLookupRequestEntry> seenLookupByReferentialId = [];

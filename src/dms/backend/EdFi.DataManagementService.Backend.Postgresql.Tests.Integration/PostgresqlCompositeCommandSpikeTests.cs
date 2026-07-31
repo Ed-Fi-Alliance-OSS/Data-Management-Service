@@ -167,7 +167,11 @@ public class Given_A_Postgresql_Composite_Command_Against_A_Live_Provider
 
         var outcomes = await new RelationalCompositeCommandExecution().ExecuteAsync(session, builder.Seal());
 
-        outcomes[0].Value.Should().Be(documentId);
+        outcomes[0]
+            .Value.Should()
+            .BeOfType<RelationalCompositeCapturedTarget>()
+            .Which.DocumentId.Should()
+            .Be(documentId);
         outcomes[1].Value.Should().Be(documentId);
         outcomes[2].Value.Should().Be(true);
 
@@ -195,8 +199,8 @@ public class Given_A_Postgresql_Composite_Command_Against_A_Live_Provider
 
         var outcomes = await new RelationalCompositeCommandExecution().ExecuteAsync(session, builder.Seal());
 
-        // The capture statement still ran and captured "no target". Its own result set has no row, so it
-        // decodes as null, and the dependents observe the absent capture.
+        // The capture statement still ran and captured "no target": its unconditional projection row
+        // carries NULLs, which decodes as an absent captured target, and the dependents observe it.
         outcomes[0].Value.Should().BeNull();
         outcomes[1].Value.Should().Be(false);
         outcomes[2].Value.Should().BeNull();

@@ -320,6 +320,98 @@ public class Given_A_Relational_Composite_Command_Execution
         outcomes.Should().ContainSingle().Which.Value.Should().Be(4);
     }
 
+    [Test]
+    public async Task It_decodes_a_statement_that_owns_several_result_sets_through_its_span_reader()
+    {
+        var command = new RelationalCompositeCommand(
+            new RelationalCommand("SELECT 1;"),
+            [
+                new RelationalCompositeStatement(
+                    0,
+                    "auth-span",
+                    "SELECT 1; SELECT 2;",
+                    [],
+                    RelationalCompositeResultShape.Rows,
+                    ReadTwoResultSetsAsync,
+                    ResultSetCount: 2
+                ),
+                new RelationalCompositeStatement(
+                    1,
+                    "rows-after-span",
+                    "SELECT 3;",
+                    [],
+                    RelationalCompositeResultShape.Rows
+                ),
+            ]
+        );
+        var session = new FakeWriteSession(new FakeReaderScript(resultSetCount: 3) { RowsPerResultSet = 2 });
+
+        var outcomes = await new RelationalCompositeCommandExecution().ExecuteAsync(session, command);
+
+        // The span reader consumed both of its result sets, so the following statement decodes its own
+        // result set rather than one left over from the span.
+        outcomes.Select(outcome => outcome.Value).Should().Equal(4, 2);
+    }
+
+    [Test]
+    public async Task It_attributes_a_failure_inside_a_result_set_span_to_the_owning_statement()
+    {
+        var providerException = new FakeDbException("mid-span");
+        var command = new RelationalCompositeCommand(
+            new RelationalCommand("SELECT 1;"),
+            [
+                new RelationalCompositeStatement(
+                    0,
+                    "auth-span",
+                    "SELECT 1; SELECT 2;",
+                    [],
+                    RelationalCompositeResultShape.Rows,
+                    ReadTwoResultSetsAsync,
+                    ResultSetCount: 2
+                ),
+            ]
+        );
+        var session = new FakeWriteSession(
+            new FakeReaderScript(resultSetCount: 2)
+            {
+                RowsPerResultSet = 2,
+                ThrowOnNextResultAtIndex = 1,
+                NextResultException = providerException,
+            }
+        );
+        var execution = new RelationalCompositeCommandExecution();
+
+        var act = async () => await execution.ExecuteAsync(session, command);
+
+        await act.Should().ThrowAsync<FakeDbException>();
+        execution.Failure!.Ordinal.Should().Be(0);
+        execution.Failure.Label.Should().Be("auth-span");
+        execution.Failure.Stage.Should().Be(RelationalCompositeFailureStage.ReadingRows);
+        session.ReportedFailures.Should().ContainSingle().Which.Should().BeSameAs(providerException);
+    }
+
+    private static async Task<object?> ReadTwoResultSetsAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        var rowCount = 0;
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rowCount++;
+        }
+
+        await reader.NextResultAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rowCount++;
+        }
+
+        return rowCount;
+    }
+
     private sealed class FakeReaderScript(int resultSetCount)
     {
         public int ResultSetCount { get; } = resultSetCount;

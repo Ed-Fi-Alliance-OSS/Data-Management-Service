@@ -81,6 +81,17 @@ internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExe
 
         return new MssqlReferenceResolverAdapter(commandExecutor);
     }
+
+    public RelationalCommand? TryBuildSessionLookupCommand(ReferenceLookupRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // The bulk strategy binds a table-valued parameter, which cannot be renamed into a composite
+        // command's allocator-owned parameter set; those requests fall back to the standalone adapter.
+        return MssqlReferenceLookupSmallListStrategy.CanResolve(request.ReferentialIds)
+            ? MssqlReferenceLookupSmallListStrategy.BuildCommand(request)
+            : null;
+    }
 }
 
 internal sealed class MssqlDocumentHydrator : IDocumentHydrator

@@ -250,4 +250,194 @@ public class Given_A_Relational_Composite_Command_Builder
         builder.Allocator.Allocate("city", 5, 0).Should().Be("@city_s5_0");
         builder.Allocator.AllocateStatementScoped("documentUuid", 0).Should().Be("@documentUuid_s0");
     }
+
+    [Test]
+    public void It_rejects_a_result_set_count_below_one()
+    {
+        var builder = CreateBuilder();
+
+        var act = () =>
+            builder.Append(
+                "empty-span",
+                "SELECT 1;",
+                [],
+                RelationalCompositeResultShape.Rows,
+                (_, _) => Task.FromResult<object?>(null),
+                resultSetCount: 0
+            );
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
+    public void It_rejects_a_multi_result_set_statement_without_a_reader()
+    {
+        var builder = CreateBuilder();
+
+        // With nothing to consume the extra result sets, every later ordinal would decode the wrong set.
+        var act = () =>
+            builder.Append(
+                "auth-span",
+                "SELECT 1; SELECT 2;",
+                [],
+                RelationalCompositeResultShape.Rows,
+                read: null,
+                resultSetCount: 2
+            );
+
+        act.Should().Throw<ArgumentException>().WithMessage("*consumes the span*");
+    }
+
+    [Test]
+    public void It_accepts_a_multi_result_set_statement_with_a_span_reader()
+    {
+        var builder = CreateBuilder();
+
+        var ordinal = builder.Append(
+            "auth-span",
+            "SELECT 1; SELECT 2;",
+            [],
+            RelationalCompositeResultShape.Rows,
+            (_, _) => Task.FromResult<object?>(null),
+            resultSetCount: 2
+        );
+
+        builder.Seal().StatementsInOrder[ordinal].ResultSetCount.Should().Be(2);
+    }
+
+    [Test]
+    public void It_terminates_an_unterminated_statement_when_sealing()
+    {
+        var builder = CreateBuilder();
+        builder.Append("bare", "SELECT 1", [], RelationalCompositeResultShape.Scalar);
+        builder.Append("terminated", "SELECT 2;", [], RelationalCompositeResultShape.Scalar);
+
+        var commandText = builder.Seal().Command.CommandText;
+
+        commandText.Should().Contain("SELECT 1;");
+        commandText.Should().NotContain("SELECT 2;;");
+    }
+
+    [Test]
+    public async Task It_decodes_a_present_captured_target_with_its_content_version_and_uuid()
+    {
+        var documentUuid = Guid.NewGuid();
+        var statement = SealCaptureStatement();
+        await using var reader = new ScriptedDbDataReader([
+            [
+                [42L, 7L, documentUuid],
+            ],
+        ]);
+
+        var outcome = await statement.Read!(reader, CancellationToken.None);
+
+        outcome
+            .Should()
+            .BeOfType<RelationalCompositeCapturedTarget>()
+            .Which.Should()
+            .Be(
+                new RelationalCompositeCapturedTarget(
+                    DocumentId: 42L,
+                    ContentVersion: 7L,
+                    DocumentUuid: documentUuid
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_decodes_an_absent_captured_target_as_null()
+    {
+        var statement = SealCaptureStatement();
+        await using var reader = new ScriptedDbDataReader([
+            [
+                [null, null, null],
+            ],
+        ]);
+
+        var outcome = await statement.Read!(reader, CancellationToken.None);
+
+        outcome.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_rejects_a_captured_target_missing_its_content_version()
+    {
+        var statement = SealCaptureStatement();
+        await using var reader = new ScriptedDbDataReader([
+            [
+                [42L, null, Guid.NewGuid()],
+            ],
+        ]);
+
+        var act = async () => await statement.Read!(reader, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*content version*");
+    }
+
+    [Test]
+    public async Task It_rejects_a_captured_target_missing_its_document_uuid()
+    {
+        var statement = SealCaptureStatement();
+        await using var reader = new ScriptedDbDataReader([
+            [
+                [42L, 7L, null],
+            ],
+        ]);
+
+        var act = async () => await statement.Read!(reader, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*partial target tuple*");
+    }
+
+    [Test]
+    public async Task It_rejects_capture_metadata_without_a_document_id()
+    {
+        var statement = SealCaptureStatement();
+        await using var reader = new ScriptedDbDataReader([
+            [
+                [null, 7L, Guid.NewGuid()],
+            ],
+        ]);
+
+        var act = async () => await statement.Read!(reader, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*partial target tuple*");
+    }
+
+    [Test]
+    public async Task It_rejects_a_capture_that_returned_no_row()
+    {
+        var statement = SealCaptureStatement();
+        await using var reader = new ScriptedDbDataReader([
+            [],
+        ]);
+
+        var act = async () => await statement.Read!(reader, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*returned no row*");
+    }
+
+    [Test]
+    public async Task It_rejects_a_capture_that_matched_more_than_one_row()
+    {
+        var statement = SealCaptureStatement();
+        await using var reader = new ScriptedDbDataReader([
+            [
+                [42L, 7L, Guid.NewGuid()],
+                [43L, 8L, Guid.NewGuid()],
+            ],
+        ]);
+
+        var act = async () => await statement.Read!(reader, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*more than one row*");
+    }
+
+    private static RelationalCompositeStatement SealCaptureStatement()
+    {
+        var builder = CreateBuilder();
+        builder.AppendCaptureTarget(TargetPredicate, [Allocate(builder, "documentUuid", 0)]);
+
+        return builder.Seal().StatementsInOrder[0];
+    }
 }

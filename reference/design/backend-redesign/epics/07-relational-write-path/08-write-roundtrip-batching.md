@@ -32,10 +32,9 @@ excluding the provider's BEGIN and COMMIT.**
 - COMMIT is a separate exchange on both providers and DMS-1332 does not remove it. See
   "COMMIT is a permanent floor" below.
 - A command may carry many SQL statements and many result sets; that is still one command.
-- Today `RelationalDocumentStoreRepository.ResolveTargetContextAsync` issues a command on a separate
-  scoped executor *before* the write session exists. Such commands are counted and flagged as
-  pre-session in the current-state tables below. After target resolution moves into the write session
-  there is no pre-session command and the distinction disappears from the target tables.
+- Relational writes now resolve and lock the target as the first logical statement of the write
+  session's first-phase command. There is no pre-session target lookup. A fallback is an ordered set of
+  commands on that same session and transaction; it never re-observes the target.
 
 ### Estimate Versus Measured
 
@@ -51,34 +50,42 @@ the story.
 
 ### Measured Baseline
 
-Observed on live PostgreSQL and SQL Server through the write-session command recorder, using the
+Re-measured after first-phase production adoption on live PostgreSQL and SQL Server through the
+write-session command recorder, using the
 `focused/stable-key-update-semantics` fixture (an `Ed-Fi.School` with an `addresses` child collection
 and no document or descriptor references), with no authorization strategies configured and no etag
 precondition. **Both providers produced identical counts for every row.**
 
-| Scenario | Session commands | BEGIN | COMMIT | ROLLBACK | In-session `dms.ReferentialIdentity` reads | Hydration batches |
-| --- | --- | --- | --- | --- | --- | --- |
-| POST create, 2 collection rows | 6 | 1 | 1 | 0 | 1 | 0 |
-| PUT changed, 2 rows to 3 | 4 | 1 | 1 | 0 | 0 | 1 |
-| POST resolving to an existing document, 2 rows to 3 | 4 | 1 | 1 | 0 | 0 | 1 |
+| Scenario | Session commands | BEGIN | COMMIT | ROLLBACK | `dms.ReferentialIdentity` reads | `DocumentUuid` reads | Hydration batches |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| POST create, 2 collection rows | 6 | 1 | 1 | 0 | 1 | 0 | 1 |
+| PUT changed, 2 rows to 3 | 4 | 1 | 1 | 0 | 0 | 1 | 1 |
+| POST resolving to an existing document, 2 rows to 3 | 4 | 1 | 1 | 0 | 1 | 0 | 1 |
+| PUT missing target | 1 | 1 | 0 | 1 | 0 | 1 | 1 |
 
 Reading these numbers:
 
-- They count commands **issued on the write session**. Each also pays one pre-session target-lookup
-  command, issued on a separate connection outside the write transaction, which the session recorder
-  cannot see. Total DB commands per request are therefore one higher than the session count.
-- The POST create stream is: in-session target lookup, `dms.Document` insert, root insert,
-  `CollectionItemId` reservation, collection insert, `ContentVersion` read.
-- The PUT and POST-as-update streams are: hydration batch, `CollectionItemId` reservation, collection
-  insert for the single added row, `ContentVersion` read. The root row is unchanged so it is not
-  rewritten.
-- **POST-as-update issues no in-session target lookup.** The executor re-resolves a POST target
-  in-session only when the incoming target context is `CreateNew` or the request carries an etag
-  precondition; here the pre-session lookup already resolved an existing document. So the only target
-  resolution for that request happened outside the write transaction.
+- These are all commands for the request: no target lookup occurs before the session begins.
+- The first command for all four scenarios is the production first phase. Its first logical statement
+  captures and locks the target, and its later logical statements consume only that captured decision.
+  The ordinary path co-batches stored authorization (vacuous here), reference lookup (absent here), and
+  current-state hydration. On create and missing-target paths hydration owns empty result sets rather
+  than re-observing a target.
+- The POST create stream is: first-phase composite; `dms.Document` insert; root insert;
+  `CollectionItemId` reservation; collection insert; `ContentVersion` read.
+- The PUT and POST-as-update streams are: first-phase composite; `CollectionItemId` reservation;
+  collection insert for the single added row; `ContentVersion` read. The root row is unchanged so it is
+  not rewritten. POST-as-update now performs its only target resolution inside the transaction.
+- Missing PUT executes only the first-phase command, maps the absent capture to the unchanged not-exists
+  result, and rolls back.
 - Reference resolution issues no command in these scenarios because the fixture body carries no
-  references; the resolver skips the adapter when every lookup is already satisfied. Its routing
-  through the session is covered by unit-level assertions rather than by these counts.
+  references. Live production-first-phase reference variants were measured separately:
+
+| Provider and reference shape | Session commands | BEGIN | COMMIT | ROLLBACK | Result |
+| --- | --- | --- | --- | --- | --- |
+| PostgreSQL array lookup, missing reference | 1 | 1 | 0 | 1 | capture, lookup, and vacuous hydration in one command |
+| SQL Server scalar small-list lookup, missing reference | 1 | 1 | 0 | 1 | capture, lookup, and vacuous hydration in one command |
+| SQL Server table-valued lookup at 2000 references | 2 | 1 | 0 | 1 | capture, then standalone TVP lookup on the same transaction |
 
 Reproduce with:
 
@@ -94,9 +101,10 @@ dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integ
   --filter "FullyQualifiedName~Write_Session_Command_Stream"
 ```
 
-Still estimates, because no live characterization covers them yet: DELETE, the guarded no-op path,
-GET-by-id, descriptor writes, every authorization and precondition variant, and the counts that scale
-with collection-table count.
+Still estimates, because no live command-count characterization covers them yet: DELETE, the guarded
+no-op path, GET-by-id, descriptor writes, most authorization and precondition variants, and the counts
+that scale with collection-table count. The focused AUTH1 tests below prove precedence, not a complete
+count matrix.
 
 ## Measurement Method
 
@@ -135,31 +143,33 @@ All counts are code-inspected estimates and exclude BEGIN and COMMIT.
 
 ### POST
 
-`RelationalDocumentStoreRepository.ExecuteWriteGuardRails` → `ResolveTargetContextAsync`
-(pre-session) → `DefaultRelationalWriteExecutor.ExecuteAsyncInternal`.
+`RelationalDocumentStoreRepository.ExecuteWriteGuardRails` →
+`DefaultRelationalWriteExecutor.ExecuteAsyncInternal` → production relational first phase. Unless a
+row says otherwise, these estimates assume no request references.
 
 | Variant | Commands | Sequence |
 | --- | --- | --- |
-| Create, no collections, no authorization, no precondition | 6 | pre-session `ResolveForPostAsync`; reference resolution; in-session `ResolvePostTargetAsync` (a duplicate of the first); `INSERT dms."Document" ... RETURNING`; root insert; `SELECT "ContentVersion" ... FOR UPDATE` |
-| Create, proposed relationship authorization | 6 | the `AUTH1` check is already prefixed onto the `dms.Document` insert by `RelationalWriteNoProfilePersister.BuildAuthorizedInsertDocumentCommand`; no extra command |
-| Create, proposed namespace authorization | 7 | `ProposedNamespaceAuthorizationOrchestrator` issues its own command |
-| Create, N collection tables with new rows | 6 + 2 x (row groups across all collection tables) | each collection table pays one `CollectionItemIdSequence` reservation command plus one insert command per parameter-cap group; five collections is roughly 16 |
-| Resolves to an existing document, no authorization | 5 + persist | pre-session lookup; reference resolution; current-state hydration; per-table DML; `ContentVersion` |
-| Resolves to an existing document, stored authorization | +3 | a third `ResolveForPostAsync` inside `StoredRelationshipAuthorizationOrchestrator`, then `TryLockExistingTargetAsync`, then stored namespace and stored relationship as separate commands |
+| Create, no collections, no authorization, no precondition | 4 | first-phase capture/lock plus vacuous hydration; `INSERT dms."Document" ... RETURNING`; root insert; `SELECT "ContentVersion" ... FOR UPDATE` |
+| Create, proposed relationship authorization | 4 | the `AUTH1` check remains prefixed onto the `dms.Document` insert by `RelationalWriteNoProfilePersister.BuildAuthorizedInsertDocumentCommand`; no extra command |
+| Create, proposed namespace authorization | 5 | `ProposedNamespaceAuthorizationOrchestrator` remains a later command |
+| Create, N collection tables with new rows | 4 + 2 x (row groups across all collection tables) | collection reservation and persistence are unchanged in this slice; five collections is roughly 14 |
+| Resolves to an existing document, no authorization | 1 + persist | first-phase capture/lock and hydration; per-table DML; `ContentVersion` |
+| Resolves to an existing document, stored authorization | 1 + persist when embeddable | stored namespace then stored relationship are logical statements in the first-phase command; a structured parameter or command-budget boundary selects ordered same-session segments |
 
-The collection-less create at 6 commands plus COMMIT reproduces the 7 round trips reported on the
-ticket, and the five-collection create reproduces the reported 18.
+The old collection-less count of 6 plus COMMIT explained the ticket's original 7 round trips. The
+first-phase slice removes the separate pre-session lookup and folds capture, stored authorization,
+reference lookup, and hydration into one command when the provider shape and parameter budget permit.
 
 ### PUT
 
 | Variant | Commands | Sequence |
 | --- | --- | --- |
-| Changed, no collections, no authorization, no precondition | 5 | pre-session `ResolveForPutAsync`; reference resolution; current-state hydration; root `UPDATE`; `SELECT "ContentVersion" ... FOR UPDATE` |
-| Changed, stored authorization | 8 | plus `TryLockExistingTargetAsync`, stored namespace, stored relationship |
+| Changed, no collections, no authorization, no precondition | 3 | first-phase capture/lock and hydration; root `UPDATE`; `SELECT "ContentVersion" ... FOR UPDATE` |
+| Changed, stored authorization | 3 when embeddable | stored namespace then stored relationship join the first phase; structured parameters or a command-budget boundary use ordered segments |
 | Changed, proposed authorization | +1 to +2 | proposed namespace and proposed relationship are each their own command; the POST-create inline path does not apply to PUT |
-| Guarded no-op | 4 to 7 | as above minus persist, plus `RelationalWriteFreshnessChecker.IsCurrentAsync`, a second `FOR UPDATE` read of the same row |
+| Guarded no-op, no proposed authorization | 1 | first phase holds the capture lock; the exact same-session lock proof replaces the freshness query |
 | With collections | + 2 x row groups | the same N+1 shape as POST |
-| Missing target | 1 to 2 | the pre-session lookup returns not-found and no session is opened on the plain path |
+| Missing target | 1 | the first-phase capture returns absent and the session rolls back |
 
 ### DELETE
 
@@ -194,12 +204,12 @@ here as a technically justified deviation.
 
 | Operation | Draft | Current (estimate) | Target, carrier proven | Target, carrier fallback | Deviation from draft and why |
 | --- | --- | --- | --- | --- | --- |
-| POST create, no collections | 4 | 6 | 2 | 2 | Stricter than the draft. The draft's four trips assumed separate reference-resolution, existence, authorization, and insert trips; reference resolution and target resolution are both `dms.ReferentialIdentity` lookups and merge, and the authorization/insert/child/`ContentVersion` statements all merge behind the abort device. |
-| POST create, 5 collections | 4 | ~16 | 2 | 2 | Stricter. Child rows carry `CollectionItemId` from an inline sequence expression, so no table pays a reservation trip. |
-| POST-as-update | 4 | 5 to 9 | 2 | 3 | Carrier-dependent. One command must serve both the create and the update branch, which requires carrying the initial target-or-missing decision across statements. |
-| PUT changed | 3 | 5 to 8 | 2 | 2 | Equal to or better than the draft. PUT's target must exist, so it never needs the create/update fork. |
-| PUT guarded no-op, no proposed authorization | 3 | 4 to 7 | 1 | 1 | Stricter. The freshness re-read becomes redundant once the target row is held under lock from the observing statement through commit. |
-| PUT guarded no-op, proposed authorization configured | 3 | 4 to 7 | 2 | 2 | Proposed authorization runs before the no-op decision in the current executor and must continue to. |
+| POST create, no collections | 4 | 4 | 2 | 2 | Stricter than the draft. The draft's four trips assumed separate reference-resolution, existence, authorization, and insert trips; reference resolution and target resolution are both `dms.ReferentialIdentity` lookups and merge, and the authorization/insert/child/`ContentVersion` statements all merge behind the abort device. |
+| POST create, 5 collections | 4 | ~14 | 2 | 2 | Stricter. Child rows carry `CollectionItemId` from an inline sequence expression, so no table pays a reservation trip. |
+| POST-as-update | 4 | 3 to 5 | 2 | 3 | Carrier-dependent. One command must serve both the create and the update branch, which requires carrying the initial target-or-missing decision across statements. |
+| PUT changed | 3 | 3 to 5 | 2 | 2 | Equal to or better than the draft. PUT's target must exist, so it never needs the create/update fork. |
+| PUT guarded no-op, no proposed authorization | 3 | 1 to 3 | 1 | 1 | Stricter. The freshness re-read becomes redundant once the target row is held under lock from the observing statement through commit. |
+| PUT guarded no-op, proposed authorization configured | 3 | 2 to 4 | 2 | 2 | Proposed authorization runs before the no-op decision in the current executor and must continue to. |
 | DELETE | 2 | 3 to 5 | 1 | 2 | Carrier-dependent, and stricter than the draft when proven. |
 | GET-by-id, no authorization | 2 | 2 | 2 | 2 | Already at target; unchanged. |
 | GET-by-id, authorized | 2 | 4 to 5 | unchanged | unchanged | Verification-only deviation; see below. |
@@ -330,8 +340,10 @@ statement rather than re-observe:
 - SQL Server captures into batch-local variables declared in the same batch, which are scoped to it by
   construction. Their names are reserved so the parameter allocator cannot collide with them.
 
-The command builder enforces the rule mechanically: after the capturing statement is emitted, any
-statement that references the target other than through the captured expression is a build-time error.
+The command builder enforces the rule mechanically on the single-command path: after capture, target
+dependent SQL consumes only the provider carrier. The ordered-segment path does not attempt to carry a
+SQL Server batch local across commands. It decodes the captured `DocumentId`, binds that exact value to
+each later standalone command, and keeps the original row lock held on the same transaction.
 
 Holding the lock from the capturing statement also makes child-table reads *more* consistent than they
 are today: a concurrent writer to any child row must bump `dms.Document.ContentVersion` through its
@@ -350,10 +362,11 @@ transaction can change that row in between, so the criterion is satisfied withou
 
 This applies only where the lock is provably held in the current session. That is expressed as a type,
 not a flag: a locked-target value is constructible only from the result of the locking statement the
-session just executed, and the no-op path accepts only that type. Paths that did not lock retain the
-existing freshness query. A consequence to note: existing-target PUT and POST-as-update take the row
-lock on every request rather than only when authorization is configured, so concurrent no-ops on the
-same document may contend where they previously did not.
+session just executed. The guarded no-op validator requires the same session and exact agreement on
+`DocumentId` and captured `ContentVersion`. A missing or mismatched proof is an invariant failure; it
+never falls back to a freshness query. A consequence to note: existing-target PUT and POST-as-update
+take the row lock on every request rather than only when authorization is configured, so concurrent
+no-ops on the same document may contend where they previously did not.
 
 ## Error Attribution
 
@@ -563,10 +576,69 @@ Two findings the gate produced:
   the same transaction fails to compile rather than observing stale state. That is verified directly, and
   it means neither provider requires a cleanup statement.
 
-One incidental observation, recorded as evidence for the later transaction-state work rather than acted
-on here: after an `XACT_ABORT`-aborted batch, SQL Server may already have rolled the transaction back and
-detached the client-side transaction object, so an unconditional rollback can throw. The gate tolerates
-that case locally; making the shared session narrowly tolerant of it is separate scope.
+One incidental gate observation drove the transaction-state work that preceded production adoption:
+after an `XACT_ABORT`-aborted batch, SQL Server may already have rolled the transaction back and detached
+the client-side transaction object, so an unconditional rollback can throw. The shared session is now
+narrowly tolerant only when a reported provider failure and transaction-state probe prove that exact
+case.
+
+### Production First-Phase Adoption
+
+The first production slice now combines target capture and lock, stored namespace authorization,
+stored relationship authorization, reference resolution, and current-state hydration. The ordinary
+path is one composite command in that exact order. Target-dependent POST immediate results, SQL Server
+structured parameters, a non-embeddable reference lookup, or a combined parameter budget that does not
+fit select a conservative ordered-segment path before the candidate builder is executed. Every segment
+uses the same write session and transaction; target-dependent standalone commands bind the decoded
+captured `DocumentId`.
+
+Live verification after adoption:
+
+- PostgreSQL command-stream characterization: 8 discovered, 8 passed, 0 failed, 0 skipped.
+- PostgreSQL production array-reference first phase: 1 discovered, 1 passed, 0 failed, 0 skipped.
+- PostgreSQL stored/proposed AUTH1 precedence: 2 discovered, 2 passed, 0 failed, 0 skipped.
+- SQL Server command-stream characterization: 8 discovered, 8 passed, 0 failed, 0 skipped.
+- SQL Server scalar and TVP production reference forms: 2 discovered, 2 passed, 0 failed, 0 skipped.
+- SQL Server stored/proposed AUTH1 precedence: 2 discovered, 2 passed, 0 failed, 0 skipped.
+- SQL Server structured stored-relationship fallback at 2000 claims: 1 discovered, 1 passed, 0 failed,
+  0 skipped.
+
+The AUTH1 tests prove the observable denial order: stored authorization still wins over reference
+failure, and proposed authorization still wins over a stale precondition where the existing executor
+contract requires it. The final targets above are unchanged; this is only the first-phase adoption.
+
+### Executor Test Removal And Replacement Audit
+
+The executor fixture now uses a sequential first-phase fake to keep later executor orchestration tests
+focused. Production SQL construction, ordered-segment behavior, result-stream decoding, and lock-proof
+validation are owned by `Given_The_Composite_Relational_Write_First_Phase` and the composite command
+fixtures. The audit of every removed or renamed executor test is:
+
+| Removed test | Disposition | Equivalent coverage |
+| --- | --- | --- |
+| `It_locks_existing_put_target_before_returning_stored_relationship_no_claims` | Replaced | `It_returns_stored_relationship_no_claims_for_an_existing_put_without_a_second_observation`; `It_accepts_an_exact_guarded_no_op_lock_proof_from_the_current_session` |
+| `It_returns_not_exists_when_put_target_disappears_before_stored_relationship_no_claims` | Obsolete race | Capture and row lock are one statement, so an observed target cannot disappear before stored authorization; covered by `It_returns_missing_put_without_decoding_absent_hydration_as_current_state` and the existing-target no-claims replacement above |
+| `It_uses_the_session_loaded_content_version_when_guarding_unchanged_put_requests` | Renamed/replaced | `It_uses_the_session_observed_content_version_when_guarding_unchanged_put_requests`; exact proof agreement is covered by `It_rejects_a_guarded_no_op_lock_proof_that_disagrees_with_the_target` |
+| `It_uses_the_session_loaded_content_version_when_guarding_unchanged_post_as_update_requests` | Renamed/replaced | `It_uses_the_session_observed_content_version_when_guarding_unchanged_post_as_update_requests`; exact proof agreement is covered by `It_rejects_a_guarded_no_op_lock_proof_that_disagrees_with_the_target` |
+| `It_returns_not_exists_when_the_existing_put_target_disappears_before_current_state_load` | Obsolete race, invariant replacement | A locked target cannot disappear; a malformed empty hydration result is covered by `It_throws_when_current_state_hydration_returns_no_metadata_for_a_locked_put_target` and `It_rejects_missing_hydration_metadata_for_a_captured_target` |
+| `It_returns_if_match_failure_for_put_before_reference_resolution_when_the_current_etag_mismatches` | Renamed/replaced | `It_returns_if_match_failure_for_put_before_reference_failures_when_the_current_etag_mismatches` |
+| `It_returns_if_match_failure_for_post_as_update_before_reference_resolution_when_the_current_etag_mismatches` | Renamed/replaced | `It_returns_if_match_failure_for_post_as_update_before_reference_failures_when_the_current_etag_mismatches` |
+| `It_locks_the_observed_post_target_for_stored_authorization_without_a_second_observation` | Replaced | `It_returns_stored_relationship_no_claims_for_an_observed_post_target_without_a_second_observation`; production proof construction is covered by `It_resolves_an_existing_target_and_hydrates_the_captured_content_version` |
+| `It_retries_the_post_observation_once_when_the_observed_target_vanishes_before_the_lock` | Obsolete race | Capture and lock are atomic; POST branch selection is covered by `It_selects_the_existing_post_authorization_plan_after_capture` and `It_selects_the_post_create_immediate_result_before_reference_or_hydration_execution` |
+| `It_returns_write_conflict_when_the_observed_post_target_disappears_before_current_state_load` | Obsolete race, invariant replacement | A locked target cannot disappear; malformed hydration is covered by `It_throws_when_current_state_hydration_returns_no_metadata_for_a_locked_post_target` |
+| `It_returns_a_stale_no_op_compare_outcome_when_guarded_freshness_is_lost` | Obsolete race | Guarded no-op no longer re-reads freshness; same-session and exact-value proof requirements are covered by the four `guarded_no_op_lock_proof` tests |
+| `It_returns_if_match_failure_with_a_stale_no_op_compare_outcome_when_guarded_freshness_is_lost` | Obsolete race | Etag comparison uses the captured/hydrated version, while the same-session proof prevents post-observation staleness; covered by the PUT etag replacement and proof tests |
+| `It_returns_write_conflict_not_if_match_failure_for_wildcard_stale_no_op_compare` | Obsolete race | No stale freshness compare remains; wildcard precedence remains covered by the existing guarded no-op and precondition tests, with proof invariants covered directly |
+| `It_never_reaches_the_stale_no_op_check_for_a_post_as_update_no_op_body_under_if_none_match_wildcard` | Renamed/replaced | `It_never_reaches_the_guarded_no_op_check_for_a_post_as_update_no_op_body_under_if_none_match_wildcard` |
+| `It_never_reaches_the_stale_no_op_check_for_a_put_no_op_body_under_if_none_match_wildcard` | Renamed/replaced | `It_never_reaches_the_guarded_no_op_check_for_a_put_no_op_body_under_if_none_match_wildcard` |
+| `It_returns_stale_no_op_write_conflict_for_profiled_put_when_freshness_is_lost` | Obsolete race | Profile merge still feeds guarded no-op; freshness is now proven by the same-session capture-lock proof and its direct invariant tests |
+| `It_returns_stale_no_op_write_conflict_for_profiled_post_as_update_when_freshness_is_lost` | Obsolete race | Profile merge still feeds guarded no-op; freshness is now proven by the same-session capture-lock proof and its direct invariant tests |
+| `It_returns_if_match_failure_for_profiled_stale_post_as_update_no_op_compares` | Renamed/replaced | `It_returns_if_match_failure_for_profiled_post_as_update_when_the_current_etag_mismatches` |
+
+No retained same-name executor test dropped a caller-visible assertion without an equivalent. The
+tests that stopped inspecting obsolete resolver/freshness calls now assert the same result and ordering
+through the sequential first-phase boundary; the production-first-phase fixture supplies the direct
+replacement for the removed internal-call assertions.
 
 ## Follow-On Work
 

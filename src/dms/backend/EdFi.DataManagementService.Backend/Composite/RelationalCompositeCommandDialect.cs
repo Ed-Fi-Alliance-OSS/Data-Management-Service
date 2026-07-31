@@ -219,7 +219,7 @@ internal sealed class PgsqlCompositeTargetCarrier : IRelationalCompositeTargetCa
 
         return $"""
             WITH target AS (
-                SELECT d."DocumentId", d."ContentVersion"
+                SELECT d."DocumentId", d."ContentVersion", d."DocumentUuid"
                 FROM dms."Document" d
                 WHERE {targetPredicateSql}
                 FOR UPDATE
@@ -234,6 +234,7 @@ internal sealed class PgsqlCompositeTargetCarrier : IRelationalCompositeTargetCa
             SELECT
                 (SELECT "DocumentId" FROM target) AS "DocumentId",
                 (SELECT "ContentVersion" FROM target) AS "ContentVersion",
+                (SELECT "DocumentUuid" FROM target) AS "DocumentUuid",
                 (SELECT "CapturedToken" FROM captured) AS "CapturedToken";
             """;
     }
@@ -258,13 +259,16 @@ internal sealed class MssqlCompositeTargetCarrier : IRelationalCompositeTargetCa
 
     private const string DocumentIdVariable = "dms_composite_target_documentid";
     private const string ContentVersionVariable = "dms_composite_target_contentversion";
+    private const string DocumentUuidVariable = "dms_composite_target_documentuuid";
 
     private MssqlCompositeTargetCarrier() { }
 
-    public IReadOnlyList<string> ReservedNames => [DocumentIdVariable, ContentVersionVariable];
+    public IReadOnlyList<string> ReservedNames =>
+        [DocumentIdVariable, ContentVersionVariable, DocumentUuidVariable];
 
     public string? DeclarationPrologue =>
-        $"DECLARE @{DocumentIdVariable} BIGINT, @{ContentVersionVariable} BIGINT;";
+        $"DECLARE @{DocumentIdVariable} BIGINT, @{ContentVersionVariable} BIGINT, "
+        + $"@{DocumentUuidVariable} UNIQUEIDENTIFIER;";
 
     public string EmitCaptureTarget(string targetPredicateSql)
     {
@@ -273,13 +277,15 @@ internal sealed class MssqlCompositeTargetCarrier : IRelationalCompositeTargetCa
         return $"""
             SELECT
                 @{DocumentIdVariable} = d.[DocumentId],
-                @{ContentVersionVariable} = d.[ContentVersion]
+                @{ContentVersionVariable} = d.[ContentVersion],
+                @{DocumentUuidVariable} = d.[DocumentUuid]
             FROM [dms].[Document] d WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
             WHERE {targetPredicateSql};
 
             SELECT
                 @{DocumentIdVariable} AS [DocumentId],
-                @{ContentVersionVariable} AS [ContentVersion];
+                @{ContentVersionVariable} AS [ContentVersion],
+                @{DocumentUuidVariable} AS [DocumentUuid];
             """;
     }
 

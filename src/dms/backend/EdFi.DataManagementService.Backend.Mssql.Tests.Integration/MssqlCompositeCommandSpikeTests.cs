@@ -176,7 +176,11 @@ public class Given_A_Mssql_Composite_Command_Against_A_Live_Provider
 
         var outcomes = await new RelationalCompositeCommandExecution().ExecuteAsync(session, composite);
 
-        outcomes[0].Value.Should().Be(documentId);
+        outcomes[0]
+            .Value.Should()
+            .BeOfType<RelationalCompositeCapturedTarget>()
+            .Which.DocumentId.Should()
+            .Be(documentId);
         outcomes[1].Value.Should().Be(documentId);
         outcomes[2].Value.Should().Be(true);
 

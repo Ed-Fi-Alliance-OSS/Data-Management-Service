@@ -40,13 +40,32 @@ internal enum RelationalCompositeResultShape
 /// Optional reader for <see cref="RelationalCompositeResultShape.Rows"/>. When absent the decoder
 /// counts rows.
 /// </param>
+/// <param name="ResultSetCount">
+/// How many result sets this logical statement owns. One for most statements; a statement whose SQL is
+/// itself a fixed multi-select run — co-batched authorization checks, a hydration batch — declares the
+/// full span and its <paramref name="Read"/> callback must consume exactly
+/// <c>ResultSetCount - 1</c> result-set advances of its own. Failure attribution treats the whole span
+/// as this statement's ordinal, which keeps every later ordinal aligned.
+/// </param>
 internal sealed record RelationalCompositeStatement(
     int Ordinal,
     string Label,
     string Sql,
     IReadOnlyList<RelationalParameter> Parameters,
     RelationalCompositeResultShape ResultShape,
-    Func<DbDataReader, CancellationToken, Task<object?>>? Read = null
+    Func<DbDataReader, CancellationToken, Task<object?>>? Read = null,
+    int ResultSetCount = 1
+);
+
+/// <summary>
+/// The decoded outcome of a captured-target statement: the locked row's identity, the representation
+/// stamp observed while the lock was taken, and the stored external document id. Absent when the
+/// capture observed no target.
+/// </summary>
+internal sealed record RelationalCompositeCapturedTarget(
+    long DocumentId,
+    long ContentVersion,
+    Guid DocumentUuid
 );
 
 /// <summary>

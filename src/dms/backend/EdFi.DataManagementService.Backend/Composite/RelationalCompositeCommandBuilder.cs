@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using System.Text;
 
 namespace EdFi.DataManagementService.Backend.Composite;
@@ -84,7 +85,9 @@ internal sealed class RelationalCompositeCommandBuilder
 
     /// <summary>
     /// Appends the locking capture statement. Later statements must reference the target only through
-    /// <see cref="Carrier"/>'s captured expressions.
+    /// <see cref="Carrier"/>'s captured expressions. Its decoded outcome is a
+    /// <see cref="RelationalCompositeCapturedTarget"/>, or <see langword="null"/> when no target row
+    /// matched the predicate.
     /// </summary>
     public int AppendCaptureTarget(string targetPredicateSql, IReadOnlyList<RelationalParameter> parameters)
     {
@@ -110,7 +113,8 @@ internal sealed class RelationalCompositeCommandBuilder
             "capture-target",
             _dialect.Carrier.EmitCaptureTarget(targetPredicateSql),
             parameters,
-            RelationalCompositeResultShape.Scalar
+            RelationalCompositeResultShape.Rows,
+            ReadCapturedTargetAsync
         );
 
         _capturedTargetPredicate = targetPredicateSql;
@@ -124,12 +128,14 @@ internal sealed class RelationalCompositeCommandBuilder
         string sql,
         IReadOnlyList<RelationalParameter> parameters,
         RelationalCompositeResultShape resultShape,
-        Func<DbDataReader, CancellationToken, Task<object?>>? read = null
+        Func<DbDataReader, CancellationToken, Task<object?>>? read = null,
+        int resultSetCount = 1
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ArgumentException.ThrowIfNullOrWhiteSpace(sql);
         ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentOutOfRangeException.ThrowIfLessThan(resultSetCount, 1);
         ObjectDisposedException.ThrowIf(_sealed, this);
 
         if (resultShape is not RelationalCompositeResultShape.Rows && read is not null)
@@ -141,16 +147,88 @@ internal sealed class RelationalCompositeCommandBuilder
             );
         }
 
+        if (resultSetCount > 1 && (resultShape is not RelationalCompositeResultShape.Rows || read is null))
+        {
+            // Without a reader nothing would consume the extra result sets, so every later statement's
+            // ordinal would silently shift onto the wrong result set.
+            throw new ArgumentException(
+                $"Statement '{label}' declares {resultSetCount} result sets, which requires shape "
+                    + $"'{nameof(RelationalCompositeResultShape.Rows)}' and a reader that consumes the span.",
+                nameof(resultSetCount)
+            );
+        }
+
         GuardAgainstFreshTargetRecheck(label, sql);
         GuardParameterBudget(label, parameters.Count);
         GuardParametersWereAllocated(label, parameters);
 
         var ordinal = _statements.Count;
 
-        _statements.Add(new RelationalCompositeStatement(ordinal, label, sql, parameters, resultShape, read));
+        _statements.Add(
+            new RelationalCompositeStatement(
+                ordinal,
+                label,
+                sql,
+                parameters,
+                resultShape,
+                read,
+                resultSetCount
+            )
+        );
         _parameters.AddRange(parameters);
 
         return ordinal;
+    }
+
+    /// <summary>
+    /// Decodes the capture statement's single row. Both provider carriers always project exactly one row;
+    /// a null document id in it means the predicate matched no target, which is a decision, not an error.
+    /// </summary>
+    private static async Task<object?> ReadCapturedTargetAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "The captured-target statement returned no row; the carrier must project the capture "
+                    + "outcome unconditionally so an absent target is observable."
+            );
+        }
+
+        RelationalCompositeCapturedTarget? capturedTarget = null;
+
+        var documentIdIsNull = await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false);
+        var contentVersionIsNull = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false);
+        var documentUuidIsNull = await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false);
+
+        if (documentIdIsNull != contentVersionIsNull || documentIdIsNull != documentUuidIsNull)
+        {
+            throw new InvalidOperationException(
+                "The captured-target statement returned a partial target tuple; document id, content "
+                    + "version, and document uuid must either all be present or all be null."
+            );
+        }
+
+        if (!documentIdIsNull)
+        {
+            capturedTarget = new RelationalCompositeCapturedTarget(
+                Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+                Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
+                await reader.GetFieldValueAsync<Guid>(2, cancellationToken).ConfigureAwait(false)
+            );
+        }
+
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "The captured-target statement returned more than one row; the target predicate must "
+                    + "identify at most one document."
+            );
+        }
+
+        return capturedTarget;
     }
 
     /// <summary>
@@ -195,7 +273,11 @@ internal sealed class RelationalCompositeCommandBuilder
 
         foreach (var statement in _statements)
         {
-            builder.AppendLine(statement.Sql.TrimEnd());
+            var statementSql = statement.Sql.TrimEnd();
+
+            // Every statement must terminate so the next one starts a fresh statement; SQL Server in
+            // particular requires the statement before a WITH clause to be terminated.
+            builder.AppendLine(statementSql.EndsWith(';') ? statementSql : statementSql + ";");
 
             if (statement.ResultShape is RelationalCompositeResultShape.Sentinel)
             {

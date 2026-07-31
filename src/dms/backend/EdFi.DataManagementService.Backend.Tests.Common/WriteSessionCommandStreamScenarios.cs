@@ -50,9 +50,12 @@ public sealed record WriteSessionCommandStreamSummary(
 public static class WriteSessionCommandStreamScenarios
 {
     /// <summary>
-    /// A POST create shows exactly one in-session <c>dms.ReferentialIdentity</c> target lookup: the
-    /// initial observation the executor makes inside its own transaction. Nothing observes the target
-    /// again on the normal path, and a create hydrates no current state.
+    /// A POST create's first phase is one composite command whose capture statement reads
+    /// <c>dms.ReferentialIdentity</c> to observe and lock the target, and which speculatively carries
+    /// the hydration batch — the command is built before create-vs-update is known, so one command
+    /// serves both branches and the create branch pays the batch's empty result sets. Exactly one
+    /// command therefore classifies as both the referential-identity lookup and the hydration batch,
+    /// and nothing observes the target again on the normal path.
     /// </summary>
     public static void AssertCreateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -63,15 +66,15 @@ public static class WriteSessionCommandStreamScenarios
 
         summary.ReferentialIdentityLookupCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(0);
-        summary.HydrationBatchCount.Should().Be(0);
+        summary.HydrationBatchCount.Should().Be(1);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
         AssertCommittedTransactionBoundary(summary);
     }
 
     /// <summary>
-    /// A PUT against an existing target shows its hydration batch plus exactly one in-session
-    /// <c>DocumentUuid</c> target lookup: PUT resolves its target by external id inside the write
-    /// transaction, so no <c>dms.ReferentialIdentity</c> read appears on this path.
+    /// A PUT against an existing target resolves it by external <c>DocumentUuid</c> in the capture
+    /// statement of one composite first-phase command, which also carries the hydration batch. One
+    /// command classifies as both, and no <c>dms.ReferentialIdentity</c> read appears on this path.
     /// </summary>
     public static void AssertUpdateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -88,30 +91,26 @@ public static class WriteSessionCommandStreamScenarios
     }
 
     /// <summary>
-    /// A POST that resolves to an existing document hydrates current state and shows exactly one
-    /// in-session <c>dms.ReferentialIdentity</c> lookup — the same initial observation a POST create
-    /// makes. Every target resolution for this request now happens inside the write transaction the
-    /// recorder can see, and one lookup is the whole of it: the observation decides create-vs-update
-    /// for the attempt and is never repeated on the normal path.
+    /// A POST that resolves to an existing document makes the same one composite first-phase command a
+    /// POST create makes — capture through <c>dms.ReferentialIdentity</c> plus the hydration batch —
+    /// and here the batch hydrates the locked target's current state. The capture is the only target
+    /// observation: it decides create-vs-update for the attempt and is never repeated on the normal
+    /// path.
     /// </summary>
     public static void AssertPostAsUpdateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
         int expectedTotalCommandCount
-    )
-    {
-        ArgumentNullException.ThrowIfNull(summary);
-
-        summary.ReferentialIdentityLookupCount.Should().Be(1);
-        summary.DocumentUuidLookupCount.Should().Be(0);
-        summary.HydrationBatchCount.Should().Be(1);
-        summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
-        AssertCommittedTransactionBoundary(summary);
-    }
+    ) =>
+        // Both POST branches make the identical first-phase command; only what its result sets carry
+        // differs, which the request outcome asserts separately.
+        AssertCreateStreamIsFullyObserved(summary, expectedTotalCommandCount);
 
     /// <summary>
     /// A PUT whose target does not exist observes that inside the write transaction and rolls back.
-    /// The single in-session <c>DocumentUuid</c> lookup is the whole command stream: no hydration,
-    /// reference resolution, or persistence runs after a missing target, and nothing commits.
+    /// The whole command stream is the single composite first-phase command: its capture filters on
+    /// the external <c>DocumentUuid</c>, its co-batched hydration statements return empty result sets
+    /// behind the absent capture, and no reference resolution or persistence runs after the missing
+    /// target. Nothing commits.
     /// </summary>
     public static void AssertMissingPutTargetStreamIsFullyObserved(WriteSessionCommandStreamSummary summary)
     {
@@ -119,7 +118,7 @@ public static class WriteSessionCommandStreamScenarios
 
         summary.DocumentUuidLookupCount.Should().Be(1);
         summary.ReferentialIdentityLookupCount.Should().Be(0);
-        summary.HydrationBatchCount.Should().Be(0);
+        summary.HydrationBatchCount.Should().Be(1);
         summary.TotalCommandCount.Should().Be(1);
         summary.BeginCount.Should().Be(1);
         summary.CommitCount.Should().Be(0);

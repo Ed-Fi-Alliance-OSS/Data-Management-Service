@@ -109,6 +109,22 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             )
             .ConfigureAwait(false);
 
+        return TranslateHydratedPage(hydratedPage, request.TargetContext.DocumentId);
+    }
+
+    /// <summary>
+    /// Validates and translates a single-document hydration result into the write current state, or
+    /// <see langword="null"/> when the document produced no metadata row. Shared by the standalone
+    /// load above and by composite decoding, so the two paths cannot drift on what a valid
+    /// single-document page is.
+    /// </summary>
+    internal static RelationalWriteCurrentState? TranslateHydratedPage(
+        HydratedPage hydratedPage,
+        long documentId
+    )
+    {
+        ArgumentNullException.ThrowIfNull(hydratedPage);
+
         if (hydratedPage.DocumentMetadata.Count != 1)
         {
             if (hydratedPage.DocumentMetadata.Count == 0)
@@ -117,18 +133,18 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             }
 
             throw new InvalidOperationException(
-                $"Current-state load for document id {request.TargetContext.DocumentId} returned "
+                $"Current-state load for document id {documentId} returned "
                     + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
             );
         }
 
         var documentMetadata = hydratedPage.DocumentMetadata[0];
 
-        if (documentMetadata.DocumentId != request.TargetContext.DocumentId)
+        if (documentMetadata.DocumentId != documentId)
         {
             throw new InvalidOperationException(
                 $"Current-state load returned metadata for document id {documentMetadata.DocumentId}, "
-                    + $"but target document id was {request.TargetContext.DocumentId}."
+                    + $"but target document id was {documentId}."
             );
         }
 

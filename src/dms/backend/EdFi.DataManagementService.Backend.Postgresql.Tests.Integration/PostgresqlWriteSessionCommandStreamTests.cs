@@ -119,6 +119,42 @@ file static class WriteSessionCommandStreamTestSupport
             DocumentUuid: documentUuid
         );
 
+    public static UpsertRequest CreateReferenceUpsertRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid
+    )
+    {
+        var documentInfo = CreateSchoolDocumentInfo();
+        var programResourceInfo = new ResourceInfo(
+            ProjectName: new ProjectName("Ed-Fi"),
+            ResourceName: new ResourceName("Program"),
+            IsDescriptor: false,
+            ResourceVersion: new SemVer("1.0.0"),
+            AllowIdentityUpdates: false
+        );
+        var referencedIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(new JsonPath("$.programName"), "missing-program"),
+        ]);
+        var documentReference = new DocumentReference(
+            programResourceInfo,
+            referencedIdentity,
+            ReferentialIdCalculator.ReferentialIdFrom(programResourceInfo, referencedIdentity),
+            new JsonPath(
+                "$._ext.sample.addresses[0]._ext.sample.sponsorReferences[0].programReference"
+            )
+        );
+
+        return new UpsertRequest(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: documentInfo with { DocumentReferences = [documentReference] },
+            MappingSet: mappingSet,
+            EdfiDoc: CreateRequestBody(0),
+            Headers: [],
+            TraceId: new TraceId("pg-write-session-reference-embedding"),
+            DocumentUuid: documentUuid
+        );
+    }
+
     /// <summary>
     /// Classifies recorded PostgreSQL command text into the provider-neutral summary the shared
     /// contract asserts over. Dialect text stays in this adapter, never in Tests.Common.
@@ -141,13 +177,12 @@ file static class WriteSessionCommandStreamTestSupport
                 command.CommandText.Contains("\"edfi\".\"School\"", StringComparison.Ordinal)
                 && command.CommandText.Contains("\"edfi\".\"SchoolAddress\"", StringComparison.Ordinal)
             ),
-            // The PUT target lookup is the only command that filters dms."Document" on the external
-            // DocumentUuid; the POST lookup reaches the same table through "ReferentialIdentity".
+            // The PUT capture predicate is the only place the aliased dms."Document" row filters on
+            // the external DocumentUuid; the POST capture reaches the same table through
+            // "ReferentialIdentity". The parameter suffix is allocator-issued, so the match is on the
+            // stable prefix.
             DocumentUuidLookupCount: recorder.Commands.Count(command =>
-                command.CommandText.Contains(
-                    "document.\"DocumentUuid\" = @documentUuid",
-                    StringComparison.Ordinal
-                )
+                command.CommandText.Contains("d.\"DocumentUuid\" = @documentUuid", StringComparison.Ordinal)
             )
         );
 }
@@ -261,6 +296,46 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_Create
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Production_First_Phase_With_A_Reference_Lookup
+    : PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("1a1a1a1a-0000-0000-0000-000000000099")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateReferenceUpsertRequest(
+                _mappingSet,
+                _schoolDocumentUuid
+            )
+        );
+    }
+
+    [Test]
+    public void It_embeds_capture_and_the_array_reference_lookup_in_one_production_command()
+    {
+        _result.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+        _recorder.ShouldHaveCommandCount(1);
+        _recorder.Commands[0].CommandText.Should().Contain("unnest(@referentialIds");
+        _recorder.Commands[0].Parameters.Should().HaveCount(3);
+        _recorder.ShouldHaveTransactionBoundary(
+            expectedBeginCount: 1,
+            expectedCommitCount: 0,
+            expectedRollbackCount: 1
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Put_Update
     : PostgresqlWriteSessionCommandStreamFixtureTestBase
 {
@@ -310,7 +385,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Put_Update
     public void It_observes_the_hydration_batch_and_the_in_session_put_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 5
+            expectedTotalCommandCount: 4
         );
 }
 
@@ -365,7 +440,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_As_Updat
     public void It_observes_the_hydration_batch_and_the_single_in_session_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertPostAsUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 5
+            expectedTotalCommandCount: 4
         );
 }
 

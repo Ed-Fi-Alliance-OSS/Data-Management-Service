@@ -19,11 +19,14 @@ namespace EdFi.DataManagementService.Backend.Composite;
 /// at all.
 /// </para>
 /// <para>
-/// Attribution rests on the builder's one-result-set-per-statement invariant. A failure raised while opening
-/// the reader can only be statement 0, because statement 0 always produces a result set and the provider
-/// therefore never scans past it. A failure raised while advancing to result set <c>k</c> is statement
-/// <c>k</c>. Both providers process batch statements strictly in order and stream results, so neither
-/// reorders.
+/// Attribution rests on the builder's invariant that every logical statement owns a declared number of
+/// result sets — one for most statements. A failure raised while opening the reader can only be statement
+/// 0, because statement 0 always produces a result set and the provider therefore never scans past it. A
+/// failure raised while advancing between statements identifies the statement being advanced to. A
+/// statement declaring several result sets consumes its whole span through its reader, so a failure inside
+/// the span — including an internal advance — is attributed to that statement's ordinal at the
+/// row-reading stage. Both providers process batch statements strictly in order and stream results, so
+/// neither reorders.
 /// </para>
 /// <para>
 /// The provider exception is never wrapped or replaced. It propagates with its SQLSTATE or error number,

@@ -82,6 +82,15 @@ internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalComma
 
         return new PostgresqlReferenceResolverAdapter(commandExecutor);
     }
+
+    public RelationalCommand? TryBuildSessionLookupCommand(ReferenceLookupRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // The PostgreSQL lookup is always one statement binding one array parameter, so every
+        // request is embeddable.
+        return PostgresqlReferenceLookupCommandBuilder.Build(request);
+    }
 }
 
 internal sealed class PostgresqlDocumentHydrator(NpgsqlDataSourceProvider dataSourceProvider)

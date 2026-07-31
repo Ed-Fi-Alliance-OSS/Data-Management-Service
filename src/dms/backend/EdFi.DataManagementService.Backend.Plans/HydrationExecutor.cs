@@ -185,6 +185,60 @@ public static class HydrationExecutor
         // Npgsql and SqlClient skip DDL/DML statements when advancing result sets, so the reader
         // is positioned at the first SELECT result set automatically. The PostgreSQL fast path
         // starts with that same first SELECT result set.
+        return await ReadPageAsync(reader, plan, keyset, executionOptions, ct);
+    }
+
+    /// <summary>
+    /// How many result sets the hydration batch for <paramref name="keyset"/> emits. The batch's
+    /// DDL/DML statements produce none, so this is also the number of result-set positions the batch
+    /// occupies when co-batched into a larger command.
+    /// </summary>
+    public static int GetResultSetCount(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions
+    )
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(keyset);
+
+        var count = 1 + plan.TablePlansInDependencyOrder.Length;
+
+        if (keyset is PageKeysetSpec.Query { Plan.TotalCountSql: not null })
+        {
+            count++;
+        }
+
+        if (executionOptions.IncludeDescriptorProjection)
+        {
+            count += plan.DescriptorProjectionPlansInOrder.Length;
+        }
+
+        if (executionOptions.IncludeDocumentReferenceLookup && plan.DocumentReferenceLookup is not null)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Reads the hydration batch's result sets from a reader positioned at the batch's first result
+    /// set. Consumes exactly <see cref="GetResultSetCount"/> result sets — the last of them remains
+    /// current when this returns — so the batch can be decoded from inside a larger multi-statement
+    /// command as well as from its own.
+    /// </summary>
+    public static async Task<HydratedPage> ReadPageAsync(
+        DbDataReader reader,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
+        CancellationToken ct
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(keyset);
 
         // 1. Optional total count
         long? totalCount = null;
