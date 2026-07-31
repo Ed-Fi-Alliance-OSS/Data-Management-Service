@@ -200,7 +200,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcProviderMetadata",
       "Review diagnostics mapping tests for ProviderHistoryUnavailable and ProviderHistoryLossEvidence."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "binding-validation",

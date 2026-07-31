@@ -36,6 +36,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         return
         [
             new CdcProviderSetupStep(
+                CdcProviderArtifactKind.SourceFingerprint,
+                CdcSourceFingerprintMetadata.SafeArtifactName,
+                canCreateInInitialSetup: false,
+                ExecuteSourceFingerprintAsync
+            ),
+            new CdcProviderSetupStep(
                 CdcProviderArtifactKind.ProviderHistory,
                 _databaseCdcSafeName,
                 canCreateInInitialSetup: true,
@@ -65,7 +71,35 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 canCreateInInitialSetup: true,
                 ExecuteConnectorPrincipalAccessAsync
             ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.ProviderHistory,
+                _databaseCdcSafeName,
+                canCreateInInitialSetup: false,
+                ExecuteProviderMetadataRefreshAsync
+            ),
         ];
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteSourceFingerprintAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.SourceFingerprint,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        return await CdcSourceFingerprintMetadata
+            .ReadAsync(executor, SourceFingerprintSql, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<CdcProviderSetupStepResult> ExecuteDatabaseCdcAsync(
@@ -134,6 +168,38 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 _databaseCdcSafeName,
                 exception
             );
+        }
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteProviderMetadataRefreshAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.ProviderHistory,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        try
+        {
+            var inspection = await InspectDatabaseCdcAsync(executor, cancellationToken).ConfigureAwait(false);
+            return DatabaseCdcMetadataRefreshResult(inspection, DatabaseCdcDiagnostics(inspection));
+        }
+        catch (DbException exception)
+        {
+            return ProviderMetadataUnavailableResult(exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return ProviderMetadataUnavailableResult(exception);
         }
     }
 
@@ -1245,6 +1311,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ELSE 1
             END) AS table_exists;
             """;
+
+    private const string SourceFingerprintSql = """
+        /* cdc:sqlserver:source-fingerprint */
+        SELECT CONVERT(nvarchar(36), [SourceIdentity]) AS source_identity
+        FROM [dms].[DataStoreIdentity]
+        WHERE [DataStoreIdentitySingletonId] = 1;
+        """;
 
     private static async Task<IReadOnlyList<CdcSourceTableInventory>> ReadLiveSourceInventoryAsync(
         ICdcProviderDatabaseExecutor executor,
@@ -2449,6 +2522,66 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             diagnostics: diagnostics
         );
     }
+
+    private static CdcProviderSetupStepResult DatabaseCdcMetadataRefreshResult(
+        DatabaseCdcInspection inspection,
+        IReadOnlyList<CdcProviderDiagnostic> diagnostics
+    )
+    {
+        var observedValues = DatabaseCdcObservedValues(
+            inspection,
+            wasEnabledAtStart: inspection.IsCdcEnabled
+        );
+        var classification =
+            diagnostics
+                .FirstOrDefault(diagnostic =>
+                    diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
+                    && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                )
+                ?.Classification
+            ?? CdcProviderRetryContinuityClassification.None;
+
+        return new CdcProviderSetupStepResult(
+            providerHistoryObservations:
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _databaseCdcSafeName,
+                    observedValues,
+                    classification
+                ),
+            ],
+            diagnostics: diagnostics
+        );
+    }
+
+    private static CdcProviderSetupStepResult ProviderMetadataUnavailableResult(Exception exception) =>
+        new(
+            providerHistoryObservations:
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _databaseCdcSafeName,
+                    new Dictionary<string, string> { ["history"] = "unavailable" },
+                    CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+                ),
+            ],
+            diagnostics:
+            [
+                new CdcProviderDiagnostic(
+                    Code: "CDC_SQLSERVER_PROVIDER_METADATA_UNAVAILABLE",
+                    Category: CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.SetupPrincipal,
+                    ArtifactKind: CdcProviderArtifactKind.ProviderHistory,
+                    SafeName: _databaseCdcSafeName,
+                    ExpectedValue: "readable-provider-history",
+                    ObservedValue: "unavailable",
+                    ProviderErrorClass: exception.GetType().Name,
+                    Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+                ),
+            ]
+        );
 
     private static IReadOnlyDictionary<string, string> DatabaseCdcObservedValues(
         DatabaseCdcInspection inspection,

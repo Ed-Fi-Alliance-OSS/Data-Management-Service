@@ -254,7 +254,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
         _grantInventory.AddRange(stepResult.GrantInventory);
         _sourceTableInventory.AddRange(stepResult.SourceTableInventory);
         _expectedMessageKeyColumns.AddRange(stepResult.ExpectedMessageKeyColumns);
-        _providerHistoryObservations.AddRange(stepResult.ProviderHistoryObservations);
+        UpsertProviderHistoryObservations(stepResult.ProviderHistoryObservations);
         _diagnostics.AddRange(stepResult.Diagnostics);
 
         _heartbeatActionQuery ??= stepResult.HeartbeatActionQuery;
@@ -273,6 +273,20 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
         {
             AddDiagnosticForUnexpectedCreate(step, stepMode, observation);
             AddDiagnosticForUnsafeArtifactState(observation);
+        }
+    }
+
+    private void UpsertProviderHistoryObservations(
+        IReadOnlyList<CdcProviderHistoryObservation> providerHistoryObservations
+    )
+    {
+        foreach (var observation in providerHistoryObservations)
+        {
+            _providerHistoryObservations.RemoveAll(existing =>
+                existing.ArtifactKind == observation.ArtifactKind
+                && existing.SafeArtifactName.Equals(observation.SafeArtifactName)
+            );
+            _providerHistoryObservations.Add(observation);
         }
     }
 

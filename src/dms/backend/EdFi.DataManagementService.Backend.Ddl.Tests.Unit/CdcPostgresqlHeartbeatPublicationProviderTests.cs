@@ -107,6 +107,33 @@ public class Given_PostgresqlCdcHeartbeatPublication_Initial_Setup
             .ExpectedMessageKeyColumns.Should()
             .NotContain(key => key.TableKind == CdcSourceTableKind.CdcHeartbeat);
     }
+
+    [Test]
+    public void CdcProviderMetadata_should_observe_the_source_fingerprint_from_DataStoreIdentity()
+    {
+        _result
+            .ObservedSourceFingerprint.Should()
+            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", "source-123"));
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SourceFingerprint
+                && observation.SafeArtifactName.Value == "dms.DataStoreIdentity"
+                && observation.State == CdcProviderArtifactState.Matched
+                && observation.SafeObservedValues["source_fingerprint_version"] == "dms-source-fingerprint-v1"
+                && observation.SafeObservedValues["source_identity"] == "source-123"
+            );
+        _result
+            .ManifestPayload!.Json.Should()
+            .Contain(
+                """
+                  "observed_source_fingerprint": {
+                    "version": "dms-source-fingerprint-v1",
+                    "value": "source-123"
+                  }
+                """
+            );
+    }
 }
 
 [TestFixture]
@@ -656,6 +683,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private readonly string _connectorDocumentCacheWritePrivileges;
     private readonly string _connectorWorkTablePrivileges;
     private readonly string _connectorExtraDmsSelectTables;
+    private readonly string _sourceIdentity;
 
     public RecordingPostgresqlCdcExecutor(
         bool heartbeatTableExists = false,
@@ -690,7 +718,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         string connectorDocumentWritePrivileges = "",
         string connectorDocumentCacheWritePrivileges = "",
         string connectorWorkTablePrivileges = "",
-        string connectorExtraDmsSelectTables = ""
+        string connectorExtraDmsSelectTables = "",
+        string sourceIdentity = "source-123"
     )
     {
         _heartbeatTableExists = heartbeatTableExists;
@@ -726,6 +755,7 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _connectorDocumentCacheWritePrivileges = connectorDocumentCacheWritePrivileges;
         _connectorWorkTablePrivileges = connectorWorkTablePrivileges;
         _connectorExtraDmsSelectTables = connectorExtraDmsSelectTables;
+        _sourceIdentity = sourceIdentity;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -819,6 +849,10 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     {
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
         {
+            var text when text.Contains("cdc:postgresql:source-fingerprint") =>
+            [
+                Row(("source_identity", _sourceIdentity)),
+            ],
             var text when text.Contains("cdc:postgresql:table-exists") =>
             [
                 Row(("table_exists", _heartbeatTableExists.ToString())),

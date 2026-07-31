@@ -140,6 +140,49 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
     }
 
     [Test]
+    public async Task PostgresqlCdcProviderMetadata_should_report_source_fingerprint_publication_and_slot_history()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var expectedSourceIdentity = ReadDataStoreIdentity(connection);
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result
+            .ObservedSourceFingerprint.Should()
+            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", expectedSourceIdentity));
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SourceFingerprint
+                && observation.SafeArtifactName.Value == "dms.DataStoreIdentity"
+                && observation.State == CdcProviderArtifactState.Matched
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication
+                && observation.SafeObservedValues["tables"]
+                    == "dms.CdcHeartbeat,dms.Document,dms.DocumentCache"
+                && observation.SafeObservedValues["publish"] == "True,True,True"
+                && observation.SafeObservedValues["row_filters"] == "absent"
+                && observation.SafeObservedValues["column_lists"] == "absent"
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+                && observation.SafeObservedValues["plugin"] == "pgoutput"
+                && observation.SafeObservedValues["restart_lsn"].Length > 0
+                && observation.SafeObservedValues["confirmed_flush_lsn"].Length > 0
+                && observation.SafeObservedValues["retained_position_gap_evaluation"]
+                    == "not_evaluated_without_committed_offset"
+            );
+        result.ManifestPayload!.Json.Should().Contain(expectedSourceIdentity);
+        result.ManifestPayload.Json.Should().NotContain(_connectionString);
+    }
+
+    [Test]
     public async Task It_should_exact_match_existing_artifacts_in_validate_only_without_mutating_heartbeat()
     {
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -373,6 +416,16 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         command.Parameters.AddWithValue("privilege", privilege);
         return (bool)command.ExecuteScalar()!;
     }
+
+    private static string ReadDataStoreIdentity(NpgsqlConnection connection) =>
+        ExecuteScalarText(
+            connection,
+            """
+            SELECT "SourceIdentity"::text
+            FROM dms."DataStoreIdentity"
+            WHERE "DataStoreIdentitySingletonId" = 1;
+            """
+        );
 
     private static void AssertHeartbeatTable(NpgsqlConnection connection)
     {

@@ -160,6 +160,49 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
+    public async Task MssqlCdcProviderMetadata_should_report_source_fingerprint_database_history_and_capture_inventory()
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var expectedSourceIdentity = ReadDataStoreIdentity(connection);
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(result.Diagnostics));
+        result
+            .ObservedSourceFingerprint.Should()
+            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", expectedSourceIdentity));
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SourceFingerprint
+                && observation.SafeArtifactName.Value == "dms.DataStoreIdentity"
+                && observation.State == CdcProviderArtifactState.Matched
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.SafeObservedValues["database_cdc_enabled"] == "True"
+                && observation.SafeObservedValues["capture_instance_count"] == "3"
+                && observation.SafeObservedValues["retained_lsn_gap_evaluation"]
+                    == "not_evaluated_without_committed_offset"
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
+                && observation.SafeObservedValues["heartbeat_capture_visible"] == "True"
+            );
+        result.ManifestPayload!.Json.Should().Contain(expectedSourceIdentity);
+        result.ManifestPayload.Json.Should().NotContain(_connectionString);
+    }
+
+    [Test]
     public async Task It_should_exact_match_existing_database_cdc_and_heartbeat_without_mutating_heartbeat()
     {
         await using var connection = new SqlConnection(_connectionString);
@@ -243,6 +286,17 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
 
         return await service.SetupAsync(BuildRequest(executor, mode));
+    }
+
+    private static string ReadDataStoreIdentity(SqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT CONVERT(nvarchar(36), [SourceIdentity])
+            FROM [dms].[DataStoreIdentity]
+            WHERE [DataStoreIdentitySingletonId] = 1;
+            """;
+        return command.ExecuteScalar()!.ToString()!;
     }
 
     private static void AssumeMssqlAvailable()

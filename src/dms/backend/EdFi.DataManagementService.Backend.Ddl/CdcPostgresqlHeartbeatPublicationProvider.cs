@@ -34,6 +34,12 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         return
         [
             new CdcProviderSetupStep(
+                CdcProviderArtifactKind.SourceFingerprint,
+                CdcSourceFingerprintMetadata.SafeArtifactName,
+                canCreateInInitialSetup: false,
+                ExecuteSourceFingerprintAsync
+            ),
+            new CdcProviderSetupStep(
                 CdcProviderArtifactKind.HeartbeatTable,
                 SafeName(DmsTableNames.CdcHeartbeat),
                 canCreateInInitialSetup: true,
@@ -189,6 +195,28 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 exception
             );
         }
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteSourceFingerprintAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.SourceFingerprint,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        return await CdcSourceFingerprintMetadata
+            .ReadAsync(executor, SourceFingerprintSql, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<CdcProviderSetupStepResult> ExecuteSourceInventoryAsync(
@@ -730,6 +758,13 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 _dialect.QualifyTable(table)
             )}') IS NOT NULL)::text AS table_exists;
             """;
+
+    private const string SourceFingerprintSql = """
+        /* cdc:postgresql:source-fingerprint */
+        SELECT "SourceIdentity"::text AS source_identity
+        FROM dms."DataStoreIdentity"
+        WHERE "DataStoreIdentitySingletonId" = 1;
+        """;
 
     private static async Task<IReadOnlyList<CdcSourceTableInventory>> ReadLiveSourceInventoryAsync(
         ICdcProviderDatabaseExecutor executor,

@@ -45,9 +45,9 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
                 && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
                 && observation.SafeObservedValues["database_cdc_enabled"] == "True"
-                && observation.SafeObservedValues["capture_instance_count"] == "0"
-                && observation.SafeObservedValues["capture_job_present"] == "False"
-                && observation.SafeObservedValues["cleanup_job_present"] == "False"
+                && observation.SafeObservedValues["capture_instance_count"] == "3"
+                && observation.SafeObservedValues["capture_job_present"] == "True"
+                && observation.SafeObservedValues["cleanup_job_present"] == "True"
             );
     }
 
@@ -100,6 +100,33 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
         _result
             .ExpectedMessageKeyColumns.Should()
             .NotContain(key => key.TableKind == CdcSourceTableKind.CdcHeartbeat);
+    }
+
+    [Test]
+    public void CdcProviderMetadata_should_observe_the_source_fingerprint_from_DataStoreIdentity()
+    {
+        _result
+            .ObservedSourceFingerprint.Should()
+            .Be(new CdcSourceFingerprint("dms-source-fingerprint-v1", "source-123"));
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SourceFingerprint
+                && observation.SafeArtifactName.Value == "dms.DataStoreIdentity"
+                && observation.State == CdcProviderArtifactState.Matched
+                && observation.SafeObservedValues["source_fingerprint_version"] == "dms-source-fingerprint-v1"
+                && observation.SafeObservedValues["source_identity"] == "source-123"
+            );
+        _result
+            .ManifestPayload!.Json.Should()
+            .Contain(
+                """
+                  "observed_source_fingerprint": {
+                    "version": "dms-source-fingerprint-v1",
+                    "value": "source-123"
+                  }
+                """
+            );
     }
 
     [Test]
@@ -823,8 +850,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly bool _readCommittedSnapshotOn;
     private readonly string _nestedTriggersValue;
     private int _captureInstanceCount;
-    private readonly bool _captureJobPresent;
-    private readonly bool _cleanupJobPresent;
+    private bool _captureJobPresent;
+    private bool _cleanupJobPresent;
     private readonly string _captureJobEnabled;
     private readonly string _captureJobRunning;
     private readonly string _captureJobLastRunStatus;
@@ -833,6 +860,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly string _cleanupJobLastRunStatus;
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
     private readonly RecordingSqlServerConnectorAccess _connectorAccess;
+    private readonly string _sourceIdentity;
 
     public RecordingSqlServerCdcExecutor(
         bool databaseCdcEnabled = false,
@@ -850,7 +878,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
-        RecordingSqlServerConnectorAccess? connectorAccess = null
+        RecordingSqlServerConnectorAccess? connectorAccess = null,
+        string sourceIdentity = "source-123"
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
@@ -872,6 +901,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _cleanupJobRunning = cleanupJobRunning;
         _cleanupJobLastRunStatus = cleanupJobLastRunStatus;
         _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
+        _sourceIdentity = sourceIdentity;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -935,6 +965,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             var captureInstance = RecordingSqlServerCaptureInstance.FromEnableSql(sql);
             _captureInstances[captureInstance.CaptureInstanceName.Value] = captureInstance;
             _captureInstanceCount = Math.Max(_captureInstanceCount, _captureInstances.Count);
+            _captureJobPresent = true;
+            _cleanupJobPresent = true;
         }
 
         if (sql.Contains("cdc:sqlserver:grant-connector-access"))
@@ -960,6 +992,10 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     {
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
         {
+            var text when text.Contains("cdc:sqlserver:source-fingerprint") =>
+            [
+                Row(("source_identity", _sourceIdentity)),
+            ],
             var text when text.Contains("cdc:sqlserver:database-cdc-state") =>
             [
                 Row(
