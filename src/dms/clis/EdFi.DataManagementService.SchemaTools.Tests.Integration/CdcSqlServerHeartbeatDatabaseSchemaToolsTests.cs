@@ -14,8 +14,10 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 [Category("MssqlIntegration")]
 public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
 {
+    private const string ConnectorPassword = "EdFi_Dms1!";
     private string _databaseName = null!;
     private string _connectionString = null!;
+    private string _connectorPrincipalName = null!;
 
     [SetUp]
     public void SetUp()
@@ -24,6 +26,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
 
         _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
         _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+        _connectorPrincipalName = $"cdc_connector_{Guid.NewGuid():N}";
 
         MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
 
@@ -31,6 +34,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         exitCode
             .Should()
             .Be(0, $"ordinary SQL Server provisioning must succeed. Output: {output} Error: {error}");
+
+        CreateConnectorLoginAndUser(_databaseName, _connectorPrincipalName);
     }
 
     [TearDown]
@@ -39,6 +44,11 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         if (!string.IsNullOrWhiteSpace(_databaseName))
         {
             MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_connectorPrincipalName))
+        {
+            DropConnectorLoginIfExists(_connectorPrincipalName);
         }
     }
 
@@ -105,6 +115,51 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
+    public async Task MssqlCdcPrincipalAccess_should_grant_and_validate_connector_principal_boundaries()
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        setupResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(setupResult.Diagnostics));
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        setupResult
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafePrincipalName.Value == _connectorPrincipalName
+                && grant.SafeObjectName.Value == "role.dms_binding_gate"
+                && grant.Privileges.SequenceEqual(new[] { "MEMBER" })
+            );
+        setupResult
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafePrincipalName.Value == _connectorPrincipalName
+                && grant.SafeObjectName.Value == "dms.CdcHeartbeat"
+                && grant.Privileges.SequenceEqual(new[] { "UPDATE" })
+                && grant
+                    .Columns.Select(column => column.Value)
+                    .SequenceEqual(new[] { "HeartbeatSequence", "HeartbeatAt" })
+            );
+        setupResult.ManifestPayload!.Json.Should().NotContain(ConnectorPassword);
+        setupResult.ManifestPayload.Json.Should().NotContain(_connectionString);
+
+        AssertConnectorPrincipalAccess(connection);
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+    }
+
+    [Test]
     public async Task It_should_exact_match_existing_database_cdc_and_heartbeat_without_mutating_heartbeat()
     {
         await using var connection = new SqlConnection(_connectionString);
@@ -150,7 +205,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         TableExists(connection, "CdcHeartbeat").Should().BeFalse();
     }
 
-    private static CdcProviderSetupRequest BuildRequest(
+    private CdcProviderSetupRequest BuildRequest(
         ICdcProviderDatabaseExecutor databaseExecutor,
         CdcProviderSetupMode mode
     ) =>
@@ -162,7 +217,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
                 "integration-source"
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("sa")),
-            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("cdc_connector")),
+            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(_connectorPrincipalName)),
             artifactNames: CdcProviderArtifactNames.ForSqlServer(
                 new CdcSafeName("dms_binding_gate"),
                 new Dictionary<CdcSourceTableKind, CdcSafeName>
@@ -179,7 +234,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
             databaseExecutor: databaseExecutor
         );
 
-    private static async Task<CdcProviderSetupResult> RunSetupAsync(
+    private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
         CdcProviderSetupMode mode
     )
@@ -207,6 +262,176 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
             Assert.Ignore(
                 $"SQL Server integration tests require a reachable SQL Server: {exception.Message}"
             );
+        }
+    }
+
+    private static void CreateConnectorLoginAndUser(string databaseName, string connectorPrincipalName)
+    {
+        using var connection = new SqlConnection(DatabaseConfiguration.MssqlAdminConnectionString!);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        var quotedDatabase = QuoteIdentifier(databaseName);
+        var quotedPrincipal = QuoteIdentifier(connectorPrincipalName);
+        command.CommandText = $"""
+            IF SUSER_ID(N'{connectorPrincipalName}') IS NULL
+            BEGIN
+                CREATE LOGIN {quotedPrincipal} WITH PASSWORD = '{ConnectorPassword}', CHECK_POLICY = OFF;
+            END;
+
+            USE {quotedDatabase};
+
+            IF USER_ID(N'{connectorPrincipalName}') IS NULL
+            BEGIN
+                CREATE USER {quotedPrincipal} FOR LOGIN {quotedPrincipal};
+            END;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private static void DropConnectorLoginIfExists(string connectorPrincipalName)
+    {
+        SqlConnection.ClearAllPools();
+
+        using var connection = new SqlConnection(DatabaseConfiguration.MssqlAdminConnectionString!);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            IF SUSER_ID(N'{connectorPrincipalName}') IS NOT NULL
+            BEGIN
+                DROP LOGIN {QuoteIdentifier(connectorPrincipalName)};
+            END;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private void AssertConnectorPrincipalAccess(SqlConnection connection)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT member_principal.name
+                FROM sys.database_role_members role_member
+                INNER JOIN sys.database_principals database_role
+                    ON database_role.principal_id = role_member.role_principal_id
+                INNER JOIN sys.database_principals member_principal
+                    ON member_principal.principal_id = role_member.member_principal_id
+                WHERE database_role.name = N'dms_binding_gate'
+                ORDER BY member_principal.name;
+                """;
+
+            using var reader = command.ExecuteReader();
+            List<string> members = [];
+            while (reader.Read())
+            {
+                members.Add(reader.GetString(0));
+            }
+
+            members.Should().Equal(_connectorPrincipalName);
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT COUNT_BIG(*)
+                FROM sys.database_permissions permission_info
+                LEFT JOIN sys.objects object_info
+                    ON object_info.object_id = permission_info.major_id
+                LEFT JOIN sys.schemas schema_info
+                    ON schema_info.schema_id = object_info.schema_id
+                WHERE permission_info.grantee_principal_id = DATABASE_PRINCIPAL_ID(N'dms_binding_gate')
+                AND NOT (
+                    permission_info.class = 1
+                    AND permission_info.permission_name = N'SELECT'
+                    AND schema_info.name = N'cdc'
+                );
+                """;
+
+            Convert.ToInt64(command.ExecuteScalar()).Should().Be(0);
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT
+                    schema_info.name,
+                    object_info.name,
+                    permission_info.permission_name,
+                    COALESCE(column_info.name, N'') AS column_name
+                FROM sys.database_permissions permission_info
+                INNER JOIN sys.objects object_info
+                    ON object_info.object_id = permission_info.major_id
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.schema_id = object_info.schema_id
+                LEFT JOIN sys.columns column_info
+                    ON column_info.object_id = permission_info.major_id
+                    AND column_info.column_id = permission_info.minor_id
+                WHERE permission_info.grantee_principal_id = DATABASE_PRINCIPAL_ID(@connector_principal)
+                AND permission_info.state IN (N'G', N'W')
+                AND permission_info.class = 1
+                ORDER BY schema_info.name, object_info.name, permission_info.permission_name, column_info.name;
+                """;
+            command.Parameters.AddWithValue("connector_principal", _connectorPrincipalName);
+
+            using var reader = command.ExecuteReader();
+            List<PermissionRow> permissions = [];
+            while (reader.Read())
+            {
+                permissions.Add(
+                    new PermissionRow(
+                        reader.GetString(0),
+                        reader.GetString(1),
+                        reader.GetString(2),
+                        reader.GetString(3)
+                    )
+                );
+            }
+
+            permissions
+                .Should()
+                .ContainSingle(permission =>
+                    permission.ObjectName == "Document"
+                    && permission.PermissionName == "SELECT"
+                    && permission.ColumnName == ""
+                );
+            permissions
+                .Should()
+                .ContainSingle(permission =>
+                    permission.ObjectName == "DocumentCache"
+                    && permission.PermissionName == "SELECT"
+                    && permission.ColumnName == ""
+                );
+            permissions
+                .Should()
+                .ContainSingle(permission =>
+                    permission.ObjectName == "CdcHeartbeat"
+                    && permission.PermissionName == "SELECT"
+                    && permission.ColumnName == ""
+                );
+            permissions
+                .Where(permission =>
+                    permission.ObjectName == "CdcHeartbeat"
+                    && permission.PermissionName == "UPDATE"
+                    && permission.ColumnName != ""
+                )
+                .Select(permission => permission.ColumnName)
+                .Should()
+                .BeEquivalentTo("HeartbeatSequence", "HeartbeatAt");
+            permissions
+                .Should()
+                .NotContain(permission =>
+                    permission.ObjectName == "DocumentProjectionWork"
+                    || (
+                        (permission.ObjectName == "Document" || permission.ObjectName == "DocumentCache")
+                        && permission.PermissionName != "SELECT"
+                    )
+                    || (
+                        permission.ObjectName == "CdcHeartbeat"
+                        && permission.PermissionName == "UPDATE"
+                        && permission.ColumnName == "HeartbeatId"
+                    )
+                );
         }
     }
 
@@ -481,6 +706,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         command.ExecuteNonQuery();
     }
 
+    private static string QuoteIdentifier(string identifier) => $"[{identifier.Replace("]", "]]")}]";
+
     private static string DescribeDiagnostics(IReadOnlyList<CdcProviderDiagnostic> diagnostics) =>
         string.Join(
             "; ",
@@ -494,6 +721,13 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     private sealed record HeartbeatColumn(string Name, string DataType, bool IsNullable, byte Scale);
 
     private sealed record HeartbeatSnapshot(short HeartbeatId, long HeartbeatSequence);
+
+    private sealed record PermissionRow(
+        string SchemaName,
+        string ObjectName,
+        string PermissionName,
+        string ColumnName
+    );
 
     private sealed record CaptureColumn(
         string CaptureInstance,

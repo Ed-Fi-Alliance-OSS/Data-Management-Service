@@ -447,6 +447,302 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 }
 
+[TestFixture]
+public class Given_MssqlCdcPrincipalAccess_Initial_Setup
+{
+    [Test]
+    public async Task It_should_create_the_gating_role_membership_and_grant_only_required_privileges_to_existing_connector_user()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants();
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.SafeArtifactName.Value == "connector_principal"
+                && observation.State == CdcProviderArtifactState.Created
+            );
+
+        var grantSql = executor.ExecutedSql.Single(sql =>
+            sql.Contains("cdc:sqlserver:grant-connector-access")
+        );
+        grantSql.Should().Contain("CREATE ROLE [dms_binding_gate]");
+        grantSql.Should().Contain("ALTER ROLE [dms_binding_gate] ADD MEMBER [connector_principal]");
+        grantSql.Should().Contain("GRANT SELECT ON OBJECT::[dms].[Document] TO [connector_principal]");
+        grantSql.Should().Contain("GRANT SELECT ON OBJECT::[dms].[DocumentCache] TO [connector_principal]");
+        grantSql.Should().Contain("GRANT SELECT ON OBJECT::[dms].[CdcHeartbeat] TO [connector_principal]");
+        grantSql
+            .Should()
+            .Contain(
+                "GRANT UPDATE ([HeartbeatSequence], [HeartbeatAt]) ON OBJECT::[dms].[CdcHeartbeat] TO [connector_principal]"
+            );
+        grantSql.Should().NotContain("DocumentProjectionWork");
+        grantSql.Should().NotContain("CREATE LOGIN");
+        grantSql.Should().NotContain("ALTER LOGIN");
+
+        result
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafeObjectName.Value == "role.dms_binding_gate"
+                && grant.Privileges.SequenceEqual(new[] { "MEMBER" })
+            );
+        result
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafeObjectName.Value == "dms.Document"
+                && grant.Privileges.SequenceEqual(new[] { "SELECT" })
+            );
+        result
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafeObjectName.Value == "dms.DocumentCache"
+                && grant.Privileges.SequenceEqual(new[] { "SELECT" })
+            );
+        result
+            .GrantInventory.Should()
+            .ContainSingle(grant =>
+                grant.SafeObjectName.Value == "dms.CdcHeartbeat"
+                && grant.Privileges.SequenceEqual(new[] { "UPDATE" })
+                && grant
+                    .Columns.Select(column => column.Value)
+                    .SequenceEqual(new[] { "HeartbeatSequence", "HeartbeatAt" })
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant => grant.SafeObjectName.Value == "dms.DocumentProjectionWork");
+    }
+
+    [Test]
+    public async Task It_should_not_create_connector_logins_or_users_when_connector_principal_is_missing()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants(
+            new RecordingSqlServerConnectorAccess { ConnectorExists = false }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_USER_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+            );
+        executor
+            .ExecutedSql.Should()
+            .NotContain(sql =>
+                sql.Contains("cdc:sqlserver:grant-connector-access")
+                || sql.Contains("CREATE LOGIN")
+                || sql.Contains("CREATE USER")
+            );
+    }
+
+    [Test]
+    public async Task It_should_reject_disallowed_elevated_connector_memberships()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants(
+            new RecordingSqlServerConnectorAccess
+            {
+                DisallowedDatabaseRoles = ["db_owner"],
+                DisallowedServerRoles = ["sysadmin"],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_ELEVATED_MEMBERSHIP_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("db_owner")
+                && diagnostic.ObservedValue.Contains("sysadmin")
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task It_should_reject_gating_role_extra_members_permissions_and_ownership()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal", "extra_reader"],
+                GatingRoleExplicitPermissions = ["SELECT"],
+                GatingRoleOwnedObjects = ["schema:dms"],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == "dms_binding_gate"
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task It_should_reject_connector_access_to_document_projection_work()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+                WorkTablePrivileges = ["SELECT"],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
+                && diagnostic.ExpectedValue == "no-dms.DocumentProjectionWork-privileges"
+            );
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_optional_live_probe_reports_connector_boundary_failure()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(RecordingSqlServerConnectorAccess.Exact());
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                databaseExecutor: executor,
+                connectorPrincipalProbeFactory: new FailingSqlServerConnectorPrincipalProbeFactory()
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_PROBE_BOUNDARY_FAILURE"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+            )
+            .Which;
+        diagnostic.ProviderErrorClass.Should().BeNull();
+    }
+
+    private static RecordingSqlServerCdcExecutor ExistingArtifactsWithoutConnectorGrants(
+        RecordingSqlServerConnectorAccess? connectorAccess = null
+    ) =>
+        RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants()
+        );
+
+    private static RecordingSqlServerCdcExecutor ExistingArtifactsWithConnectorAccess(
+        RecordingSqlServerConnectorAccess connectorAccess
+    ) =>
+        RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            connectorAccess: connectorAccess
+        );
+}
+
+[TestFixture]
+public class Given_MssqlCdcPrincipalAccess_ValidateOnly
+{
+    [Test]
+    public async Task It_should_report_missing_required_grants_without_creating_them()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            connectorAccess: RecordingSqlServerConnectorAccess.MissingGrants()
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+}
+
+internal sealed class FailingSqlServerConnectorPrincipalProbeFactory : ICdcConnectorPrincipalProbeFactory
+{
+    public Task<CdcConnectorPrincipalProbeResult> ProbeAsync(
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult(
+            new CdcConnectorPrincipalProbeResult(
+                GrantInventory: [],
+                Diagnostics:
+                [
+                    new CdcProviderDiagnostic(
+                        Code: "CDC_SQLSERVER_CONNECTOR_PROBE_BOUNDARY_FAILURE",
+                        Category: CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure,
+                        Severity: CdcProviderDiagnosticSeverity.Error,
+                        PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+                        ArtifactKind: CdcProviderArtifactKind.Grant,
+                        SafeName: request.ConnectorPrincipal.SafePrincipalName,
+                        ExpectedValue: "rolled-back-boundary-probe-success",
+                        ObservedValue: "probe-failed",
+                        ProviderErrorClass: null,
+                        Classification: CdcProviderRetryContinuityClassification.FailClosed
+                    ),
+                ]
+            )
+        );
+}
+
 internal static class SqlServerCaptureInstanceTestData
 {
     internal static IReadOnlyList<RecordingSqlServerCaptureInstance> Expected() =>
@@ -455,6 +751,68 @@ internal static class SqlServerCaptureInstanceTestData
             RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.Document),
             RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.CdcHeartbeat),
         ];
+}
+
+internal sealed class RecordingSqlServerConnectorAccess
+{
+    public bool ConnectorExists { get; init; } = true;
+
+    public bool ConnectorIsDatabasePrincipal { get; init; } = true;
+
+    public bool GatingRoleExists { get; set; }
+
+    public bool GatingRoleIsNormalRole { get; set; } = true;
+
+    public IReadOnlyList<string> GatingRoleDirectMembers { get; set; } = [];
+
+    public IReadOnlyList<string> GatingRoleParentRoles { get; init; } = [];
+
+    public IReadOnlyList<string> GatingRoleOwnedObjects { get; init; } = [];
+
+    public IReadOnlyList<string> GatingRoleExplicitPermissions { get; init; } = [];
+
+    public IReadOnlyList<string> DisallowedDatabaseRoles { get; init; } = [];
+
+    public IReadOnlyList<string> DisallowedServerRoles { get; init; } = [];
+
+    public IReadOnlyList<string> Ownership { get; init; } = [];
+
+    public bool DatabaseConnect { get; set; }
+
+    public bool DocumentSelect { get; set; }
+
+    public bool DocumentCacheSelect { get; set; }
+
+    public bool HeartbeatSelect { get; set; }
+
+    public bool HeartbeatSequenceUpdate { get; set; }
+
+    public bool HeartbeatAtUpdate { get; set; }
+
+    public bool HeartbeatIdUpdate { get; init; }
+
+    public IReadOnlyList<string> DocumentWritePrivileges { get; init; } = [];
+
+    public IReadOnlyList<string> DocumentCacheWritePrivileges { get; init; } = [];
+
+    public IReadOnlyList<string> WorkTablePrivileges { get; init; } = [];
+
+    public IReadOnlyList<string> ExtraDmsSelectTables { get; init; } = [];
+
+    public static RecordingSqlServerConnectorAccess MissingGrants() => new();
+
+    public static RecordingSqlServerConnectorAccess Exact() =>
+        new()
+        {
+            GatingRoleExists = true,
+            GatingRoleDirectMembers = ["connector_principal"],
+            DatabaseConnect = true,
+            DocumentSelect = true,
+            DocumentCacheSelect = true,
+            HeartbeatSelect = true,
+            HeartbeatSequenceUpdate = true,
+            HeartbeatAtUpdate = true,
+        };
 }
 
 internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecutor
@@ -474,6 +832,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly string _cleanupJobRunning;
     private readonly string _cleanupJobLastRunStatus;
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
+    private readonly RecordingSqlServerConnectorAccess _connectorAccess;
 
     public RecordingSqlServerCdcExecutor(
         bool databaseCdcEnabled = false,
@@ -490,7 +849,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobEnabled = "True",
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
-        IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null
+        IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
+        RecordingSqlServerConnectorAccess? connectorAccess = null
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
@@ -511,6 +871,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _cleanupJobEnabled = cleanupJobEnabled;
         _cleanupJobRunning = cleanupJobRunning;
         _cleanupJobLastRunStatus = cleanupJobLastRunStatus;
+        _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -527,7 +888,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobEnabled = "True",
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
-        IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null
+        IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
+        RecordingSqlServerConnectorAccess? connectorAccess = null
     ) =>
         new(
             databaseCdcEnabled: true,
@@ -544,7 +906,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             cleanupJobEnabled: cleanupJobEnabled,
             cleanupJobRunning: cleanupJobRunning,
             cleanupJobLastRunStatus: cleanupJobLastRunStatus,
-            captureInstances: captureInstances
+            captureInstances: captureInstances,
+            connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.Exact()
         );
 
     public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
@@ -572,6 +935,19 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             var captureInstance = RecordingSqlServerCaptureInstance.FromEnableSql(sql);
             _captureInstances[captureInstance.CaptureInstanceName.Value] = captureInstance;
             _captureInstanceCount = Math.Max(_captureInstanceCount, _captureInstances.Count);
+        }
+
+        if (sql.Contains("cdc:sqlserver:grant-connector-access"))
+        {
+            _connectorAccess.GatingRoleExists = true;
+            _connectorAccess.GatingRoleIsNormalRole = true;
+            _connectorAccess.GatingRoleDirectMembers = ["connector_principal"];
+            _connectorAccess.DatabaseConnect = true;
+            _connectorAccess.DocumentSelect = true;
+            _connectorAccess.DocumentCacheSelect = true;
+            _connectorAccess.HeartbeatSelect = true;
+            _connectorAccess.HeartbeatSequenceUpdate = true;
+            _connectorAccess.HeartbeatAtUpdate = true;
         }
 
         return Task.CompletedTask;
@@ -625,6 +1001,10 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             ],
             var text when text.Contains("cdc:sqlserver:source-inventory") => SourceInventoryRows(),
             var text when text.Contains("cdc:sqlserver:capture-instances") => CaptureInstanceRows(),
+            var text when text.Contains("cdc:sqlserver:connector-principal-access") =>
+            [
+                ConnectorPrincipalAccessRow(),
+            ],
             _ => throw new InvalidOperationException($"Unexpected SQL Server CDC query: {sql}"),
         };
 
@@ -668,6 +1048,69 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         }
 
         return rows;
+    }
+
+    private IReadOnlyDictionary<string, string?> ConnectorPrincipalAccessRow() =>
+        Row(
+            ("connector_exists", _connectorAccess.ConnectorExists.ToString()),
+            ("connector_is_database_principal", _connectorAccess.ConnectorIsDatabasePrincipal.ToString()),
+            ("gating_role_exists", _connectorAccess.GatingRoleExists.ToString()),
+            ("gating_role_is_normal_role", _connectorAccess.GatingRoleIsNormalRole.ToString()),
+            (
+                "gating_role_member",
+                _connectorAccess
+                    .GatingRoleDirectMembers.SequenceEqual(["connector_principal"], StringComparer.Ordinal)
+                    .ToString()
+            ),
+            ("gating_role_direct_members", Csv(_connectorAccess.GatingRoleDirectMembers)),
+            ("gating_role_parent_roles", Csv(_connectorAccess.GatingRoleParentRoles)),
+            ("gating_role_owned_objects", Csv(_connectorAccess.GatingRoleOwnedObjects)),
+            ("gating_role_explicit_permissions", Csv(_connectorAccess.GatingRoleExplicitPermissions)),
+            ("expected_capture_instances_using_role", ExpectedCaptureInstancesUsingGatingRole().ToString()),
+            ("unexpected_capture_instances_using_role", Csv(UnexpectedCaptureInstancesUsingGatingRole())),
+            ("disallowed_database_roles", Csv(_connectorAccess.DisallowedDatabaseRoles)),
+            ("disallowed_server_roles", Csv(_connectorAccess.DisallowedServerRoles)),
+            ("ownership", Csv(_connectorAccess.Ownership)),
+            ("database_connect", _connectorAccess.DatabaseConnect.ToString()),
+            ("document_select", _connectorAccess.DocumentSelect.ToString()),
+            ("document_cache_select", _connectorAccess.DocumentCacheSelect.ToString()),
+            ("heartbeat_select", _connectorAccess.HeartbeatSelect.ToString()),
+            ("heartbeat_sequence_update", _connectorAccess.HeartbeatSequenceUpdate.ToString()),
+            ("heartbeat_at_update", _connectorAccess.HeartbeatAtUpdate.ToString()),
+            ("heartbeat_id_update", _connectorAccess.HeartbeatIdUpdate.ToString()),
+            ("document_write_privileges", Csv(_connectorAccess.DocumentWritePrivileges)),
+            ("document_cache_write_privileges", Csv(_connectorAccess.DocumentCacheWritePrivileges)),
+            ("work_table_privileges", Csv(_connectorAccess.WorkTablePrivileges)),
+            ("extra_dms_select_tables", Csv(_connectorAccess.ExtraDmsSelectTables))
+        );
+
+    private int ExpectedCaptureInstancesUsingGatingRole()
+    {
+        var expected = SqlServerCaptureInstanceTestData
+            .Expected()
+            .Select(capture => capture.CaptureInstanceName.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return _captureInstances.Values.Count(capture =>
+            capture.GatingRoleName.Value == "dms_binding_gate"
+            && expected.Contains(capture.CaptureInstanceName.Value)
+        );
+    }
+
+    private IReadOnlyList<string> UnexpectedCaptureInstancesUsingGatingRole()
+    {
+        var expected = SqlServerCaptureInstanceTestData
+            .Expected()
+            .Select(capture => capture.CaptureInstanceName.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return _captureInstances
+            .Values.Where(capture =>
+                capture.GatingRoleName.Value == "dms_binding_gate"
+                && !expected.Contains(capture.CaptureInstanceName.Value)
+            )
+            .Select(capture => capture.CaptureInstanceName.Value)
+            .ToArray();
     }
 
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> JobRuntimeRows()
@@ -770,6 +1213,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
 
     private static IReadOnlyDictionary<string, string?> Row(params (string Key, string? Value)[] values) =>
         values.ToDictionary(value => value.Key, value => value.Value);
+
+    private static string Csv(IEnumerable<string> values) => string.Join(",", values);
 }
 
 internal sealed record RecordingSqlServerCaptureInstance(

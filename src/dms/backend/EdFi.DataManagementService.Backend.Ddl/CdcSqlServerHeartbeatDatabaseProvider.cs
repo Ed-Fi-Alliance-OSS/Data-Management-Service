@@ -59,6 +59,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 canCreateInInitialSetup: true,
                 ExecuteCaptureInstancesAsync
             ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.Grant,
+                request.ConnectorPrincipal.SafePrincipalName,
+                canCreateInInitialSetup: true,
+                ExecuteConnectorPrincipalAccessAsync
+            ),
         ];
     }
 
@@ -360,6 +366,81 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
     }
 
+    private static async Task<CdcProviderSetupStepResult> ExecuteConnectorPrincipalAccessAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!TryGetExecutor(context, CdcProviderArtifactKind.Grant, out var executor, out var failure))
+        {
+            return failure;
+        }
+
+        var connectorPrincipal = context.Request.ConnectorPrincipal.SafePrincipalName;
+
+        try
+        {
+            var access = await InspectConnectorPrincipalAccessAsync(
+                    executor,
+                    context.Request,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            var state = CdcProviderArtifactState.Matched;
+
+            if (
+                access.IsGrantableMissingPrivilege
+                && context.Mode == CdcProviderSetupStepMode.CreateOrExactMatch
+            )
+            {
+                await executor
+                    .ExecuteNonQueryAsync(GrantConnectorPrivilegesSql(context.Request), cancellationToken)
+                    .ConfigureAwait(false);
+                state = CdcProviderArtifactState.Created;
+                access = await InspectConnectorPrincipalAccessAsync(
+                        executor,
+                        context.Request,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            if (!access.IsExactMatch)
+            {
+                return ConnectorPrincipalAccessResult(
+                    connectorPrincipal,
+                    CdcProviderArtifactState.Mismatched,
+                    access
+                );
+            }
+
+            var result = ConnectorPrincipalAccessResult(connectorPrincipal, state, access);
+
+            if (context.Request.ConnectorPrincipalProbeFactory is null)
+            {
+                return result;
+            }
+
+            var probeResult = await context
+                .Request.ConnectorPrincipalProbeFactory.ProbeAsync(context.Request, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new CdcProviderSetupStepResult(
+                artifactInventory: result.ArtifactInventory,
+                grantInventory: result.GrantInventory.Concat(probeResult.GrantInventory).ToArray(),
+                diagnostics: result.Diagnostics.Concat(probeResult.Diagnostics).ToArray()
+            );
+        }
+        catch (DbException exception)
+        {
+            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
+        }
+    }
+
     internal static CdcHeartbeatActionQuery BuildHeartbeatActionQuery(CdcProviderSetupRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -372,6 +453,537 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             $"UPDATE {heartbeat.EmittedQuotedTableName} SET {heartbeatSequence.EmittedQuotedColumnName} = {heartbeatSequence.EmittedQuotedColumnName} + 1, {heartbeatAt.EmittedQuotedColumnName} = sysutcdatetime() WHERE {heartbeatId.EmittedQuotedColumnName} = 1";
 
         return new CdcHeartbeatActionQuery(sql, Sha256(sql));
+    }
+
+    private static async Task<ConnectorPrincipalAccessInspection> InspectConnectorPrincipalAccessAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(ConnectorPrincipalAccessSql(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Count == 0)
+        {
+            return new ConnectorPrincipalAccessInspection(
+                IsExactMatch: false,
+                IsGrantableMissingPrivilege: false,
+                ObservedValues: new Dictionary<string, string> { ["connector_access"] = "unavailable" },
+                GrantInventory: [],
+                Diagnostics:
+                [
+                    ConnectorPrincipalPrivilegeFailure(
+                        request.ConnectorPrincipal.SafePrincipalName,
+                        "CDC_SQLSERVER_CONNECTOR_PRIVILEGE_UNAVAILABLE",
+                        expectedValue: "readable-connector-privilege-inventory",
+                        observedValue: "unavailable"
+                    ),
+                ]
+            );
+        }
+
+        var row = rows[0];
+        var connectorExists = ReadBool(row, "connector_exists");
+        var connectorIsDatabasePrincipal = ReadBool(row, "connector_is_database_principal");
+        var gatingRoleExists = ReadBool(row, "gating_role_exists");
+        var gatingRoleIsNormalRole = ReadBool(row, "gating_role_is_normal_role");
+        var gatingRoleMember = ReadBool(row, "gating_role_member");
+        var gatingRoleDirectMembers = ReadCsv(row, "gating_role_direct_members");
+        var gatingRoleParentRoles = ReadCsv(row, "gating_role_parent_roles");
+        var gatingRoleOwnedObjects = ReadCsv(row, "gating_role_owned_objects");
+        var gatingRoleExplicitPermissions = ReadCsv(row, "gating_role_explicit_permissions");
+        var expectedCaptureInstancesUsingRole = ReadInt32(row, "expected_capture_instances_using_role");
+        var unexpectedCaptureInstancesUsingRole = ReadCsv(row, "unexpected_capture_instances_using_role");
+        var disallowedDatabaseRoles = ReadCsv(row, "disallowed_database_roles");
+        var disallowedServerRoles = ReadCsv(row, "disallowed_server_roles");
+        var ownership = ReadCsv(row, "ownership");
+        var hasDatabaseConnect = ReadBool(row, "database_connect");
+        var hasDocumentSelect = ReadBool(row, "document_select");
+        var hasDocumentCacheSelect = ReadBool(row, "document_cache_select");
+        var hasHeartbeatSelect = ReadBool(row, "heartbeat_select");
+        var hasHeartbeatSequenceUpdate = ReadBool(row, "heartbeat_sequence_update");
+        var hasHeartbeatAtUpdate = ReadBool(row, "heartbeat_at_update");
+        var hasHeartbeatIdUpdate = ReadBool(row, "heartbeat_id_update");
+        var documentWritePrivileges = ReadCsv(row, "document_write_privileges");
+        var documentCacheWritePrivileges = ReadCsv(row, "document_cache_write_privileges");
+        var workTablePrivileges = ReadCsv(row, "work_table_privileges");
+        var extraDmsSelectTables = ReadCsv(row, "extra_dms_select_tables");
+
+        var connectorPrincipal = request.ConnectorPrincipal.SafePrincipalName;
+        var gatingRoleName = request.ArtifactNames.SqlServer!.GatingRoleName;
+        var missingRequiredPrivileges = MissingRequiredSqlServerConnectorPrivileges(
+            hasDatabaseConnect,
+            gatingRoleExists,
+            gatingRoleMember,
+            hasDocumentSelect,
+            hasDocumentCacheSelect,
+            hasHeartbeatSelect,
+            hasHeartbeatSequenceUpdate,
+            hasHeartbeatAtUpdate
+        );
+        var gatingRoleDirectMembershipIsGrantable =
+            gatingRoleDirectMembers.Count == 0
+            || gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
+        var gatingRoleShapeIsGrantable =
+            !gatingRoleExists
+            || (
+                gatingRoleIsNormalRole
+                && gatingRoleDirectMembershipIsGrantable
+                && gatingRoleParentRoles.Count == 0
+                && gatingRoleOwnedObjects.Count == 0
+                && gatingRoleExplicitPermissions.Count == 0
+                && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+                && unexpectedCaptureInstancesUsingRole.Count == 0
+            );
+        var connectorIdentityIsGrantable =
+            connectorExists
+            && connectorIsDatabasePrincipal
+            && disallowedDatabaseRoles.Count == 0
+            && disallowedServerRoles.Count == 0
+            && ownership.Count == 0;
+        var hasForbiddenPrivileges =
+            hasHeartbeatIdUpdate
+            || documentWritePrivileges.Count > 0
+            || documentCacheWritePrivileges.Count > 0
+            || workTablePrivileges.Count > 0
+            || extraDmsSelectTables.Count > 0;
+        var isGrantableMissingPrivilege =
+            connectorIdentityIsGrantable
+            && gatingRoleShapeIsGrantable
+            && !hasForbiddenPrivileges
+            && missingRequiredPrivileges.Count > 0;
+        var isExactMatch =
+            connectorIdentityIsGrantable
+            && gatingRoleExists
+            && gatingRoleIsNormalRole
+            && gatingRoleMember
+            && gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal)
+            && gatingRoleParentRoles.Count == 0
+            && gatingRoleOwnedObjects.Count == 0
+            && gatingRoleExplicitPermissions.Count == 0
+            && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+            && unexpectedCaptureInstancesUsingRole.Count == 0
+            && !hasForbiddenPrivileges
+            && missingRequiredPrivileges.Count == 0;
+
+        var observedValues = new Dictionary<string, string>
+        {
+            ["connector_exists"] = connectorExists.ToString(),
+            ["connector_is_database_principal"] = connectorIsDatabasePrincipal.ToString(),
+            ["gating_role_exists"] = gatingRoleExists.ToString(),
+            ["gating_role_is_normal_role"] = gatingRoleIsNormalRole.ToString(),
+            ["gating_role_member"] = gatingRoleMember.ToString(),
+            ["gating_role_direct_members"] = CsvOrNone(gatingRoleDirectMembers),
+            ["gating_role_parent_roles"] = CsvOrNone(gatingRoleParentRoles),
+            ["gating_role_owned_objects"] = CsvOrNone(gatingRoleOwnedObjects),
+            ["gating_role_explicit_permissions"] = CsvOrNone(gatingRoleExplicitPermissions),
+            ["expected_capture_instances_using_role"] = expectedCaptureInstancesUsingRole.ToString(),
+            ["unexpected_capture_instances_using_role"] = CsvOrNone(unexpectedCaptureInstancesUsingRole),
+            ["disallowed_database_roles"] = CsvOrNone(disallowedDatabaseRoles),
+            ["disallowed_server_roles"] = CsvOrNone(disallowedServerRoles),
+            ["ownership"] = CsvOrNone(ownership),
+            ["missing_required_privileges"] = CsvOrNone(missingRequiredPrivileges),
+            ["document_write_privileges"] = CsvOrNone(documentWritePrivileges),
+            ["document_cache_write_privileges"] = CsvOrNone(documentCacheWritePrivileges),
+            ["heartbeat_id_update"] = hasHeartbeatIdUpdate.ToString(),
+            ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
+            ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
+        };
+
+        var diagnostics = ConnectorPrincipalAccessDiagnostics(
+            connectorPrincipal,
+            gatingRoleName,
+            connectorExists,
+            connectorIsDatabasePrincipal,
+            gatingRoleExists,
+            gatingRoleIsNormalRole,
+            gatingRoleDirectMembers,
+            gatingRoleParentRoles,
+            gatingRoleOwnedObjects,
+            gatingRoleExplicitPermissions,
+            expectedCaptureInstancesUsingRole,
+            unexpectedCaptureInstancesUsingRole,
+            disallowedDatabaseRoles,
+            disallowedServerRoles,
+            ownership,
+            missingRequiredPrivileges,
+            hasHeartbeatIdUpdate,
+            documentWritePrivileges,
+            documentCacheWritePrivileges,
+            workTablePrivileges,
+            extraDmsSelectTables
+        );
+
+        return new ConnectorPrincipalAccessInspection(
+            isExactMatch,
+            isGrantableMissingPrivilege,
+            observedValues,
+            ConnectorGrantInventory(
+                request,
+                hasDatabaseConnect,
+                gatingRoleMember,
+                hasDocumentSelect,
+                hasDocumentCacheSelect,
+                hasHeartbeatSelect,
+                hasHeartbeatSequenceUpdate,
+                hasHeartbeatAtUpdate,
+                hasHeartbeatIdUpdate,
+                documentWritePrivileges,
+                documentCacheWritePrivileges,
+                workTablePrivileges
+            ),
+            diagnostics
+        );
+    }
+
+    private static string ConnectorPrincipalAccessSql(CdcProviderSetupRequest request)
+    {
+        var connectorPrincipal = EscapeSqlLiteral(request.ConnectorPrincipal.SafePrincipalName.Value);
+        var gatingRoleName = EscapeSqlLiteral(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
+        var documentObjectName = ObjectIdName(SourceTable(request, CdcSourceTableKind.Document).TableName);
+        var documentCacheObjectName = ObjectIdName(
+            SourceTable(request, CdcSourceTableKind.DocumentCache).TableName
+        );
+        var heartbeatObjectName = ObjectIdName(
+            SourceTable(request, CdcSourceTableKind.CdcHeartbeat).TableName
+        );
+        var workTableObjectName = ObjectIdName(DmsTableNames.DocumentProjectionWork);
+        var expectedCaptureInstances = string.Join(
+            ",\n            ",
+            _captureTableOrder.Select(kind =>
+                $"(N'{EscapeSqlLiteral(request.ArtifactNames.SqlServer.CaptureInstanceNames[kind].Value)}')"
+            )
+        );
+
+        return $"""
+            /* cdc:sqlserver:connector-principal-access */
+            DECLARE @connector_name sysname = N'{connectorPrincipal}';
+            DECLARE @gating_role_name sysname = N'{gatingRoleName}';
+            DECLARE @document_object_id int = OBJECT_ID(N'{documentObjectName}', N'U');
+            DECLARE @document_cache_object_id int = OBJECT_ID(N'{documentCacheObjectName}', N'U');
+            DECLARE @heartbeat_object_id int = OBJECT_ID(N'{heartbeatObjectName}', N'U');
+            DECLARE @work_table_object_id int = OBJECT_ID(N'{workTableObjectName}', N'U');
+            DECLARE @heartbeat_sequence_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'HeartbeatSequence', N'ColumnId');
+            DECLARE @heartbeat_at_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'HeartbeatAt', N'ColumnId');
+            DECLARE @heartbeat_id_column_id int = COLUMNPROPERTY(@heartbeat_object_id, N'HeartbeatId', N'ColumnId');
+
+            WITH expected_capture_instances(capture_instance) AS (
+                SELECT *
+                FROM (VALUES
+            {expectedCaptureInstances}
+                ) AS expected(capture_instance)
+            ),
+            connector AS (
+                SELECT TOP (1)
+                    principal_info.principal_id,
+                    principal_info.name,
+                    principal_info.type,
+                    principal_info.sid
+                FROM sys.database_principals principal_info
+                WHERE principal_info.name = @connector_name
+                AND principal_info.type <> N'R'
+            ),
+            gating_role AS (
+                SELECT TOP (1)
+                    principal_info.principal_id,
+                    principal_info.name,
+                    principal_info.type,
+                    principal_info.is_fixed_role
+                FROM sys.database_principals principal_info
+                WHERE principal_info.name = @gating_role_name
+            ),
+            public_principal AS (
+                SELECT principal_id
+                FROM sys.database_principals
+                WHERE name = N'public'
+            )
+            SELECT
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector) THEN 1 ELSE 0 END) AS connector_exists,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector WHERE type <> N'R') THEN 1 ELSE 0 END) AS connector_is_database_principal,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role) THEN 1 ELSE 0 END) AS gating_role_exists,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role WHERE type = N'R' AND is_fixed_role = 0) THEN 1 ELSE 0 END) AS gating_role_is_normal_role,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM gating_role
+                    INNER JOIN connector
+                        ON 1 = 1
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.role_principal_id = gating_role.principal_id
+                        AND role_member.member_principal_id = connector.principal_id
+                ) THEN 1 ELSE 0 END) AS gating_role_member,
+                COALESCE((
+                    SELECT STRING_AGG(role_member_principal.name, N',') WITHIN GROUP (ORDER BY role_member_principal.name)
+                    FROM gating_role
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.role_principal_id = gating_role.principal_id
+                    INNER JOIN sys.database_principals role_member_principal
+                        ON role_member_principal.principal_id = role_member.member_principal_id
+                ), N'') AS gating_role_direct_members,
+                COALESCE((
+                    SELECT STRING_AGG(parent_role.name, N',') WITHIN GROUP (ORDER BY parent_role.name)
+                    FROM gating_role
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.member_principal_id = gating_role.principal_id
+                    INNER JOIN sys.database_principals parent_role
+                        ON parent_role.principal_id = role_member.role_principal_id
+                ), N'') AS gating_role_parent_roles,
+                COALESCE((
+                    SELECT STRING_AGG(owned_object, N',') WITHIN GROUP (ORDER BY owned_object)
+                    FROM (
+                        SELECT N'schema:' + schema_info.name AS owned_object
+                        FROM gating_role
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.principal_id = gating_role.principal_id
+                        UNION ALL
+                        SELECT N'object:' + schema_info.name + N'.' + object_info.name
+                        FROM gating_role
+                        INNER JOIN sys.objects object_info
+                            ON object_info.principal_id = gating_role.principal_id
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.schema_id = object_info.schema_id
+                    ) ownership
+                ), N'') AS gating_role_owned_objects,
+                COALESCE((
+                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
+                    FROM gating_role
+                    INNER JOIN sys.database_permissions permission_info
+                        ON permission_info.grantee_principal_id = gating_role.principal_id
+                        AND permission_info.state IN (N'G', N'W')
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM sys.objects object_info
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.schema_id = object_info.schema_id
+                        WHERE object_info.object_id = permission_info.major_id
+                        AND permission_info.class = 1
+                        AND permission_info.permission_name = N'SELECT'
+                        AND schema_info.name = N'cdc'
+                    )
+                ), N'') AS gating_role_explicit_permissions,
+                COALESCE((
+                    SELECT CONVERT(nvarchar(20), COUNT_BIG(*))
+                    FROM cdc.change_tables capture_info
+                    INNER JOIN expected_capture_instances expected
+                        ON expected.capture_instance = capture_info.capture_instance
+                    WHERE capture_info.role_name = @gating_role_name
+                ), N'0') AS expected_capture_instances_using_role,
+                COALESCE((
+                    SELECT STRING_AGG(capture_info.capture_instance, N',') WITHIN GROUP (ORDER BY capture_info.capture_instance)
+                    FROM cdc.change_tables capture_info
+                    LEFT JOIN expected_capture_instances expected
+                        ON expected.capture_instance = capture_info.capture_instance
+                    WHERE capture_info.role_name = @gating_role_name
+                    AND expected.capture_instance IS NULL
+                ), N'') AS unexpected_capture_instances_using_role,
+                COALESCE((
+                    SELECT STRING_AGG(database_role.name, N',') WITHIN GROUP (ORDER BY database_role.name)
+                    FROM connector
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.member_principal_id = connector.principal_id
+                    INNER JOIN sys.database_principals database_role
+                        ON database_role.principal_id = role_member.role_principal_id
+                    WHERE database_role.name IN (N'db_owner', N'db_ddladmin', N'db_datareader', N'db_datawriter')
+                ), N'') AS disallowed_database_roles,
+                COALESCE((
+                    SELECT STRING_AGG(server_role.name, N',') WITHIN GROUP (ORDER BY server_role.name)
+                    FROM connector
+                    INNER JOIN sys.server_principals server_principal
+                        ON server_principal.sid = connector.sid
+                    INNER JOIN sys.server_role_members role_member
+                        ON role_member.member_principal_id = server_principal.principal_id
+                    INNER JOIN sys.server_principals server_role
+                        ON server_role.principal_id = role_member.role_principal_id
+                    WHERE server_role.name IN (N'sysadmin', N'securityadmin', N'serveradmin', N'dbcreator')
+                ), N'') AS disallowed_server_roles,
+                COALESCE((
+                    SELECT STRING_AGG(owned_object, N',') WITHIN GROUP (ORDER BY owned_object)
+                    FROM (
+                        SELECT N'schema:' + schema_info.name AS owned_object
+                        FROM connector
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.principal_id = connector.principal_id
+                        UNION ALL
+                        SELECT N'object:' + schema_info.name + N'.' + object_info.name
+                        FROM connector
+                        INNER JOIN sys.objects object_info
+                            ON object_info.principal_id = connector.principal_id
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.schema_id = object_info.schema_id
+                    ) ownership
+                ), N'') AS ownership,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.database_permissions permission_info
+                    CROSS JOIN connector
+                    WHERE permission_info.permission_name = N'CONNECT'
+                    AND permission_info.state IN (N'G', N'W')
+                    AND permission_info.class = 0
+                    AND permission_info.major_id = 0
+                    AND permission_info.grantee_principal_id IN (
+                        connector.principal_id,
+                        (SELECT principal_id FROM public_principal)
+                    )
+                ) THEN 1 ELSE 0 END) AS database_connect,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.database_permissions permission_info
+                    CROSS JOIN connector
+                    WHERE permission_info.permission_name = N'SELECT'
+                    AND permission_info.state IN (N'G', N'W')
+                    AND permission_info.class = 1
+                    AND permission_info.major_id = @document_object_id
+                    AND permission_info.minor_id = 0
+                    AND permission_info.grantee_principal_id = connector.principal_id
+                ) THEN 1 ELSE 0 END) AS document_select,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.database_permissions permission_info
+                    CROSS JOIN connector
+                    WHERE permission_info.permission_name = N'SELECT'
+                    AND permission_info.state IN (N'G', N'W')
+                    AND permission_info.class = 1
+                    AND permission_info.major_id = @document_cache_object_id
+                    AND permission_info.minor_id = 0
+                    AND permission_info.grantee_principal_id = connector.principal_id
+                ) THEN 1 ELSE 0 END) AS document_cache_select,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.database_permissions permission_info
+                    CROSS JOIN connector
+                    WHERE permission_info.permission_name = N'SELECT'
+                    AND permission_info.state IN (N'G', N'W')
+                    AND permission_info.class = 1
+                    AND permission_info.major_id = @heartbeat_object_id
+                    AND permission_info.minor_id = 0
+                    AND permission_info.grantee_principal_id = connector.principal_id
+                ) THEN 1 ELSE 0 END) AS heartbeat_select,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.database_permissions permission_info
+                    CROSS JOIN connector
+                    WHERE permission_info.permission_name = N'UPDATE'
+                    AND permission_info.state IN (N'G', N'W')
+                    AND permission_info.class = 1
+                    AND permission_info.major_id = @heartbeat_object_id
+                    AND permission_info.minor_id IN (0, @heartbeat_sequence_column_id)
+                    AND permission_info.grantee_principal_id = connector.principal_id
+                ) THEN 1 ELSE 0 END) AS heartbeat_sequence_update,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.database_permissions permission_info
+                    CROSS JOIN connector
+                    WHERE permission_info.permission_name = N'UPDATE'
+                    AND permission_info.state IN (N'G', N'W')
+                    AND permission_info.class = 1
+                    AND permission_info.major_id = @heartbeat_object_id
+                    AND permission_info.minor_id IN (0, @heartbeat_at_column_id)
+                    AND permission_info.grantee_principal_id = connector.principal_id
+                ) THEN 1 ELSE 0 END) AS heartbeat_at_update,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.database_permissions permission_info
+                    CROSS JOIN connector
+                    WHERE permission_info.permission_name = N'UPDATE'
+                    AND permission_info.state IN (N'G', N'W')
+                    AND permission_info.class = 1
+                    AND permission_info.major_id = @heartbeat_object_id
+                    AND permission_info.minor_id IN (0, @heartbeat_id_column_id)
+                    AND permission_info.grantee_principal_id = connector.principal_id
+                ) THEN 1 ELSE 0 END) AS heartbeat_id_update,
+                COALESCE((
+                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
+                    FROM connector
+                    INNER JOIN sys.database_permissions permission_info
+                        ON permission_info.grantee_principal_id = connector.principal_id
+                        AND permission_info.state IN (N'G', N'W')
+                        AND permission_info.class = 1
+                        AND permission_info.major_id = @document_object_id
+                        AND permission_info.permission_name <> N'SELECT'
+                ), N'') AS document_write_privileges,
+                COALESCE((
+                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
+                    FROM connector
+                    INNER JOIN sys.database_permissions permission_info
+                        ON permission_info.grantee_principal_id = connector.principal_id
+                        AND permission_info.state IN (N'G', N'W')
+                        AND permission_info.class = 1
+                        AND permission_info.major_id = @document_cache_object_id
+                        AND permission_info.permission_name <> N'SELECT'
+                ), N'') AS document_cache_write_privileges,
+                COALESCE((
+                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
+                    FROM connector
+                    INNER JOIN sys.database_permissions permission_info
+                        ON permission_info.grantee_principal_id = connector.principal_id
+                        AND permission_info.state IN (N'G', N'W')
+                        AND permission_info.class = 1
+                        AND permission_info.major_id = @work_table_object_id
+                ), N'') AS work_table_privileges,
+                COALESCE((
+                    SELECT STRING_AGG(object_info.name, N',') WITHIN GROUP (ORDER BY object_info.name)
+                    FROM connector
+                    INNER JOIN sys.database_permissions permission_info
+                        ON permission_info.grantee_principal_id = connector.principal_id
+                        AND permission_info.state IN (N'G', N'W')
+                        AND permission_info.class = 1
+                        AND permission_info.permission_name = N'SELECT'
+                        AND permission_info.minor_id = 0
+                    INNER JOIN sys.objects object_info
+                        ON object_info.object_id = permission_info.major_id
+                    INNER JOIN sys.schemas schema_info
+                        ON schema_info.schema_id = object_info.schema_id
+                    WHERE schema_info.name = N'dms'
+                    AND object_info.name NOT IN (N'Document', N'DocumentCache', N'CdcHeartbeat', N'DocumentProjectionWork')
+                ), N'') AS extra_dms_select_tables;
+            """;
+    }
+
+    private static string GrantConnectorPrivilegesSql(CdcProviderSetupRequest request)
+    {
+        var connectorPrincipal = _dialect.QuoteIdentifier(request.ConnectorPrincipal.SafePrincipalName.Value);
+        var connectorPrincipalLiteral = EscapeSqlLiteral(request.ConnectorPrincipal.SafePrincipalName.Value);
+        var gatingRole = _dialect.QuoteIdentifier(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
+        var gatingRoleLiteral = EscapeSqlLiteral(request.ArtifactNames.SqlServer.GatingRoleName.Value);
+        var document = SourceTable(request, CdcSourceTableKind.Document);
+        var documentCache = SourceTable(request, CdcSourceTableKind.DocumentCache);
+        var heartbeat = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
+        var heartbeatSequence = SourceColumn(heartbeat, "HeartbeatSequence");
+        var heartbeatAt = SourceColumn(heartbeat, "HeartbeatAt");
+
+        return $"""
+            /* cdc:sqlserver:grant-connector-access */
+            IF USER_ID(N'{connectorPrincipalLiteral}') IS NULL
+            BEGIN
+                THROW 51000, 'CDC SQL Server connector database principal is missing.', 1;
+            END;
+
+            IF DATABASE_PRINCIPAL_ID(N'{gatingRoleLiteral}') IS NULL
+            BEGIN
+                CREATE ROLE {gatingRole};
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.database_role_members role_member
+                INNER JOIN sys.database_principals database_role
+                    ON database_role.principal_id = role_member.role_principal_id
+                INNER JOIN sys.database_principals member_principal
+                    ON member_principal.principal_id = role_member.member_principal_id
+                WHERE database_role.name = N'{gatingRoleLiteral}'
+                AND member_principal.name = N'{connectorPrincipalLiteral}'
+            )
+            BEGIN
+                ALTER ROLE {gatingRole} ADD MEMBER {connectorPrincipal};
+            END;
+
+            GRANT CONNECT TO {connectorPrincipal};
+            GRANT SELECT ON OBJECT::{document.EmittedQuotedTableName} TO {connectorPrincipal};
+            GRANT SELECT ON OBJECT::{documentCache.EmittedQuotedTableName} TO {connectorPrincipal};
+            GRANT SELECT ON OBJECT::{heartbeat.EmittedQuotedTableName} TO {connectorPrincipal};
+            GRANT UPDATE ({heartbeatSequence.EmittedQuotedColumnName}, {heartbeatAt.EmittedQuotedColumnName}) ON OBJECT::{heartbeat.EmittedQuotedTableName} TO {connectorPrincipal};
+            """;
     }
 
     private const string EnableDatabaseCdcSql = """
@@ -1383,6 +1995,421 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ),
         ];
 
+    private static CdcProviderSetupStepResult ConnectorPrincipalAccessResult(
+        CdcSafeName connectorPrincipal,
+        CdcProviderArtifactState state,
+        ConnectorPrincipalAccessInspection access
+    ) =>
+        new(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.Grant,
+                    connectorPrincipal,
+                    state,
+                    access.ObservedValues
+                ),
+            ],
+            grantInventory: access.GrantInventory,
+            diagnostics: access.Diagnostics
+        );
+
+    private static IReadOnlyList<string> MissingRequiredSqlServerConnectorPrivileges(
+        bool hasDatabaseConnect,
+        bool gatingRoleExists,
+        bool gatingRoleMember,
+        bool hasDocumentSelect,
+        bool hasDocumentCacheSelect,
+        bool hasHeartbeatSelect,
+        bool hasHeartbeatSequenceUpdate,
+        bool hasHeartbeatAtUpdate
+    )
+    {
+        List<string> missing = [];
+
+        if (!hasDatabaseConnect)
+        {
+            missing.Add("CONNECT:database");
+        }
+
+        if (!gatingRoleExists)
+        {
+            missing.Add("ROLE:gating-role");
+        }
+
+        if (!gatingRoleMember)
+        {
+            missing.Add("MEMBER:gating-role");
+        }
+
+        if (!hasDocumentSelect)
+        {
+            missing.Add("SELECT:dms.Document");
+        }
+
+        if (!hasDocumentCacheSelect)
+        {
+            missing.Add("SELECT:dms.DocumentCache");
+        }
+
+        if (!hasHeartbeatSelect)
+        {
+            missing.Add("SELECT:dms.CdcHeartbeat");
+        }
+
+        if (!hasHeartbeatSequenceUpdate)
+        {
+            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatSequence");
+        }
+
+        if (!hasHeartbeatAtUpdate)
+        {
+            missing.Add("UPDATE:dms.CdcHeartbeat.HeartbeatAt");
+        }
+
+        return missing;
+    }
+
+    private static IReadOnlyList<CdcProviderDiagnostic> ConnectorPrincipalAccessDiagnostics(
+        CdcSafeName connectorPrincipal,
+        CdcSafeName gatingRoleName,
+        bool connectorExists,
+        bool connectorIsDatabasePrincipal,
+        bool gatingRoleExists,
+        bool gatingRoleIsNormalRole,
+        IReadOnlyList<string> gatingRoleDirectMembers,
+        IReadOnlyList<string> gatingRoleParentRoles,
+        IReadOnlyList<string> gatingRoleOwnedObjects,
+        IReadOnlyList<string> gatingRoleExplicitPermissions,
+        int expectedCaptureInstancesUsingRole,
+        IReadOnlyList<string> unexpectedCaptureInstancesUsingRole,
+        IReadOnlyList<string> disallowedDatabaseRoles,
+        IReadOnlyList<string> disallowedServerRoles,
+        IReadOnlyList<string> ownership,
+        IReadOnlyList<string> missingRequiredPrivileges,
+        bool hasHeartbeatIdUpdate,
+        IReadOnlyList<string> documentWritePrivileges,
+        IReadOnlyList<string> documentCacheWritePrivileges,
+        IReadOnlyList<string> workTablePrivileges,
+        IReadOnlyList<string> extraDmsSelectTables
+    )
+    {
+        List<CdcProviderDiagnostic> diagnostics = [];
+
+        if (!connectorExists || !connectorIsDatabasePrincipal)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_USER_MISSING",
+                    expectedValue: "existing-database-principal",
+                    observedValue: connectorExists ? "not-database-user" : "missing"
+                )
+            );
+        }
+
+        var gatingRoleDirectMemberMismatch =
+            gatingRoleExists
+            && gatingRoleDirectMembers.Count > 0
+            && !gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
+        if (
+            gatingRoleExists
+            && (
+                !gatingRoleIsNormalRole
+                || gatingRoleDirectMemberMismatch
+                || gatingRoleParentRoles.Count > 0
+                || gatingRoleOwnedObjects.Count > 0
+                || gatingRoleExplicitPermissions.Count > 0
+                || expectedCaptureInstancesUsingRole != _captureTableOrder.Count
+                || unexpectedCaptureInstancesUsingRole.Count > 0
+            )
+        )
+        {
+            diagnostics.Add(
+                new CdcProviderDiagnostic(
+                    Code: "CDC_SQLSERVER_GATING_ROLE_MISMATCH",
+                    Category: CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+                    ArtifactKind: CdcProviderArtifactKind.SqlServerGatingRole,
+                    SafeName: gatingRoleName,
+                    ExpectedValue: "normal-role-exact-connector-member-no-ownership-no-permissions-three-captures",
+                    ObservedValue: string.Join(
+                        ";",
+                        new[]
+                        {
+                            gatingRoleIsNormalRole ? null : "not-normal-role",
+                            gatingRoleDirectMemberMismatch
+                                ? $"members:{CsvOrNone(gatingRoleDirectMembers)}"
+                                : null,
+                            gatingRoleParentRoles.Count == 0
+                                ? null
+                                : $"parent_roles:{CsvOrNone(gatingRoleParentRoles)}",
+                            gatingRoleOwnedObjects.Count == 0
+                                ? null
+                                : $"ownership:{CsvOrNone(gatingRoleOwnedObjects)}",
+                            gatingRoleExplicitPermissions.Count == 0
+                                ? null
+                                : $"permissions:{CsvOrNone(gatingRoleExplicitPermissions)}",
+                            expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+                                ? null
+                                : $"expected_capture_count:{expectedCaptureInstancesUsingRole}",
+                            unexpectedCaptureInstancesUsingRole.Count == 0
+                                ? null
+                                : $"unexpected_captures:{CsvOrNone(unexpectedCaptureInstancesUsingRole)}",
+                        }.Where(value => value is not null)
+                    ),
+                    ProviderErrorClass: null,
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                )
+            );
+        }
+
+        if (disallowedDatabaseRoles.Count > 0 || disallowedServerRoles.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_ELEVATED_MEMBERSHIP_MISMATCH",
+                    expectedValue: "no-disallowed-database-or-server-role-membership",
+                    observedValue: $"database={CsvOrNone(disallowedDatabaseRoles)};server={CsvOrNone(disallowedServerRoles)}"
+                )
+            );
+        }
+
+        if (ownership.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_OWNERSHIP_MISMATCH",
+                    expectedValue: "no-schema-or-object-ownership",
+                    observedValue: CsvOrNone(ownership)
+                )
+            );
+        }
+
+        if (missingRequiredPrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING",
+                    expectedValue: "connect-gating-role-source-select-heartbeat-column-update",
+                    observedValue: CsvOrNone(missingRequiredPrivileges)
+                )
+            );
+        }
+
+        if (documentWritePrivileges.Count > 0 || documentCacheWritePrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH",
+                    expectedValue: "no-write-on-dms.Document-or-dms.DocumentCache",
+                    observedValue: $"Document={CsvOrNone(documentWritePrivileges)};DocumentCache={CsvOrNone(documentCacheWritePrivileges)}"
+                )
+            );
+        }
+
+        if (hasHeartbeatIdUpdate)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH",
+                    expectedValue: "UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
+                    observedValue: "HeartbeatId"
+                )
+            );
+        }
+
+        if (extraDmsSelectTables.Count > 0)
+        {
+            diagnostics.Add(
+                ConnectorPrincipalPrivilegeFailure(
+                    connectorPrincipal,
+                    "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH",
+                    expectedValue: "SELECT-only-Document-DocumentCache-CdcHeartbeat",
+                    observedValue: CsvOrNone(extraDmsSelectTables)
+                )
+            );
+        }
+
+        if (workTablePrivileges.Count > 0)
+        {
+            diagnostics.Add(
+                new CdcProviderDiagnostic(
+                    Code: "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH",
+                    Category: CdcProviderDiagnosticCategory.WorkTableGrantViolation,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+                    ArtifactKind: CdcProviderArtifactKind.Grant,
+                    SafeName: connectorPrincipal,
+                    ExpectedValue: "no-dms.DocumentProjectionWork-privileges",
+                    ObservedValue: CsvOrNone(workTablePrivileges),
+                    ProviderErrorClass: null,
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                )
+            );
+        }
+
+        return diagnostics;
+    }
+
+    private static CdcProviderDiagnostic ConnectorPrincipalPrivilegeFailure(
+        CdcSafeName connectorPrincipal,
+        string code,
+        string expectedValue,
+        string observedValue
+    ) =>
+        new(
+            Code: code,
+            Category: CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+            ArtifactKind: CdcProviderArtifactKind.Grant,
+            SafeName: connectorPrincipal,
+            ExpectedValue: expectedValue,
+            ObservedValue: observedValue,
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.FailClosed
+        );
+
+    private static IReadOnlyList<CdcGrantObservation> ConnectorGrantInventory(
+        CdcProviderSetupRequest request,
+        bool hasDatabaseConnect,
+        bool hasGatingRoleMembership,
+        bool hasDocumentSelect,
+        bool hasDocumentCacheSelect,
+        bool hasHeartbeatSelect,
+        bool hasHeartbeatSequenceUpdate,
+        bool hasHeartbeatAtUpdate,
+        bool hasHeartbeatIdUpdate,
+        IReadOnlyList<string> documentWritePrivileges,
+        IReadOnlyList<string> documentCacheWritePrivileges,
+        IReadOnlyList<string> workTablePrivileges
+    )
+    {
+        var connector = request.ConnectorPrincipal.SafePrincipalName;
+        List<CdcGrantObservation> grants = [];
+
+        if (hasDatabaseConnect)
+        {
+            grants.Add(GrantObservation(connector, new CdcSafeName("database.current"), ["CONNECT"]));
+        }
+
+        if (hasGatingRoleMembership)
+        {
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    new CdcSafeName(
+                        $"role.{SafeText(request.ArtifactNames.SqlServer!.GatingRoleName.Value)}"
+                    ),
+                    ["MEMBER"]
+                )
+            );
+        }
+
+        if (hasDocumentSelect || documentWritePrivileges.Count > 0)
+        {
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    SafeName(DmsTableNames.Document),
+                    Privileges(hasDocumentSelect, documentWritePrivileges)
+                )
+            );
+        }
+
+        if (hasDocumentCacheSelect || documentCacheWritePrivileges.Count > 0)
+        {
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    SafeName(DmsTableNames.DocumentCache),
+                    Privileges(hasDocumentCacheSelect, documentCacheWritePrivileges)
+                )
+            );
+        }
+
+        if (hasHeartbeatSelect)
+        {
+            grants.Add(GrantObservation(connector, SafeName(DmsTableNames.CdcHeartbeat), ["SELECT"]));
+        }
+
+        List<DbColumnName> heartbeatUpdateColumns = [];
+        if (hasHeartbeatSequenceUpdate)
+        {
+            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatSequence"));
+        }
+
+        if (hasHeartbeatAtUpdate)
+        {
+            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatAt"));
+        }
+
+        if (hasHeartbeatIdUpdate)
+        {
+            heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatId"));
+        }
+
+        if (heartbeatUpdateColumns.Count > 0)
+        {
+            grants.Add(
+                new CdcGrantObservation(
+                    CdcPrincipalKind.ConnectorPrincipal,
+                    connector,
+                    CdcProviderArtifactKind.Grant,
+                    SafeName(DmsTableNames.CdcHeartbeat),
+                    ["UPDATE"],
+                    heartbeatUpdateColumns
+                )
+            );
+        }
+
+        if (workTablePrivileges.Count > 0)
+        {
+            grants.Add(
+                GrantObservation(
+                    connector,
+                    SafeName(DmsTableNames.DocumentProjectionWork),
+                    workTablePrivileges
+                )
+            );
+        }
+
+        return grants;
+    }
+
+    private static CdcGrantObservation GrantObservation(
+        CdcSafeName connector,
+        CdcSafeName objectName,
+        IReadOnlyList<string> privileges
+    ) =>
+        new(
+            CdcPrincipalKind.ConnectorPrincipal,
+            connector,
+            CdcProviderArtifactKind.Grant,
+            objectName,
+            privileges,
+            []
+        );
+
+    private static IReadOnlyList<string> Privileges(bool includeSelect, IReadOnlyList<string> writePrivileges)
+    {
+        List<string> privileges = [];
+        if (includeSelect)
+        {
+            privileges.Add("SELECT");
+        }
+
+        privileges.AddRange(writePrivileges);
+        return privileges;
+    }
+
     private static CdcProviderSetupStepResult DatabaseCdcResult(
         CdcProviderArtifactState state,
         DatabaseCdcInspection inspection,
@@ -1718,6 +2745,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     private static string EmptyAsNone(string value) =>
         string.IsNullOrWhiteSpace(value) ? "none" : SafeText(value);
 
+    private static IReadOnlyList<string> ReadCsv(
+        IReadOnlyDictionary<string, string?> row,
+        string columnName
+    ) =>
+        ReadRequired(row, columnName)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(SafeText)
+            .ToArray();
+
     private static string CsvOrNone(IEnumerable<string> values)
     {
         var sanitizedValues = values
@@ -1789,6 +2825,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     );
 
     private sealed record RetainedLsnObservation(long RowCount, string MinLsn, string MaxLsn);
+
+    private sealed record ConnectorPrincipalAccessInspection(
+        bool IsExactMatch,
+        bool IsGrantableMissingPrivilege,
+        IReadOnlyDictionary<string, string> ObservedValues,
+        IReadOnlyList<CdcGrantObservation> GrantInventory,
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+    );
 
     private sealed record HeartbeatTableShapeInspection(
         bool IsExactMatch,
