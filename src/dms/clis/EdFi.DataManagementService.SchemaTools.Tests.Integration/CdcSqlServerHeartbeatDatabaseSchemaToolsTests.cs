@@ -43,7 +43,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
-    public async Task It_should_enable_database_cdc_and_create_heartbeat_only_when_opted_in()
+    public async Task MssqlCdcCaptureInstances_should_enable_database_cdc_heartbeat_and_capture_instances_only_when_opted_in()
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -53,10 +53,13 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         TableExists(connection, "CdcHeartbeat")
             .Should()
             .BeFalse("ordinary provisioning must not create CDC heartbeat");
+        AssertNoCaptureInstances(connection);
 
         var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
 
-        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(result.Diagnostics));
         result
             .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
@@ -71,8 +74,14 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
                 observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
                 && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
                 && observation.SafeObservedValues["database_cdc_enabled"] == "True"
-                && observation.SafeObservedValues["capture_instance_count"] == "0"
             );
+        result
+            .ArtifactInventory.Where(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(observation => observation.State == CdcProviderArtifactState.Created);
         result
             .ExpectedMessageKeyColumns.Should()
             .ContainSingle(key =>
@@ -89,7 +98,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         IsDatabaseCdcEnabled(connection).Should().BeTrue();
         ReadProjectionPrerequisites(connection).Should().Be(projectionPrerequisitesBefore);
         AssertHeartbeatTable(connection);
-        AssertNoCaptureInstances(connection);
+        AssertCaptureInstances(connection);
 
         ExecuteNonQuery(connection, result.HeartbeatActionQuery.Sql);
         ReadHeartbeatSnapshot(connection).Should().Be(new HeartbeatSnapshot(1, 1));
@@ -109,10 +118,19 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
 
         var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
-        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(validateResult.Diagnostics));
         validateResult
             .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        validateResult
+            .ArtifactInventory.Where(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(observation => observation.State == CdcProviderArtifactState.Matched);
         ReadHeartbeatSnapshot(connection).Should().Be(beforeValidate);
     }
 
@@ -322,6 +340,125 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         Convert.ToInt64(command.ExecuteScalar()).Should().Be(0);
     }
 
+    private static void AssertCaptureInstances(SqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                capture_info.capture_instance,
+                source_schema.name AS source_schema,
+                source_table.name AS source_name,
+                capture_info.role_name,
+                capture_info.supports_net_changes,
+                COALESCE(capture_info.index_name, N'') AS index_name,
+                COALESCE(capture_info.filegroup_name, N'') AS filegroup_name,
+                capture_info.partition_switch,
+                captured_column.column_name,
+                captured_column.column_ordinal
+            FROM cdc.change_tables capture_info
+            INNER JOIN sys.tables source_table
+                ON source_table.object_id = capture_info.source_object_id
+            INNER JOIN sys.schemas source_schema
+                ON source_schema.schema_id = source_table.schema_id
+            INNER JOIN cdc.captured_columns captured_column
+                ON captured_column.object_id = capture_info.object_id
+            WHERE source_schema.name = N'dms'
+            ORDER BY capture_info.capture_instance, captured_column.column_ordinal;
+            """;
+
+        using var reader = command.ExecuteReader();
+        List<CaptureColumn> rows = [];
+        while (reader.Read())
+        {
+            rows.Add(
+                new CaptureColumn(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetBoolean(4),
+                    reader.GetString(5),
+                    reader.GetString(6),
+                    reader.GetBoolean(7),
+                    reader.GetString(8),
+                    reader.GetInt32(9)
+                )
+            );
+        }
+
+        var captures = rows.GroupBy(row => row.CaptureInstance).ToDictionary(group => group.Key);
+        captures
+            .Keys.Should()
+            .BeEquivalentTo(
+                "dms_binding_document_cache",
+                "dms_binding_document",
+                "dms_binding_cdc_heartbeat"
+            );
+        rows.Select(row => row.SourceName).Should().NotContain("DocumentProjectionWork");
+
+        AssertCapture(
+            captures["dms_binding_document_cache"],
+            sourceName: "DocumentCache",
+            expectedPrimaryKey: "PK_DocumentCache",
+            expectedColumns:
+            [
+                "DocumentId",
+                "DocumentUuid",
+                "ProjectName",
+                "ResourceName",
+                "ResourceVersion",
+                "ContentVersion",
+                "StreamEtag",
+                "LastModifiedAt",
+                "DocumentJson",
+                "ComputedAt",
+            ]
+        );
+        AssertCapture(
+            captures["dms_binding_document"],
+            sourceName: "Document",
+            expectedPrimaryKey: "PK_Document",
+            expectedColumns:
+            [
+                "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
+                "CreatedByOwnershipTokenId",
+                "ContentVersion",
+                "IdentityVersion",
+                "ContentLastModifiedAt",
+                "IdentityLastModifiedAt",
+                "CreatedAt",
+            ]
+        );
+        AssertCapture(
+            captures["dms_binding_cdc_heartbeat"],
+            sourceName: "CdcHeartbeat",
+            expectedPrimaryKey: "PK_CdcHeartbeat",
+            expectedColumns: ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"]
+        );
+    }
+
+    private static void AssertCapture(
+        IEnumerable<CaptureColumn> captureRows,
+        string sourceName,
+        string expectedPrimaryKey,
+        IReadOnlyList<string> expectedColumns
+    )
+    {
+        var rows = captureRows.OrderBy(row => row.ColumnOrdinal).ToArray();
+        var first = rows[0];
+
+        first.SourceSchema.Should().Be("dms");
+        first.SourceName.Should().Be(sourceName);
+        first.RoleName.Should().Be("dms_binding_gate");
+        first.SupportsNetChanges.Should().BeFalse();
+        first.IndexName.Should().Be(expectedPrimaryKey);
+        first.FilegroupName.Should().BeEmpty();
+        first.PartitionSwitch.Should().BeTrue("SQL Server reports 1 for non-partitioned tables");
+        rows.Select(row => row.ColumnName).Should().Equal(expectedColumns);
+    }
+
     private static HeartbeatSnapshot ReadHeartbeatSnapshot(SqlConnection connection)
     {
         using var command = connection.CreateCommand();
@@ -344,9 +481,30 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         command.ExecuteNonQuery();
     }
 
+    private static string DescribeDiagnostics(IReadOnlyList<CdcProviderDiagnostic> diagnostics) =>
+        string.Join(
+            "; ",
+            diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:{diagnostic.ProviderErrorClass}"
+            )
+        );
+
     private sealed record ProjectionPrerequisites(bool ReadCommittedSnapshotOn, int NestedTriggersValue);
 
     private sealed record HeartbeatColumn(string Name, string DataType, bool IsNullable, byte Scale);
 
     private sealed record HeartbeatSnapshot(short HeartbeatId, long HeartbeatSequence);
+
+    private sealed record CaptureColumn(
+        string CaptureInstance,
+        string SourceSchema,
+        string SourceName,
+        string RoleName,
+        bool SupportsNetChanges,
+        string IndexName,
+        string FilegroupName,
+        bool PartitionSwitch,
+        string ColumnName,
+        int ColumnOrdinal
+    );
 }

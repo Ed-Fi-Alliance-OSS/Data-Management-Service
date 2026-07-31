@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -100,6 +101,76 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
             .ExpectedMessageKeyColumns.Should()
             .NotContain(key => key.TableKind == CdcSourceTableKind.CdcHeartbeat);
     }
+
+    [Test]
+    public void MssqlCdcCaptureInstances_should_create_binding_derived_capture_instances_for_the_three_fixed_sources()
+    {
+        var enableCaptureSql = _executor
+            .ExecutedSql.Where(sql => sql.Contains("cdc:sqlserver:enable-capture-instance"))
+            .ToArray();
+
+        enableCaptureSql.Should().HaveCount(3);
+        enableCaptureSql.Should().OnlyContain(sql => !sql.Contains("DocumentProjectionWork"));
+        enableCaptureSql
+            .Should()
+            .Contain(sql =>
+                sql.Contains("@source_schema = N'dms'")
+                && sql.Contains("@source_name = N'DocumentCache'")
+                && sql.Contains("@capture_instance = N'dms_binding_document_cache'")
+                && sql.Contains("@supports_net_changes = 0")
+                && sql.Contains("@role_name = N'dms_binding_gate'")
+                && sql.Contains("@index_name = NULL")
+                && sql.Contains("@filegroup_name = NULL")
+                && sql.Contains("@allow_partition_switch = 0")
+                && sql.Contains(
+                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ProjectName], [ResourceName], [ResourceVersion], [ContentVersion], [StreamEtag], [LastModifiedAt], [DocumentJson], [ComputedAt]'"
+                )
+            );
+        enableCaptureSql
+            .Should()
+            .Contain(sql =>
+                sql.Contains("@source_name = N'Document'")
+                && sql.Contains("@capture_instance = N'dms_binding_document'")
+                && sql.Contains(
+                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [IdentityVersion], [ContentLastModifiedAt], [IdentityLastModifiedAt], [CreatedAt]'"
+                )
+            );
+        enableCaptureSql
+            .Should()
+            .Contain(sql =>
+                sql.Contains("@source_name = N'CdcHeartbeat'")
+                && sql.Contains("@capture_instance = N'dms_binding_cdc_heartbeat'")
+                && sql.Contains(
+                    "@captured_column_list = N'[HeartbeatId], [HeartbeatSequence], [HeartbeatAt]'"
+                )
+            );
+
+        _result
+            .ArtifactInventory.Where(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(observation => observation.State == CdcProviderArtifactState.Created);
+        _result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_cache"
+                && observation.SafeObservedValues["source_object"] == "dms.DocumentCache"
+                && observation.SafeObservedValues["role_name"] == "dms_binding_gate"
+                && observation.SafeObservedValues["supports_net_changes"] == "False"
+                && observation.SafeObservedValues["source_index"] == "PK_DocumentCache"
+                && observation.SafeObservedValues["captured_column_count"] == "10"
+            );
+        _result
+            .ProviderHistoryObservations.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
+                && observation.SafeObservedValues["heartbeat_capture_visible"] == "True"
+            );
+    }
 }
 
 [TestFixture]
@@ -133,9 +204,13 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
-    public async Task It_should_exact_match_existing_database_cdc_and_heartbeat_without_writes()
+    public async Task MssqlCdcCaptureInstances_should_exact_match_existing_database_cdc_heartbeat_and_capture_instances_without_writes()
     {
-        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase();
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected()
+        );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
         var result = await service.SetupAsync(
@@ -149,6 +224,13 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         result
             .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        result
+            .ArtifactInventory.Where(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(observation => observation.State == CdcProviderArtifactState.Matched);
         executor.ExecutedSql.Should().BeEmpty();
     }
 
@@ -180,12 +262,12 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     public async Task It_should_report_disabled_stopped_or_failed_jobs_without_repairing_them()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
-            captureInstanceCount: 3,
             captureJobPresent: true,
             cleanupJobPresent: true,
             captureJobEnabled: "False",
             captureJobRunning: "False",
-            captureJobLastRunStatus: "0"
+            captureJobLastRunStatus: "0",
+            captureInstances: SqlServerCaptureInstanceTestData.Expected()
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
@@ -223,7 +305,10 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
             readCommittedSnapshotOn: false,
-            nestedTriggersValue: "0"
+            nestedTriggersValue: "0",
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected()
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
@@ -249,6 +334,127 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             );
         executor.ExecutedSql.Should().BeEmpty();
     }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_capture_instances_are_missing()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase();
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document"
+                && observation.State == CdcProviderArtifactState.Missing
+            );
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISSING"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_capture_instance_metadata_mismatches()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances:
+            [
+                RecordingSqlServerCaptureInstance.Expected(
+                    CdcSourceTableKind.DocumentCache,
+                    supportsNetChanges: true
+                ),
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.Document),
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.CdcHeartbeat),
+            ]
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_cache"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["supports_net_changes"] == "True"
+            );
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_document_projection_work_is_captured()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData
+                .Expected()
+                .Append(RecordingSqlServerCaptureInstance.WorkTable())
+                .ToArray()
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_WORK_TABLE_CAPTURE_FORBIDDEN"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableCaptureViolation
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            );
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_projection_work"
+                && observation.State == CdcProviderArtifactState.Mismatched
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+}
+
+internal static class SqlServerCaptureInstanceTestData
+{
+    internal static IReadOnlyList<RecordingSqlServerCaptureInstance> Expected() =>
+        [
+            RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.DocumentCache),
+            RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.Document),
+            RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.CdcHeartbeat),
+        ];
 }
 
 internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecutor
@@ -258,7 +464,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private bool _heartbeatSingletonExists;
     private readonly bool _readCommittedSnapshotOn;
     private readonly string _nestedTriggersValue;
-    private readonly int _captureInstanceCount;
+    private int _captureInstanceCount;
     private readonly bool _captureJobPresent;
     private readonly bool _cleanupJobPresent;
     private readonly string _captureJobEnabled;
@@ -267,6 +473,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly string _cleanupJobEnabled;
     private readonly string _cleanupJobRunning;
     private readonly string _cleanupJobLastRunStatus;
+    private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
 
     public RecordingSqlServerCdcExecutor(
         bool databaseCdcEnabled = false,
@@ -282,7 +489,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string captureJobLastRunStatus = "",
         string cleanupJobEnabled = "True",
         string cleanupJobRunning = "False",
-        string cleanupJobLastRunStatus = ""
+        string cleanupJobLastRunStatus = "",
+        IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
@@ -290,7 +498,11 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _heartbeatSingletonExists = heartbeatSingletonExists;
         _readCommittedSnapshotOn = readCommittedSnapshotOn;
         _nestedTriggersValue = nestedTriggersValue;
-        _captureInstanceCount = captureInstanceCount;
+        _captureInstances = (captureInstances ?? []).ToDictionary(
+            capture => capture.CaptureInstanceName.Value,
+            StringComparer.Ordinal
+        );
+        _captureInstanceCount = Math.Max(captureInstanceCount, _captureInstances.Count);
         _captureJobPresent = captureJobPresent;
         _cleanupJobPresent = cleanupJobPresent;
         _captureJobEnabled = captureJobEnabled;
@@ -314,7 +526,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string captureJobLastRunStatus = "",
         string cleanupJobEnabled = "True",
         string cleanupJobRunning = "False",
-        string cleanupJobLastRunStatus = ""
+        string cleanupJobLastRunStatus = "",
+        IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null
     ) =>
         new(
             databaseCdcEnabled: true,
@@ -330,7 +543,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             captureJobLastRunStatus: captureJobLastRunStatus,
             cleanupJobEnabled: cleanupJobEnabled,
             cleanupJobRunning: cleanupJobRunning,
-            cleanupJobLastRunStatus: cleanupJobLastRunStatus
+            cleanupJobLastRunStatus: cleanupJobLastRunStatus,
+            captureInstances: captureInstances
         );
 
     public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
@@ -351,6 +565,13 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         if (sql.Contains("INSERT INTO [dms].[CdcHeartbeat]"))
         {
             _heartbeatSingletonExists = true;
+        }
+
+        if (sql.Contains("cdc:sqlserver:enable-capture-instance"))
+        {
+            var captureInstance = RecordingSqlServerCaptureInstance.FromEnableSql(sql);
+            _captureInstances[captureInstance.CaptureInstanceName.Value] = captureInstance;
+            _captureInstanceCount = Math.Max(_captureInstanceCount, _captureInstances.Count);
         }
 
         return Task.CompletedTask;
@@ -403,6 +624,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
                 ),
             ],
             var text when text.Contains("cdc:sqlserver:source-inventory") => SourceInventoryRows(),
+            var text when text.Contains("cdc:sqlserver:capture-instances") => CaptureInstanceRows(),
             _ => throw new InvalidOperationException($"Unexpected SQL Server CDC query: {sql}"),
         };
 
@@ -510,6 +732,174 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         return rows;
     }
 
+    private IReadOnlyList<IReadOnlyDictionary<string, string?>> CaptureInstanceRows()
+    {
+        List<IReadOnlyDictionary<string, string?>> rows = [];
+        foreach (
+            var capture in _captureInstances.Values.OrderBy(capture => capture.CaptureInstanceName.Value)
+        )
+        {
+            rows.AddRange(
+                capture.CapturedColumns.Select(
+                    (column, index) =>
+                        Row(
+                            ("capture_instance", capture.CaptureInstanceName.Value),
+                            ("source_schema", capture.SourceTable.Schema.Value),
+                            ("source_name", capture.SourceTable.Name),
+                            ("table_kind", capture.TableKindToken),
+                            ("expected_capture_instance_for_source", ""),
+                            ("expected_source_schema", ""),
+                            ("expected_source_name", ""),
+                            ("role_name", capture.GatingRoleName.Value),
+                            ("supports_net_changes", capture.SupportsNetChanges.ToString()),
+                            ("has_drop_pending", capture.HasDropPending.ToString()),
+                            ("index_name", capture.IndexName),
+                            ("filegroup_name", capture.FilegroupName),
+                            ("partition_switch", capture.PartitionSwitch.ToString()),
+                            ("source_is_partitioned", capture.SourceIsPartitioned.ToString()),
+                            ("change_table", $"cdc.{capture.CaptureInstanceName.Value}_CT"),
+                            ("column_name", column),
+                            ("column_ordinal", (index + 1).ToString())
+                        )
+                )
+            );
+        }
+
+        return rows;
+    }
+
     private static IReadOnlyDictionary<string, string?> Row(params (string Key, string? Value)[] values) =>
         values.ToDictionary(value => value.Key, value => value.Value);
+}
+
+internal sealed record RecordingSqlServerCaptureInstance(
+    string TableKindToken,
+    DbTableName SourceTable,
+    CdcSafeName CaptureInstanceName,
+    CdcSafeName GatingRoleName,
+    IReadOnlyList<string> CapturedColumns,
+    bool SupportsNetChanges = false,
+    bool HasDropPending = false,
+    string IndexName = "",
+    string FilegroupName = "",
+    bool PartitionSwitch = true,
+    bool SourceIsPartitioned = false
+)
+{
+    public static RecordingSqlServerCaptureInstance Expected(
+        CdcSourceTableKind tableKind,
+        string? captureInstanceName = null,
+        string gatingRoleName = "dms_binding_gate",
+        IReadOnlyList<string>? capturedColumns = null,
+        bool supportsNetChanges = false,
+        bool hasDropPending = false,
+        string? indexName = null,
+        string filegroupName = "",
+        bool partitionSwitch = true,
+        bool sourceIsPartitioned = false
+    )
+    {
+        var table = CdcProviderSetupContractTestData
+            .BuildSqlServerRequiredSourceInventory()
+            .Single(table => table.TableKind == tableKind);
+
+        return new RecordingSqlServerCaptureInstance(
+            SourceTableKindToken(tableKind),
+            table.TableName,
+            new CdcSafeName(captureInstanceName ?? DefaultCaptureInstanceName(tableKind)),
+            new CdcSafeName(gatingRoleName),
+            capturedColumns ?? table.Columns.Select(column => column.ColumnName.Value).ToArray(),
+            supportsNetChanges,
+            hasDropPending,
+            indexName ?? ExpectedPrimaryKeyName(tableKind),
+            filegroupName,
+            partitionSwitch,
+            sourceIsPartitioned
+        );
+    }
+
+    public static RecordingSqlServerCaptureInstance WorkTable() =>
+        new(
+            "document_projection_work",
+            DmsTableNames.DocumentProjectionWork,
+            new CdcSafeName("dms_binding_document_projection_work"),
+            new CdcSafeName("dms_binding_gate"),
+            ["DocumentId", "RequiredContentVersion"],
+            IndexName: "PK_DocumentProjectionWork"
+        );
+
+    public static RecordingSqlServerCaptureInstance FromEnableSql(string sql)
+    {
+        var tableKind = sql switch
+        {
+            var text when text.Contains("@source_name = N'DocumentCache'") =>
+                CdcSourceTableKind.DocumentCache,
+            var text when text.Contains("@source_name = N'Document'") => CdcSourceTableKind.Document,
+            var text when text.Contains("@source_name = N'CdcHeartbeat'") => CdcSourceTableKind.CdcHeartbeat,
+            _ => throw new InvalidOperationException($"Could not identify CDC source table from SQL: {sql}"),
+        };
+
+        return Expected(
+            tableKind,
+            ExtractSqlLiteral(sql, "@capture_instance = N'"),
+            ExtractSqlLiteral(sql, "@role_name = N'")
+        );
+    }
+
+    private static string ExtractSqlLiteral(string sql, string marker)
+    {
+        var start = sql.IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            throw new InvalidOperationException($"Expected marker '{marker}' in SQL.");
+        }
+
+        start += marker.Length;
+        var end = sql.IndexOf('\'', start);
+        if (end < 0)
+        {
+            throw new InvalidOperationException($"Expected SQL literal terminator after marker '{marker}'.");
+        }
+
+        return sql[start..end];
+    }
+
+    private static string DefaultCaptureInstanceName(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => "dms_binding_document",
+            CdcSourceTableKind.DocumentCache => "dms_binding_document_cache",
+            CdcSourceTableKind.CdcHeartbeat => "dms_binding_cdc_heartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    private static string ExpectedPrimaryKeyName(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => "PK_Document",
+            CdcSourceTableKind.DocumentCache => "PK_DocumentCache",
+            CdcSourceTableKind.CdcHeartbeat => "PK_CdcHeartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    private static string SourceTableKindToken(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => "document",
+            CdcSourceTableKind.DocumentCache => "document_cache",
+            CdcSourceTableKind.CdcHeartbeat => "cdc_heartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
 }

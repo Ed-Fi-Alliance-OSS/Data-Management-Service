@@ -14,6 +14,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 {
     private static readonly ISqlDialect _dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
     private static readonly CdcSafeName _databaseCdcSafeName = new("sqlserver_database_cdc");
+    private static readonly CdcSafeName _captureInstancesSafeName = new("sqlserver_cdc_capture_instances");
+
+    private static readonly IReadOnlyList<CdcSourceTableKind> _captureTableOrder =
+    [
+        CdcSourceTableKind.DocumentCache,
+        CdcSourceTableKind.Document,
+        CdcSourceTableKind.CdcHeartbeat,
+    ];
 
     public CdcProvider Provider => CdcProvider.SqlServer;
 
@@ -44,6 +52,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 new CdcSafeName("sqlserver_cdc_source_inventory"),
                 canCreateInInitialSetup: false,
                 ExecuteSourceInventoryAsync
+            ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.SqlServerCaptureInstance,
+                _captureInstancesSafeName,
+                canCreateInInitialSetup: true,
+                ExecuteCaptureInstancesAsync
             ),
         ];
     }
@@ -271,6 +285,76 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             return SetupPrincipalFailure(
                 CdcProviderArtifactKind.SourceTable,
                 new CdcSafeName("sqlserver_cdc_source_inventory"),
+                exception
+            );
+        }
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteCaptureInstancesAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.SqlServerCaptureInstance,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        try
+        {
+            var inspection = await InspectCaptureInstancesAsync(executor, context.Request, cancellationToken)
+                .ConfigureAwait(false);
+            var missingKinds = inspection
+                .ExpectedInstances.Where(capture => !capture.Exists)
+                .Select(capture => capture.TableKind)
+                .ToArray();
+
+            if (missingKinds.Length > 0)
+            {
+                if (
+                    context.Mode == CdcProviderSetupStepMode.ExactMatchOnly
+                    || inspection.HasMismatchedExistingArtifacts
+                )
+                {
+                    return CaptureInstancesResult(inspection, createdKinds: []);
+                }
+
+                foreach (var tableKind in _captureTableOrder.Where(missingKinds.Contains))
+                {
+                    await executor
+                        .ExecuteNonQueryAsync(
+                            EnableCaptureInstanceSql(context.Request, tableKind),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+
+                inspection = await InspectCaptureInstancesAsync(executor, context.Request, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return CaptureInstancesResult(inspection, missingKinds);
+        }
+        catch (DbException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.SqlServerCaptureInstance,
+                _captureInstancesSafeName,
+                exception
+            );
+        }
+        catch (InvalidOperationException exception)
+        {
+            return SetupPrincipalFailure(
+                CdcProviderArtifactKind.SqlServerCaptureInstance,
+                _captureInstancesSafeName,
                 exception
             );
         }
@@ -654,6 +738,513 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ORDER BY expected_tables.table_order, column_info.column_id;
             """;
     }
+
+    internal static string EnableCaptureInstanceSql(
+        CdcProviderSetupRequest request,
+        CdcSourceTableKind tableKind
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var sqlServerNames = request.ArtifactNames.SqlServer!;
+        var sourceTable = SourceTable(request, tableKind);
+        var captureInstanceName = sqlServerNames.CaptureInstanceNames[tableKind];
+        var capturedColumns = string.Join(
+            ", ",
+            sourceTable.Columns.Select(column => column.EmittedQuotedColumnName)
+        );
+
+        return $"""
+            /* cdc:sqlserver:enable-capture-instance */
+            EXEC sys.sp_cdc_enable_table
+                @source_schema = N'{EscapeSqlLiteral(sourceTable.TableName.Schema.Value)}',
+                @source_name = N'{EscapeSqlLiteral(sourceTable.TableName.Name)}',
+                @capture_instance = N'{EscapeSqlLiteral(captureInstanceName.Value)}',
+                @supports_net_changes = 0,
+                @role_name = N'{EscapeSqlLiteral(sqlServerNames.GatingRoleName.Value)}',
+                @index_name = NULL,
+                @captured_column_list = N'{EscapeSqlLiteral(capturedColumns)}',
+                @filegroup_name = NULL,
+                @allow_partition_switch = 0;
+            """;
+    }
+
+    private static async Task<SqlServerCaptureInstancesInspection> InspectCaptureInstancesAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(CaptureInstancesSql(request), cancellationToken)
+            .ConfigureAwait(false);
+        var rowsByCaptureInstance = rows.GroupBy(row => ReadRequired(row, "capture_instance"))
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var expectedDefinitions = _captureTableOrder
+            .Select(kind => ExpectedCaptureDefinition(request, kind))
+            .ToArray();
+        var expectedCaptureNames = expectedDefinitions
+            .Select(definition => definition.CaptureInstanceName.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        List<SqlServerCaptureInstanceInspection> expectedInstances = [];
+        foreach (var definition in expectedDefinitions)
+        {
+            expectedInstances.Add(
+                rowsByCaptureInstance.TryGetValue(definition.CaptureInstanceName.Value, out var captureRows)
+                    ? ReadExpectedCaptureInstance(definition, captureRows)
+                    : MissingCaptureInstance(definition)
+            );
+        }
+
+        List<CdcProviderArtifactObservation> unexpectedArtifacts = [];
+        List<CdcProviderDiagnostic> diagnostics = [];
+        foreach (
+            var unexpectedRows in rowsByCaptureInstance
+                .Where(group => !expectedCaptureNames.Contains(group.Key))
+                .Select(group => group.Value)
+        )
+        {
+            var unexpected = ReadUnexpectedCaptureInstance(unexpectedRows);
+            unexpectedArtifacts.Add(unexpected.Artifact);
+            diagnostics.AddRange(unexpected.Diagnostics);
+        }
+
+        return new SqlServerCaptureInstancesInspection(expectedInstances, unexpectedArtifacts, diagnostics);
+    }
+
+    private static string CaptureInstancesSql(CdcProviderSetupRequest request)
+    {
+        var expectedValues = string.Join(
+            ",\n                    ",
+            _captureTableOrder.Select(
+                (kind, index) =>
+                {
+                    var sourceTable = SourceTable(request, kind);
+                    var captureInstance = request.ArtifactNames.SqlServer!.CaptureInstanceNames[kind];
+
+                    return $"({index + 1}, N'{CaptureTableKindToken(kind)}', N'{EscapeSqlLiteral(sourceTable.TableName.Schema.Value)}', N'{EscapeSqlLiteral(sourceTable.TableName.Name)}', N'{EscapeSqlLiteral(captureInstance.Value)}')";
+                }
+            )
+        );
+        var workTableSchema = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Schema.Value);
+        var workTableName = EscapeSqlLiteral(DmsTableNames.DocumentProjectionWork.Name);
+
+        return $"""
+            /* cdc:sqlserver:capture-instances */
+            IF OBJECT_ID(N'cdc.change_tables', N'U') IS NULL
+            BEGIN
+                SELECT
+                    CAST(NULL AS nvarchar(128)) AS capture_instance,
+                    CAST(NULL AS nvarchar(128)) AS source_schema,
+                    CAST(NULL AS nvarchar(128)) AS source_name,
+                    CAST(NULL AS nvarchar(128)) AS table_kind,
+                    CAST(NULL AS nvarchar(128)) AS expected_capture_instance_for_source,
+                    CAST(NULL AS nvarchar(128)) AS expected_source_schema,
+                    CAST(NULL AS nvarchar(128)) AS expected_source_name,
+                    CAST(NULL AS nvarchar(128)) AS role_name,
+                    CAST(NULL AS nvarchar(5)) AS supports_net_changes,
+                    CAST(NULL AS nvarchar(5)) AS has_drop_pending,
+                    CAST(NULL AS nvarchar(128)) AS index_name,
+                    CAST(NULL AS nvarchar(128)) AS filegroup_name,
+                    CAST(NULL AS nvarchar(5)) AS partition_switch,
+                    CAST(NULL AS nvarchar(5)) AS source_is_partitioned,
+                    CAST(NULL AS nvarchar(260)) AS change_table,
+                    CAST(NULL AS nvarchar(128)) AS column_name,
+                    CAST(NULL AS nvarchar(20)) AS column_ordinal
+                WHERE 1 = 0;
+            END
+            ELSE
+            BEGIN
+                WITH expected_capture_instances(table_order, table_kind, source_schema, source_name, capture_instance) AS (
+                    SELECT *
+                    FROM (VALUES
+                    {expectedValues}
+                    ) AS expected(table_order, table_kind, source_schema, source_name, capture_instance)
+                )
+                SELECT
+                    capture_info.capture_instance,
+                    source_schema.name AS source_schema,
+                    source_table.name AS source_name,
+                    COALESCE(
+                        expected_by_instance.table_kind,
+                        expected_by_source.table_kind,
+                        CASE
+                            WHEN source_schema.name = N'{workTableSchema}'
+                                AND source_table.name = N'{workTableName}'
+                                THEN N'document_projection_work'
+                            ELSE N'unexpected'
+                        END
+                    ) AS table_kind,
+                    COALESCE(expected_by_source.capture_instance, N'') AS expected_capture_instance_for_source,
+                    COALESCE(expected_by_instance.source_schema, expected_by_source.source_schema, N'') AS expected_source_schema,
+                    COALESCE(expected_by_instance.source_name, expected_by_source.source_name, N'') AS expected_source_name,
+                    COALESCE(capture_info.role_name, N'') AS role_name,
+                    CONVERT(nvarchar(5), capture_info.supports_net_changes) AS supports_net_changes,
+                    N'False' AS has_drop_pending,
+                    COALESCE(capture_info.index_name, N'') AS index_name,
+                    COALESCE(capture_info.filegroup_name, N'') AS filegroup_name,
+                    CONVERT(nvarchar(5), capture_info.partition_switch) AS partition_switch,
+                    CONVERT(nvarchar(5), CASE WHEN EXISTS (
+                        SELECT 1
+                        FROM sys.indexes source_index
+                        INNER JOIN sys.partition_schemes partition_scheme
+                            ON partition_scheme.data_space_id = source_index.data_space_id
+                        WHERE source_index.object_id = source_table.object_id
+                        AND source_index.index_id IN (0, 1)
+                    ) THEN 1 ELSE 0 END) AS source_is_partitioned,
+                    OBJECT_SCHEMA_NAME(capture_info.object_id) + N'.' + OBJECT_NAME(capture_info.object_id) AS change_table,
+                    COALESCE(captured_column.column_name, N'') AS column_name,
+                    COALESCE(CONVERT(nvarchar(20), captured_column.column_ordinal), N'0') AS column_ordinal
+                FROM cdc.change_tables capture_info
+                INNER JOIN sys.tables source_table
+                    ON source_table.object_id = capture_info.source_object_id
+                INNER JOIN sys.schemas source_schema
+                    ON source_schema.schema_id = source_table.schema_id
+                LEFT JOIN cdc.captured_columns captured_column
+                    ON captured_column.object_id = capture_info.object_id
+                LEFT JOIN expected_capture_instances expected_by_instance
+                    ON expected_by_instance.capture_instance = capture_info.capture_instance
+                LEFT JOIN expected_capture_instances expected_by_source
+                    ON expected_by_source.source_schema = source_schema.name
+                    AND expected_by_source.source_name = source_table.name
+                WHERE expected_by_instance.capture_instance IS NOT NULL
+                OR expected_by_source.source_name IS NOT NULL
+                OR (
+                    source_schema.name = N'{workTableSchema}'
+                    AND source_table.name = N'{workTableName}'
+                )
+                ORDER BY
+                    COALESCE(expected_by_instance.table_order, expected_by_source.table_order, 1000),
+                    capture_info.capture_instance,
+                    captured_column.column_ordinal;
+            END;
+            """;
+    }
+
+    private static ExpectedSqlServerCaptureDefinition ExpectedCaptureDefinition(
+        CdcProviderSetupRequest request,
+        CdcSourceTableKind tableKind
+    )
+    {
+        var sourceTable = SourceTable(request, tableKind);
+
+        return new ExpectedSqlServerCaptureDefinition(
+            tableKind,
+            sourceTable,
+            request.ArtifactNames.SqlServer!.CaptureInstanceNames[tableKind],
+            request.ArtifactNames.SqlServer.GatingRoleName
+        );
+    }
+
+    private static SqlServerCaptureInstanceInspection MissingCaptureInstance(
+        ExpectedSqlServerCaptureDefinition definition
+    ) =>
+        new(
+            definition.TableKind,
+            definition.CaptureInstanceName,
+            Exists: false,
+            IsExactMatch: false,
+            new Dictionary<string, string>
+            {
+                ["capture_instance"] = SafeText(definition.CaptureInstanceName.Value),
+                ["source_table_kind"] = CaptureTableKindToken(definition.TableKind),
+                ["source_object"] = SafeName(definition.ExpectedSourceTable.TableName).Value,
+                ["capture_instance_state"] = "missing",
+            }
+        );
+
+    private static SqlServerCaptureInstanceInspection ReadExpectedCaptureInstance(
+        ExpectedSqlServerCaptureDefinition definition,
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows
+    )
+    {
+        var first = rows[0];
+        var captureInstanceName = ReadRequired(first, "capture_instance");
+        var sourceSchema = ReadRequired(first, "source_schema");
+        var sourceName = ReadRequired(first, "source_name");
+        var roleName = ReadOptional(first, "role_name");
+        var supportsNetChanges = ReadBool(first, "supports_net_changes");
+        var hasDropPending = ReadBool(first, "has_drop_pending");
+        var sourceIndex = ReadOptional(first, "index_name");
+        var filegroupName = ReadOptional(first, "filegroup_name");
+        var partitionSwitch = ReadBool(first, "partition_switch");
+        var sourceIsPartitioned = ReadBool(first, "source_is_partitioned");
+        var capturedColumns = CapturedColumnNames(rows);
+        var expectedColumns = definition
+            .ExpectedSourceTable.Columns.Select(column => column.ColumnName.Value)
+            .ToArray();
+
+        var sourceMatches =
+            string.Equals(
+                sourceSchema,
+                definition.ExpectedSourceTable.TableName.Schema.Value,
+                StringComparison.Ordinal
+            )
+            && string.Equals(
+                sourceName,
+                definition.ExpectedSourceTable.TableName.Name,
+                StringComparison.Ordinal
+            );
+        var captureInstanceMatches = string.Equals(
+            captureInstanceName,
+            definition.CaptureInstanceName.Value,
+            StringComparison.Ordinal
+        );
+        var roleMatches = string.Equals(roleName, definition.GatingRoleName.Value, StringComparison.Ordinal);
+        var sourceIndexMatches =
+            string.IsNullOrWhiteSpace(sourceIndex)
+            || string.Equals(
+                sourceIndex,
+                ExpectedPrimaryKeyName(definition.TableKind),
+                StringComparison.Ordinal
+            );
+        var partitionSwitchMatches = !sourceIsPartitioned || !partitionSwitch;
+        var capturedColumnsMatch = capturedColumns.SequenceEqual(expectedColumns, StringComparer.Ordinal);
+
+        return new SqlServerCaptureInstanceInspection(
+            definition.TableKind,
+            definition.CaptureInstanceName,
+            Exists: true,
+            sourceMatches
+                && captureInstanceMatches
+                && roleMatches
+                && !supportsNetChanges
+                && !hasDropPending
+                && sourceIndexMatches
+                && string.IsNullOrWhiteSpace(filegroupName)
+                && partitionSwitchMatches
+                && capturedColumnsMatch,
+            CaptureInstanceObservedValues(
+                captureInstanceName,
+                definition,
+                sourceSchema,
+                sourceName,
+                roleName,
+                supportsNetChanges,
+                hasDropPending,
+                sourceIndex,
+                filegroupName,
+                partitionSwitch,
+                sourceIsPartitioned,
+                ReadOptional(first, "change_table"),
+                capturedColumns,
+                expectedColumns
+            )
+        );
+    }
+
+    private static UnexpectedSqlServerCaptureInstance ReadUnexpectedCaptureInstance(
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows
+    )
+    {
+        var first = rows[0];
+        var captureInstanceName = ReadRequired(first, "capture_instance");
+        var sourceSchema = ReadRequired(first, "source_schema");
+        var sourceName = ReadRequired(first, "source_name");
+        var tableKind = ReadRequired(first, "table_kind");
+        var capturedColumns = CapturedColumnNames(rows);
+        var safeName = new CdcSafeName(SafeText(captureInstanceName));
+        var observedValues = new Dictionary<string, string>
+        {
+            ["capture_instance"] = SafeText(captureInstanceName),
+            ["source_table_kind"] = SafeText(tableKind),
+            ["source_object"] = SafeText($"{sourceSchema}.{sourceName}"),
+            ["role_name"] = SafeText(ReadOptional(first, "role_name")),
+            ["supports_net_changes"] = ReadBool(first, "supports_net_changes").ToString(),
+            ["source_index"] = EmptyAsNone(ReadOptional(first, "index_name")),
+            ["filegroup_name"] = EmptyAsNone(ReadOptional(first, "filegroup_name")),
+            ["partition_switch"] = ReadBool(first, "partition_switch").ToString(),
+            ["source_is_partitioned"] = ReadBool(first, "source_is_partitioned").ToString(),
+            ["change_table"] = SafeText(ReadOptional(first, "change_table")),
+            ["captured_columns"] = CsvOrNone(capturedColumns),
+        };
+
+        var artifact = new CdcProviderArtifactObservation(
+            CdcProviderArtifactKind.SqlServerCaptureInstance,
+            safeName,
+            CdcProviderArtifactState.Mismatched,
+            observedValues
+        );
+
+        if (!string.Equals(tableKind, "document_projection_work", StringComparison.Ordinal))
+        {
+            return new UnexpectedSqlServerCaptureInstance(artifact, []);
+        }
+
+        return new UnexpectedSqlServerCaptureInstance(
+            artifact,
+            [
+                new CdcProviderDiagnostic(
+                    Code: "CDC_SQLSERVER_WORK_TABLE_CAPTURE_FORBIDDEN",
+                    Category: CdcProviderDiagnosticCategory.WorkTableCaptureViolation,
+                    Severity: CdcProviderDiagnosticSeverity.Error,
+                    PrincipalKind: CdcPrincipalKind.None,
+                    ArtifactKind: CdcProviderArtifactKind.SqlServerCaptureInstance,
+                    SafeName: safeName,
+                    ExpectedValue: "dms.DocumentProjectionWork-not-captured",
+                    ObservedValue: "captured",
+                    ProviderErrorClass: null,
+                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                ),
+            ]
+        );
+    }
+
+    private static CdcProviderSetupStepResult CaptureInstancesResult(
+        SqlServerCaptureInstancesInspection inspection,
+        IReadOnlyCollection<CdcSourceTableKind> createdKinds
+    )
+    {
+        var created = createdKinds.ToHashSet();
+        var artifactInventory = inspection
+            .ExpectedInstances.Select(capture => new CdcProviderArtifactObservation(
+                CdcProviderArtifactKind.SqlServerCaptureInstance,
+                capture.CaptureInstanceName,
+                CaptureInstanceState(capture, created),
+                capture.ObservedValues
+            ))
+            .Concat(inspection.UnexpectedArtifacts)
+            .ToArray();
+
+        return new CdcProviderSetupStepResult(
+            artifactInventory: artifactInventory,
+            providerHistoryObservations: artifactInventory
+                .Select(observation => new CdcProviderHistoryObservation(
+                    observation.ArtifactKind,
+                    observation.SafeArtifactName,
+                    observation.SafeObservedValues,
+                    observation.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
+                        ? CdcProviderRetryContinuityClassification.None
+                        : CdcProviderRetryContinuityClassification.FailClosed
+                ))
+                .ToArray(),
+            diagnostics: inspection.Diagnostics
+        );
+    }
+
+    private static CdcProviderArtifactState CaptureInstanceState(
+        SqlServerCaptureInstanceInspection capture,
+        HashSet<CdcSourceTableKind> createdKinds
+    )
+    {
+        if (!capture.Exists)
+        {
+            return CdcProviderArtifactState.Missing;
+        }
+
+        if (!capture.IsExactMatch)
+        {
+            return CdcProviderArtifactState.Mismatched;
+        }
+
+        return createdKinds.Contains(capture.TableKind)
+            ? CdcProviderArtifactState.Created
+            : CdcProviderArtifactState.Matched;
+    }
+
+    private static IReadOnlyList<string> CapturedColumnNames(
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows
+    )
+    {
+        List<(string ColumnName, int Ordinal)> capturedColumns = [];
+        foreach (var row in rows)
+        {
+            var columnName = ReadOptional(row, "column_name");
+            if (string.IsNullOrWhiteSpace(columnName))
+            {
+                continue;
+            }
+
+            capturedColumns.Add((columnName, ReadInt32(row, "column_ordinal")));
+        }
+
+        return capturedColumns
+            .OrderBy(column => column.Ordinal)
+            .Select(column => column.ColumnName)
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, string> CaptureInstanceObservedValues(
+        string captureInstanceName,
+        ExpectedSqlServerCaptureDefinition definition,
+        string sourceSchema,
+        string sourceName,
+        string roleName,
+        bool supportsNetChanges,
+        bool hasDropPending,
+        string sourceIndex,
+        string filegroupName,
+        bool partitionSwitch,
+        bool sourceIsPartitioned,
+        string changeTable,
+        IReadOnlyList<string> capturedColumns,
+        IReadOnlyList<string> expectedColumns
+    ) =>
+        new Dictionary<string, string>
+        {
+            ["capture_instance"] = SafeText(captureInstanceName),
+            ["expected_capture_instance"] = SafeText(definition.CaptureInstanceName.Value),
+            ["source_table_kind"] = CaptureTableKindToken(definition.TableKind),
+            ["source_object"] = SafeText($"{sourceSchema}.{sourceName}"),
+            ["expected_source_object"] = SafeName(definition.ExpectedSourceTable.TableName).Value,
+            ["role_name"] = EmptyAsNone(roleName),
+            ["expected_role_name"] = SafeText(definition.GatingRoleName.Value),
+            ["supports_net_changes"] = supportsNetChanges.ToString(),
+            ["expected_supports_net_changes"] = "False",
+            ["has_drop_pending"] = hasDropPending.ToString(),
+            ["source_index"] = EmptyAsNone(sourceIndex),
+            ["expected_source_index"] = $"none-or-{ExpectedPrimaryKeyName(definition.TableKind)}",
+            ["filegroup_name"] = EmptyAsNone(filegroupName),
+            ["expected_filegroup_name"] = "none",
+            ["partition_switch"] = partitionSwitch.ToString(),
+            ["source_is_partitioned"] = sourceIsPartitioned.ToString(),
+            ["partition_switch_validation"] = PartitionSwitchValidation(sourceIsPartitioned, partitionSwitch),
+            ["requested_partition_switch"] = "False",
+            ["change_table"] = SafeText(changeTable),
+            ["captured_columns"] = CsvOrNone(capturedColumns),
+            ["expected_captured_columns"] = CsvOrNone(expectedColumns),
+            ["captured_column_count"] = capturedColumns.Count.ToString(),
+            ["heartbeat_capture_visible"] = (
+                definition.TableKind == CdcSourceTableKind.CdcHeartbeat
+            ).ToString(),
+        };
+
+    private static string PartitionSwitchValidation(bool sourceIsPartitioned, bool partitionSwitch)
+    {
+        if (!sourceIsPartitioned)
+        {
+            return "ignored_for_nonpartitioned_source";
+        }
+
+        return partitionSwitch ? "enabled_for_partitioned_source" : "disabled_for_partitioned_source";
+    }
+
+    private static string ExpectedPrimaryKeyName(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => "PK_Document",
+            CdcSourceTableKind.DocumentCache => "PK_DocumentCache",
+            CdcSourceTableKind.CdcHeartbeat => "PK_CdcHeartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    private static string CaptureTableKindToken(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => "document",
+            CdcSourceTableKind.DocumentCache => "document_cache",
+            CdcSourceTableKind.CdcHeartbeat => "cdc_heartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
 
     private static async Task<HeartbeatTableShapeInspection> InspectHeartbeatTableShapeAsync(
         ICdcProviderDatabaseExecutor executor,
@@ -1124,6 +1715,18 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     private static string Sha256(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
+    private static string EmptyAsNone(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "none" : SafeText(value);
+
+    private static string CsvOrNone(IEnumerable<string> values)
+    {
+        var sanitizedValues = values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(SafeText)
+            .ToArray();
+        return sanitizedValues.Length == 0 ? "none" : string.Join(",", sanitizedValues);
+    }
+
     private static string ReadRequired(IReadOnlyDictionary<string, string?> row, string columnName) =>
         row.TryGetValue(columnName, out var value) && value is not null
             ? value
@@ -1197,4 +1800,35 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool IsExactMatch,
         IReadOnlyDictionary<string, string> ObservedValues
     );
+
+    private sealed record ExpectedSqlServerCaptureDefinition(
+        CdcSourceTableKind TableKind,
+        CdcSourceTableInventory ExpectedSourceTable,
+        CdcSafeName CaptureInstanceName,
+        CdcSafeName GatingRoleName
+    );
+
+    private sealed record SqlServerCaptureInstanceInspection(
+        CdcSourceTableKind TableKind,
+        CdcSafeName CaptureInstanceName,
+        bool Exists,
+        bool IsExactMatch,
+        IReadOnlyDictionary<string, string> ObservedValues
+    );
+
+    private sealed record UnexpectedSqlServerCaptureInstance(
+        CdcProviderArtifactObservation Artifact,
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+    );
+
+    private sealed record SqlServerCaptureInstancesInspection(
+        IReadOnlyList<SqlServerCaptureInstanceInspection> ExpectedInstances,
+        IReadOnlyList<CdcProviderArtifactObservation> UnexpectedArtifacts,
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+    )
+    {
+        public bool HasMismatchedExistingArtifacts =>
+            ExpectedInstances.Any(capture => capture.Exists && !capture.IsExactMatch)
+            || UnexpectedArtifacts.Count > 0;
+    }
 }

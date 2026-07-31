@@ -160,7 +160,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcCaptureInstances",
       "Inspect cdc.change_tables and cdc.captured_columns in a provisioned SQL Server test database when diagnosing capture-instance fixtures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-security",
