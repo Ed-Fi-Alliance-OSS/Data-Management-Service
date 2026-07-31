@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -333,6 +334,63 @@ public class Given_DocumentCacheWriterRetry
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Direct_Fill_Bounded_Result : Given_DocumentCacheWriterRetry
+    {
+        private RecordingDocumentCacheWriterTelemetry _telemetry = null!;
+        private DocumentCacheWriterResult _result = null!;
+        private int _attemptCount;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _attemptCount = 0;
+            _telemetry = new RecordingDocumentCacheWriterTelemetry();
+            DocumentCacheWriterRetryAdapter sut = CreateSut(maxRetryAttempts: 3, telemetry: _telemetry);
+
+            _result = await sut.ExecuteAsync(
+                CreateRequest(purpose: DocumentCacheWriterPurpose.DirectFill),
+                (_, _) =>
+                {
+                    _attemptCount++;
+                    return Task.FromResult<DocumentCacheWriterResult>(
+                        new DocumentCacheWriterResult.WorkAnomaly(
+                            DocumentCacheWriterWorkAnomalyKind.MissingWork,
+                            DocumentCacheLifecycleState.Rebuilding,
+                            currentSourceContentVersion: 11,
+                            workRequiredContentVersion: null
+                        )
+                    );
+                }
+            );
+        }
+
+        [Test]
+        public void It_surfaces_the_typed_direct_fill_result_without_retry_or_swallowing()
+        {
+            _attemptCount.Should().Be(1);
+            _result
+                .Should()
+                .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+                .Which.LifecycleState.Should()
+                .Be(DocumentCacheLifecycleState.Rebuilding);
+        }
+
+        [Test]
+        public void It_records_direct_fill_retry_context_with_bounded_outcome_and_lifecycle()
+        {
+            RecordedRetry retry = _telemetry.Retries.Should().ContainSingle().Which;
+
+            retry.AttemptCount.Should().Be(1);
+            retry.Context.Provider.Should().Be(RelationalProviderToken.PostgresqlValue);
+            retry.Context.TargetKey.Should().Be("tenant-a:7");
+            retry.Context.Purpose.Should().Be(nameof(DocumentCacheWriterPurpose.DirectFill));
+            retry.Context.Lifecycle.Should().Be(nameof(DocumentCacheLifecycleState.Rebuilding));
+            retry.Context.Outcome.Should().Be(nameof(DocumentCacheWriterOutcome.WorkAnomaly));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Delete_Race_Exhausts_Retry_Budget : Given_DocumentCacheWriterRetry
     {
         private DocumentCacheWriterResult _result = null!;
@@ -373,7 +431,8 @@ public class Given_DocumentCacheWriterRetry
 
     private static DocumentCacheWriterRetryAdapter CreateSut(
         int maxRetryAttempts,
-        CapturingLogger<DocumentCacheWriterRetryAdapter>? logger = null
+        CapturingLogger<DocumentCacheWriterRetryAdapter>? logger = null,
+        IDocumentCacheWriterTelemetry? telemetry = null
     ) =>
         new(
             new DeadlockRetrySettings
@@ -383,18 +442,60 @@ public class Given_DocumentCacheWriterRetry
                 UseJitter = false,
             },
             new FakeRelationalWriteExceptionClassifier(),
-            logger ?? new CapturingLogger<DocumentCacheWriterRetryAdapter>()
+            logger ?? new CapturingLogger<DocumentCacheWriterRetryAdapter>(),
+            telemetry
         );
 
     private static DocumentCacheWriterRetryRequest CreateRequest(
-        CancellationToken cancellationToken = default
-    ) =>
-        new(
-            RelationalProviderToken.Postgresql,
-            TargetKey,
-            DocumentCacheWriterPurpose.DurableWorkProjection,
-            cancellationToken
-        );
+        CancellationToken cancellationToken = default,
+        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection
+    ) => new(RelationalProviderToken.Postgresql, TargetKey, purpose, cancellationToken);
+
+    private sealed class RecordingDocumentCacheWriterTelemetry : IDocumentCacheWriterTelemetry
+    {
+        public List<RecordedRetry> Retries { get; } = [];
+
+        public void RecordOutcome(DocumentCacheWriterMetricContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+        }
+
+        public void RecordTransactionDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+        }
+
+        public void RecordCacheDmlDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+        }
+
+        public void RecordAcknowledgementDuration(DocumentCacheWriterMetricContext context, TimeSpan duration)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+        }
+
+        public void RecordRetry(DocumentCacheWriterMetricContext context, TimeSpan duration, int attemptCount)
+        {
+            Retries.Add(new RecordedRetry(context, duration, attemptCount));
+        }
+
+        public void RecordSameDocumentWait(
+            DocumentCacheWriterMetricContext context,
+            DocumentCacheWriterContentionParticipant participant,
+            DocumentCacheWriterContentionPhase phase,
+            TimeSpan duration
+        )
+        {
+            ArgumentNullException.ThrowIfNull(context);
+        }
+    }
+
+    private sealed record RecordedRetry(
+        DocumentCacheWriterMetricContext Context,
+        TimeSpan Duration,
+        int AttemptCount
+    );
 
     private sealed class FakeRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {

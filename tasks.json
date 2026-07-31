@@ -194,7 +194,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter DocumentCache.",
       "Run dotnet csharpier format on all modified unit-test files."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "provider-tests-postgresql",

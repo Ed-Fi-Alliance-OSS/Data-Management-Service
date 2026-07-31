@@ -185,6 +185,11 @@ public class Given_DocumentCacheWriterContract
             .Select(result => result.Outcome)
             .Should()
             .BeEquivalentTo(Enum.GetValues<DocumentCacheWriterOutcome>());
+
+        typeof(DocumentCacheWriterResult)
+            .GetNestedTypes(BindingFlags.Public)
+            .Should()
+            .OnlyContain(type => type.IsSealed);
     }
 
     [Test]
@@ -247,6 +252,68 @@ public class Given_DocumentCacheWriterContract
             );
 
         invalidLifecycle.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*Tracking*Rebuilding*");
+    }
+
+    [Test]
+    public void It_rejects_invalid_bounded_result_values()
+    {
+        Action invalidRetryBudgetAttempts = () => _ = new DocumentCacheWriterResult.RetryBudgetExhausted(0);
+        Action invalidCallerAbortAttempts = () => _ = new DocumentCacheWriterResult.CallerAbortedRetry(0);
+        Action invalidDeleteRaceAttempts = () =>
+            _ = new DocumentCacheWriterResult.DeleteRaceRetryExhausted(0);
+        Action invalidCacheAheadVersions = () =>
+            _ = new DocumentCacheWriterResult.CacheAheadLatchSet(
+                sourceContentVersion: 11,
+                cacheContentVersion: 11
+            );
+        Action invalidFenceReason = () =>
+            _ = new DocumentCacheWriterResult.LifecycleOrLatchFenced(
+                (DocumentCacheWriterFenceReason)0,
+                lifecycleState: null,
+                cacheAheadRecoveryRequired: null
+            );
+        Action invalidFenceLifecycle = () =>
+            _ = new DocumentCacheWriterResult.LifecycleOrLatchFenced(
+                DocumentCacheWriterFenceReason.LifecycleNotEligible,
+                (DocumentCacheLifecycleState)999,
+                cacheAheadRecoveryRequired: false
+            );
+        Action invalidWorkAnomalyKind = () =>
+            _ = new DocumentCacheWriterResult.WorkAnomaly(
+                (DocumentCacheWriterWorkAnomalyKind)0,
+                DocumentCacheLifecycleState.Tracking,
+                currentSourceContentVersion: 11,
+                workRequiredContentVersion: 10
+            );
+        Action invalidWorkAnomalyVersion = () =>
+            _ = new DocumentCacheWriterResult.WorkAnomaly(
+                DocumentCacheWriterWorkAnomalyKind.WorkVersionMismatch,
+                DocumentCacheLifecycleState.Tracking,
+                currentSourceContentVersion: 11,
+                workRequiredContentVersion: 0
+            );
+        Action invalidInvariantReason = () =>
+            _ = new DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure(
+                (DocumentCacheWriterInvariantFailureReason)0,
+                currentContentVersion: 11,
+                candidateContentVersion: 11
+            );
+
+        invalidRetryBudgetAttempts.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+        invalidCallerAbortAttempts.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+        invalidDeleteRaceAttempts.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+        invalidCacheAheadVersions
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*cache ContentVersion*greater than source ContentVersion*");
+        invalidFenceReason.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*fence reason*");
+        invalidFenceLifecycle.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*lifecycle state*");
+        invalidWorkAnomalyKind.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*anomaly kind*");
+        invalidWorkAnomalyVersion.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+        invalidInvariantReason
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*invariant failure reason*");
     }
 
     [Test]

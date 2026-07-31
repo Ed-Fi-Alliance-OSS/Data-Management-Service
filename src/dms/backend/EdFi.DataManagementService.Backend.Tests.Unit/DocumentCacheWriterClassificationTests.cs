@@ -209,6 +209,15 @@ public class Given_DocumentCacheWriterClassification
                 DocumentCacheWriterCandidateMetadataComparison.ResourceMetadataMismatch
             )
         );
+        DocumentCacheWriterClassificationSelection targetMismatch = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: 10,
+            workRequiredContentVersion: 11,
+            candidateObservation: CandidateWithMetadataMismatch(
+                CreateCandidate(contentVersion: 11),
+                DocumentCacheWriterCandidateMetadataComparison.TargetMappingMismatch
+            )
+        );
 
         uuidMismatch
             .Action.Should()
@@ -227,6 +236,11 @@ public class Given_DocumentCacheWriterClassification
             .BeOfType<DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure>()
             .Which.Reason.Should()
             .Be(DocumentCacheWriterInvariantFailureReason.MatchingVersionResourceMetadataMismatch);
+        targetMismatch
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure>()
+            .Which.Reason.Should()
+            .Be(DocumentCacheWriterInvariantFailureReason.TargetMappingMismatch);
     }
 
     [Test]
@@ -318,6 +332,77 @@ public class Given_DocumentCacheWriterClassification
         mismatchedWork.WritesCache.Should().BeFalse();
         missingWork.AcknowledgesWork.Should().BeFalse();
         mismatchedWork.AcknowledgesWork.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_uses_the_same_action_and_result_model_for_direct_fill_when_current_work_exists()
+    {
+        DocumentCacheMaterializationCandidate currentCandidate = CreateCandidate(contentVersion: 11);
+
+        DocumentCacheWriterClassificationSelection healthyPending = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: 10,
+            workRequiredContentVersion: 11,
+            purpose: DocumentCacheWriterPurpose.DirectFill,
+            candidateObservation: CandidateMatches(currentCandidate)
+        );
+        DocumentCacheWriterClassificationSelection equalVersion = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: 11,
+            workRequiredContentVersion: 11,
+            purpose: DocumentCacheWriterPurpose.DirectFill
+        );
+        DocumentCacheWriterClassificationSelection needsMaterialization = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: null,
+            workRequiredContentVersion: 11,
+            purpose: DocumentCacheWriterPurpose.DirectFill
+        );
+        DocumentCacheWriterClassificationSelection staleCandidate = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: null,
+            workRequiredContentVersion: 11,
+            purpose: DocumentCacheWriterPurpose.DirectFill,
+            candidateObservation: CandidateMatches(CreateCandidate(contentVersion: 10))
+        );
+        DocumentCacheWriterClassificationSelection invariantFailure = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: null,
+            workRequiredContentVersion: 11,
+            purpose: DocumentCacheWriterPurpose.DirectFill,
+            candidateObservation: CandidateWithMetadataMismatch(
+                currentCandidate,
+                DocumentCacheWriterCandidateMetadataComparison.TargetMappingMismatch
+            )
+        );
+
+        healthyPending
+            .Action.Should()
+            .Be(DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork);
+        healthyPending.Outcome.Should().Be(DocumentCacheWriterOutcome.CandidateWrittenAcknowledged);
+        healthyPending.Candidate.Should().BeSameAs(currentCandidate);
+        healthyPending.ExpectedContentVersion.Should().Be(11);
+        healthyPending.TerminalResult.Should().BeNull();
+
+        equalVersion.Action.Should().Be(DocumentCacheWriterSelectedAction.AcknowledgeAlreadyCurrentWork);
+        equalVersion.Outcome.Should().Be(DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged);
+        equalVersion.ExpectedContentVersion.Should().Be(11);
+
+        needsMaterialization
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.NeedsMaterialization>()
+            .Which.CurrentContentVersion.Should()
+            .Be(11);
+        staleCandidate
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.StaleCandidateSuppressed>()
+            .Which.CandidateContentVersion.Should()
+            .Be(10);
+        invariantFailure
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure>()
+            .Which.Reason.Should()
+            .Be(DocumentCacheWriterInvariantFailureReason.TargetMappingMismatch);
     }
 
     [Test]
