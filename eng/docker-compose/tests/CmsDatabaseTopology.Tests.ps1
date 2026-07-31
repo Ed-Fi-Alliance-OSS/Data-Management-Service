@@ -1553,23 +1553,28 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
         }
     }
 
-    Context "registered path: the name -DataStoreDatabaseName registers and SchemaTools creates quoted" {
+    Context "registered path: the database value the provider receives after serialization and parsing" {
         It "postgresql treats the reserved name itself as a collision" {
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName 'edfi_configurationservice' |
                 Should -BeTrue
         }
 
-        It "postgresql accepts <Label>, a physically distinct database once the identifier is quoted" -ForEach @(
+        It "postgresql accepts <Label>, which reaches the provider as a different database" -ForEach @(
             @{ Label = 'a case variant'; Name = 'EDFI_ConfigurationService' }
             @{ Label = 'an upper-cased name'; Name = 'EDFI_CONFIGURATIONSERVICE' }
             @{ Label = 'a trailing space'; Name = 'edfi_configurationservice ' }
+            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
             @{ Label = 'an unrelated name'; Name = 'edfi_datamanagementservice' }
             @{ Label = 'a blank name, meaning the datastore name was not overridden'; Name = '' }
         ) {
-            # Measured: with edfi_configurationservice already present, SchemaTools' own form
-            # `CREATE DATABASE "EDFI_ConfigurationService"` succeeds and both rows coexist in
-            # pg_database. Borrowing the unquoted path's case-insensitivity here refused a working
-            # configuration.
+            # Two measured facts back this, and the whitespace rows depend on BOTH. (1) The registered
+            # connection string is serialized with escaping, so surrounding whitespace survives parsing
+            # instead of being discarded - see the transport Describe, which fails if that regresses.
+            # (2) SchemaTools then creates the database with a QUOTED identifier
+            # (PgsqlDatabaseProvisioner emits `CREATE DATABASE "<name>"`), so nothing folds:
+            # edfi_configurationservice and EDFI_ConfigurationService were observed coexisting in
+            # pg_database. Borrowing the unquoted initialized path's case-insensitivity here would
+            # refuse a working configuration.
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
                 Should -BeFalse
         }
@@ -1607,41 +1612,184 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
     }
 }
 
-Describe "the registered datastore connection string carries its database name verbatim" {
-    # Also ambient-free: Add-DataStore takes every value as a parameter, and the one outbound call is
-    # mocked, so nothing here reads the environment, touches Docker, or reaches the network. The
-    # Should -Invoke count is what proves the mock actually intercepted rather than a real request
-    # escaping to localhost. Dms-Management shares no function name with env-utility, so importing it
-    # here cannot shadow anything the later Describes in this file rely on.
+Describe "the registered datastore database name survives the transport that carries it" {
+    # The registered name does not reach the server as text. Add-DataStore serializes it into a
+    # connection string and SchemaTools PARSES that string back before quoting the identifier, so the
+    # only claim worth asserting is about the parsed value. Asserting that the name appears somewhere
+    # inside an unparsed connection string is what previously let a trailing space look preserved while
+    # the parser discarded it.
+    #
+    # Ambient-free and offline: every value is a parameter and no test here opens a socket, reads the
+    # environment, or invokes Docker. Dms-Management shares no function name with env-utility, so
+    # importing it cannot shadow anything the later Describes in this file rely on.
     BeforeAll {
         $script:engRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:engRoot "Dms-Management.psm1") -Force
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+
+        # Parses a connection string the way a provider does. DbConnectionStringBuilder is the ADO.NET
+        # base class NpgsqlConnectionStringBuilder derives from, so it applies the same quoting rules;
+        # measured across whitespace, both quote characters, ';', '=', newline and '${...}', the two
+        # return identical values.
+        function script:Get-ParsedDatabaseValue {
+            param([Parameter(Mandatory)] [string]$ConnectionString)
+
+            $reader = [System.Data.Common.DbConnectionStringBuilder]::new()
+            # .psbase is required: PowerShell's IDictionary adapter would store a literal
+            # "ConnectionString" KEY instead of invoking the property setter, leaving nothing parsed and
+            # every lookup silently missing.
+            $reader.psbase.ConnectionString = $ConnectionString
+            if (-not $reader.ContainsKey("database")) { return $null }
+            return [string]$reader["database"]
+        }
     }
 
-    It "postgresql: Add-DataStore registers the mixed-case name unfolded, which is why the registered path is ordinal" {
-        # This is the reason -DataStoreDatabaseName must NOT borrow the unquoted path's
-        # case-insensitivity: the name CMS stores is the name the datastore connects with, and nothing
-        # between the parameter and the registered connection string lower-cases it. Proving the value
-        # arrives verbatim is stronger than asserting that one error message was absent - a path that
-        # quietly folded the name would satisfy the latter and still re-share the CMS database.
-        Mock -ModuleName Dms-Management Invoke-Api { return [pscustomobject]@{ id = 7 } }
+    Context "Add-DataStore builds the registered string with the escaping serializer, not interpolation" {
+        It "constructs its PostgreSQL connection string through New-DataStoreConnectionString" {
+            # The load-bearing wiring assertion. Interpolation cannot escape a value, so reverting this
+            # single call re-opens the whole class of defect: the guard judges the parameter text while
+            # the provider consumes something else. Asserted on the parsed AST of the real function so
+            # a comment or an unrelated mention cannot satisfy it.
+            $modulePath = Join-Path $script:engRoot "Dms-Management.psm1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$null, [ref]$null)
+            $function = $ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Add-DataStore'
+            }, $true) | Select-Object -First 1
+            $function | Should -Not -BeNullOrEmpty -Because "the sweep must actually be looking at Add-DataStore"
 
-        # Empty SecureString rather than ConvertTo-SecureString -AsPlainText: the password is not part
-        # of what this test asserts, and the plaintext form is a PSScriptAnalyzer error.
-        $credential = [System.Management.Automation.PSCredential]::new(
-            "postgres",
-            [System.Security.SecureString]::new())
+            $factoryCalls = @($function.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -eq 'New-DataStoreConnectionString'
+            }, $true))
+            $factoryCalls.Count | Should -BeGreaterThan 0 -Because "the registered string must be built by the escaping serializer"
 
-        Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken "token" `
-            -PostgresCredential $credential -PostgresDbName 'EDFI_ConfigurationService' | Out-Null
-
-        # -clike, not -like: a case-insensitive match would be satisfied by the folded name this test
-        # exists to rule out.
-        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 1 -Exactly -ParameterFilter {
-            (ConvertFrom-Json $Body).connectionString -clike '*database=EDFI_ConfigurationService;*'
+            # And no interpolated connection-string literal survives anywhere in the function.
+            $interpolated = @($function.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst] -and
+                $node.Value -match 'database='
+            }, $true))
+            $interpolated | Should -BeNullOrEmpty -Because "an interpolated database= segment cannot escape its value"
         }
-        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 0 -Exactly -ParameterFilter {
-            (ConvertFrom-Json $Body).connectionString -clike '*database=edfi_configurationservice;*'
+
+        It "names the missing password instead of failing on a parameter it was never handed" {
+            # ConvertTo-PostgresCredential accepts an empty secret by design, and the escaping serializer
+            # rejects one - so the empty case has to be reported as the missing environment value it is.
+            # Interpolation used to register `password=` here, which only failed later at connect time.
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+
+            { Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                    -PostgresCredential $emptyCredential -PostgresDbName 'edfi_datamanagementservice' } |
+                Should -Throw "*empty password*POSTGRES_PASSWORD*"
+        }
+    }
+
+    Context "the serialized-then-parsed database value equals the registered name" {
+        It "round-trips <Label> unchanged" -ForEach @(
+            @{ Label = 'a plain name'; Name = 'edfi_datamanagementservice' }
+            @{ Label = 'a mixed-case name'; Name = 'EDFI_ConfigurationService' }
+            @{ Label = 'a trailing space'; Name = 'edfi_configurationservice ' }
+            @{ Label = 'two trailing spaces'; Name = 'edfi_configurationservice  ' }
+            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
+            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
+            @{ Label = 'an embedded semicolon that would otherwise start a new segment'; Name = 'edfi_dms;Database=edfi_configurationservice' }
+            @{ Label = 'a double quote'; Name = 'edfi_dms"x' }
+            @{ Label = 'a single quote'; Name = "edfi_dms'x" }
+            @{ Label = 'both quote characters'; Name = 'edfi_dms"x''y' }
+            @{ Label = 'an equals sign'; Name = 'edfi_dms=x' }
+        ) {
+            # Before the serializer change, the unquoted forms of the first six of these parsed back as
+            # a DIFFERENT name (whitespace discarded) and the semicolon form introduced a second
+            # Database segment that won - so the datastore reached edfi_configurationservice while the
+            # registered text said otherwise.
+            $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
+                -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
+                -DatabaseName $Name
+
+            Get-ParsedDatabaseValue -ConnectionString $connectionString |
+                Should -BeExactly $Name -Because "the collision guard compares this value, so it must be the registered name"
+        }
+
+        It "introduces no second database segment for a semicolon-bearing name" {
+            # The parsed value already proves this, but state it directly: the escape must keep the
+            # value inside its own slot rather than adding a segment a provider would prefer.
+            $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
+                -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
+                -DatabaseName 'edfi_dms;Database=edfi_configurationservice'
+
+            $reader = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $reader.psbase.ConnectionString = $connectionString
+            @($reader.Keys | Where-Object { $_ -match '^(database|dbname)$' }).Count |
+                Should -Be 1 -Because "an escaped value cannot introduce another database key"
+        }
+    }
+
+    Context "the collision authority judges the parsed value, so guard and transport cannot disagree" {
+        It "agrees with the transport for <Label>" -ForEach @(
+            @{ Label = 'the reserved name itself'; Name = 'edfi_configurationservice' }
+            @{ Label = 'a mixed-case name'; Name = 'EDFI_ConfigurationService' }
+            @{ Label = 'a trailing space'; Name = 'edfi_configurationservice ' }
+            @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
+            @{ Label = 'a semicolon-bearing name'; Name = 'edfi_dms;Database=edfi_configurationservice' }
+        ) {
+            # One assertion, both sides: whether the predicate says "collides" must equal whether the
+            # database the provider will actually receive IS the reserved database. This is the property
+            # the previous round asserted only by inspection.
+            $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
+                -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
+                -DatabaseName $Name
+            $parsedIsReserved = [string]::Equals(
+                (Get-ParsedDatabaseValue -ConnectionString $connectionString),
+                'edfi_configurationservice',
+                [System.StringComparison]::Ordinal)
+
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine postgresql -DatastoreDatabaseName $Name |
+                Should -Be $parsedIsReserved
+        }
+    }
+
+    Context "the modelled parser matches the provider parser SchemaTools uses" {
+        It "reads the database back with NpgsqlConnectionStringBuilder in SchemaTools" {
+            # Pins the provider side of the claim to real code rather than to a comment: if SchemaTools
+            # stopped parsing the registered string, the transport this Describe models would no longer
+            # be the transport in use.
+            $provisioner = Join-Path $script:engRoot "../src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/PgsqlDatabaseProvisioner.cs"
+            $provisioner = [System.IO.Path]::GetFullPath($provisioner)
+            Test-Path -LiteralPath $provisioner | Should -BeTrue
+
+            $source = Get-Content -LiteralPath $provisioner -Raw
+            $source | Should -Match 'new NpgsqlConnectionStringBuilder\(connectionString\)'
+            $source | Should -Match 'return\s+string\.IsNullOrWhiteSpace\(builder\.Database\)'
+        }
+
+        It "returns the same value as Npgsql itself for every transported shape" {
+            # Skipped rather than silently vacuous when the SchemaTools Release output is not built: the
+            # provider assembly is the only way to compare against the real parser.
+            $npgsql = Join-Path $script:engRoot "../src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0/Npgsql.dll"
+            $npgsql = [System.IO.Path]::GetFullPath($npgsql)
+            if (-not (Test-Path -LiteralPath $npgsql)) {
+                Set-ItResult -Skipped -Because "Npgsql.dll is only present once SchemaTools has been built in Release"
+                return
+            }
+            [System.Reflection.Assembly]::LoadFrom($npgsql) | Out-Null
+
+            foreach ($name in @(
+                'edfi_configurationservice', 'EDFI_ConfigurationService', 'edfi_configurationservice ',
+                ' edfi_configurationservice', "edfi_configurationservice`t",
+                'edfi_dms;Database=edfi_configurationservice', 'edfi_dms"x', "edfi_dms'x", 'edfi_dms=x'
+            )) {
+                $connectionString = New-DataStoreConnectionString -DatabaseEngine postgresql `
+                    -DbHost 'dms-postgresql' -Port 5432 -Username 'postgres' -Password 'abcdefgh1!' `
+                    -DatabaseName $name
+                $fromProvider = [Npgsql.NpgsqlConnectionStringBuilder]::new($connectionString).Database
+                $fromModel = Get-ParsedDatabaseValue -ConnectionString $connectionString
+
+                $fromProvider | Should -BeExactly $name
+                $fromModel | Should -BeExactly $fromProvider
+            }
         }
     }
 }
