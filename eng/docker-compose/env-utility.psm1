@@ -1643,9 +1643,10 @@ function Get-ComposeDatabaseServiceHostAlias {
 
         Unsupported first-service headers - anchors, aliases, merge keys, quoted keys, inline mappings,
         sequence entries - all fail closed, even though Compose accepts them, because the alternative is a
-        validator that silently stops protecting the invariant it exists for. Diagnostics name the file and
-        line number and never echo line content, so a compose line carrying an interpolated reference to a
-        secret cannot be disclosed by a parse failure.
+        validator that silently stops protecting the invariant it exists for. Every diagnostic names the
+        compose file, the unsupported-header one also names the offending line number, and none echoes line
+        content - so a compose line carrying an interpolated reference to a secret cannot be disclosed by a
+        parse failure.
 
     .OUTPUTS
         [string[]] one or more distinct host names, in file order, service key first.

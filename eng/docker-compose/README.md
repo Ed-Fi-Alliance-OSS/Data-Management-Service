@@ -284,8 +284,8 @@ The switch exists on every public entry point and is forwarded unchanged:
 ./bootstrap-local-dms.ps1 -SeparateConfigDatabase
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -SeparateConfigDatabase
 
-# Same through the repo-root build script
-./build-dms.ps1 StartEnvironment -SeparateConfigDatabase -DatabaseEngine postgresql
+# Same through the build script, which lives at the repository root
+../../build-dms.ps1 StartEnvironment -SeparateConfigDatabase -DatabaseEngine postgresql
 ```
 
 ### Predicting the effective CMS database
