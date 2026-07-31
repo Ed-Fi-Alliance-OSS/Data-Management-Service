@@ -120,6 +120,46 @@ public class Given_DescriptorReadRowReader
     }
 
     [Test]
+    public async Task It_classifies_a_null_content_last_modified_at_as_an_invariant_failure()
+    {
+        // ContentLastModifiedAt is a trigger-owned mirror on dms.Descriptor, which is now the only
+        // table the descriptor read touches, so the invariant message names dms.Descriptor.
+        var row = CreateInvariantProbeRow();
+        row["ContentLastModifiedAt"] = null;
+
+        await using var reader = CreateReader(row);
+
+        var act = async () => await DescriptorReadRowReader.ReadSingleOrDefaultAsync(reader);
+
+        var exception = await act.Should().ThrowAsync<DescriptorReadInvariantException>();
+        exception
+            .Which.Message.Should()
+            .Contain("dms.Descriptor.ContentLastModifiedAt must not be null.")
+            .And.Contain("DocumentId 305")
+            .And.Contain("ResourceKeyId=13");
+    }
+
+    [Test]
+    public async Task It_classifies_a_null_resource_key_id_mirror_as_an_invariant_failure()
+    {
+        // dms.Descriptor.ResourceKeyId is a nullable trigger-owned mirror: a NULL means the row was
+        // written with the stamping trigger bypassed, so the read fails closed rather than surfacing
+        // a provider cast error.
+        var row = CreateInvariantProbeRow();
+        row["ResourceKeyId"] = null;
+
+        await using var reader = CreateReader(row);
+
+        var act = async () => await DescriptorReadRowReader.ReadSingleOrDefaultAsync(reader);
+
+        var exception = await act.Should().ThrowAsync<DescriptorReadInvariantException>();
+        exception
+            .Which.Message.Should()
+            .Contain("dms.Descriptor.ResourceKeyId must not be null.")
+            .And.Contain("DocumentId 305");
+    }
+
+    [Test]
     public async Task It_returns_a_null_namespace_when_the_descriptor_row_has_a_null_namespace()
     {
         // Namespace is read nullably so the namespace-authorization path (DescriptorReadHandler)
@@ -229,6 +269,23 @@ public class Given_DescriptorReadRowReader
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("Descriptor single-row read returned multiple rows.");
     }
+
+    private static Dictionary<string, object?> CreateInvariantProbeRow() =>
+        RelationalAccessTestData
+            .CreateRow(
+                ("DocumentId", 305L),
+                ("DocumentUuid", Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+                ("ContentVersion", 305L),
+                ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 16, 0, 0, TimeSpan.Zero)),
+                ("ResourceKeyId", (short)13),
+                ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
+                ("CodeValue", "Magnet"),
+                ("ShortDescription", "Magnet"),
+                ("Description", "Magnet school type"),
+                ("EffectiveBeginDate", new DateOnly(2025, 1, 1)),
+                ("EffectiveEndDate", null)
+            )
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
 
     private static InMemoryRelationalCommandReader CreateReader(
         params IReadOnlyDictionary<string, object?>[] rows

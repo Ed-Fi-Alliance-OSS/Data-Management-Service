@@ -503,12 +503,13 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         result.Should().BeOfType<QueryResult.QuerySuccess>();
         commandExecutor.Commands.Should().ContainSingle();
         var command = commandExecutor.Commands[0];
+        // The page keyset roots on dms.Descriptor, so the stored Namespace column is root-local and
+        // the namespace check binds the root alias with no join to collapse.
+        command.CommandText.Should().Contain("FROM \"dms\".\"Descriptor\" r");
+        command.CommandText.Should().NotContain("INNER JOIN \"dms\".\"Descriptor\" d ON");
         command
             .CommandText.Should()
-            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
-        command
-            .CommandText.Should()
-            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+            .Contain("(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes))");
         var namespaceParameter = command.Parameters.Single(static p => p.Name == "@namespacePrefixes");
         namespaceParameter
             .Value.Should()
@@ -540,15 +541,14 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         result.Should().BeOfType<QueryResult.QuerySuccess>();
         commandExecutor.Commands.Should().ContainSingle();
         var command = commandExecutor.Commands[0];
-        command
-            .CommandText.Should()
-            .Contain("INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = r.[DocumentId]");
+        command.CommandText.Should().Contain("FROM [dms].[Descriptor] r");
+        command.CommandText.Should().NotContain("INNER JOIN [dms].[Descriptor] d ON");
         command
             .CommandText.Should()
             .Contain(
-                "(d.[Namespace] IS NOT NULL AND ("
-                    + "d.[Namespace] LIKE @namespacePrefixes_0 ESCAPE '\\' "
-                    + "OR d.[Namespace] LIKE @namespacePrefixes_1 ESCAPE '\\'"
+                "(r.[Namespace] IS NOT NULL AND ("
+                    + "r.[Namespace] LIKE @namespacePrefixes_0 ESCAPE '\\' "
+                    + "OR r.[Namespace] LIKE @namespacePrefixes_1 ESCAPE '\\'"
                     + "))"
             );
         command
@@ -585,10 +585,12 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         result.Should().BeOfType<QueryResult.QuerySuccess>();
         var command = commandExecutor.Commands.Single();
         command.CommandText.Should().Contain("SELECT COUNT(1)");
-        // The namespace filter shape appears twice: once in COUNT, once in the page subquery.
+        // The namespace filter shape appears twice: once in COUNT, once in the page subquery. Both
+        // bind the dms.Descriptor root alias, so neither statement joins a second table.
+        command.CommandText.Should().NotContain("INNER JOIN \"dms\".\"Descriptor\" d ON");
         var namespacePredicateOccurrences = CountOccurrences(
             command.CommandText,
-            "d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes)"
+            "r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes)"
         );
         namespacePredicateOccurrences.Should().Be(2);
     }

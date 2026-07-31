@@ -16,8 +16,8 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 /// Asserts the change-version page-selection SQL shape (DMS-1182) against real authoritative
 /// mapping sets: regular resources filter the concrete root table's mirrored
 /// <c>ContentVersion</c> with no <c>dms.Document</c> join, and descriptor resources filter
-/// <c>dms.Document.ContentVersion</c> scoped by the project-qualified <c>ResourceKeyId</c>
-/// predicate.
+/// <c>dms.Descriptor.ContentVersion</c> scoped by the project-qualified <c>ResourceKeyId</c>
+/// predicate — also with no <c>dms.Document</c> join.
 /// </summary>
 [TestFixture]
 public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
@@ -79,7 +79,7 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
     }
 
     [Test]
-    public void It_filters_document_content_version_with_the_resource_key_predicate_for_descriptor_resources()
+    public void It_filters_descriptor_content_version_with_the_resource_key_predicate_for_descriptor_resources()
     {
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
         _ds52MappingSet.TryGetDescriptorResourceModel(descriptorResource, out _).Should().BeTrue();
@@ -93,14 +93,17 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
             changeVersionRange: _changeVersionRange
         );
 
-        keyset.Plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Document\" r");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("\"dms\".\"Document\"");
         keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset.Plan.TotalCountSql.Should().NotContain("\"dms\".\"Document\"");
         keyset
             .ParameterValues["resourceKeyId"]
             .Should()

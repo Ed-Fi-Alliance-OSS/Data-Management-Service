@@ -227,28 +227,21 @@ public class Given_A_Postgresql_DescriptorRead_Get_Request
     }
 
     [Test]
-    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_document_has_no_descriptor_row()
+    public async Task It_returns_not_exists_when_a_document_row_has_no_descriptor_row()
     {
+        // Descriptor GET-by-id reads dms.Descriptor alone, so a dms.Document row with no descriptor
+        // row is simply not found. The former corruption 500 for this shape is unreachable now: the
+        // reader's invariant messages only fire for NULL columns on a descriptor row that exists.
         var documentUuid = new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000106"));
         var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
             _mappingSet,
             SchoolTypeDescriptorResource
         );
-        var documentId = await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
-            _database,
-            documentUuid,
-            resourceKeyId
-        );
+        await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(_database, documentUuid, resourceKeyId);
 
         var result = await ExecuteGetByIdAsync(documentUuid, "pg-descriptor-get-missing-row");
 
-        var failure = result.Should().BeOfType<GetResult.UnknownFailure>().Subject;
-        failure.FailureMessage.Should().Contain($"DocumentId {documentId}");
-        // The row reader treats Namespace as nullable so a stored null can flow into the
-        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
-        // required column, so the reader's invariant message names it when the LEFT JOIN
-        // finds no descriptor row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
     }
 
     [Test]

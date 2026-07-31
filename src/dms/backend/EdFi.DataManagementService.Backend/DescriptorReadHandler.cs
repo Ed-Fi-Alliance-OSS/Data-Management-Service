@@ -221,10 +221,10 @@ internal sealed class DescriptorReadHandler(
 
         var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
 
-        // The descriptor page subquery roots on dms.Document while Namespace lives on the joined
-        // dms.Descriptor row. The page SQL compiler aliases the namespace check to the descriptor
-        // join, so the planner consumes the orchestrator's namespace check specs + prefix
-        // parameterization through PageDocumentIdAuthorizationSpec.
+        // The descriptor page subquery roots on dms.Descriptor, which is also where Namespace lives,
+        // so the page SQL compiler binds the namespace check to the page root alias with no join. The
+        // planner consumes the orchestrator's namespace check specs + prefix parameterization through
+        // PageDocumentIdAuthorizationSpec.
         var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
 
         DescriptorQueryPreprocessingResult preprocessingResult;
@@ -666,16 +666,17 @@ internal sealed class DescriptorReadHandler(
         var pageDocumentIdSqlBody = StripTrailingSemicolon(pageDocumentIdSql);
 
         // The shared page compiler intentionally returns only a DocumentId keyset. Descriptor queries
-        // root on dms.Document, so this performs a page-sized PK lookup instead of widening that contract.
+        // root that keyset on dms.Descriptor, so this performs a page-sized PK lookup against the same
+        // table for the row payload instead of widening that contract.
         return dialect switch
         {
             SqlDialect.Pgsql => $$"""
                 SELECT
                     page_document_ids."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
+                    descriptor."DocumentUuid" AS "DocumentUuid",
+                    descriptor."ContentVersion" AS "ContentVersion",
+                    descriptor."ContentLastModifiedAt" AS "ContentLastModifiedAt",
+                    descriptor."ResourceKeyId" AS "ResourceKeyId",
                     descriptor."Namespace" AS "Namespace",
                     descriptor."CodeValue" AS "CodeValue",
                     descriptor."ShortDescription" AS "ShortDescription",
@@ -686,19 +687,17 @@ internal sealed class DescriptorReadHandler(
                 FROM (
                 {{pageDocumentIdSqlBody}}
                 ) page_document_ids
-                INNER JOIN dms."Document" document
-                    ON document."DocumentId" = page_document_ids."DocumentId"
-                LEFT JOIN dms."Descriptor" descriptor
+                INNER JOIN dms."Descriptor" descriptor
                     ON descriptor."DocumentId" = page_document_ids."DocumentId"
                 ORDER BY page_document_ids."DocumentId" ASC;
                 """,
             SqlDialect.Mssql => $$"""
                 SELECT
                     page_document_ids.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
+                    descriptor.[DocumentUuid] AS [DocumentUuid],
+                    descriptor.[ContentVersion] AS [ContentVersion],
+                    descriptor.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
+                    descriptor.[ResourceKeyId] AS [ResourceKeyId],
                     descriptor.[Namespace] AS [Namespace],
                     descriptor.[CodeValue] AS [CodeValue],
                     descriptor.[ShortDescription] AS [ShortDescription],
@@ -709,9 +708,7 @@ internal sealed class DescriptorReadHandler(
                 FROM (
                 {{pageDocumentIdSqlBody}}
                 ) page_document_ids
-                INNER JOIN [dms].[Document] document
-                    ON document.[DocumentId] = page_document_ids.[DocumentId]
-                LEFT JOIN [dms].[Descriptor] descriptor
+                INNER JOIN [dms].[Descriptor] descriptor
                     ON descriptor.[DocumentId] = page_document_ids.[DocumentId]
                 ORDER BY page_document_ids.[DocumentId] ASC;
                 """,
@@ -949,6 +946,13 @@ internal sealed class DescriptorReadHandler(
         }
     }
 
+    /// <summary>
+    /// Builds the descriptor GET-by-id command. <c>dms.Descriptor</c> mirrors <c>DocumentUuid</c>,
+    /// <c>ResourceKeyId</c>, and the content stamps, so the whole response row comes from one table:
+    /// <c>UX_Descriptor_DocumentUuid</c> serves the lookup and the mirrored <c>ResourceKeyId</c>
+    /// keeps the project-qualified type discrimination. A descriptor row that does not exist is a
+    /// 404 rather than the former "document without descriptor row" corruption case.
+    /// </summary>
     private static RelationalCommand BuildGetByIdCommand(
         SqlDialect dialect,
         DocumentUuid documentUuid,
@@ -966,11 +970,11 @@ internal sealed class DescriptorReadHandler(
             SqlDialect.Pgsql => new RelationalCommand(
                 """
                 SELECT
-                    document."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
+                    descriptor."DocumentId" AS "DocumentId",
+                    descriptor."DocumentUuid" AS "DocumentUuid",
+                    descriptor."ContentVersion" AS "ContentVersion",
+                    descriptor."ContentLastModifiedAt" AS "ContentLastModifiedAt",
+                    descriptor."ResourceKeyId" AS "ResourceKeyId",
                     descriptor."Namespace" AS "Namespace",
                     descriptor."CodeValue" AS "CodeValue",
                     descriptor."ShortDescription" AS "ShortDescription",
@@ -978,22 +982,20 @@ internal sealed class DescriptorReadHandler(
                     descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
                     descriptor."EffectiveEndDate" AS "EffectiveEndDate",
                     descriptor."Discriminator" AS "Discriminator"
-                FROM dms."Document" document
-                LEFT JOIN dms."Descriptor" descriptor
-                    ON descriptor."DocumentId" = document."DocumentId"
-                WHERE document."DocumentUuid" = @documentUuid
-                    AND document."ResourceKeyId" = @resourceKeyId;
+                FROM dms."Descriptor" descriptor
+                WHERE descriptor."DocumentUuid" = @documentUuid
+                    AND descriptor."ResourceKeyId" = @resourceKeyId;
                 """,
                 parameters
             ),
             SqlDialect.Mssql => new RelationalCommand(
                 """
                 SELECT
-                    document.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
+                    descriptor.[DocumentId] AS [DocumentId],
+                    descriptor.[DocumentUuid] AS [DocumentUuid],
+                    descriptor.[ContentVersion] AS [ContentVersion],
+                    descriptor.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
+                    descriptor.[ResourceKeyId] AS [ResourceKeyId],
                     descriptor.[Namespace] AS [Namespace],
                     descriptor.[CodeValue] AS [CodeValue],
                     descriptor.[ShortDescription] AS [ShortDescription],
@@ -1001,11 +1003,9 @@ internal sealed class DescriptorReadHandler(
                     descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
                     descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
                     descriptor.[Discriminator] AS [Discriminator]
-                FROM [dms].[Document] document
-                LEFT JOIN [dms].[Descriptor] descriptor
-                    ON descriptor.[DocumentId] = document.[DocumentId]
-                WHERE document.[DocumentUuid] = @documentUuid
-                    AND document.[ResourceKeyId] = @resourceKeyId;
+                FROM [dms].[Descriptor] descriptor
+                WHERE descriptor.[DocumentUuid] = @documentUuid
+                    AND descriptor.[ResourceKeyId] = @resourceKeyId;
                 """,
                 parameters
             ),

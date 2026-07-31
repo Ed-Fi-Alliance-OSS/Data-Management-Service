@@ -92,10 +92,15 @@ internal static class PlanSqlGoldenFixtureQueryPlans
         );
     }
 
+    /// <summary>
+    /// Mirrors what <c>DescriptorQueryPageKeysetPlanner</c> emits: descriptor pages root on
+    /// <c>dms.Descriptor</c>, so every predicate — the type discriminator, <c>?id=</c>, and the
+    /// descriptor field filters — is a root column carrying its own scalar kind.
+    /// </summary>
     private static PageDocumentIdQuerySpec CreateDescriptorQuerySpec()
     {
         return new PageDocumentIdQuerySpec(
-            RootTable: new DbTableName(new DbSchemaName("dms"), "Document"),
+            RootTable: new DbTableName(new DbSchemaName("dms"), "Descriptor"),
             Predicates:
             [
                 new QueryValuePredicate(
@@ -109,13 +114,13 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                     "id"
                 ),
                 new QueryValuePredicate(
-                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
+                    new DbColumnName("Namespace"),
                     QueryComparisonOperator.Equal,
                     "namespace",
                     ScalarKind.String
                 ),
                 new QueryValuePredicate(
-                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("EffectiveEndDate")),
+                    new DbColumnName("EffectiveEndDate"),
                     QueryComparisonOperator.Equal,
                     "effectiveEndDate",
                     ScalarKind.Date

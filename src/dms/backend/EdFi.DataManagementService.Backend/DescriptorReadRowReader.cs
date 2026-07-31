@@ -25,8 +25,9 @@ internal sealed record DescriptorReadRow(
 internal sealed class DescriptorReadInvariantException(string message) : InvalidOperationException(message);
 
 /// <summary>
-/// Shared relational reader for descriptor rows emitted from <c>dms.Document</c> joined to
-/// <c>dms.Descriptor</c>.
+/// Shared relational reader for descriptor rows emitted from <c>dms.Descriptor</c>. That row carries
+/// both the descriptor content columns and the trigger-owned <c>dms.Document</c> metadata mirrors, so
+/// every column this reader materializes comes from the one table.
 /// </summary>
 internal static class DescriptorReadRowReader
 {
@@ -89,7 +90,7 @@ internal static class DescriptorReadRowReader
         var documentId = reader.GetRequiredFieldValue<long>(DocumentIdColumnName);
         var documentUuid = reader.GetRequiredFieldValue<Guid>(DocumentUuidColumnName);
         var contentVersion = reader.GetRequiredFieldValue<long>(ContentVersionColumnName);
-        var resourceKeyId = reader.GetRequiredFieldValue<short>(ResourceKeyIdColumnName);
+        var resourceKeyId = ReadRequiredResourceKeyId(reader, documentId);
 
         return new DescriptorReadRow(
             DocumentId: documentId,
@@ -126,6 +127,28 @@ internal static class DescriptorReadRowReader
         );
     }
 
+    /// <summary>
+    /// Reads the required <c>ResourceKeyId</c> descriptor type discriminator.
+    /// <c>dms.Descriptor.ResourceKeyId</c> is a nullable trigger-owned mirror of
+    /// <c>dms.Document.ResourceKeyId</c> with no default, so a stored NULL means the row was written
+    /// with the stamping trigger bypassed. That is tamper, not a readable descriptor: it fails closed
+    /// with a named invariant rather than escaping as a provider cast error.
+    /// </summary>
+    private static short ReadRequiredResourceKeyId(IRelationalCommandReader reader, long documentId)
+    {
+        var ordinal = reader.GetOrdinal(ResourceKeyIdColumnName);
+
+        if (reader.IsDBNull(ordinal))
+        {
+            throw new DescriptorReadInvariantException(
+                $"Descriptor read corruption detected for DocumentId {documentId}: "
+                    + $"dms.Descriptor.{ResourceKeyIdColumnName} must not be null."
+            );
+        }
+
+        return reader.GetFieldValue<short>(ordinal);
+    }
+
     private static string ReadRequiredDescriptorStringField(
         IRelationalCommandReader reader,
         string columnName,
@@ -157,8 +180,7 @@ internal static class DescriptorReadRowReader
         if (reader.IsDBNull(ordinal))
         {
             throw new DescriptorReadInvariantException(
-                $"Descriptor read corruption detected for DocumentId {documentId} (ResourceKeyId={resourceKeyId}): "
-                    + $"dms.Document.{columnName} must not be null."
+                BuildRequiredDescriptorColumnNullMessage(columnName, documentId, resourceKeyId)
             );
         }
 
@@ -174,7 +196,7 @@ internal static class DescriptorReadRowReader
             ),
             string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
             _ => throw new InvalidOperationException(
-                $"Descriptor read expected a DateTimeOffset-compatible value for dms.Document.{columnName}, "
+                $"Descriptor read expected a DateTimeOffset-compatible value for dms.Descriptor.{columnName}, "
                     + $"but received '{value.GetType().Name}'."
             ),
         };

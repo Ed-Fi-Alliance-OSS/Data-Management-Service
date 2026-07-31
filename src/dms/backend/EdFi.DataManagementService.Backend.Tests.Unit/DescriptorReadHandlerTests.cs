@@ -25,12 +25,12 @@ public class Given_DescriptorReadHandler
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
     private static readonly IServedEtagComposer _servedEtagComposer = new ServedEtagComposer();
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "dms.\"Descriptor\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[dms].[Descriptor]")]
-    public async Task It_reads_descriptor_gets_directly_from_document_and_descriptor(
+    [TestCase(SqlDialect.Pgsql, "dms.\"Descriptor\" descriptor", "Document\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Descriptor] descriptor", "Document]")]
+    public async Task It_reads_descriptor_gets_directly_from_the_shared_descriptor_table(
         SqlDialect dialect,
-        string expectedDocumentTableFragment,
-        string expectedDescriptorTableFragment
+        string expectedDescriptorFromFragment,
+        string unexpectedDocumentTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
@@ -54,9 +54,11 @@ public class Given_DescriptorReadHandler
         success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
         success.EdfiDoc["Discriminator"].Should().BeNull();
         commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedDocumentTableFragment);
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedDescriptorTableFragment);
-        commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN");
+        // The descriptor row is a single-table read: dms.Descriptor mirrors DocumentUuid,
+        // ResourceKeyId, and the content stamps, so no dms.Document join remains.
+        commandExecutor.Commands[0].CommandText.Should().Contain($"FROM {expectedDescriptorFromFragment}");
+        commandExecutor.Commands[0].CommandText.Should().NotContain(unexpectedDocumentTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().NotContain("JOIN");
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
@@ -108,23 +110,16 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_returns_an_unknown_failure_when_the_selected_document_has_no_descriptor_row()
+    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_row_has_a_required_field_null()
     {
+        // The former "document row exists but its descriptor row is missing" corruption case is
+        // structurally unreachable now that GET-by-id reads dms.Descriptor alone: no descriptor row
+        // means no row at all, which is the 404 the sibling not-exists test pins. A stored NULL in a
+        // required descriptor column is still genuine corruption and still fails as a 500.
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-eeeeeeeeeeee"));
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(
-                        documentUuid.Value,
-                        ns: null,
-                        codeValue: null,
-                        shortDescription: null,
-                        description: null,
-                        effectiveBeginDate: null,
-                        effectiveEndDate: null,
-                        discriminator: null
-                    )
-                ),
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value, codeValue: null)),
             ]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -132,10 +127,6 @@ public class Given_DescriptorReadHandler
         var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
 
         var failure = result.Should().BeOfType<GetResult.UnknownFailure>().Subject;
-        // The row reader treats Namespace as nullable so a stored null can flow into the
-        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
-        // required column, so the reader's invariant message names it when the LEFT JOIN finds
-        // no descriptor row.
         failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
         failure.FailureMessage.Should().Contain("DocumentId 101");
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
@@ -386,12 +377,25 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands.Should().BeEmpty();
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "dms.\"Descriptor\"", "page_document_ids.\"DocumentId\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[dms].[Descriptor]", "page_document_ids.[DocumentId]")]
+    [TestCase(
+        SqlDialect.Pgsql,
+        "FROM \"dms\".\"Descriptor\" r",
+        "INNER JOIN dms.\"Descriptor\" descriptor",
+        "Document\"",
+        "page_document_ids.\"DocumentId\""
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "FROM [dms].[Descriptor] r",
+        "INNER JOIN [dms].[Descriptor] descriptor",
+        "Document]",
+        "page_document_ids.[DocumentId]"
+    )]
     public async Task It_reads_descriptor_query_rows_in_document_id_order_and_honors_total_count(
         SqlDialect dialect,
-        string expectedDocumentTableFragment,
-        string expectedDescriptorTableFragment,
+        string expectedKeysetRootFragment,
+        string expectedDescriptorJoinFragment,
+        string unexpectedDocumentTableFragment,
         string expectedOrderByFragment
     )
     {
@@ -428,9 +432,12 @@ public class Given_DescriptorReadHandler
         result.Rows.Select(row => row.DocumentUuid).Should().Equal(firstDocumentUuid, secondDocumentUuid);
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain("COUNT(1)");
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedDocumentTableFragment);
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedDescriptorTableFragment);
-        commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN");
+        // The COUNT and page-keyset statements root on dms.Descriptor and the page-rows statement
+        // re-joins that one table for the row payload: no dms.Document reference survives.
+        commandExecutor.Commands[0].CommandText.Should().Contain(expectedKeysetRootFragment);
+        commandExecutor.Commands[0].CommandText.Should().Contain(expectedDescriptorJoinFragment);
+        commandExecutor.Commands[0].CommandText.Should().NotContain(unexpectedDocumentTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedOrderByFragment);
     }
 
@@ -456,37 +463,10 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands.Should().ContainSingle();
     }
 
-    [Test]
-    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_query_document_has_no_descriptor_row()
-    {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(
-                        Guid.Parse("aaaaaaaa-1111-2222-3333-444444444444"),
-                        ns: null,
-                        codeValue: null,
-                        shortDescription: null,
-                        description: null,
-                        effectiveBeginDate: null,
-                        effectiveEndDate: null,
-                        discriminator: null
-                    )
-                ),
-            ]),
-        ]);
-        var sut = CreateHandler(commandExecutor);
-
-        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
-
-        var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
-        // See sibling GET-by-id test: Namespace is read nullably so CodeValue is now the first
-        // required column whose null value the reader trips on when the LEFT JOIN finds no row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
-        failure.FailureMessage.Should().Contain("DocumentId 101");
-        failure.FailureMessage.Should().Contain("ResourceKeyId=13");
-    }
-
+    // The former "selected document has no descriptor row" query corruption case is structurally
+    // unreachable now that the page keyset and the page rows both come from dms.Descriptor: a
+    // document without a descriptor row is never selected. The surviving required-field-null case
+    // below still covers the reader's invariant path for the GET-many statement.
     [Test]
     public async Task It_returns_an_unknown_failure_when_a_selected_descriptor_query_row_has_a_required_field_null()
     {

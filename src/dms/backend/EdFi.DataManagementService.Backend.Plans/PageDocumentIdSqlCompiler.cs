@@ -25,7 +25,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static readonly string _descriptorAlias = PlanNamingConventions.GetFixedAlias(
         PlanSqlAliasRole.Descriptor
     );
-    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
 
     private readonly SqlDialect _dialect = dialect;
@@ -65,16 +64,20 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var authorization = NormalizeAuthorization(spec.Authorization);
         var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
         var namespacePrefixParameterization = authorization?.NamespacePrefixParameterization;
-        // The descriptor join also covers the descriptor-alias namespace check used by descriptor
-        // queries: the page subquery roots on dms.Document for ResourceKeyId paging, while the
-        // Namespace column lives on the joined dms.Descriptor row.
+        // Resource queries that filter a descriptor-valued field reach the shared descriptor table
+        // through this join. A descriptor-rooted page needs no join at all: its predicates and its
+        // namespace check are root-local, so the namespace arm is gated on the root table to keep the
+        // descriptor page from self-joining.
         var requiresDescriptorJoin =
             rewrittenPredicates.Any(static predicate =>
                 predicate.Target is QueryPredicateTarget.DescriptorColumn
             )
             || (
-                authorization?.NamespaceChecks?.Any(check => check.RootTable.Equals(_descriptorTable))
-                ?? false
+                !spec.RootTable.Equals(_descriptorTable)
+                && (
+                    authorization?.NamespaceChecks?.Any(check => check.RootTable.Equals(_descriptorTable))
+                    ?? false
+                )
             );
         var filterParametersInOrder = BuildFilterParametersInOrder(
             rewrittenPredicates,
@@ -656,10 +659,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Resolves the SQL alias to qualify a namespace check column. Resource queries always check
-    /// against the query root table. Descriptor queries root the page subquery on
-    /// <c>dms.Document</c> but the namespace column lives on the joined <c>dms.Descriptor</c> row;
-    /// in that case the check binds to the shared descriptor alias rather than the document root.
+    /// Resolves the SQL alias to qualify a namespace check column. Every namespace check binds the
+    /// query root alias: resource queries check their own root table, and descriptor queries root the
+    /// page subquery on <c>dms.Descriptor</c>, which is where the checked <c>Namespace</c> column
+    /// lives. A check spec for any other table cannot be emitted.
     /// </summary>
     private static string ResolveNamespaceCheckAlias(DbTableName checkRootTable, DbTableName queryRootTable)
     {
@@ -668,14 +671,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             return _rootAlias;
         }
 
-        if (queryRootTable.Equals(_documentTable) && checkRootTable.Equals(_descriptorTable))
-        {
-            return _descriptorAlias;
-        }
-
         throw new InvalidOperationException(
             $"Namespace authorization check spec table '{checkRootTable}' does not match query root table '{queryRootTable}'. "
-                + "Namespace authorization SQL emission supports only concrete root-table columns (or the shared dms.Descriptor join for descriptor queries)."
+                + "Namespace authorization SQL emission supports only concrete root-table columns."
         );
     }
 
