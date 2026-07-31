@@ -177,7 +177,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter Startup.",
       "Review registrations to confirm no background service or read-path call site was introduced."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",

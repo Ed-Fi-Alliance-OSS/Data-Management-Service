@@ -7,6 +7,7 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -80,6 +81,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheDescriptorHydrator>();
         var documentCacheMaterializer =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>();
+        var documentCacheWriterRetryAdapter =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var singleRecordRelationshipAuthorizationExecutor =
@@ -136,6 +139,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         documentCacheSourceMetadataReader.Should().BeOfType<DocumentCacheSourceMetadataReader>();
         documentCacheDescriptorHydrator.Should().BeOfType<DocumentCacheDescriptorHydrator>();
         documentCacheMaterializer.Should().BeOfType<DocumentCacheMaterializer>();
+        documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
+        scope.ServiceProvider.GetService<IDocumentCacheWriter>().Should().BeNull();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         singleRecordRelationshipAuthorizationExecutor
             .Should()
@@ -164,7 +169,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     }
 
     [Test]
-    public void DocumentCacheMaterializer_ServiceRegistration_registers_the_materializer_without_cross_story_services()
+    public void DocumentCacheMaterializer_ServiceRegistration_registers_the_materializer_without_cross_story_call_sites()
     {
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
@@ -194,7 +199,6 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Should()
             .NotContain(serviceTypeName =>
                 serviceTypeName.Contains("DocumentCacheTarget", StringComparison.Ordinal)
-                || serviceTypeName.Contains("DocumentCacheWriter", StringComparison.Ordinal)
                 || serviceTypeName.Contains("DocumentProjectionWork", StringComparison.Ordinal)
                 || serviceTypeName.Contains("Lifecycle", StringComparison.Ordinal)
                 || serviceTypeName.Contains("Kafka", StringComparison.Ordinal)
@@ -215,6 +219,41 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>()
             .Should()
             .BeOfType<DocumentCacheMaterializer>();
+        scope.ServiceProvider.GetService<IDocumentCacheWriter>().Should().BeNull();
+    }
+
+    [Test]
+    public void DocumentCacheWriter_ServiceRegistration_registers_shared_retry_adapter_without_provider_writer()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+
+        services.AddReferenceResolver<
+            ExecutorBackedReferenceResolverAdapterFactory,
+            TestRelationalCommandExecutor,
+            TestRelationalWriteSessionFactory,
+            TestDocumentHydrator,
+            TestSessionDocumentHydrator
+        >();
+
+        ServiceDescriptor retryDescriptor = services.Single(descriptor =>
+            descriptor.ServiceType == typeof(IDocumentCacheWriterRetryAdapter)
+        );
+
+        retryDescriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        retryDescriptor.ImplementationType.Should().Be<DocumentCacheWriterRetryAdapter>();
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IDocumentCacheWriter));
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>()
+            .Should()
+            .BeOfType<DocumentCacheWriterRetryAdapter>();
+        scope.ServiceProvider.GetService<IDocumentCacheWriter>().Should().BeNull();
     }
 
     [Test]
@@ -260,6 +299,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         // which depends on Core-owned IDocumentLinkSlugResolver and bound ResourceLinksOptions.
         // Provide stubs so the composition surface validates end-to-end without pulling in the
         // full Core DI extension.
+        services.TryAddSingleton(new DeadlockRetrySettings());
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
         services.AddOptions<ResourceLinksOptions>();
 

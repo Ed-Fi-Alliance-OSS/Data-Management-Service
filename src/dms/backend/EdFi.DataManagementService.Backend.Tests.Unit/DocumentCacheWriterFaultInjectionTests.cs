@@ -166,6 +166,7 @@ public class Given_DocumentCacheWriterFaultInjection
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
+        services.TryAddSingleton(new DeadlockRetrySettings());
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
         services.AddOptions<ResourceLinksOptions>();
 

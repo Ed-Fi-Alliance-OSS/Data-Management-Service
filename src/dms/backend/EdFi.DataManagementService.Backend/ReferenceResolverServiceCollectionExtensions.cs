@@ -90,6 +90,9 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Singleton<IDocumentCacheWriterTelemetry, DocumentCacheWriterTelemetry>()
         );
         services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
         );
         services.TryAdd(
