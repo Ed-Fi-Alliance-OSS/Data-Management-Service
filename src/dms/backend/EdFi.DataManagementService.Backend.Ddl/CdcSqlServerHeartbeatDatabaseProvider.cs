@@ -764,6 +764,113 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 SELECT principal_id
                 FROM sys.database_principals
                 WHERE name = N'public'
+            ),
+            direct_database_roles AS (
+                SELECT
+                    database_role.principal_id,
+                    database_role.name COLLATE DATABASE_DEFAULT AS name
+                FROM connector
+                INNER JOIN sys.database_role_members role_member
+                    ON role_member.member_principal_id = connector.principal_id
+                INNER JOIN sys.database_principals database_role
+                    ON database_role.principal_id = role_member.role_principal_id
+            ),
+            reachable_database_roles(principal_id, name, role_path) AS (
+                SELECT
+                    direct_database_roles.principal_id,
+                    direct_database_roles.name,
+                    CONVERT(
+                        nvarchar(max),
+                        N',' + CONVERT(nvarchar(20), direct_database_roles.principal_id) + N','
+                    ) AS role_path
+                FROM direct_database_roles
+                UNION ALL
+                SELECT
+                    parent_role.principal_id,
+                    parent_role.name COLLATE DATABASE_DEFAULT AS name,
+                    CONVERT(
+                        nvarchar(max),
+                        reachable_database_roles.role_path
+                            + CONVERT(nvarchar(20), parent_role.principal_id)
+                            + N','
+                    ) AS role_path
+                FROM reachable_database_roles
+                INNER JOIN sys.database_role_members role_member
+                    ON role_member.member_principal_id = reachable_database_roles.principal_id
+                INNER JOIN sys.database_principals parent_role
+                    ON parent_role.principal_id = role_member.role_principal_id
+                WHERE CHARINDEX(
+                    N',' + CONVERT(nvarchar(20), parent_role.principal_id) + N',',
+                    reachable_database_roles.role_path
+                ) = 0
+            ),
+            connector_permission_principals AS (
+                SELECT
+                    connector.principal_id,
+                    CONVERT(nvarchar(300), N'direct') AS source_name
+                FROM connector
+                UNION
+                SELECT
+                    public_principal.principal_id,
+                    CONVERT(nvarchar(300), N'public') AS source_name
+                FROM public_principal
+                WHERE EXISTS (SELECT 1 FROM connector)
+                UNION
+                SELECT DISTINCT
+                    reachable_database_roles.principal_id,
+                    CONVERT(
+                        nvarchar(300),
+                        N'role.' + reachable_database_roles.name COLLATE DATABASE_DEFAULT
+                    ) AS source_name
+                FROM reachable_database_roles
+            ),
+            connector_permissions AS (
+                SELECT
+                    permission_info.permission_name,
+                    permission_info.class,
+                    permission_info.major_id,
+                    permission_info.minor_id,
+                    permission_info.state,
+                    connector_permission_principals.source_name
+                FROM connector_permission_principals
+                INNER JOIN sys.database_permissions permission_info
+                    ON permission_info.grantee_principal_id = connector_permission_principals.principal_id
+                    AND permission_info.state IN (N'G', N'W', N'D')
+            ),
+            effective_connector_permissions AS (
+                SELECT DISTINCT
+                    grant_info.permission_name,
+                    grant_info.class,
+                    grant_info.major_id,
+                    grant_info.minor_id,
+                    grant_info.source_name
+                FROM connector_permissions grant_info
+                WHERE grant_info.state IN (N'G', N'W')
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM connector_permissions deny_info
+                    WHERE deny_info.state = N'D'
+                    AND deny_info.permission_name = grant_info.permission_name
+                    AND deny_info.class = grant_info.class
+                    AND deny_info.major_id = grant_info.major_id
+                    AND (
+                        deny_info.minor_id = 0
+                        OR grant_info.minor_id = 0
+                        OR deny_info.minor_id = grant_info.minor_id
+                    )
+                )
+            ),
+            direct_connector_permissions AS (
+                SELECT
+                    permission_info.permission_name,
+                    permission_info.class,
+                    permission_info.major_id,
+                    permission_info.minor_id,
+                    permission_info.state
+                FROM connector
+                INNER JOIN sys.database_permissions permission_info
+                    ON permission_info.grantee_principal_id = connector.principal_id
+                    AND permission_info.state IN (N'G', N'W')
             )
             SELECT
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector) THEN 1 ELSE 0 END) AS connector_exists,
@@ -844,13 +951,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     AND expected.capture_instance IS NULL
                 ), N'') AS unexpected_capture_instances_using_role,
                 COALESCE((
-                    SELECT STRING_AGG(database_role.name, N',') WITHIN GROUP (ORDER BY database_role.name)
-                    FROM connector
-                    INNER JOIN sys.database_role_members role_member
-                        ON role_member.member_principal_id = connector.principal_id
-                    INNER JOIN sys.database_principals database_role
-                        ON database_role.principal_id = role_member.role_principal_id
-                    WHERE database_role.name IN (N'db_owner', N'db_ddladmin', N'db_datareader', N'db_datawriter')
+                    SELECT STRING_AGG(disallowed_role.name, N',') WITHIN GROUP (ORDER BY disallowed_role.name)
+                    FROM (
+                        SELECT DISTINCT reachable_database_roles.name
+                        FROM reachable_database_roles
+                        WHERE reachable_database_roles.name <> @gating_role_name
+                    ) disallowed_role
                 ), N'') AS disallowed_database_roles,
                 COALESCE((
                     SELECT STRING_AGG(server_role.name, N',') WITHIN GROUP (ORDER BY server_role.name)
@@ -881,127 +987,155 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ), N'') AS ownership,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM sys.database_permissions permission_info
-                    CROSS JOIN connector
+                    FROM effective_connector_permissions permission_info
                     WHERE permission_info.permission_name = N'CONNECT'
-                    AND permission_info.state IN (N'G', N'W')
                     AND permission_info.class = 0
                     AND permission_info.major_id = 0
-                    AND permission_info.grantee_principal_id IN (
-                        connector.principal_id,
-                        (SELECT principal_id FROM public_principal)
-                    )
                 ) THEN 1 ELSE 0 END) AS database_connect,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM sys.database_permissions permission_info
-                    CROSS JOIN connector
+                    FROM direct_connector_permissions permission_info
                     WHERE permission_info.permission_name = N'SELECT'
-                    AND permission_info.state IN (N'G', N'W')
                     AND permission_info.class = 1
                     AND permission_info.major_id = @document_object_id
                     AND permission_info.minor_id = 0
-                    AND permission_info.grantee_principal_id = connector.principal_id
+                    AND EXISTS (
+                        SELECT 1
+                        FROM effective_connector_permissions effective_permission
+                        WHERE effective_permission.permission_name = N'SELECT'
+                        AND effective_permission.class = 1
+                        AND effective_permission.major_id = @document_object_id
+                        AND effective_permission.minor_id = 0
+                    )
                 ) THEN 1 ELSE 0 END) AS document_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM sys.database_permissions permission_info
-                    CROSS JOIN connector
+                    FROM direct_connector_permissions permission_info
                     WHERE permission_info.permission_name = N'SELECT'
-                    AND permission_info.state IN (N'G', N'W')
                     AND permission_info.class = 1
                     AND permission_info.major_id = @document_cache_object_id
                     AND permission_info.minor_id = 0
-                    AND permission_info.grantee_principal_id = connector.principal_id
+                    AND EXISTS (
+                        SELECT 1
+                        FROM effective_connector_permissions effective_permission
+                        WHERE effective_permission.permission_name = N'SELECT'
+                        AND effective_permission.class = 1
+                        AND effective_permission.major_id = @document_cache_object_id
+                        AND effective_permission.minor_id = 0
+                    )
                 ) THEN 1 ELSE 0 END) AS document_cache_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM sys.database_permissions permission_info
-                    CROSS JOIN connector
+                    FROM direct_connector_permissions permission_info
                     WHERE permission_info.permission_name = N'SELECT'
-                    AND permission_info.state IN (N'G', N'W')
                     AND permission_info.class = 1
                     AND permission_info.major_id = @heartbeat_object_id
                     AND permission_info.minor_id = 0
-                    AND permission_info.grantee_principal_id = connector.principal_id
+                    AND EXISTS (
+                        SELECT 1
+                        FROM effective_connector_permissions effective_permission
+                        WHERE effective_permission.permission_name = N'SELECT'
+                        AND effective_permission.class = 1
+                        AND effective_permission.major_id = @heartbeat_object_id
+                        AND effective_permission.minor_id = 0
+                    )
                 ) THEN 1 ELSE 0 END) AS heartbeat_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM sys.database_permissions permission_info
-                    CROSS JOIN connector
+                    FROM direct_connector_permissions permission_info
                     WHERE permission_info.permission_name = N'UPDATE'
-                    AND permission_info.state IN (N'G', N'W')
                     AND permission_info.class = 1
                     AND permission_info.major_id = @heartbeat_object_id
-                    AND permission_info.minor_id IN (0, @heartbeat_sequence_column_id)
-                    AND permission_info.grantee_principal_id = connector.principal_id
+                    AND permission_info.minor_id = @heartbeat_sequence_column_id
+                    AND EXISTS (
+                        SELECT 1
+                        FROM effective_connector_permissions effective_permission
+                        WHERE effective_permission.permission_name = N'UPDATE'
+                        AND effective_permission.class = 1
+                        AND effective_permission.major_id = @heartbeat_object_id
+                        AND effective_permission.minor_id = @heartbeat_sequence_column_id
+                    )
                 ) THEN 1 ELSE 0 END) AS heartbeat_sequence_update,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM sys.database_permissions permission_info
-                    CROSS JOIN connector
+                    FROM direct_connector_permissions permission_info
                     WHERE permission_info.permission_name = N'UPDATE'
-                    AND permission_info.state IN (N'G', N'W')
                     AND permission_info.class = 1
                     AND permission_info.major_id = @heartbeat_object_id
-                    AND permission_info.minor_id IN (0, @heartbeat_at_column_id)
-                    AND permission_info.grantee_principal_id = connector.principal_id
+                    AND permission_info.minor_id = @heartbeat_at_column_id
+                    AND EXISTS (
+                        SELECT 1
+                        FROM effective_connector_permissions effective_permission
+                        WHERE effective_permission.permission_name = N'UPDATE'
+                        AND effective_permission.class = 1
+                        AND effective_permission.major_id = @heartbeat_object_id
+                        AND effective_permission.minor_id = @heartbeat_at_column_id
+                    )
                 ) THEN 1 ELSE 0 END) AS heartbeat_at_update,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM sys.database_permissions permission_info
-                    CROSS JOIN connector
+                    FROM effective_connector_permissions permission_info
                     WHERE permission_info.permission_name = N'UPDATE'
-                    AND permission_info.state IN (N'G', N'W')
                     AND permission_info.class = 1
                     AND permission_info.major_id = @heartbeat_object_id
                     AND permission_info.minor_id IN (0, @heartbeat_id_column_id)
-                    AND permission_info.grantee_principal_id = connector.principal_id
                 ) THEN 1 ELSE 0 END) AS heartbeat_id_update,
                 COALESCE((
-                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
-                    FROM connector
-                    INNER JOIN sys.database_permissions permission_info
-                        ON permission_info.grantee_principal_id = connector.principal_id
-                        AND permission_info.state IN (N'G', N'W')
-                        AND permission_info.class = 1
+                    SELECT STRING_AGG(permission_info.privilege_source, N',') WITHIN GROUP (ORDER BY permission_info.privilege_source)
+                    FROM (
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM effective_connector_permissions permission_info
+                        WHERE permission_info.class = 1
                         AND permission_info.major_id = @document_object_id
                         AND permission_info.permission_name <> N'SELECT'
+                    ) permission_info
                 ), N'') AS document_write_privileges,
                 COALESCE((
-                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
-                    FROM connector
-                    INNER JOIN sys.database_permissions permission_info
-                        ON permission_info.grantee_principal_id = connector.principal_id
-                        AND permission_info.state IN (N'G', N'W')
-                        AND permission_info.class = 1
+                    SELECT STRING_AGG(permission_info.privilege_source, N',') WITHIN GROUP (ORDER BY permission_info.privilege_source)
+                    FROM (
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM effective_connector_permissions permission_info
+                        WHERE permission_info.class = 1
                         AND permission_info.major_id = @document_cache_object_id
                         AND permission_info.permission_name <> N'SELECT'
+                    ) permission_info
                 ), N'') AS document_cache_write_privileges,
                 COALESCE((
-                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
-                    FROM connector
-                    INNER JOIN sys.database_permissions permission_info
-                        ON permission_info.grantee_principal_id = connector.principal_id
-                        AND permission_info.state IN (N'G', N'W')
-                        AND permission_info.class = 1
+                    SELECT STRING_AGG(permission_info.privilege_source, N',') WITHIN GROUP (ORDER BY permission_info.privilege_source)
+                    FROM (
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM effective_connector_permissions permission_info
+                        WHERE permission_info.class = 1
                         AND permission_info.major_id = @work_table_object_id
+                    ) permission_info
                 ), N'') AS work_table_privileges,
                 COALESCE((
-                    SELECT STRING_AGG(object_info.name, N',') WITHIN GROUP (ORDER BY object_info.name)
-                    FROM connector
-                    INNER JOIN sys.database_permissions permission_info
-                        ON permission_info.grantee_principal_id = connector.principal_id
-                        AND permission_info.state IN (N'G', N'W')
-                        AND permission_info.class = 1
-                        AND permission_info.permission_name = N'SELECT'
-                        AND permission_info.minor_id = 0
+                    SELECT STRING_AGG(permission_info.object_source, N',') WITHIN GROUP (ORDER BY permission_info.object_source)
+                    FROM (
+                        SELECT DISTINCT
+                            object_info.name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS object_source
+                        FROM effective_connector_permissions permission_info
                     INNER JOIN sys.objects object_info
                         ON object_info.object_id = permission_info.major_id
                     INNER JOIN sys.schemas schema_info
                         ON schema_info.schema_id = object_info.schema_id
-                    WHERE schema_info.name = N'dms'
-                    AND object_info.name NOT IN (N'Document', N'DocumentCache', N'CdcHeartbeat', N'DocumentProjectionWork')
+                        WHERE permission_info.class = 1
+                        AND permission_info.permission_name = N'SELECT'
+                        AND permission_info.minor_id = 0
+                        AND schema_info.name = N'dms'
+                        AND object_info.name NOT IN (N'Document', N'DocumentCache', N'CdcHeartbeat', N'DocumentProjectionWork')
+                    ) permission_info
                 ), N'') AS extra_dms_select_tables;
             """;
     }
@@ -2449,7 +2583,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 GrantObservation(
                     connector,
                     SafeName(DmsTableNames.DocumentProjectionWork),
-                    workTablePrivileges
+                    PrivilegeNames(workTablePrivileges)
                 )
             );
         }
@@ -2479,8 +2613,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             privileges.Add("SELECT");
         }
 
-        privileges.AddRange(writePrivileges);
+        privileges.AddRange(PrivilegeNames(writePrivileges));
         return privileges;
+    }
+
+    private static IReadOnlyList<string> PrivilegeNames(IReadOnlyList<string> privileges) =>
+        privileges.Select(PrivilegeName).Distinct(StringComparer.Ordinal).ToArray();
+
+    private static string PrivilegeName(string privilege)
+    {
+        var separatorIndex = privilege.IndexOf(".via.", StringComparison.Ordinal);
+        return separatorIndex < 0 ? privilege : privilege[..separatorIndex];
     }
 
     private static CdcProviderSetupStepResult DatabaseCdcResult(

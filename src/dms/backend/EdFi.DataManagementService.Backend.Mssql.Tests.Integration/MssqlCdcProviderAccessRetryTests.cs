@@ -321,6 +321,127 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
+    public async Task It_should_fail_closed_when_required_access_comes_from_custom_role_instead_of_direct_grants()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        var customRole = $"cdc_custom_reader_{Guid.NewGuid():N}";
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            CREATE ROLE {QuoteIdentifier(customRole)};
+            ALTER ROLE {QuoteIdentifier(customRole)} ADD MEMBER {QuoteIdentifier(_connectorPrincipalName)};
+
+            REVOKE SELECT ON OBJECT::[dms].[Document] FROM {QuoteIdentifier(_connectorPrincipalName)};
+            REVOKE SELECT ON OBJECT::[dms].[DocumentCache] FROM {QuoteIdentifier(_connectorPrincipalName)};
+            REVOKE SELECT ON OBJECT::[dms].[CdcHeartbeat] FROM {QuoteIdentifier(_connectorPrincipalName)};
+            REVOKE UPDATE ([HeartbeatSequence], [HeartbeatAt]) ON OBJECT::[dms].[CdcHeartbeat] FROM {QuoteIdentifier(
+                _connectorPrincipalName
+            )};
+
+            GRANT SELECT ON OBJECT::[dms].[Document] TO {QuoteIdentifier(customRole)};
+            GRANT SELECT ON OBJECT::[dms].[DocumentCache] TO {QuoteIdentifier(customRole)};
+            GRANT SELECT ON OBJECT::[dms].[CdcHeartbeat] TO {QuoteIdentifier(customRole)};
+            GRANT UPDATE ([HeartbeatSequence], [HeartbeatAt]) ON OBJECT::[dms].[CdcHeartbeat] TO {QuoteIdentifier(
+                customRole
+            )};
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        validateResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_ELEVATED_MEMBERSHIP_MISMATCH"
+                && diagnostic.ObservedValue!.Contains(customRole, StringComparison.Ordinal)
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document", StringComparison.Ordinal)
+            );
+        (await IsConnectorDatabaseRoleMemberAsync(connection, customRole)).Should().BeTrue();
+        (await HasConnectorObjectPermissionAsync(connection, "Document", "SELECT"))
+            .Should()
+            .BeFalse("custom role access must not be accepted as the direct provider grant path");
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_on_public_forbidden_dms_permissions()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+
+        await ExecuteNonQueryAsync(
+            connection,
+            """
+            GRANT SELECT ON OBJECT::[dms].[DocumentProjectionWork] TO public;
+            GRANT UPDATE ON OBJECT::[dms].[Document] TO public;
+            GRANT SELECT ON OBJECT::[dms].[ResourceKey] TO public;
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        validateResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
+                && diagnostic.ObservedValue!.Contains(".via.public", StringComparison.Ordinal)
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains(".via.public", StringComparison.Ordinal)
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains(".via.public", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_should_not_report_public_grant_when_connector_deny_removes_effective_access()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            GRANT SELECT ON OBJECT::[dms].[DocumentProjectionWork] TO public;
+            DENY SELECT ON OBJECT::[dms].[DocumentProjectionWork] TO {QuoteIdentifier(
+                _connectorPrincipalName
+            )};
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+    }
+
+    [Test]
     public async Task It_should_fail_closed_on_elevated_connector_membership_without_downgrading_it()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);

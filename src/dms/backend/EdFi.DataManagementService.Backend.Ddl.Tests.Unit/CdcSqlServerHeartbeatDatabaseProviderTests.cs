@@ -602,6 +602,38 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_reject_unexpected_custom_database_role_membership_and_required_grants_still_missing()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DisallowedDatabaseRoles = ["custom_cdc_reader"],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_ELEVATED_MEMBERSHIP_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("custom_cdc_reader")
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document")
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
     public async Task It_should_reject_gating_role_extra_members_permissions_and_ownership()
     {
         var executor = ExistingArtifactsWithoutConnectorGrants(
@@ -628,6 +660,59 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 && diagnostic.SafeName.Value == "dms_binding_gate"
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task It_should_reject_inherited_or_public_forbidden_connector_permissions()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+                DisallowedDatabaseRoles = ["custom_writer"],
+                DocumentWritePrivileges = ["UPDATE.via.role.custom_writer"],
+                DocumentCacheWritePrivileges = ["DELETE.via.public"],
+                WorkTablePrivileges = ["SELECT.via.public"],
+                ExtraDmsSelectTables = ["ResourceKey.via.role.custom_writer"],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("UPDATE.via.role.custom_writer")
+                && diagnostic.ObservedValue.Contains("DELETE.via.public")
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
+                && diagnostic.ObservedValue == "SELECT.via.public"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == "ResourceKey.via.role.custom_writer"
+            );
+        result
+            .GrantInventory.Should()
+            .Contain(grant =>
+                grant.SafeObjectName.Value == "dms.Document"
+                && grant.Privileges.Contains("UPDATE")
+                && !grant.Privileges.Contains("UPDATE.via.role.custom_writer")
+            );
     }
 
     [Test]
