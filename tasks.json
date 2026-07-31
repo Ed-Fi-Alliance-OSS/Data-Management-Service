@@ -218,7 +218,7 @@
       "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcBindingAwareValidation",
       "Review validation fixtures for mismatched binding names, mismatched source fingerprints, missing heartbeat objects, and work-table capture or grant violations."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "work-table-exclusion",

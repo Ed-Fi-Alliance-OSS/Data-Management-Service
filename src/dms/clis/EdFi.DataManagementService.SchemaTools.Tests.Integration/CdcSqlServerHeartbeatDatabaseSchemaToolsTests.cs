@@ -248,16 +248,37 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         TableExists(connection, "CdcHeartbeat").Should().BeFalse();
     }
 
+    [Test]
+    public async Task MssqlCdcBindingAwareValidation_should_fail_before_enabling_cdc_when_source_fingerprint_mismatches()
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var result = await RunSetupAsync(
+            connection,
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            boundSourceIdentity: "mismatched-source"
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_BINDING_SOURCE_FINGERPRINT_MISMATCH");
+        IsDatabaseCdcEnabled(connection).Should().BeFalse();
+        TableExists(connection, "CdcHeartbeat").Should().BeFalse();
+    }
+
     private CdcProviderSetupRequest BuildRequest(
         ICdcProviderDatabaseExecutor databaseExecutor,
-        CdcProviderSetupMode mode
+        CdcProviderSetupMode mode,
+        string boundSourceIdentity
     ) =>
         new(
             provider: CdcProvider.SqlServer,
             mode: mode,
             boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
                 "dms-source-fingerprint-v1",
-                "integration-source"
+                boundSourceIdentity
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("sa")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(_connectorPrincipalName)),
@@ -279,13 +300,16 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
 
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
-        CdcProviderSetupMode mode
+        CdcProviderSetupMode mode,
+        string? boundSourceIdentity = null
     )
     {
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
         var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
 
-        return await service.SetupAsync(BuildRequest(executor, mode));
+        return await service.SetupAsync(
+            BuildRequest(executor, mode, boundSourceIdentity ?? ReadDataStoreIdentity(connection))
+        );
     }
 
     private static string ReadDataStoreIdentity(SqlConnection connection)

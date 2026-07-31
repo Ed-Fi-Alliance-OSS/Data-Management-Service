@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -293,6 +294,188 @@ public class Given_CdcProviderSetupService_Fail_Closed_Validation
 }
 
 [TestFixture]
+public class Given_CdcBindingAwareValidation
+{
+    [Test]
+    public async Task It_should_fail_closed_on_source_fingerprint_mismatch_before_artifact_creation()
+    {
+        var laterStep = new RecordingStep();
+        var service = new CdcProviderSetupService([
+            new TestProvider(
+                CdcProvider.Postgresql,
+                [
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.SourceFingerprint,
+                        CdcSourceFingerprintMetadata.SafeArtifactName,
+                        canCreateInInitialSetup: false,
+                        observedSourceFingerprint: new CdcSourceFingerprint(
+                            "dms-source-fingerprint-v1",
+                            "other-source"
+                        )
+                    ),
+                    laterStep.ToSetupStep(
+                        CdcProviderArtifactKind.PostgresqlPublication,
+                        canCreateInInitialSetup: true
+                    ),
+                ]
+            ),
+        ]);
+
+        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_BINDING_SOURCE_FINGERPRINT_MISMATCH")
+            .Which.Should()
+            .Match<CdcProviderDiagnostic>(diagnostic =>
+                diagnostic.ExpectedValue == "dms_source_fingerprint_v1:source_123"
+                && diagnostic.ObservedValue == "dms_source_fingerprint_v1:other_source"
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.FailClosed
+            );
+        laterStep.ExecutionCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_a_provider_reports_a_substituted_binding_artifact_name()
+    {
+        var service = new CdcProviderSetupService([
+            new TestProvider(
+                CdcProvider.Postgresql,
+                [
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.SourceFingerprint,
+                        CdcSourceFingerprintMetadata.SafeArtifactName,
+                        canCreateInInitialSetup: false,
+                        observedSourceFingerprint: new CdcSourceFingerprint(
+                            "dms-source-fingerprint-v1",
+                            "source-123"
+                        )
+                    ),
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.PostgresqlPublication,
+                        new CdcSafeName("derived_from_database_name")
+                    ),
+                ]
+            ),
+        ]);
+
+        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_BINDING_ARTIFACT_NAME_MISMATCH")
+            .Which.Should()
+            .Match<CdcProviderDiagnostic>(diagnostic =>
+                diagnostic.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication
+                && diagnostic.ExpectedValue == "dms_binding_publication"
+                && diagnostic.ObservedValue == "derived_from_database_name"
+            );
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_expected_message_keys_do_not_match_the_binding_contract()
+    {
+        var service = new CdcProviderSetupService([
+            new TestProvider(
+                CdcProvider.Postgresql,
+                [
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.SourceFingerprint,
+                        CdcSourceFingerprintMetadata.SafeArtifactName,
+                        canCreateInInitialSetup: false,
+                        observedSourceFingerprint: new CdcSourceFingerprint(
+                            "dms-source-fingerprint-v1",
+                            "source-123"
+                        )
+                    ),
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.HeartbeatTable,
+                        new CdcSafeName("dms.CdcHeartbeat"),
+                        heartbeatActionQuery: new CdcHeartbeatActionQuery("UPDATE dms.CdcHeartbeat", "hash")
+                    ),
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.PostgresqlPublication,
+                        new CdcSafeName("dms_binding_publication"),
+                        expectedMessageKeyColumns:
+                        [
+                            new CdcExpectedMessageKeyColumns(
+                                CdcSourceTableKind.Document,
+                                [new DbColumnName("DocumentId")]
+                            ),
+                            new CdcExpectedMessageKeyColumns(
+                                CdcSourceTableKind.DocumentCache,
+                                [new DbColumnName("DocumentUuid")]
+                            ),
+                        ]
+                    ),
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                        new CdcSafeName("dms_binding_slot")
+                    ),
+                ]
+            ),
+        ]);
+
+        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_BINDING_MESSAGE_KEY_COLUMNS_MISMATCH"
+                && diagnostic.SafeName.Value == "dms.Document"
+            )
+            .Which.Should()
+            .Match<CdcProviderDiagnostic>(diagnostic =>
+                diagnostic.ExpectedValue == "DocumentUuid" && diagnostic.ObservedValue == "DocumentId"
+            );
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_connector_grants_include_the_projection_work_table()
+    {
+        var service = new CdcProviderSetupService([
+            new TestProvider(
+                CdcProvider.Postgresql,
+                [
+                    RecordingStep.Create(
+                        CdcProviderArtifactKind.SourceFingerprint,
+                        CdcSourceFingerprintMetadata.SafeArtifactName,
+                        canCreateInInitialSetup: false,
+                        observedSourceFingerprint: new CdcSourceFingerprint(
+                            "dms-source-fingerprint-v1",
+                            "source-123"
+                        ),
+                        grantInventory:
+                        [
+                            new CdcGrantObservation(
+                                CdcPrincipalKind.ConnectorPrincipal,
+                                new CdcSafeName("connector_principal"),
+                                CdcProviderArtifactKind.Grant,
+                                new CdcSafeName("dms.DocumentProjectionWork"),
+                                ["SELECT"],
+                                []
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+        ]);
+
+        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_BINDING_WORK_TABLE_GRANT_FORBIDDEN")
+            .Which.Category.Should()
+            .Be(CdcProviderDiagnosticCategory.WorkTableGrantViolation);
+    }
+}
+
+[TestFixture]
 public class Given_CdcProviderSetupService_Registration
 {
     [Test]
@@ -360,6 +543,10 @@ internal sealed class RecordingStep
     private const string DefaultSafeName = "dms_binding_artifact";
     private readonly CdcProviderArtifactState _artifactState;
     private readonly IReadOnlyList<CdcSourceTableInventory> _sourceTableInventory;
+    private readonly CdcSourceFingerprint? _observedSourceFingerprint;
+    private readonly IReadOnlyList<CdcGrantObservation> _grantInventory;
+    private readonly IReadOnlyList<CdcExpectedMessageKeyColumns> _expectedMessageKeyColumns;
+    private readonly CdcHeartbeatActionQuery? _heartbeatActionQuery;
     private readonly IReadOnlyList<CdcProviderDiagnostic> _diagnostics;
     private readonly CdcSafeName _safeName;
 
@@ -367,11 +554,19 @@ internal sealed class RecordingStep
         CdcProviderArtifactState artifactState = CdcProviderArtifactState.Matched,
         CdcSafeName? safeName = null,
         IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory = null,
+        CdcSourceFingerprint? observedSourceFingerprint = null,
+        IReadOnlyList<CdcGrantObservation>? grantInventory = null,
+        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
+        CdcHeartbeatActionQuery? heartbeatActionQuery = null,
         IReadOnlyList<CdcProviderDiagnostic>? diagnostics = null
     )
     {
         _artifactState = artifactState;
         _sourceTableInventory = sourceTableInventory ?? [];
+        _observedSourceFingerprint = observedSourceFingerprint;
+        _grantInventory = grantInventory ?? [];
+        _expectedMessageKeyColumns = expectedMessageKeyColumns ?? [];
+        _heartbeatActionQuery = heartbeatActionQuery;
         _diagnostics = diagnostics ?? [];
         _safeName = safeName ?? new CdcSafeName(DefaultSafeName);
     }
@@ -388,12 +583,22 @@ internal sealed class RecordingStep
         CdcProviderArtifactState artifactState = CdcProviderArtifactState.Matched,
         bool canCreateInInitialSetup = true,
         IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory = null,
+        CdcSourceFingerprint? observedSourceFingerprint = null,
+        IReadOnlyList<CdcGrantObservation>? grantInventory = null,
+        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
+        CdcHeartbeatActionQuery? heartbeatActionQuery = null,
         IReadOnlyList<CdcProviderDiagnostic>? diagnostics = null
     ) =>
-        new RecordingStep(artifactState, safeName, sourceTableInventory, diagnostics).ToSetupStep(
-            artifactKind,
-            canCreateInInitialSetup
-        );
+        new RecordingStep(
+            artifactState,
+            safeName,
+            sourceTableInventory,
+            observedSourceFingerprint,
+            grantInventory,
+            expectedMessageKeyColumns,
+            heartbeatActionQuery,
+            diagnostics
+        ).ToSetupStep(artifactKind, canCreateInInitialSetup);
 
     public CdcProviderSetupStep ToSetupStep(
         CdcProviderArtifactKind artifactKind,
@@ -408,6 +613,7 @@ internal sealed class RecordingStep
                 _executedModes.Add(context.Mode);
                 return Task.FromResult(
                     new CdcProviderSetupStepResult(
+                        observedSourceFingerprint: _observedSourceFingerprint,
                         artifactInventory:
                         [
                             new CdcProviderArtifactObservation(
@@ -417,7 +623,10 @@ internal sealed class RecordingStep
                                 new Dictionary<string, string> { ["state"] = _artifactState.ToString() }
                             ),
                         ],
+                        grantInventory: _grantInventory,
                         sourceTableInventory: _sourceTableInventory,
+                        expectedMessageKeyColumns: _expectedMessageKeyColumns,
+                        heartbeatActionQuery: _heartbeatActionQuery,
                         diagnostics: _diagnostics
                     )
                 );

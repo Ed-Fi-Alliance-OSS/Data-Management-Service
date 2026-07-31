@@ -234,16 +234,38 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
         validateResult.Diagnostics.Should().BeEmpty();
     }
 
+    [Test]
+    public async Task PostgresqlCdcBindingAwareValidation_should_fail_before_creating_artifacts_when_source_fingerprint_mismatches()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var result = await RunSetupAsync(
+            connection,
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            boundSourceIdentity: "mismatched-source"
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_BINDING_SOURCE_FINGERPRINT_MISMATCH");
+        TableExists(connection, "CdcHeartbeat").Should().BeFalse();
+        PublicationExists(connection).Should().BeFalse();
+        ReadReplicationSlotSnapshot(connection).Should().BeNull();
+    }
+
     private CdcProviderSetupRequest BuildRequest(
         ICdcProviderDatabaseExecutor databaseExecutor,
-        CdcProviderSetupMode mode
+        CdcProviderSetupMode mode,
+        string boundSourceIdentity
     ) =>
         new(
             provider: CdcProvider.Postgresql,
             mode: mode,
             boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
                 "dms-source-fingerprint-v1",
-                "integration-source"
+                boundSourceIdentity
             ),
             setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("postgres")),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(_connectorRoleName)),
@@ -260,13 +282,16 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
 
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         NpgsqlConnection connection,
-        CdcProviderSetupMode mode
+        CdcProviderSetupMode mode,
+        string? boundSourceIdentity = null
     )
     {
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
         var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
 
-        return await service.SetupAsync(BuildRequest(executor, mode));
+        return await service.SetupAsync(
+            BuildRequest(executor, mode, boundSourceIdentity ?? ReadDataStoreIdentity(connection))
+        );
     }
 
     private static void CreateConnectorRole(string connectorRoleName)
@@ -322,6 +347,20 @@ public class Given_PostgresqlCdcHeartbeatPublication_Provider_Setup
             );
             """;
         command.Parameters.AddWithValue("table_name", tableName);
+        return (bool)command.ExecuteScalar()!;
+    }
+
+    private static bool PublicationExists(NpgsqlConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_publication
+                WHERE pubname = @publication_name
+            );
+            """;
+        command.Parameters.AddWithValue("publication_name", PublicationName);
         return (bool)command.ExecuteScalar()!;
     }
 
