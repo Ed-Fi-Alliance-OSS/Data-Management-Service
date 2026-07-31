@@ -284,17 +284,17 @@ if (-not $d) {
     # -DmsOnly, and -DbOnly all return before it, and -NoDataStore skips it. Because -NoDataStore and
     # -SchoolYearRange are mutually exclusive - rejected immediately above - -NoDataStore always means the
     # registration is skipped, so the parameter is inert in that shape too and the switch combination
-    # stays a no-op, matching continuation behavior. The comparison follows the engine's identifier
-    # semantics: SQL Server database names are case-insensitive; PostgreSQL names are case-sensitive, so
-    # a case-variant IS a physically distinct database there.
+    # stays a no-op, matching continuation behavior.
+    #
+    # WHETHER a name collides is not decided here. Test-DatastoreNameCollidesWithReservedCmsDatabase is the
+    # single authority, shared with Confirm-CmsDatabaseTopologyAgreement, and it models the unquoted
+    # CREATE DATABASE the local datastore path actually runs rather than applying a per-engine string
+    # comparison. A second copy of that judgment here is what previously let this script and the validator
+    # disagree about a PostgreSQL case variant.
     $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly -or $NoDataStore)
-    $databaseNameComparison =
-        if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase }
-        else { [System.StringComparison]::Ordinal }
     if ($SeparateConfigDatabase -and $dataStoreRegistrationRuns -and
-        -not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName) -and
-        [string]::Equals($DataStoreDatabaseName, "edfi_configurationservice", $databaseNameComparison)) {
-        throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of."
+        (Test-DatastoreNameCollidesWithReservedCmsDatabase -DatastoreDatabaseName $DataStoreDatabaseName)) {
+        throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' (or any case variant of it) with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. The local datastore is created with an unquoted CREATE DATABASE, which PostgreSQL folds to lower case; SQL Server matches database names case-insensitively."
     }
 
     # Resolved once with Compose precedence and reused by the data-store creation below, so the

@@ -1969,6 +1969,49 @@ function Get-DotenvDependencyClosure {
     return @($closure)
 }
 
+function Test-DatastoreNameCollidesWithReservedCmsDatabase {
+    <#
+    .SYNOPSIS
+        True when a DMS datastore database name would land in the SAME physical database as
+        'edfi_configurationservice', the dedicated Configuration Service database that
+        -SeparateConfigDatabase establishes.
+
+    .DESCRIPTION
+        Models this repository's own local datastore creation path, and nothing else. It is deliberately
+        NOT a general database-name comparison and must not be reused as one.
+
+        PostgreSQL: postgresql-init.sh creates the datastore with an UNQUOTED
+        `CREATE DATABASE ${POSTGRES_DB_NAME};`, and PostgreSQL folds an unquoted identifier to lower case.
+        POSTGRES_DB_NAME=EDFI_ConfigurationService therefore creates edfi_configurationservice - the very
+        database the separate topology reserves for CMS. An ordinal comparison here approved exactly that
+        configuration while promising two physically distinct databases.
+
+        SQL Server: New-MssqlCreateDatabaseStatement bracket-quotes the identifier, which prevents folding,
+        but a database name is matched under the server's collation and the default is case-insensitive, so
+        a case variant names the same database there too.
+
+        Both engines answer identically, for different reasons, so this predicate takes no -DatabaseEngine
+        parameter: an inert engine branch here is what let the two answers drift apart in the first place.
+        Every OTHER database-name comparison keeps its own semantics - notably a resolved connection-string
+        database name, which is not an unquoted identifier, does not fold, and stays ordinal
+        case-sensitive on PostgreSQL.
+
+    .PARAMETER DatastoreDatabaseName
+        The DMS datastore database name: either resolved with Compose precedence, or taken straight from a
+        caller parameter. A blank name is not a collision - callers report absence separately.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatastoreDatabaseName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) { return $false }
+
+    return [string]::Equals(
+        $DatastoreDatabaseName,
+        "edfi_configurationservice",
+        [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
     <#
     .SYNOPSIS
@@ -2443,6 +2486,11 @@ function Confirm-CmsDatabaseTopologyAgreement {
     # none, so it must be the exact host that fallback names. A test pins it to a real Compose render.
     $inlineFallbackHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
     $expectedPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
+    # Governs the RESOLVED database names compared below - the connection string's own database segments
+    # and an ambient DMS_CONFIG_DATABASE_NAME override. Neither is an unquoted SQL identifier, so neither
+    # folds, and PostgreSQL stays case-sensitive for both. It deliberately does NOT govern the
+    # datastore-versus-reserved-CMS-name collision, which models the unquoted CREATE DATABASE the local
+    # datastore path runs and belongs to Test-DatastoreNameCollidesWithReservedCmsDatabase.
     $nameComparison = if ($DatabaseEngine -eq "mssql") { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
 
     # The marker comes from its own raw declaration through the shared assignment model, then through
@@ -2476,15 +2524,16 @@ function Confirm-CmsDatabaseTopologyAgreement {
     }
 
     if ($isSeparate) {
-        # Separate mode's whole promise is two physically distinct databases. A datastore name that
-        # itself resolves to the dedicated CMS name would pass every equality check below while both
-        # services silently share one database, so distinctness is proven explicitly. Resolved with
-        # the same Compose precedence as everything else here, so an ambient datastore-name override
-        # that collides is caught too.
+        # Separate mode's whole promise is two physically distinct databases. A datastore name that would
+        # land in the dedicated CMS database would pass every equality check below while both services
+        # silently share one database, so distinctness is proven explicitly - and it is proven by the
+        # single collision authority, which models the unquoted CREATE DATABASE the local datastore path
+        # actually runs rather than comparing two strings under this function's connection-string
+        # comparison rule. Resolved with the same Compose precedence as everything else here, so an
+        # ambient datastore-name override that collides is caught too.
         $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
-        if (-not [string]::IsNullOrWhiteSpace($datastoreDatabaseName) -and
-            [string]::Equals($datastoreDatabaseName, $expectedDatabaseName, $nameComparison)) {
-            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' also resolves to '$datastoreDatabaseName'. Rename the datastore database or use shared mode."
+        if (Test-DatastoreNameCollidesWithReservedCmsDatabase -DatastoreDatabaseName $datastoreDatabaseName) {
+            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that denotes the same physical database as the dedicated 'edfi_configurationservice' (the local datastore is created with an unquoted CREATE DATABASE, which PostgreSQL folds to lower case; SQL Server matches database names case-insensitively). The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
 
