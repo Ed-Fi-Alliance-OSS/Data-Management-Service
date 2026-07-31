@@ -1,0 +1,385 @@
+[
+  {
+    "category": "contracts",
+    "description": "Define the internal CDC provider setup/validation contract used by bootstrap orchestration and tests. Add typed input models for provider selection, setup mode, bound physical-source fingerprint, setup principal context, connector principal, binding-derived artifact names, optional connector-principal probe factory or credentials, artifact-output request, and caller-supplied emitted source-table/column inventory. Add typed output models for provider setup result, outcome, observed artifact inventory, grant inventory, source-table inventory, expected message-key columns, heartbeat action query, provider-history observations, source fingerprint, manifest payload, and diagnostics. Keep this as an internal service API and do not add a supported user-facing CDC setup CLI.",
+    "acceptance-criteria": [
+      "The setup mode enum exposes InitialCreateOrExactMatch and ValidateOnly with mode semantics available to provider implementations.",
+      "The input model requires caller-supplied artifact names and emitted source inventory for dms.Document, dms.DocumentCache, and dms.CdcHeartbeat, and contains no path that derives names from tenant display names, raw connection strings, server names, database names, or connector JSON.",
+      "The input model does not accept a free-form heartbeat action query; provider implementations generate the action query from emitted identifiers and return it as provider setup metadata.",
+      "The result model has stable fields for provider, mode, outcome, physical-source fingerprint, observed source fingerprint, artifact inventory, grant inventory, source-table inventory, expected message-key columns, heartbeat action query or hash, provider-history observations, manifest payload, and diagnostics.",
+      "Diagnostic entries expose stable code, category, severity, principal kind, artifact kind, safe artifact or object name, expected value, observed value, provider error class when available, and retry or continuity classification.",
+      "Required diagnostic categories include SetupPrincipalFailure, ConnectorPrincipalPrivilegeFailure, MissingRequiredSourceObject, WorkTableCaptureViolation, WorkTableGrantViolation, ProviderHistoryUnavailable, and ProviderHistoryLossEvidence.",
+      "The contract does not serialize credentials, connection strings, document payloads, tenant display names, or unsanitized physical identifiers."
+    ],
+    "steps-to-verify": [
+      "Review the new contract types for required fields and absence of connector-template or bootstrap-orchestration dependencies.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderSetupContract",
+      "Run dotnet csharpier format src/dms/backend src/dms/clis/EdFi.DataManagementService.SchemaTools src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit"
+    ],
+    "completed": true
+  },
+  {
+    "category": "source-inventory",
+    "description": "Add the CDC source-inventory bridge from ordinary DDL output to provider setup. The bridge should expose the emitted quoted physical identifiers and ordinal column metadata for dms.Document, dms.DocumentCache, and dms.CdcHeartbeat only, and provider setup should validate live database objects against that expected inventory before creating or exact-matching provider artifacts.",
+    "acceptance-criteria": [
+      "The expected CDC source inventory is built from the ordinary DDL layer's emitted object and column metadata instead of a second hard-coded column model.",
+      "The inventory contains exactly dms.Document, dms.DocumentCache, and dms.CdcHeartbeat with emitted physical identifiers and all emitted columns in table-ordinal order.",
+      "dms.DocumentProjectionWork is absent from the inventory and cannot be added through a provider-specific default.",
+      "A missing table, missing column, extra required source mismatch, type mismatch relevant to capture, or column-order mismatch produces a fail-closed diagnostic rather than adapting capture to the live database.",
+      "The ordinary relational ddl emit and ddl provision paths still do not create CdcHeartbeat or any CDC provider artifacts unless the opt-in provider setup service is invoked."
+    ],
+    "steps-to-verify": [
+      "Review the source-inventory code path from ordinary DDL metadata into provider setup input.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcSourceInventory",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcSourceInventory"
+    ],
+    "completed": true
+  },
+  {
+    "category": "setup-orchestration",
+    "description": "Implement the provider-neutral CdcProviderSetupService orchestration. It should dispatch to the selected provider, enforce mode behavior, stage idempotent create-or-exact-match steps, aggregate diagnostics, and return observed provider metadata without attempting destructive repair. The service should accept an explicit caller-selected mode and should not hide CDC setup inside ordinary DDL provisioning.",
+    "acceptance-criteria": [
+      "InitialCreateOrExactMatch may create missing provider artifacts only through the explicit provider setup service and only for the setup steps allowed by provider-specific implementations.",
+      "ValidateOnly performs exact-match inspection without creating, dropping, renaming, or repairing provider history artifacts.",
+      "Partial retry re-enters the same mode, exact-matches completed steps, and reports enough created or matched artifact metadata for retry diagnostics.",
+      "Mismatched existing artifacts fail closed with diagnostics and are not renamed, dropped, recreated, or offset-reset.",
+      "The service output is provider metadata and diagnostics only; it does not render connector JSON, register connectors, create Kafka topics, or mutate binding state.",
+      "Provider setup remains separate from EffectiveSchemaHash, ResourceKeySeedHash, RelationalMappingVersion, mapping packs, and ordinary DDL manifests."
+    ],
+    "steps-to-verify": [
+      "Review the service registration and call path to confirm ordinary ddl emit/provision remains unchanged.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderSetupService",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcProviderSetupService"
+    ],
+    "completed": false
+  },
+  {
+    "category": "manifest",
+    "description": "Add the standalone CDC provider manifest model and emitter. The manifest should be generated only from live database inspection after setup or validate-only execution and should be available as cdc-provider.{dialect}.manifest.json when artifact output is requested. Planned inputs may be represented as expected names or expected inventory, but every artifact, grant, heartbeat, source-fingerprint, and provider-history field in the manifest must come from observed database state.",
+    "acceptance-criteria": [
+      "The standalone manifest records provider, opt-in status, source table inventory, provider artifact names, heartbeat action query literal or hash, grant inventory, source fingerprint observed through dms.DataStoreIdentity, provider-history observations, and validation diagnostics.",
+      "The manifest is emitted as cdc-provider.pgsql.manifest.json or cdc-provider.mssql.manifest.json and is not added to ddl.manifest.json, effective-schema.manifest.json, relational-model.{dialect}.manifest.json, .mpack payloads, or .bootstrap/bootstrap-manifest.json.",
+      "The manifest uses deterministic ordering and System.Text.Json serialization consistent with existing repository style.",
+      "The manifest excludes credentials, connection strings, tenant display names, document payloads, and unsanitized server or catalog identifiers.",
+      "Manifest snapshot tests prove CDC metadata stays separate from EffectiveSchemaHash, ResourceKeySeedHash, RelationalMappingVersion, and ordinary E18 DDL output."
+    ],
+    "steps-to-verify": [
+      "Review manifest file naming, JSON shape, and serialization options.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcProviderManifest"
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-heartbeat-publication",
+    "description": "Implement PostgreSQL provider setup for the opt-in heartbeat table, heartbeat action query, dms.Document replica identity, and binding-derived publication. The implementation should use emitted quoted identifiers and caller-supplied artifact names, and should leave ordinary relational ddl emit/provision paths unchanged.",
+    "acceptance-criteria": [
+      "InitialCreateOrExactMatch creates dms.CdcHeartbeat when absent, inserts the singleton row with HeartbeatId 1, HeartbeatSequence 0, and a PostgreSQL UTC HeartbeatAt value when absent, and exact-matches the table, constraints, columns, and singleton on rerun.",
+      "ValidateOnly exact-matches the heartbeat table, singleton, and dms.Document REPLICA IDENTITY FULL requirement without creating or changing them.",
+      "The generated heartbeat action query increments HeartbeatSequence and sets HeartbeatAt from the PostgreSQL UTC clock for HeartbeatId 1, is generated from emitted identifiers rather than free-form operator SQL, and is returned in provider metadata.",
+      "dms.Document is set to REPLICA IDENTITY FULL, while dms.DocumentCache keeps its existing DocumentId primary-key shape and receives no DocumentUuid index.",
+      "The binding-derived publication contains exactly dms.DocumentCache, dms.Document, and dms.CdcHeartbeat, is not FOR ALL TABLES or schema-wide, publishes insert/update/delete but not truncate, has no row filters or column lists, uses publish_via_partition_root=false when supported, and excludes dms.DocumentProjectionWork.",
+      "Expected message-key metadata identifies DocumentUuid for dms.Document and dms.DocumentCache and does not create connector JSON."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcHeartbeatPublication",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcHeartbeatPublication",
+      "Inspect a provisioned PostgreSQL test database with psql or the schema-tools introspector to confirm heartbeat shape, replica identity, publication membership, and publication properties."
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-slot-history",
+    "description": "Implement PostgreSQL logical replication slot create-or-exact-match behavior and retained-history observations for provider setup. The slot work should stay idempotent, binding-derived, and non-destructive so later 19-00 continuity checks can classify retained-offset safety.",
+    "acceptance-criteria": [
+      "InitialCreateOrExactMatch creates or exact-matches one permanent database-local logical pgoutput slot with the binding-derived name.",
+      "An existing slot with a mismatched plug-in, database, temporary status, two_phase=true when exposed, invalidation reason, lost WAL state, or unreadable retained positions fails closed with diagnostics.",
+      "InitialCreateOrExactMatch fails closed if an existing slot is active, has unprovable prior creation position, or advanced before connector registration; ValidateOnly may report an active slot as an observation.",
+      "The setup never drops, recreates, renames, or offset-resets a slot as same-binding repair.",
+      "The result includes safe provider-history observations for slot existence, permanence, database, plug-in, restart_lsn, confirmed_flush_lsn, wal_status, invalidation reason when exposed, and retry or continuity classification.",
+      "ProviderHistoryUnavailable and ProviderHistoryLossEvidence diagnostics are emitted for permission or timeout failures, missing retained positions, invalidated history, and lost WAL as appropriate; retained-position gaps are diagnosed only when a committed source offset is supplied by the caller, otherwise retained-position metadata is returned as observation for 19-00 continuity comparison."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcSlotHistory",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcSlotHistory",
+      "Inspect pg_replication_slots in a provisioned PostgreSQL test database when diagnosing slot mismatch or history-loss fixtures."
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-security",
+    "description": "Implement PostgreSQL setup-principal classification, connector-principal privilege validation, least-privilege grants, and optional live connector-principal probes. Production setup should grant only to a named existing connector role and must not elevate it into setup ownership or broad database roles.",
+    "acceptance-criteria": [
+      "The setup principal can create or inspect the heartbeat table, insert the singleton, set replica identity, create or inspect the publication and pgoutput slot, inspect provider metadata, and grant connector privileges; missing authority is reported as SetupPrincipalFailure.",
+      "The connector principal must be an existing login role with REPLICATION, database CONNECT, USAGE on schema dms, SELECT on exactly dms.Document, dms.DocumentCache, and dms.CdcHeartbeat, and column-level UPDATE only on CdcHeartbeat.HeartbeatSequence and CdcHeartbeat.HeartbeatAt.",
+      "The connector principal has no privilege on dms.DocumentProjectionWork, no write privilege on dms.Document or dms.DocumentCache, and no table/schema/database/publication ownership.",
+      "The connector principal is rejected for SUPERUSER, CREATEDB, CREATEROLE, BYPASSRLS, pg_read_all_data, pg_write_all_data, or other disallowed elevated role attributes in the story's matrix.",
+      "The exact privilege checks apply to DMS/provider-managed DMS table grants, ownership, and role attributes; PostgreSQL system catalog visibility and provider metadata visibility required for logical replication and validation are not rejected.",
+      "Local bootstrap helpers may create a disposable local principal only in test/local paths; the production provider setup grants only to the supplied existing role.",
+      "Optional live probes, when supplied, prove connector connect/read/update boundaries inside rolled-back work and never serialize probe credentials to logs, diagnostics, or manifests.",
+      "Connector-principal privilege failures use ConnectorPrincipalPrivilegeFailure diagnostics and distinguish work-table grant violations from other privilege failures."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcPrincipalAccess",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcPrincipalAccess",
+      "Review emitted diagnostics and manifest snapshots for absence of credentials and unsafe identifiers."
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-heartbeat-database",
+    "description": "Implement SQL Server provider setup for database CDC state, projection-prerequisite diagnostics, the opt-in heartbeat table, and the provider heartbeat action query. The implementation should use emitted quoted identifiers and should not mutate E18 projection prerequisites.",
+    "acceptance-criteria": [
+      "InitialCreateOrExactMatch enables database CDC when absent and reports database CDC state, capture job state, cleanup job state, retention, and retained LSN observations after SQL Server creates the CDC jobs.",
+      "When database CDC is already enabled, missing required capture or cleanup jobs fail with provider-history diagnostics, while disabled, stopped, failed, or retention-outside-policy jobs are reported without creating, starting, stopping, or retuning jobs.",
+      "SQL Server setup may report READ_COMMITTED_SNAPSHOT and server-level nested triggers in diagnostics, but it does not enable, disable, or otherwise mutate those projection prerequisites.",
+      "InitialCreateOrExactMatch creates dms.CdcHeartbeat when absent, inserts the singleton row with HeartbeatId 1, HeartbeatSequence 0, and a sysutcdatetime() HeartbeatAt value when absent, and exact-matches the table, constraints, columns, and singleton on rerun.",
+      "ValidateOnly exact-matches database CDC state and the heartbeat table without creating or changing them.",
+      "The generated heartbeat action query increments HeartbeatSequence and sets HeartbeatAt from sysutcdatetime() for HeartbeatId 1, is generated from emitted identifiers rather than free-form operator SQL, and is returned in provider metadata."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcHeartbeatDatabase",
+      "Inspect a provisioned SQL Server test database with sqlcmd or the schema-tools introspector to confirm database CDC state, heartbeat shape, heartbeat row, and CDC job observations."
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-capture-instances",
+    "description": "Implement SQL Server table CDC capture-instance setup and exact-match validation for the three fixed CDC source tables. Capture setup should consume caller-supplied binding-derived artifact names and emitted column inventory, and should not create connector JSON or Kafka resources.",
+    "acceptance-criteria": [
+      "Provider setup creates or exact-matches exactly one capture instance each for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat, and no capture instance for dms.DocumentProjectionWork.",
+      "sp_cdc_enable_table is called with the binding-derived capture instance, binding-derived role name, supports_net_changes=0, all emitted columns in emitted order, index_name=NULL, filegroup_name=NULL, and allow_partition_switch=0.",
+      "Existing capture instances exact-match source schema/object, capture-instance name, gating role, all captured columns in expected order, no net changes, no named source index, no CDC filegroup override, and partition switching disabled.",
+      "The setup result includes provider metadata for source object mapping, captured columns, supports_net_changes, source index, filegroup, partition switching, captured source inventory, heartbeat capture visibility, and expected message-key columns.",
+      "Expected message-key metadata identifies DocumentUuid for dms.Document and dms.DocumentCache and does not create connector JSON.",
+      "Mismatched, missing, recreated, or unprovable capture instances fail closed with diagnostics and are not dropped, recreated, or renamed as same-binding repair."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcCaptureInstances",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcCaptureInstances",
+      "Inspect cdc.change_tables and cdc.captured_columns in a provisioned SQL Server test database when diagnosing capture-instance fixtures."
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "Implement SQL Server setup-principal classification, gating-role exact-match validation, connector-principal privilege validation, least-privilege grants, and optional live connector-principal probes. Production setup should grant only the required database permissions to an existing login/user and must not create or rotate credentials.",
+    "acceptance-criteria": [
+      "The setup principal can connect, enable database CDC when allowed, enable or inspect table CDC for the three captured tables, create or inspect the gating role, inspect capture and cleanup job metadata, and grant connector access; missing authority is reported as SetupPrincipalFailure.",
+      "The binding-derived CDC gating role is a normal database role referenced by the three expected capture instances and no unexpected capture instance, has direct membership of exactly the connector database principal, owns no schema or object, is a member of no other role, and has no explicit permissions beyond CDC gating semantics.",
+      "The connector principal must be an existing login/user with database CONNECT, membership in the exact binding-derived CDC gating role, snapshot SELECT on exactly dms.Document, dms.DocumentCache, and dms.CdcHeartbeat, Debezium-required CDC metadata/read access for the configured capture instances, and column-level UPDATE only on CdcHeartbeat.HeartbeatSequence and CdcHeartbeat.HeartbeatAt.",
+      "The connector principal has no privilege on dms.DocumentProjectionWork and no write privilege on dms.Document or dms.DocumentCache.",
+      "The connector principal is rejected for ownership, db_owner, db_ddladmin, db_datareader, db_datawriter, sysadmin, securityadmin, serveradmin, dbcreator, or other disallowed elevated memberships in the story's matrix.",
+      "The exact privilege checks apply to DMS/provider-managed DMS table grants, explicit database-role memberships, ownership, and server-role memberships; SQL Server system catalog and CDC metadata visibility required by Debezium and provider validation are not rejected.",
+      "Optional live probes, when supplied, prove connector connect/read/update boundaries inside rolled-back work and never serialize probe credentials to logs, diagnostics, or manifests.",
+      "Connector-principal privilege failures use ConnectorPrincipalPrivilegeFailure diagnostics and distinguish work-table grant violations from other privilege failures."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcPrincipalAccess",
+      "Review emitted diagnostics and manifest snapshots for absence of credentials and unsafe identifiers."
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-history",
+    "description": "Add provider metadata queries consumed by 19-00 source-position and source-history continuity checks. These queries should expose provider-specific artifact state, retained history observations, source fingerprint information, and safe diagnostics without implementing connector polling or source-history state latching.",
+    "acceptance-criteria": [
+      "PostgreSQL metadata includes slot existence, slot plug-in, database, permanence, temporary status, active status, two_phase when exposed, restart_lsn, confirmed_flush_lsn, wal_status, invalidation reason when exposed, publication existence, publication table inventory, publication operation set, row-filter or column-list observations, and publish_via_partition_root when exposed.",
+      "SQL Server metadata includes database CDC state, table capture instance inventory, source object mapping, captured columns, supports_net_changes, source index, filegroup, partition-switching setting, gating role, capture job state, cleanup job state, retention configuration, retained min/max LSN range, and heartbeat capture visibility.",
+      "Metadata includes the source fingerprint observed through dms.DataStoreIdentity using the versioned opaque source-fingerprint contract consumed by 19-00.",
+      "ProviderHistoryUnavailable diagnostics map to source-history unknown, and ProviderHistoryLossEvidence diagnostics map to source-history lost.",
+      "Provider retained-position and retained-LSN gap diagnostics compare against a committed connector source offset only when the caller supplies that offset; otherwise DMS-1320 returns retained-history observations without calling Kafka Connect or deciding source-history continuity.",
+      "SQL Server capture and cleanup job metadata observations do not cause DMS-1320 to create, start, stop, or retune jobs; missing required jobs fail with provider-history diagnostics.",
+      "Missing, recreated, mismatched, invalidated, lost, expired, or unprovable history artifacts are reported as diagnostics and are not repaired.",
+      "The metadata surface does not call Kafka Connect, inspect Kafka topics, register connectors, or latch deployment incident state."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderMetadata",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcProviderMetadata",
+      "Review diagnostics mapping tests for ProviderHistoryUnavailable and ProviderHistoryLossEvidence."
+    ],
+    "completed": false
+  },
+  {
+    "category": "binding-validation",
+    "description": "Implement binding-aware exact-match validation around provider setup. Validation should compare caller-supplied provider artifact names, the current dms.DataStoreIdentity source fingerprint, source-table and key inventories, heartbeat object, grants, and provider metadata against expected values from the binding and emitted source inventory.",
+    "acceptance-criteria": [
+      "Validation exact-matches all caller-supplied binding-derived artifact names and never derives replacement names from database or tenant metadata.",
+      "Validation compares the observed dms.DataStoreIdentity source fingerprint with the bound physical-source fingerprint supplied by the caller.",
+      "Validation fails closed on source inventory mismatches, expected message-key column mismatches, heartbeat object mismatches, grant mismatches, provider artifact mismatches, and work-table capture or grant violations.",
+      "Validation reports mismatches through stable diagnostics rather than provider exception text parsing.",
+      "Same-binding validation does not recreate a missing PostgreSQL slot, SQL Server capture instance, CDC history artifact, or other retained-offset artifact when running in ValidateOnly.",
+      "Diagnostics identify only safe provider and binding artifact names and never include credentials, connection strings, document payloads, tenant display names, or unsanitized physical identifiers."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcBindingAwareValidation",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcBindingAwareValidation",
+      "Review validation fixtures for mismatched binding names, mismatched source fingerprints, missing heartbeat objects, and work-table capture or grant violations."
+    ],
+    "completed": false
+  },
+  {
+    "category": "work-table-exclusion",
+    "description": "Add focused safeguards and tests proving dms.DocumentProjectionWork is excluded from every provider capture and CDC-reader access layer. The tests should cover provider object inventories, connector-principal grants, metadata returned for connector-template generation, and raw capture behavior after work-table DML.",
+    "acceptance-criteria": [
+      "PostgreSQL publications never include dms.DocumentProjectionWork and provider metadata never exposes it as a captured source.",
+      "SQL Server CDC capture instances are never created for dms.DocumentProjectionWork and provider metadata never exposes it as a captured source.",
+      "Connector principals receive no SELECT, INSERT, UPDATE, DELETE, ownership, or equivalent access to dms.DocumentProjectionWork.",
+      "A validation diagnostic is emitted if an existing provider artifact captures dms.DocumentProjectionWork or if connector-principal grants allow work-table access.",
+      "Provider integration fixtures prove insert, update, and delete operations on dms.DocumentProjectionWork produce no captured source record.",
+      "The provider setup result inventory consumed by 19-02 excludes dms.DocumentProjectionWork."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcWorkTableExclusion",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcWorkTableExclusion",
+      "Manually inspect the PostgreSQL publication and SQL Server cdc.change_tables output in provider integration databases when diagnosing failures."
+    ],
+    "completed": false
+  },
+  {
+    "category": "retry-and-mismatch-contract-tests",
+    "description": "Add provider-neutral setup-mode, rerun, partial retry, and fail-closed mismatch tests for the shared setup service and diagnostic contract. Live provider DB-apply retry scenarios are covered by the provider-specific access/retry tasks; this task should prove common mode semantics and diagnostic classification without expanding into full PostgreSQL or SQL Server fixture matrices.",
+    "acceptance-criteria": [
+      "InitialCreateOrExactMatch service tests prove missing artifacts are delegated to provider implementations only through allowed create-or-exact-match steps and return created artifact inventory.",
+      "Same-mode rerun service tests prove matched artifact inventory is returned without changing source fingerprints, lifecycle state, connector credentials, ordinary DDL fingerprints, or retained provider-history artifacts.",
+      "ValidateOnly service tests prove exact-match inspection performs no database writes and missing required artifacts produce diagnostics without creating replacement history artifacts.",
+      "Partial retry service tests prove completed setup steps are exact-matched and only still-missing artifacts allowed by InitialCreateOrExactMatch in the same supported initial workflow are delegated for creation; ValidateOnly and post-admission validation never recreate missing retained-offset artifacts such as PostgreSQL slots, SQL Server capture instances, or CDC history artifacts.",
+      "Provider-neutral mismatch fixtures prove artifact, source inventory, heartbeat, grant, provider history, and source-fingerprint mismatches fail closed without destructive cleanup.",
+      "Diagnostic classification tests distinguish setup-principal failure, connector-principal privilege failure, missing required source objects, work-table capture or grant violations, provider-history unavailability, and provider-history loss evidence."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderRetryContract",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcProviderRetryContract",
+      "Review contract fixtures to ensure provider-specific live database cases remain in the PostgreSQL and SQL Server DB-apply access/retry tasks."
+    ],
+    "completed": false
+  },
+  {
+    "category": "artifact-name-integration",
+    "description": "Integrate with the shared deterministic CDC artifact-name helper owned by 19-00 when available, and provide a temporary test adapter only if DMS-1320 is implemented before that shared helper lands. Provider setup should treat artifact names as immutable inputs and exact-match them.",
+    "acceptance-criteria": [
+      "Provider setup input consumes the complete artifact-name inventory needed for PostgreSQL slot/publication names and SQL Server capture-instance/gating-role names.",
+      "Production provider setup does not derive artifact names from tenant display names, connection strings, physical server names, database names, or connector JSON.",
+      "If a temporary test adapter is needed, it is isolated to tests or an explicitly marked compatibility layer and is removed or replaced when the 19-00 helper is available.",
+      "Validation tests cover deterministic name consumption, provider-specific identifier limits, generation isolation, and exact-match rejection of unexpected names.",
+      "Task or code comments identify the dependency on the 19-00 shared helper without moving connector/topic naming ownership into DMS-1320."
+    ],
+    "steps-to-verify": [
+      "Review provider setup construction sites for artifact-name source and absence of name derivation from connection or tenant data.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcArtifactNames",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcArtifactNames"
+    ],
+    "completed": false
+  },
+  {
+    "category": "artifact-output",
+    "description": "Add internal test/helper plumbing for requesting CDC provider setup artifact output without creating a supported user-facing CDC setup CLI. This should let provider setup tests and future bootstrap orchestration persist the standalone manifest when requested while keeping ordinary schema-tools commands unchanged unless they are explicitly test-only harness entry points.",
+    "acceptance-criteria": [
+      "CDC provider setup can serialize cdc-provider.{dialect}.manifest.json to a requested artifact directory after live setup or validation inspection.",
+      "No supported public ddl emit/provision flag silently enables CDC provider setup or emits CDC provider artifacts as part of ordinary relational provisioning.",
+      "Any temporary test harness entry point is clearly scoped to tests or internal automation and does not present itself as the 19-04 bootstrap command surface.",
+      "Artifact output uses deterministic file names and overwrites or compares files according to existing fixture-update conventions.",
+      "Artifact output failures are reported as setup diagnostics or test harness failures without masking provider setup mismatches."
+    ],
+    "steps-to-verify": [
+      "Review schema-tools command help and README changes to confirm no supported CDC setup CLI was added for DMS-1320.",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter CdcProviderArtifactOutput",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter CdcProviderArtifactOutput"
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-db-apply-artifacts-tests",
+    "description": "Add PostgreSQL DB-apply fixture coverage for ordinary-provisioning exclusion and opt-in provider artifact inventory. Tests should apply ordinary relational DDL first, invoke the opt-in provider setup service, and inspect live PostgreSQL objects.",
+    "acceptance-criteria": [
+      "PostgreSQL DB-apply tests prove ordinary provisioning omits CdcHeartbeat, publications, slots, CDC reader grants, connector metadata, and CDC-provider manifests before opt-in setup.",
+      "Opt-in provider setup creates or exact-matches the heartbeat table and singleton, generated heartbeat action query, dms.Document REPLICA IDENTITY FULL, binding-derived publication, binding-derived pgoutput slot, source inventory, provider metadata, diagnostics, and standalone manifest.",
+      "Tests cover exact publication membership and properties, pgoutput slot validation, retained-position observations, heartbeat action-query execution, expected message-key columns, and separation from ordinary DDL fingerprints.",
+      "Provider object inventory tests prove dms.DocumentProjectionWork is not in the publication, provider metadata, or provider manifest.",
+      "Manifest snapshots are produced only after live setup or validation inspection and exclude credentials, connection strings, document payloads, tenant display names, and unsanitized physical identifiers."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcArtifacts",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderArtifacts",
+      "Inspect PostgreSQL docker logs, pg_publication_tables, and pg_replication_slots if setup fails before provider assertions."
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-db-apply-access-retry-tests",
+    "description": "Add PostgreSQL DB-apply fixture coverage for connector-principal access, optional live probes, setup modes, reruns, partial retry, and fail-closed mismatches. These tests should focus on security and idempotency rather than connector registration.",
+    "acceptance-criteria": [
+      "Tests cover the connector-principal privilege matrix, absence of dms.DocumentProjectionWork grants, absence of dms.Document and dms.DocumentCache write grants, disallowed elevated role attributes, and optional live probe success and failure cases.",
+      "InitialCreateOrExactMatch creates all missing PostgreSQL provider artifacts on a fresh ordinary-provisioned database and returns created artifact inventory.",
+      "Same-mode reruns exact-match existing PostgreSQL artifacts and return matched artifact inventory without changing source fingerprints, lifecycle state, connector credentials, ordinary DDL fingerprints, or retained slot history.",
+      "ValidateOnly succeeds on exact existing PostgreSQL artifacts, performs no database writes, and fails with diagnostics when required artifacts are missing.",
+      "Partial retry exact-matches completed setup steps and creates only still-missing artifacts allowed by InitialCreateOrExactMatch in the same supported initial workflow; ValidateOnly and post-admission validation never recreate missing retained-offset artifacts such as PostgreSQL slots.",
+      "Mismatched publication membership, slot name or plug-in, heartbeat shape, grant inventory, source fingerprint, work-table capture, or work-table grant fails closed without destructive cleanup."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter PostgresqlCdcAccessRetry",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderAccessRetry",
+      "Review PostgreSQL fixtures to ensure no test relies on deleting and recreating replication slots as same-binding repair."
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-db-apply-artifacts-tests",
+    "description": "Add SQL Server DB-apply fixture coverage for ordinary-provisioning exclusion and opt-in provider artifact inventory. Tests should apply ordinary relational DDL first, invoke the opt-in provider setup service, and inspect live SQL Server CDC metadata.",
+    "acceptance-criteria": [
+      "SQL Server DB-apply tests prove ordinary provisioning omits CdcHeartbeat, CDC capture instances, CDC reader grants, connector metadata, and CDC-provider manifests before opt-in setup.",
+      "Opt-in provider setup creates or exact-matches the heartbeat table and singleton, database CDC state, three capture instances, source inventory, heartbeat action query, expected message-key columns, provider metadata, diagnostics, and standalone manifest.",
+      "Tests cover database/table CDC enablement, exactly three capture instances, full captured-column inventories in emitted order, supports_net_changes=0, index_name=NULL, filegroup_name=NULL, allow_partition_switch=0, heartbeat action-query execution, job/retention metadata, and separation from ordinary DDL fingerprints.",
+      "Provider object inventory tests prove dms.DocumentProjectionWork has no capture instance and is absent from provider metadata and provider manifests.",
+      "Manifest snapshots are produced only after live setup or validation inspection and exclude credentials, connection strings, document payloads, tenant display names, and unsanitized physical identifiers."
+    ],
+    "steps-to-verify": [
+      "Ensure a SQL Server 2025 instance is available and ConnectionStrings__MssqlAdmin points to it.",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcArtifacts",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts",
+      "Inspect SQL Server container logs, cdc.change_tables, cdc.captured_columns, and CDC job metadata if setup fails before provider assertions."
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-db-apply-access-retry-tests",
+    "description": "Add SQL Server DB-apply fixture coverage for connector-principal access, gating-role exact-match behavior, optional live probes, setup modes, reruns, partial retry, and fail-closed mismatches. These tests should focus on security and idempotency rather than connector registration.",
+    "acceptance-criteria": [
+      "Tests cover the connector-principal privilege matrix, exact gating-role membership and permissions, absence of dms.DocumentProjectionWork grants, absence of dms.Document and dms.DocumentCache write grants, disallowed elevated memberships, and optional live probe success and failure cases.",
+      "InitialCreateOrExactMatch creates all missing SQL Server provider artifacts on a fresh ordinary-provisioned database and returns created artifact inventory.",
+      "Same-mode reruns exact-match existing SQL Server artifacts and return matched artifact inventory without changing source fingerprints, lifecycle state, connector credentials, ordinary DDL fingerprints, CDC retention policy, or SQL Server CDC jobs.",
+      "ValidateOnly succeeds on exact existing SQL Server artifacts, performs no database writes, and fails with diagnostics when required artifacts are missing.",
+      "Partial retry exact-matches completed setup steps and creates only still-missing artifacts allowed by InitialCreateOrExactMatch in the same supported initial workflow; ValidateOnly and post-admission validation never recreate missing retained-offset artifacts such as SQL Server capture instances, CDC history artifacts, or CDC jobs.",
+      "Mismatched capture membership, capture-instance name, captured columns, heartbeat shape, gating role, grant inventory, source fingerprint, work-table capture, or work-table grant fails closed without destructive cleanup."
+    ],
+    "steps-to-verify": [
+      "Ensure a SQL Server 2025 instance is available and ConnectionStrings__MssqlAdmin points to it.",
+      "Run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcAccessRetry",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry",
+      "Review SQL Server fixtures to ensure no test relies on dropping and recreating capture instances or CDC jobs as same-binding repair."
+    ],
+    "completed": false
+  },
+  {
+    "category": "full-verification",
+    "description": "Run the focused DMS-1320 verification set and document the PR evidence trace to CDC-INV-06. This task should be the final implementation check after contracts, provider setup, manifests, validation, security, provider metadata, and provider integration tests have landed.",
+    "acceptance-criteria": [
+      "All DMS-1320-owned unit and integration tests pass for PostgreSQL and SQL Server, with skips only for explicitly unavailable external provider prerequisites.",
+      "Existing ordinary DDL emission and provisioning tests still pass and prove CDC opt-in artifacts do not alter ordinary DDL output or schema fingerprints.",
+      "Provider setup evidence is traceable to CDC-INV-06 in test names, fixture names, or PR notes.",
+      "No connector JSON generation, Kafka topic provisioning, Kafka Connect registration, source-history latching, destructive teardown, or public message transform behavior is implemented in this story.",
+      "All touched C# code is formatted with csharpier and builds under net10.0 with warnings as errors."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend src/dms/clis/EdFi.DataManagementService.SchemaTools src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter Cdc",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProvider",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProvider"
+    ],
+    "completed": false
+  }
+]

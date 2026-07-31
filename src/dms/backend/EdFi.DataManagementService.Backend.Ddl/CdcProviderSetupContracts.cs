@@ -250,6 +250,15 @@ internal sealed record CdcSourceTableInventory(
             throw new ArgumentException("CDC source table column ordinals must be unique.", nameof(columns));
         }
 
+        var expectedOrdinalOrder = Enumerable.Range(1, columns.Count).ToArray();
+        if (!columns.Select(column => column.Ordinal).SequenceEqual(expectedOrdinalOrder))
+        {
+            throw new ArgumentException(
+                "CDC source table columns must be supplied in table-ordinal order starting at 1.",
+                nameof(columns)
+            );
+        }
+
         return columns;
     }
 

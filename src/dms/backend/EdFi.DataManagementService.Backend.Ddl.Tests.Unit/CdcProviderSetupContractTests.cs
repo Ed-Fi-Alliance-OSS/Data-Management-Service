@@ -108,46 +108,7 @@ internal static class CdcProviderSetupContractTestData
         );
 
     internal static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceInventory() =>
-        [
-            BuildTable(
-                CdcSourceTableKind.Document,
-                "Document",
-                [("DocumentId", "bigint"), ("DocumentUuid", "uuid")]
-            ),
-            BuildTable(
-                CdcSourceTableKind.DocumentCache,
-                "DocumentCache",
-                [("DocumentId", "bigint"), ("DocumentUuid", "uuid"), ("DocumentJson", "jsonb")]
-            ),
-            BuildTable(
-                CdcSourceTableKind.CdcHeartbeat,
-                "CdcHeartbeat",
-                [("HeartbeatId", "smallint"), ("HeartbeatSequence", "bigint"), ("HeartbeatAt", "timestamp")]
-            ),
-        ];
-
-    private static CdcSourceTableInventory BuildTable(
-        CdcSourceTableKind tableKind,
-        string tableName,
-        IReadOnlyList<(string Name, string DataType)> columns
-    ) =>
-        new(
-            tableKind,
-            new DbTableName(new DbSchemaName("dms"), tableName),
-            $@"""dms"".""{tableName}""",
-            columns
-                .Select(
-                    (column, index) =>
-                        new CdcSourceColumnInventory(
-                            new DbColumnName(column.Name),
-                            $@"""{column.Name}""",
-                            index + 1,
-                            column.DataType,
-                            IsNullable: false
-                        )
-                )
-                .ToArray()
-        );
+        CdcSourceInventoryBuilder.BuildExpectedSourceInventory(SqlDialectFactory.Create(SqlDialect.Pgsql));
 }
 
 [TestFixture]
@@ -210,6 +171,35 @@ public class Given_CdcProviderSetupContract_Request
             .Should()
             .Throw<ArgumentException>()
             .WithMessage("*dms.Document, dms.DocumentCache, and dms.CdcHeartbeat*");
+    }
+
+    [Test]
+    public void It_should_reject_columns_that_are_not_in_table_ordinal_order()
+    {
+        Action action = () =>
+            new CdcSourceTableInventory(
+                CdcSourceTableKind.Document,
+                new DbTableName(new DbSchemaName("dms"), "Document"),
+                @"""dms"".""Document""",
+                [
+                    new CdcSourceColumnInventory(
+                        new DbColumnName("DocumentUuid"),
+                        @"""DocumentUuid""",
+                        2,
+                        "uuid",
+                        IsNullable: false
+                    ),
+                    new CdcSourceColumnInventory(
+                        new DbColumnName("DocumentId"),
+                        @"""DocumentId""",
+                        1,
+                        "bigint",
+                        IsNullable: false
+                    ),
+                ]
+            );
+
+        action.Should().Throw<ArgumentException>().WithMessage("*table-ordinal order*");
     }
 
     [Test]

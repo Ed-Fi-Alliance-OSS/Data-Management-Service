@@ -18,6 +18,7 @@ internal static class DmsTableNames
     public static readonly DbSchemaName DmsSchema = EffectiveSchemaTableDefinition.Table.Schema;
 
     public static readonly DbTableName DataStoreIdentity = DataStoreIdentityTableDefinition.Table;
+    public static readonly DbTableName CdcHeartbeat = new(DmsSchema, "CdcHeartbeat");
     public static readonly DbTableName Descriptor = new(DmsSchema, "Descriptor");
     public static readonly DbTableName Document = DocumentCacheInventoryDefinition.Document;
     public static readonly DbTableName DocumentCache = DocumentCacheInventoryDefinition.DocumentCache;
