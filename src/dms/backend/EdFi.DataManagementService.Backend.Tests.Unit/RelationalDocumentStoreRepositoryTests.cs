@@ -90,6 +90,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static RelationalEdOrgAuthorizationSubjectSelector CreateAuthorizationSubjectSelector() =>
         new(new RelationalEdOrgAuthorizationElementResolutionCache());
 
+    /// <summary>
+    /// The GET-by-id target probe is scoped to the requested resource's root table, taken from the
+    /// compiled read plan exactly as <c>GetDocumentByIdAsync</c> passes it.
+    /// </summary>
+    private static DbTableName RootTableOf(MappingSet mappingSet, QualifiedResourceName resource) =>
+        mappingSet.ReadPlansByResource[resource].Model.Root.Table;
+
     [SetUp]
     public void Setup()
     {
@@ -214,8 +221,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -358,8 +364,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustHaveHappenedOnceExactly();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -432,8 +437,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustHaveHappenedOnceExactly();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -486,8 +490,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -533,8 +536,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -587,8 +589,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -645,8 +646,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -717,8 +717,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -775,8 +774,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -847,8 +845,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -909,8 +906,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -954,8 +950,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -967,8 +962,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetFailureNotExists>();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1008,8 +1002,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1090,8 +1083,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    resource,
+                    RootTableOf(mappingSet, resource),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1158,8 +1150,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    resource,
+                    RootTableOf(mappingSet, resource),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1251,8 +1242,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure.Errors[0].Should().Contain("CustomAuthorizationStrategy");
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -1301,8 +1291,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1361,8 +1350,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1388,8 +1376,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetFailureNotExists>();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1431,8 +1418,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1476,8 +1462,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1527,8 +1512,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1586,8 +1570,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1632,8 +1615,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         // the document exists: even with the target absent the result is the 403, not a 404.
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1648,8 +1630,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -1675,8 +1656,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1688,8 +1668,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -1720,8 +1699,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1733,8 +1711,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -1773,8 +1750,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1852,8 +1828,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1911,8 +1886,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -1968,8 +1942,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -2069,8 +2042,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -2137,8 +2109,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -2230,8 +2201,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -2343,8 +2313,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -2399,8 +2368,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
@@ -2423,8 +2391,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// A document uuid that belongs to some other resource is absent from the requested resource's
+    /// root table, so the root-table probe misses and GET reports "not exists" — the same 404 the
+    /// removed wrong-resource lookup result used to produce. The probe must be scoped to the
+    /// requested resource's root table, never to an unscoped uuid lookup.
+    /// </summary>
     [Test]
-    public async Task It_translates_wrong_resource_get_targets_to_not_exists()
+    public async Task It_translates_a_root_table_probe_miss_to_not_exists()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
@@ -2432,22 +2406,24 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    mappingSet,
-                    new QualifiedResourceName("Ed-Fi", "School"),
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
                     documentUuid,
                     A<CancellationToken>._
                 )
             )
-            .Returns(
-                new RelationalReadTargetLookupResult.WrongResource(
-                    documentUuid,
-                    new QualifiedResourceName("Ed-Fi", "LocalEducationAgency")
-                )
-            );
+            .Returns(new RelationalReadTargetLookupResult.NotFound());
 
         var result = await _sut.GetDocumentById(getRequest);
 
         result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    RootTableOf(mappingSet, new QualifiedResourceName("Ed-Fi", "School")),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -2480,8 +2456,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeEquivalentTo(new GetResult.UnknownFailure(expectedFailureMessage));
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )

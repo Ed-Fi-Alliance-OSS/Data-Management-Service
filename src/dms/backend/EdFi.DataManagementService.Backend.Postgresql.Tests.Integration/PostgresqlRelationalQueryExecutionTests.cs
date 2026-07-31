@@ -145,8 +145,7 @@ internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService
 {
     public Task<RelationalReadTargetLookupResult> ResolveForGetByIdAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
+        DbTableName rootTable,
         DocumentUuid documentUuid,
         CancellationToken cancellationToken = default
     )

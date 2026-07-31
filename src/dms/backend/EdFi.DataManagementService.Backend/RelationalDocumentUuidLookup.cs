@@ -95,6 +95,62 @@ internal static class RelationalDocumentUuidLookupSupport
         );
     }
 
+    /// <summary>
+    /// GET-by-id entry point. The route already names the resource, so the target probe seeks the
+    /// resource root table's <c>UX_&lt;Root&gt;_DocumentUuid</c> unique index instead of
+    /// <c>dms.Document</c>: resource scoping is structural (a uuid belonging to another resource is
+    /// simply absent from this root table) and the probed <c>DocumentUuid</c>/<c>ContentVersion</c>
+    /// come from the same root row that GET hydration reads.
+    /// </summary>
+    public static Task<ResolvedRootTarget?> TryResolveGetTargetByRootTableAsync(
+        IRelationalCommandExecutor commandExecutor,
+        DbTableName rootTable,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+
+        var command = commandExecutor.Dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlGetTargetByRootTableCommand(rootTable, documentUuid),
+            SqlDialect.Mssql => BuildMssqlGetTargetByRootTableCommand(rootTable, documentUuid),
+            _ => throw new NotSupportedException(
+                $"Relational GET target root-table probe does not support SQL dialect '{commandExecutor.Dialect}'."
+            ),
+        };
+
+        return commandExecutor.ExecuteReaderAsync(
+            command,
+            async (reader, ct) =>
+            {
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var resolvedTarget = new ResolvedRootTarget(
+                    reader.GetRequiredFieldValue<long>("DocumentId"),
+                    reader.GetRequiredFieldValue<Guid>("DocumentUuid"),
+                    reader.GetRequiredFieldValue<long>("ContentVersion")
+                );
+
+                // UX_<Root>_DocumentUuid makes a second row impossible; keep the read defensive so a
+                // missing or corrupt index fails loudly instead of serving an arbitrary row.
+                if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        $"Relational GET target root-table probe returned multiple rows for root table "
+                            + $"'{rootTable}' and document uuid '{documentUuid.Value}'."
+                    );
+                }
+
+                return resolvedTarget;
+            },
+            cancellationToken
+        );
+    }
+
     private static Task<ResolvedDocumentByUuid?> ExecuteLookupAsync(
         IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,
@@ -191,6 +247,46 @@ internal static class RelationalDocumentUuidLookupSupport
         return new RelationalCommand(commandText, parameters);
     }
 
+    private static RelationalCommand BuildPostgresqlGetTargetByRootTableCommand(
+        DbTableName rootTable,
+        DocumentUuid documentUuid
+    )
+    {
+        var commandText = $"""
+            SELECT
+                root."DocumentId" AS "DocumentId",
+                root."DocumentUuid" AS "DocumentUuid",
+                root."ContentVersion" AS "ContentVersion"
+            FROM {SqlIdentifierQuoter.QuoteTableName(SqlDialect.Pgsql, rootTable)} root
+            WHERE root."DocumentUuid" = @documentUuid
+            """;
+
+        return new RelationalCommand(
+            commandText,
+            [new RelationalParameter(DocumentUuidParameterName, documentUuid.Value)]
+        );
+    }
+
+    private static RelationalCommand BuildMssqlGetTargetByRootTableCommand(
+        DbTableName rootTable,
+        DocumentUuid documentUuid
+    )
+    {
+        var commandText = $"""
+            SELECT
+                root.[DocumentId] AS [DocumentId],
+                root.[DocumentUuid] AS [DocumentUuid],
+                root.[ContentVersion] AS [ContentVersion]
+            FROM {SqlIdentifierQuoter.QuoteTableName(SqlDialect.Mssql, rootTable)} root
+            WHERE root.[DocumentUuid] = @documentUuid
+            """;
+
+        return new RelationalCommand(
+            commandText,
+            [new RelationalParameter(DocumentUuidParameterName, documentUuid.Value)]
+        );
+    }
+
     internal sealed record ResolvedDocumentByUuid(
         long DocumentId,
         DocumentUuid DocumentUuid,
@@ -199,4 +295,11 @@ internal static class RelationalDocumentUuidLookupSupport
     );
 
     internal sealed record ResolvedDeleteTarget(long DocumentId);
+
+    /// <summary>
+    /// GET-by-id target resolved from the resource root table's document metadata mirror columns.
+    /// <c>ContentVersion</c> is non-null there (the stamping triggers maintain it), so unlike
+    /// <see cref="ResolvedDocumentByUuid"/> this target needs no nullable content version.
+    /// </summary>
+    internal sealed record ResolvedRootTarget(long DocumentId, Guid DocumentUuid, long ContentVersion);
 }

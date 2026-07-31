@@ -493,7 +493,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                         seed.AuthorizationStudentAcademicRecordId
                     ),
                     new SqlParameter("@name", seed.Name)
-                )
+                ),
+            mirrorMetadataForDocumentId: documentId
         );
 
         await UpsertReferentialIdentityAsync(
@@ -735,7 +736,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     new SqlParameter("@currentSchoolYear", seed.CurrentSchoolYear),
                     new SqlParameter("@schoolYear", seed.SchoolYear),
                     new SqlParameter("@schoolYearDescription", seed.SchoolYearDescription)
-                )
+                ),
+            mirrorMetadataForDocumentId: documentId
         );
 
         await UpsertReferentialIdentityAsync(
@@ -780,7 +782,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     new SqlParameter("@firstName", seed.FirstName),
                     new SqlParameter("@lastSurname", seed.LastSurname),
                     new SqlParameter("@studentUniqueId", seed.StudentUniqueId)
-                )
+                ),
+            mirrorMetadataForDocumentId: documentId
         );
 
         await UpsertReferentialIdentityAsync(
@@ -833,7 +836,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     new SqlParameter("@studentUniqueId", seed.StudentUniqueId),
                     new SqlParameter("@entryGradeLevelDescriptorId", entryGradeLevelDescriptorId),
                     new SqlParameter("@entryDate", seed.EntryDate)
-                )
+                ),
+            mirrorMetadataForDocumentId: documentId
         );
     }
 
@@ -881,7 +885,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     new SqlParameter("@studentDocumentId", studentDocumentId),
                     new SqlParameter("@studentUniqueId", seed.StudentUniqueId),
                     new SqlParameter("@termDescriptorId", termDescriptorId)
-                )
+                ),
+            mirrorMetadataForDocumentId: documentId
         );
 
         await UpsertReferentialIdentityAsync(
@@ -947,7 +952,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     new SqlParameter("@documentId", documentId),
                     new SqlParameter("@nameOfInstitution", seed.NameOfInstitution),
                     new SqlParameter("@schoolId", seed.SchoolId)
-                )
+                ),
+            mirrorMetadataForDocumentId: documentId
         );
 
         await UpsertReferentialIdentityAsync(
@@ -994,7 +1000,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     new SqlParameter("@classPeriodName", seed.ClassPeriodName),
                     new SqlParameter("@schoolDocumentId", schoolDocumentId),
                     new SqlParameter("@schoolId", seed.SchoolId)
-                )
+                ),
+            mirrorMetadataForDocumentId: documentId
         );
 
         await UpsertReferentialIdentityAsync(CreateClassPeriodReferentialId(seed), documentId, resourceKeyId);
@@ -2207,10 +2214,23 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// Runs a raw root-table seeding statement with the table's triggers disabled, then re-asserts the
+    /// <c>dms.Document</c> metadata mirror on the seeded root row before re-enabling them.
+    /// </summary>
+    /// <remarks>
+    /// The root stamping trigger is what normally dual-writes <c>DocumentUuid</c>, the content stamp, and
+    /// the identity stamp from <c>dms.Document</c> onto the root row; disabling it leaves those mirrors at
+    /// their column defaults (<c>newid()</c> / <c>0</c> / <c>sysutcdatetime()</c>). Read paths now source
+    /// document metadata — including the GET-by-id target probe on <c>UX_&lt;Root&gt;_DocumentUuid</c> —
+    /// from those mirrors, so a seeder that bypasses the trigger must restore the invariant itself. The
+    /// mirror runs while triggers are still disabled so it does not itself bump the content stamp.
+    /// </remarks>
     private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
         string schema,
         string table,
-        Func<Task> action
+        Func<Task> action,
+        long? mirrorMetadataForDocumentId = null
     )
     {
         await Database.ExecuteNonQueryAsync($"""DISABLE TRIGGER ALL ON [{schema}].[{table}];""");
@@ -2218,11 +2238,35 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         try
         {
             await action();
+
+            if (mirrorMetadataForDocumentId is { } documentId)
+            {
+                await MirrorDocumentMetadataOntoRootAsync(schema, table, documentId);
+            }
         }
         finally
         {
             await Database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
         }
+    }
+
+    private async Task MirrorDocumentMetadataOntoRootAsync(string schema, string table, long documentId)
+    {
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE root
+            SET root.[DocumentUuid] = document.[DocumentUuid],
+                root.[ContentVersion] = document.[ContentVersion],
+                root.[ContentLastModifiedAt] = document.[ContentLastModifiedAt],
+                root.[IdentityVersion] = document.[IdentityVersion],
+                root.[IdentityLastModifiedAt] = document.[IdentityLastModifiedAt],
+                root.[CreatedAt] = document.[CreatedAt]
+            FROM [{schema}].[{table}] root
+            INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
+            WHERE root.[DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
     }
 
     private sealed record ResourceHandle(

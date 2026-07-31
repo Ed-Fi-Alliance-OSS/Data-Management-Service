@@ -10,9 +10,14 @@ namespace EdFi.DataManagementService.Backend;
 
 public interface IRelationalReadTargetLookupService
 {
+    /// <summary>
+    /// Resolves the GET-by-id target by probing <paramref name="rootTable"/>'s
+    /// <c>UX_&lt;Root&gt;_DocumentUuid</c> unique index. The route names the resource, so the root
+    /// table carries the resource scope: a uuid persisted for a different resource is absent here and
+    /// resolves to <see cref="RelationalReadTargetLookupResult.NotFound"/>.
+    /// </summary>
     Task<RelationalReadTargetLookupResult> ResolveForGetByIdAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
+        DbTableName rootTable,
         DocumentUuid documentUuid,
         CancellationToken cancellationToken = default
     );
@@ -26,9 +31,6 @@ public abstract record RelationalReadTargetLookupResult
         : RelationalReadTargetLookupResult;
 
     public sealed record NotFound() : RelationalReadTargetLookupResult;
-
-    public sealed record WrongResource(DocumentUuid DocumentUuid, QualifiedResourceName ActualResource)
-        : RelationalReadTargetLookupResult;
 }
 
 internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecutor commandExecutor)
@@ -38,55 +40,24 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
     public async Task<RelationalReadTargetLookupResult> ResolveForGetByIdAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
+        DbTableName rootTable,
         DocumentUuid documentUuid,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        var expectedResourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-
-        var resolvedDocument = await RelationalDocumentUuidLookupSupport
-            .TryResolveByDocumentUuidAsync(_commandExecutor, mappingSet, documentUuid, cancellationToken)
+        var resolvedTarget = await RelationalDocumentUuidLookupSupport
+            .TryResolveGetTargetByRootTableAsync(_commandExecutor, rootTable, documentUuid, cancellationToken)
             .ConfigureAwait(false);
 
-        if (resolvedDocument is null)
+        if (resolvedTarget is null)
         {
             return new RelationalReadTargetLookupResult.NotFound();
         }
 
-        if (resolvedDocument.ResourceKeyId == expectedResourceKeyId)
-        {
-            if (resolvedDocument.ContentVersion is null)
-            {
-                throw new InvalidOperationException(
-                    $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentVersion."
-                );
-            }
-
-            return new RelationalReadTargetLookupResult.ExistingDocument(
-                resolvedDocument.DocumentId,
-                resolvedDocument.DocumentUuid,
-                resolvedDocument.ContentVersion.Value
-            );
-        }
-
-        if (
-            !mappingSet.ResourceKeyById.TryGetValue(resolvedDocument.ResourceKeyId, out var actualResourceKey)
-        )
-        {
-            throw new KeyNotFoundException(
-                $"Mapping set '{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}' does not contain a resource key entry for id "
-                    + $"'{resolvedDocument.ResourceKeyId}' resolved from document uuid '{documentUuid.Value}'. "
-                    + "This indicates an internal compilation/selection bug."
-            );
-        }
-
-        return new RelationalReadTargetLookupResult.WrongResource(
-            resolvedDocument.DocumentUuid,
-            actualResourceKey.Resource
+        return new RelationalReadTargetLookupResult.ExistingDocument(
+            resolvedTarget.DocumentId,
+            new DocumentUuid(resolvedTarget.DocumentUuid),
+            resolvedTarget.ContentVersion
         );
     }
 }

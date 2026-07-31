@@ -2400,14 +2400,10 @@ public sealed class RelationalDocumentStoreRepository(
         for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
         {
             var targetLookupResult = await _readTargetLookupService
-                .ResolveForGetByIdAsync(mappingSet, resource, relationalGetRequest.DocumentUuid)
+                .ResolveForGetByIdAsync(readPlan.Model.Root.Table, relationalGetRequest.DocumentUuid)
                 .ConfigureAwait(false);
 
-            if (
-                targetLookupResult
-                is RelationalReadTargetLookupResult.NotFound
-                    or RelationalReadTargetLookupResult.WrongResource
-            )
+            if (targetLookupResult is RelationalReadTargetLookupResult.NotFound)
             {
                 return new GetResult.GetFailureNotExists();
             }
@@ -2515,8 +2511,7 @@ public sealed class RelationalDocumentStoreRepository(
             }
 
             var shouldRetryPostHydrationReadBoundary = await ShouldRetryPostHydrationReadBoundaryAsync(
-                    mappingSet,
-                    resource,
+                    readPlan.Model.Root.Table,
                     existingDocument,
                     authorizationOutcome.ObservedContentVersion
                 )
@@ -2581,8 +2576,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private async Task<bool> ShouldRetryPostHydrationReadBoundaryAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
+        DbTableName rootTable,
         RelationalReadTargetLookupResult.ExistingDocument expectedDocument,
         long? observedContentVersion
     )
@@ -2593,7 +2587,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         var targetLookupResult = await _readTargetLookupService
-            .ResolveForGetByIdAsync(mappingSet, resource, expectedDocument.DocumentUuid)
+            .ResolveForGetByIdAsync(rootTable, expectedDocument.DocumentUuid)
             .ConfigureAwait(false);
 
         if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument currentDocument)

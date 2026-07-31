@@ -14,30 +14,34 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_RelationalReadTargetLookupService
 {
-    private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
+    private static readonly DbTableName _studentRootTable = new(new DbSchemaName("edfi"), "Student");
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
-    public async Task It_returns_not_found_when_document_uuid_does_not_match_a_persisted_document(
-        SqlDialect dialect,
-        string expectedTableFragment
-    )
+    /// <summary>
+    /// The GET-by-id target probe is a single seek on the resource root table's
+    /// <c>UX_&lt;Root&gt;_DocumentUuid</c> unique index. The route already names the resource, so the
+    /// probe is resource-scoped by construction: a uuid belonging to another resource is simply
+    /// absent from this root table.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_probes_the_resource_root_table_by_document_uuid(SqlDialect dialect)
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
-        ]);
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()])],
+            dialect
+        );
         var sut = new RelationalReadTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForGetByIdAsync(
-            CreateMappingSet(dialect),
-            _requestResource,
-            documentUuid
-        );
+        await sut.ResolveForGetByIdAsync(_studentRootTable, documentUuid);
 
-        result.Should().BeOfType<RelationalReadTargetLookupResult.NotFound>();
         commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().Be(ExpectedProbeSql(dialect));
+        commandExecutor
+            .Commands[0]
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .Equal("@documentUuid");
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
@@ -45,103 +49,112 @@ public class Given_RelationalReadTargetLookupService
             .Equal(documentUuid.Value);
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
-    public async Task It_returns_existing_document_when_document_uuid_matches_the_requested_resource(
-        SqlDialect dialect,
-        string expectedTableFragment
-    )
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_existing_document_with_the_probed_content_version(SqlDialect dialect)
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    RelationalAccessTestData.CreateRow(
-                        ("DocumentId", 404L),
-                        ("DocumentUuid", documentUuid.Value),
-                        ("ResourceKeyId", (short)1),
-                        ("ContentVersion", 907L)
-                    )
-                ),
-            ]),
-        ]);
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(
+                            ("DocumentId", 404L),
+                            ("DocumentUuid", documentUuid.Value),
+                            ("ContentVersion", 907L)
+                        )
+                    ),
+                ]),
+            ],
+            dialect
+        );
         var sut = new RelationalReadTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForGetByIdAsync(
-            CreateMappingSet(dialect),
-            _requestResource,
-            documentUuid
-        );
+        var result = await sut.ResolveForGetByIdAsync(_studentRootTable, documentUuid);
 
         result
             .Should()
             .BeEquivalentTo(new RelationalReadTargetLookupResult.ExistingDocument(404L, documentUuid, 907L));
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
-        commandExecutor
-            .Commands[0]
-            .Parameters.Select(parameter => parameter.Value)
-            .Should()
-            .Equal(documentUuid.Value);
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
-    public async Task It_distinguishes_a_uuid_that_exists_for_the_wrong_resource(
-        SqlDialect dialect,
-        string expectedTableFragment
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_not_found_when_the_root_table_has_no_row_for_the_document_uuid(
+        SqlDialect dialect
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    RelationalAccessTestData.CreateRow(
-                        ("DocumentId", 808L),
-                        ("DocumentUuid", documentUuid.Value),
-                        ("ResourceKeyId", (short)11),
-                        ("ContentVersion", 1234L)
-                    )
-                ),
-            ]),
-        ]);
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()])],
+            dialect
+        );
         var sut = new RelationalReadTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForGetByIdAsync(
-            CreateMappingSet(dialect),
-            _requestResource,
-            documentUuid
-        );
+        var result = await sut.ResolveForGetByIdAsync(_studentRootTable, documentUuid);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalReadTargetLookupResult.WrongResource(
-                    documentUuid,
-                    new QualifiedResourceName("Ed-Fi", "School")
-                )
-            );
-        commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
-        commandExecutor
-            .Commands[0]
-            .Parameters.Select(parameter => parameter.Value)
-            .Should()
-            .Equal(documentUuid.Value);
+        result.Should().BeOfType<RelationalReadTargetLookupResult.NotFound>();
     }
 
-    private static MappingSet CreateMappingSet(SqlDialect dialect)
+    /// <summary>
+    /// <c>UX_&lt;Root&gt;_DocumentUuid</c> makes a second row impossible, but the defensive read stays:
+    /// a multi-row probe result means the index is missing or corrupt, and that must fail loudly
+    /// rather than silently serve an arbitrary row.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_throws_when_the_root_table_probe_returns_more_than_one_row(SqlDialect dialect)
     {
-        var mappingSet = RelationalAccessTestData.CreateMappingSet(_requestResource);
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(
+                            ("DocumentId", 404L),
+                            ("DocumentUuid", documentUuid.Value),
+                            ("ContentVersion", 907L)
+                        ),
+                        RelationalAccessTestData.CreateRow(
+                            ("DocumentId", 405L),
+                            ("DocumentUuid", documentUuid.Value),
+                            ("ContentVersion", 908L)
+                        )
+                    ),
+                ]),
+            ],
+            dialect
+        );
+        var sut = new RelationalReadTargetLookupService(commandExecutor);
 
-        return mappingSet with
-        {
-            Key = new MappingSetKey(
-                mappingSet.Key.EffectiveSchemaHash,
-                dialect,
-                mappingSet.Key.RelationalMappingVersion
-            ),
-            Model = mappingSet.Model with { Dialect = dialect },
-        };
+        var act = async () => await sut.ResolveForGetByIdAsync(_studentRootTable, documentUuid);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage(
+                $"*edfi.Student*{documentUuid.Value}*",
+                "the defensive multi-row read must name the probed root table and document uuid"
+            );
     }
+
+    private static string ExpectedProbeSql(SqlDialect dialect) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => """
+                SELECT
+                    root."DocumentId" AS "DocumentId",
+                    root."DocumentUuid" AS "DocumentUuid",
+                    root."ContentVersion" AS "ContentVersion"
+                FROM "edfi"."Student" root
+                WHERE root."DocumentUuid" = @documentUuid
+                """,
+            SqlDialect.Mssql => """
+                SELECT
+                    root.[DocumentId] AS [DocumentId],
+                    root.[DocumentUuid] AS [DocumentUuid],
+                    root.[ContentVersion] AS [ContentVersion]
+                FROM [edfi].[Student] root
+                WHERE root.[DocumentUuid] = @documentUuid
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect)),
+        };
 }
