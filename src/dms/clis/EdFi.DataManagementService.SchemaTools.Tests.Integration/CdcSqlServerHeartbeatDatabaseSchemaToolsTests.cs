@@ -12,6 +12,7 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 
 [TestFixture]
 [Category("MssqlIntegration")]
+[Category("MssqlCdcArtifacts")]
 public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
 {
     private const string ConnectorPassword = "EdFi_Dms1!";
@@ -53,7 +54,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
-    public async Task MssqlCdcCaptureInstances_should_enable_database_cdc_heartbeat_and_capture_instances_only_when_opted_in()
+    public async Task MssqlCdcArtifacts_and_MssqlCdcCaptureInstances_should_enable_database_cdc_heartbeat_and_capture_instances_only_when_opted_in()
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();

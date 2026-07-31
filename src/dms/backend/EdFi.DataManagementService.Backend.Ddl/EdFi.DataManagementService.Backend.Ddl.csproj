@@ -9,6 +9,7 @@
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Ddl.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.SchemaTools.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql.Tests.Integration" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />

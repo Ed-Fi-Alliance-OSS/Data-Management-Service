@@ -341,7 +341,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts",
       "Inspect SQL Server container logs, cdc.change_tables, cdc.captured_columns, and CDC job metadata if setup fails before provider assertions."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-db-apply-access-retry-tests",
