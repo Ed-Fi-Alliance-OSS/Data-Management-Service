@@ -195,6 +195,121 @@ tenant header values. Remote IP address and user agent are also excluded unless
 a later story defines the privacy, retention, and cardinality requirements for
 those fields.
 
+## Log Routing and Export
+
+CMS and DMS support three supported paths for routing structured logs to an
+observability platform: platform stdout collection (the default), optional
+file-tailing agents, and OTLP export through the `OtlpLogging` configuration
+section.
+
+### Platform Stdout Collection
+
+The structured JSON console output described above is the default and
+supported collector contract for CMS and DMS. No additional configuration is
+required to receive it: any platform log pipeline that collects a
+container's or process's standard output (for example, a container runtime's
+log driver, a node-level agent, or a hosting platform's built-in log
+collection) receives the same newline-delimited JSON events described in
+"CMS And DMS Request Log Console Contract" above.
+
+### File-Tailing Agents
+
+The bundled `appsettings.json` files also configure an optional structured
+JSON file sink (see above). Organizations that run a file-tailing log agent
+(for example, Filebeat, Fluent Bit, or a vendor-specific forwarder) can point
+that agent at the rolling log files instead of, or in addition to, collecting
+stdout. File logs carry the same structured properties as console logs, but
+omit `RenderedMessage`, and remain a local convenience rather than part of
+the collector contract.
+
+### OTLP Export
+
+CMS and DMS compile in `Serilog.Sinks.OpenTelemetry` as a single
+vendor-neutral OTLP log exporter, configured through a top-level
+`OtlpLogging` configuration section in each application's `appsettings.json`.
+The section is disabled by default; operators opt in by setting `Enabled` to
+`true`, typically through the environment-variable convention described in
+[CONFIGURATION.md](./CONFIGURATION.md).
+
+The `OtlpLogging` section supports these keys:
+
+* `Enabled`: when `true`, log events are also exported over OTLP. Default:
+  `false`.
+* `Endpoint`: the OTLP collector endpoint, for example
+  `http://collector:4318`.
+* `Protocol`: the OTLP wire protocol, either `Grpc` or `HttpProtobuf`.
+* `ServiceName`: the `service.name` resource attribute. Defaults to
+  `EdFi.DataManagementService` for DMS and `EdFi.DmsConfigurationService` for
+  CMS, matching each application's `Application` request log property.
+* `ServiceVersion`: the `service.version` resource attribute. Defaults to the
+  application's informational version.
+* `DeploymentEnvironment`: optional `deployment.environment` resource
+  attribute.
+* `ServiceInstanceId`: optional `service.instance.id` resource attribute.
+
+> [!NOTE]
+> OTLP export is disabled by default. Enabling it does not replace console
+> output: the console sink keeps emitting the same structured JSON described
+> above, so it remains the diagnostic fallback if the OTLP endpoint is
+> unreachable. Exporter delivery failures never block application startup or
+> request serving; they are reported on stderr through Serilog's `SelfLog`
+> facility rather than through the application's own structured logs.
+
+> [!WARNING]
+> Enabling the compiled-in OTLP sink through raw `Serilog:Using` /
+> `Serilog:WriteTo` configuration is unsupported, even though it is
+> technically reachable because both applications use
+> `ReadFrom.Configuration`. The `OtlpLogging` section is the only supported
+> surface for enabling OTLP export.
+
+Vendor-specific integrations belong outside the CMS and DMS processes: send
+OTLP directly to a compatible service, or through an OpenTelemetry Collector,
+to Splunk, Datadog, Elastic, Seq, CloudWatch, Azure, or another backend of
+choice. CMS and DMS do not document or bundle vendor-specific sinks.
+
+### Deployment Recipes
+
+These recipes are guidance for routing CMS and DMS logs in common deployment
+environments. None of them require code or runnable asset changes; each
+recipe uses the stdout contract, the file sink, or the `OtlpLogging` section
+described above.
+
+#### Kubernetes
+
+Collect stdout through the platform's log pipeline, for example a node-level
+agent (Fluent Bit, Fluentd, or a managed platform's built-in logging), or set
+the `OtlpLogging` environment variables (`OtlpLogging__Enabled=true`,
+`OtlpLogging__Endpoint=...`, `OtlpLogging__Protocol=...`) to point at an
+in-cluster OpenTelemetry Collector.
+
+#### Docker
+
+Enable OTLP export through environment variables passed to the container, for
+example `OtlpLogging__Enabled=true` and
+`OtlpLogging__Endpoint=http://collector:4318`. Compose operators must pass
+these variables through to the container environment (for example, via the
+`environment` key or an `.env` file); they are not set automatically.
+
+#### Windows Services
+
+Tail the file sink's rolling log files with the organization's log agent, or
+run a local OpenTelemetry Collector on the same host and point `OtlpLogging`
+at its endpoint.
+
+#### AWS
+
+Route stdout to CloudWatch through the container or instance log driver or
+agent (for example, the ECS `awslogs` driver or the CloudWatch agent on
+EC2), or configure `OtlpLogging` to export through a Collector, such as the
+AWS Distro for OpenTelemetry (ADOT) Collector, to the backend of choice.
+
+#### Azure
+
+Route stdout through the hosting platform's log integration (for example,
+Azure Container Apps or App Service log streaming), or configure
+`OtlpLogging` to export through a Collector to Azure Monitor or another
+backend.
+
 ## Log Levels
 
 The DMS applications will utilize the following levels when logging messages.

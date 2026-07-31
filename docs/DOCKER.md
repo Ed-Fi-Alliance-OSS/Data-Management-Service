@@ -36,6 +36,12 @@ MINIMUM_THROUGHPUT=<Integer, this many actions or more must pass through the cir
 BREAK_DURATION_SECONDS=<The number of seconds a broken circuit will stay open before resetting. Eg. 30>
 ```
 
+OTLP log export is also available, disabled by default, through the
+`OtlpLogging` configuration section (for example,
+`OtlpLogging__Enabled=true`, `OtlpLogging__Endpoint=...`). See
+[LOGGING.md](./LOGGING.md#otlp-export) and
+[CONFIGURATION.md](./CONFIGURATION.md#otlplogging) for details.
+
 For example, you might have a `.env` file like the following:
 
 ```none

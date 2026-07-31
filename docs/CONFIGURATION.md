@@ -228,6 +228,26 @@ The `RateLimit` object should have the following parameters.
 | Window      | The number of seconds before the `PermitLimit` is reset. Must be > 0.                                                                                                                                                                                                      |
 | QueueLimit  | The maximum number of requests that can be Queued once `PermitLimit`s are exhausted. These requests will wait until the `Window` expires and will be processed FIFO. When the queue is exhausted, clients will receive a `429` `Too Many Requests` response. Must be >= 0. |
 
+## OtlpLogging
+
+CMS and DMS compile in `Serilog.Sinks.OpenTelemetry` as a single
+vendor-neutral OTLP log exporter. It is configured through the top-level
+`OtlpLogging` section, disabled by default, and can be enabled without
+recompilation using the environment-variable convention described in the note
+above (for example, `OtlpLogging__Enabled=true`). See
+[LOGGING.md](./LOGGING.md#otlp-export) for the full description of supported
+log routing paths, including OTLP export and deployment recipes.
+
+| Parameter              | Description                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Enabled                | When `true`, log events are also exported over OTLP. Default: `false`.                                                                                                   |
+| Endpoint                | The OTLP collector endpoint. Example: `http://collector:4318`.                                                                                                           |
+| Protocol                | The OTLP wire protocol. Valid values are `Grpc` and `HttpProtobuf`. Default: `HttpProtobuf`.                                                                             |
+| ServiceName             | The `service.name` resource attribute. Default: `EdFi.DataManagementService` (DMS) or `EdFi.DmsConfigurationService` (CMS).                                              |
+| ServiceVersion          | The `service.version` resource attribute. Default: the application's informational version.                                                                             |
+| DeploymentEnvironment   | Optional `deployment.environment` resource attribute. Omitted when unset.                                                                                                |
+| ServiceInstanceId       | Optional `service.instance.id` resource attribute. Omitted when unset.                                                                                                   |
+
 ## Identity Provider Configuration
 
 For most deployments, environment variables and the setup script are sufficient,

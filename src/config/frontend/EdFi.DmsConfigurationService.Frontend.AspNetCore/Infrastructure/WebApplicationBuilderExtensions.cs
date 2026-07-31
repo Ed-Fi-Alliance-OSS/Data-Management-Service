@@ -127,10 +127,7 @@ public static class WebApplicationBuilderExtensions
 
         Serilog.ILogger ConfigureLogging()
         {
-            var logger = new LoggerConfiguration()
-                .ReadFrom.Configuration(webApplicationBuilder.Configuration)
-                .Enrich.FromLogContext()
-                .CreateLogger();
+            var logger = LoggingConfigurator.ConfigureLogging(webApplicationBuilder.Configuration);
             webApplicationBuilder.Logging.ClearProviders();
             webApplicationBuilder.Logging.AddSerilog(logger);
 

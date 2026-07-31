@@ -369,7 +369,7 @@
           "Npgsql": "[8.0.4, )",
           "Polly.Core": "[8.4.2, )",
           "Polly.Extensions": "[8.4.2, )",
-          "Serilog": "[4.0.2, )",
+          "Serilog": "[4.2.0, )",
           "Serilog.Extensions.Logging": "[8.0.0, )",
           "Serilog.Settings.Configuration": "[8.0.2, )",
           "Serilog.Sinks.Console": "[6.0.0, )",
@@ -635,9 +635,9 @@
       },
       "Serilog": {
         "type": "CentralTransitive",
-        "requested": "[4.0.2, )",
-        "resolved": "4.0.2",
-        "contentHash": "Vehq4uNYtURe/OnHEpWGvMgrvr5Vou7oZLdn3BuEH5FSCeHXDpNJtpzWoqywXsSvCTuiv0I65mZDRnJSeUvisA=="
+        "requested": "[4.2.0, )",
+        "resolved": "4.2.0",
+        "contentHash": "gmoWVOvKgbME8TYR+gwMf7osROiWAURterc6Rt2dQyX7wtjZYpqFiA/pY6ztjGQKKV62GGCyOcmtP1UKMHgSmA=="
       },
       "Serilog.Extensions.Logging": {
         "type": "CentralTransitive",
