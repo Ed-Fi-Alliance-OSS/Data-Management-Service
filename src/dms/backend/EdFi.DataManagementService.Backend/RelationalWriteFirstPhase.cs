@@ -115,14 +115,11 @@ internal sealed class RelationalWriteLockedTarget
             );
         }
 
-        return new RelationalWriteLockedTarget(
-            writeSession,
-            captured.DocumentId,
-            captured.ContentVersion
-        );
+        return new RelationalWriteLockedTarget(writeSession, captured.DocumentId, captured.ContentVersion);
     }
 
-    public bool IsHeldBy(IRelationalWriteSession writeSession) => ReferenceEquals(_writeSession, writeSession);
+    public bool IsHeldBy(IRelationalWriteSession writeSession) =>
+        ReferenceEquals(_writeSession, writeSession);
 }
 
 /// <summary>
@@ -219,10 +216,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         if (
             input.PostRelationshipAuthorizationPlans?.CreateNewImmediateResult is not null
             || relationshipDisposition.Disposition
-                is not (
-                    RelationshipStatementDisposition.None
-                    or RelationshipStatementDisposition.Emitted
-                )
+                is not (RelationshipStatementDisposition.None or RelationshipStatementDisposition.Emitted)
         )
         {
             return null;
@@ -698,7 +692,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             rewritten.Sql,
             rewritten.Parameters,
             RelationalCompositeResultShape.Rows,
-            (reader, readCancellation) => ConsumeResultSetSpanAsync(reader, resultSetCount, readCancellation),
+            (reader, readCancellation) =>
+                RelationalCompositeResultSetSpan.ConsumeAsync(reader, resultSetCount, readCancellation),
             resultSetCount
         );
 
@@ -788,7 +783,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                     );
                 }
 
-                return parameterization.Kind
+                return
+                    parameterization.Kind
                     is AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured
                     ? new RelationshipStatementPlan(
                         RelationshipStatementDisposition.Standalone,
@@ -1037,17 +1033,13 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         return substitutions;
     }
 
-    private static HydrationExecutionOptions BuildHydrationOptions(
-        RelationalWriteExecutorInput input
-    ) =>
+    private static HydrationExecutionOptions BuildHydrationOptions(RelationalWriteExecutorInput input) =>
         BuildHydrationOptions(
             input.ProfileWriteContext,
             RelationalWriteExecutionStateResolver.GetEtagPreconditionEvaluation(input)
         );
 
-    private static HydrationExecutionOptions BuildHydrationOptions(
-        RelationalWriteExecutorRequest request
-    ) =>
+    private static HydrationExecutionOptions BuildHydrationOptions(RelationalWriteExecutorRequest request) =>
         BuildHydrationOptions(
             request.ProfileWriteContext,
             RelationalWriteExecutionStateResolver.GetEtagPreconditionEvaluation(request)
@@ -1481,8 +1473,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     )
     {
         if (
-            ReferenceResolver.TryBuildLookupRequest(input.ReferenceResolutionRequest)
-            is not { } lookupRequest
+            ReferenceResolver.TryBuildLookupRequest(input.ReferenceResolutionRequest) is not { } lookupRequest
         )
         {
             return null;
@@ -1593,40 +1584,6 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         await HydrationExecutor
             .ReadPageAsync(reader, readPlan, keyset, options, cancellationToken)
             .ConfigureAwait(false);
-
-    /// <summary>
-    /// Consumes a statement's declared result-set span without materializing rows: the namespace
-    /// checks either authorized (a constant row), were vacuous behind the row guard (no row), or
-    /// aborted the command before reaching here.
-    /// </summary>
-    private static async Task<object?> ConsumeResultSetSpanAsync(
-        DbDataReader reader,
-        int resultSetCount,
-        CancellationToken cancellationToken
-    )
-    {
-        for (var resultSetIndex = 0; resultSetIndex < resultSetCount; resultSetIndex++)
-        {
-            if (resultSetIndex > 0 && !await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resultSetCount} authorization result sets but the provider produced "
-                        + $"{resultSetIndex}."
-                );
-            }
-
-            // Rows carry no information — a denial aborts the command instead — but each result set
-            // is still read through so a provider that raises during row streaming raises here.
-            bool hasRow;
-
-            do
-            {
-                hasRow = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-            } while (hasRow);
-        }
-
-        return null;
-    }
 
     private sealed class ReplayReferenceResolverAdapter(IReadOnlyList<ReferenceLookupResult> decodedResults)
         : IReferenceResolverAdapter

@@ -4,15 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -43,12 +38,6 @@ internal sealed class RelationalWriteNoProfilePersister(
     ILogger<RelationalWriteNoProfilePersister>? logger = null
 ) : IRelationalWritePersister
 {
-    private const string AuthorizationResultColumn = "AuthorizationResult";
-    private static readonly ConditionalWeakTable<
-        ResourceWritePlan,
-        string[]
-    > _reservedWriteParameterNamesByPlan = new();
-
     private readonly IRelationalParameterConfigurator _parameterConfigurator =
         parameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
@@ -138,12 +127,14 @@ internal sealed class RelationalWriteNoProfilePersister(
 
         try
         {
-            await ExecuteProposedRelationshipAuthorizationAsync(
+            await ProposedRelationshipAuthorizationCommand
+                .ExecuteStandaloneAsync(
                     writeSession,
-                    BuildProposedRelationshipAuthorizationCommand(
+                    ProposedRelationshipAuthorizationCommand.Build(
                         request.MappingSet,
                         request.WritePlan,
-                        mergeResult
+                        relationshipAuthorizationRuntimeCheck,
+                        _parameterConfigurator
                     ),
                     cancellationToken
                 )
@@ -151,8 +142,10 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
         catch (DbException ex)
         {
-            ThrowMappedRelationshipAuthorizationFailure(
+            ProposedRelationshipAuthorizationCommand.ThrowMappedFailure(
                 request.MappingSet.Key.Dialect,
+                _relationshipAuthorizationProviderFailureExtractor,
+                _logger,
                 relationshipAuthorizationRuntimeCheck,
                 ex
             );
@@ -404,7 +397,12 @@ internal sealed class RelationalWriteNoProfilePersister(
             {
                 return await ExecuteAuthorizedInsertDocumentAsync(
                         writeSession,
-                        BuildAuthorizedInsertDocumentCommand(mappingSet, writePlan, mergeResult, command),
+                        BuildAuthorizedInsertDocumentCommand(
+                            mappingSet,
+                            writePlan,
+                            relationshipAuthorizationRuntimeCheck,
+                            command
+                        ),
                         resource,
                         cancellationToken
                     )
@@ -418,8 +416,10 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
         catch (DbException ex) when (relationshipAuthorizationRuntimeCheck is not null)
         {
-            ThrowMappedRelationshipAuthorizationFailure(
+            ProposedRelationshipAuthorizationCommand.ThrowMappedFailure(
                 mappingSet.Key.Dialect,
+                _relationshipAuthorizationProviderFailureExtractor,
+                _logger,
                 relationshipAuthorizationRuntimeCheck,
                 ex
             );
@@ -472,7 +472,8 @@ internal sealed class RelationalWriteNoProfilePersister(
         await using var dbCommand = writeSession.CreateCommand(command);
         await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
-        await ReadAndValidateProposedRelationshipAuthorizationResultAsync(reader, cancellationToken)
+        await ProposedRelationshipAuthorizationCommand
+            .ReadAndValidateResultAsync(reader, cancellationToken)
             .ConfigureAwait(false);
 
         if (
@@ -488,77 +489,22 @@ internal sealed class RelationalWriteNoProfilePersister(
         return RequireDocumentId(reader.GetValue(0), resource);
     }
 
-    private static async Task ExecuteProposedRelationshipAuthorizationAsync(
-        IRelationalWriteSession writeSession,
-        RelationalCommand command,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var dbCommand = writeSession.CreateCommand(command);
-        await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-        await ReadAndValidateProposedRelationshipAuthorizationResultAsync(reader, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static async Task ReadAndValidateProposedRelationshipAuthorizationResultAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException(
-                "Proposed relationship authorization did not return an authorization result."
-            );
-        }
-
-        var authorizationResult = Convert.ToInt32(
-            reader.GetValue(reader.GetOrdinal(AuthorizationResultColumn)),
-            CultureInfo.InvariantCulture
-        );
-
-        if (authorizationResult != 1)
-        {
-            throw new InvalidOperationException(
-                $"Proposed relationship authorization returned unexpected result '{authorizationResult}'."
-            );
-        }
-    }
-
-    private RelationalCommand BuildProposedRelationshipAuthorizationCommand(
-        MappingSet mappingSet,
-        ResourceWritePlan writePlan,
-        RelationalWriteMergeResult mergeResult
-    )
-    {
-        var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
-            mappingSet,
-            writePlan,
-            mergeResult
-        );
-
-        return new RelationalCommand(
-            proposedAuthorizationCommand.AuthorizationSql,
-            proposedAuthorizationCommand.Parameters
-        );
-    }
-
     private RelationalCommand BuildAuthorizedInsertDocumentCommand(
         MappingSet mappingSet,
         ResourceWritePlan writePlan,
-        RelationalWriteMergeResult mergeResult,
+        ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck,
         RelationalCommand insertDocumentCommand
     )
     {
-        var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
+        var proposedAuthorizationCommand = ProposedRelationshipAuthorizationCommand.Build(
             mappingSet,
             writePlan,
-            mergeResult
+            relationshipAuthorizationRuntimeCheck,
+            _parameterConfigurator
         );
 
         return new RelationalCommand(
-            $"{proposedAuthorizationCommand.AuthorizationSql}{Environment.NewLine}{insertDocumentCommand.CommandText}",
+            $"{proposedAuthorizationCommand.CommandText}{Environment.NewLine}{insertDocumentCommand.CommandText}",
             CombineParameters(proposedAuthorizationCommand.Parameters, insertDocumentCommand.Parameters)
         );
     }
@@ -583,235 +529,6 @@ internal sealed class RelationalWriteNoProfilePersister(
         combined.AddRange(second);
 
         return combined;
-    }
-
-    private ProposedRelationshipAuthorizationCommandParts BuildProposedRelationshipAuthorizationCommandParts(
-        MappingSet mappingSet,
-        ResourceWritePlan writePlan,
-        RelationalWriteMergeResult mergeResult
-    )
-    {
-        var relationshipAuthorizationRuntimeCheck =
-            mergeResult.ProposedRelationshipAuthorizationRuntimeCheck
-            ?? throw new InvalidOperationException(
-                "Cannot build a proposed authorization command without a runtime authorization check."
-            );
-        var reservedParameterNames = GetReservedWriteParameterNames(writePlan);
-        var sqlPlan = relationshipAuthorizationRuntimeCheck.ExecutableShape is { } executableShape
-            ? SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-                mappingSet,
-                executableShape,
-                relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
-                relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
-                reservedParameterNames
-            )
-            : SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-                mappingSet,
-                new SingleRecordRelationshipAuthorizationSqlSpec(
-                    relationshipAuthorizationRuntimeCheck.CheckSpecs,
-                    relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
-                    relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
-                    ReservedParameterNames: reservedParameterNames
-                )
-            );
-
-        return new ProposedRelationshipAuthorizationCommandParts(
-            sqlPlan.AuthorizationSql,
-            BuildRelationshipAuthorizationParameters(sqlPlan, relationshipAuthorizationRuntimeCheck)
-        );
-    }
-
-    private sealed record ProposedRelationshipAuthorizationCommandParts(
-        string AuthorizationSql,
-        IReadOnlyList<RelationalParameter> Parameters
-    );
-
-    private IReadOnlyList<RelationalParameter> BuildRelationshipAuthorizationParameters(
-        SingleRecordRelationshipAuthorizationSqlPlan sqlPlan,
-        ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck
-    )
-    {
-        Dictionary<string, object?> valuesByParameterName = new(
-            sqlPlan.ParametersInOrder.Count,
-            StringComparer.Ordinal
-        );
-
-        AddProposedValueParameterValues(
-            valuesByParameterName,
-            sqlPlan,
-            relationshipAuthorizationRuntimeCheck
-        );
-        RelationshipAuthorizationCommandParameterBuilder.AddAuthorizationParameterValues(
-            valuesByParameterName,
-            relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization
-        );
-
-        List<RelationalParameter> parameters = new(sqlPlan.ParametersInOrder.Count);
-
-        foreach (var parameter in sqlPlan.ParametersInOrder)
-        {
-            parameters.Add(
-                RelationshipAuthorizationCommandParameterBuilder.BuildParameter(
-                    parameter,
-                    valuesByParameterName[parameter.ParameterName],
-                    _parameterConfigurator
-                )
-            );
-        }
-
-        return parameters;
-    }
-
-    private static void AddProposedValueParameterValues(
-        IDictionary<string, object?> valuesByParameterName,
-        SingleRecordRelationshipAuthorizationSqlPlan sqlPlan,
-        ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck
-    )
-    {
-        Dictionary<
-            (int StrategyOrdinal, int SubjectOrdinal),
-            ProposedRelationshipAuthorizationRuntimeValue
-        > valuesByOrdinal = new(CountRuntimeSubjects(relationshipAuthorizationRuntimeCheck.Strategies));
-
-        foreach (var strategy in relationshipAuthorizationRuntimeCheck.Strategies)
-        {
-            foreach (var subject in strategy.Subjects)
-            {
-                valuesByOrdinal.Add((strategy.StrategyOrdinal, subject.SubjectOrdinal), subject.RuntimeValue);
-            }
-        }
-
-        foreach (var proposedValueParameter in sqlPlan.ProposedValueParametersInOrder)
-        {
-            if (
-                !valuesByOrdinal.TryGetValue(
-                    (proposedValueParameter.StrategyOrdinal, proposedValueParameter.SubjectOrdinal),
-                    out var value
-                )
-            )
-            {
-                throw new InvalidOperationException(
-                    "Proposed relationship authorization SQL requested a runtime value for "
-                        + $"strategy '{proposedValueParameter.StrategyOrdinal}' subject '{proposedValueParameter.SubjectOrdinal}', "
-                        + "but no extracted value was available."
-                );
-            }
-
-            valuesByParameterName[proposedValueParameter.ParameterName] = value switch
-            {
-                ProposedRelationshipAuthorizationRuntimeValue.SubjectValue subjectValue => subjectValue.Value,
-                ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue anchorValue =>
-                    anchorValue.Value,
-                _ => throw new InvalidOperationException(
-                    $"Unsupported proposed relationship authorization runtime value '{value.GetType().Name}'."
-                ),
-            };
-        }
-    }
-
-    private static int CountRuntimeSubjects(
-        IReadOnlyList<ProposedRelationshipAuthorizationRuntimeStrategy> strategies
-    )
-    {
-        var count = 0;
-
-        foreach (var strategy in strategies)
-        {
-            count += strategy.Subjects.Count;
-        }
-
-        return count;
-    }
-
-    private static IReadOnlyList<string> GetReservedWriteParameterNames(ResourceWritePlan writePlan) =>
-        _reservedWriteParameterNamesByPlan.GetValue(writePlan, BuildReservedWriteParameterNames);
-
-    private static string[] BuildReservedWriteParameterNames(ResourceWritePlan writePlan)
-    {
-        var columnBindingCount = 0;
-
-        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
-        {
-            columnBindingCount += tablePlan.ColumnBindings.Length;
-        }
-
-        List<string> reservedNames = new(columnBindingCount);
-        HashSet<string> seenNames = new(columnBindingCount, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
-        {
-            foreach (var binding in tablePlan.ColumnBindings)
-            {
-                var parameterName = binding.ParameterName.TrimStart('@');
-
-                if (seenNames.Add(parameterName))
-                {
-                    reservedNames.Add(parameterName);
-                }
-            }
-        }
-
-        return [.. reservedNames];
-    }
-
-    private bool TryMapRelationshipAuthorizationFailure(
-        SqlDialect dialect,
-        ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck,
-        DbException exception,
-        out RelationshipAuthorizationFailure? relationshipFailure,
-        out RelationshipAuthorizationProviderFailureDiagnostic? invalidFailureDiagnostic
-    ) =>
-        RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
-            dialect,
-            exception,
-            _relationshipAuthorizationProviderFailureExtractor,
-            relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
-            relationshipAuthorizationRuntimeCheck.CheckSpecs,
-            relationshipAuthorizationRuntimeCheck
-                .ClaimEducationOrganizationIdParameterization
-                .ClaimEducationOrganizationIds,
-            out relationshipFailure,
-            out invalidFailureDiagnostic
-        );
-
-    [DoesNotReturn]
-    private void ThrowMappedRelationshipAuthorizationFailure(
-        SqlDialect dialect,
-        ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck,
-        DbException exception
-    )
-    {
-        if (
-            TryMapRelationshipAuthorizationFailure(
-                dialect,
-                relationshipAuthorizationRuntimeCheck,
-                exception,
-                out var relationshipFailure,
-                out var invalidFailureDiagnostic
-            )
-        )
-        {
-            throw new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure!);
-        }
-
-        if (invalidFailureDiagnostic is not null)
-        {
-            RelationshipAuthorizationProviderFailureMapper.LogInvalidFailurePayload(
-                _logger,
-                invalidFailureDiagnostic
-            );
-
-            throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
-                AuthorizationSecurityConfigurationDiagnostics.ForRelationshipAuthorizationAuth1(
-                    invalidFailureDiagnostic,
-                    relationshipAuthorizationRuntimeCheck.CheckSpecs
-                )
-            );
-        }
-
-        ExceptionDispatchInfo.Capture(exception).Throw();
-        throw new InvalidOperationException("Unreachable relationship authorization failure mapping state.");
     }
 
     private static RelationalCommand BuildInsertDocumentCommand(

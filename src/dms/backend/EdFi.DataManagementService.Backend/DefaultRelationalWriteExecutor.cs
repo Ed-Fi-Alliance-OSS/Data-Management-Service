@@ -35,7 +35,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     ILoggerFactory? loggerFactory = null,
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
     IDataStoreSelection? dataStoreSelection = null,
-    IRelationalWriteFirstPhase? writeFirstPhase = null
+    IRelationalWriteFirstPhase? writeFirstPhase = null,
+    IRelationalWriteProposedAuthorizationPhase? proposedAuthorizationPhase = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -87,6 +88,18 @@ internal sealed class DefaultRelationalWriteExecutor(
         new(
             relationshipAuthorizationProviderFailureExtractor
                 ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance
+        );
+
+    /// <summary>
+    /// The second command in authorization-only mode: the proposed namespace and proposed relationship
+    /// <c>AUTH1</c> statements co-batched, used on every path that requires no data-modifying statement.
+    /// </summary>
+    private readonly IRelationalWriteProposedAuthorizationPhase _proposedAuthorizationPhase =
+        proposedAuthorizationPhase
+        ?? new CompositeRelationalWriteProposedAuthorization(
+            relationalParameterConfigurator,
+            relationshipAuthorizationProviderFailureExtractor,
+            logger
         );
 
     private readonly RelationalWriteDatabaseFailureResultMapper _databaseFailureResultMapper = new(
@@ -232,53 +245,79 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return identityStabilityFailure;
             }
 
-            // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
-            // namespace denial surfaces over a concurrent relationship denial. Mirrors the
-            // stored-side ordering used for locked-target authorization.
-            var namespaceAuthorizationBoundary = await _proposedNamespaceAuthorizationOrchestrator
-                .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (namespaceAuthorizationBoundary.ImmediateResult is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return namespaceAuthorizationBoundary.ImmediateResult;
-            }
-
-            var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
-                .ResolveAsync(
-                    executionRequest,
-                    mergeResult,
-                    writeSession,
-                    cancellationToken,
-                    forceStandaloneAuthorization: deferMissingDocumentReferenceFailures
-                )
-                .ConfigureAwait(false);
-
-            if (proposedAuthorizationBoundary.ImmediateResult is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return proposedAuthorizationBoundary.ImmediateResult;
-            }
-
-            mergeResult = proposedAuthorizationBoundary.MergeResult;
-
-            if (
+            // Every situation that needs no data-modifying statement is decided here, in process, from
+            // the merged result and the hydrated current state. Deciding it before authorization is what
+            // lets the second command exist exactly once: it is emitted if and only if proposed
+            // authorization is configured or DML is required, and it is in authorization-only mode
+            // exactly when DML is not. A request that is several no-DML situations at once therefore
+            // still costs one command rather than one per condition.
+            var deferredPreconditionResult =
                 etagPreconditionEvaluation
                 is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-            )
-            {
-                var deferredPreconditionResult =
-                    _executionStateResolver.TryBuildDeferredPreconditionFailureResult(
+                    ? _executionStateResolver.TryBuildDeferredPreconditionFailureResult(
                         executionRequest,
                         currentState
-                    );
+                    )
+                    : null;
 
-                if (deferredPreconditionResult is not null)
+            var guardedNoOpTarget =
+                targetContext is RelationalWriteTargetContext.ExistingDocument existingTarget
+                && mergeResult.SupportsGuardedNoOp
+                && RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult)
+                    ? existingTarget
+                    : null;
+
+            var requiresDataModifyingStatements =
+                deferredPreconditionResult is null
+                && !deferMissingDocumentReferenceFailures
+                && guardedNoOpTarget is null;
+
+            if (requiresDataModifyingStatements)
+            {
+                // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
+                // namespace denial surfaces over a concurrent relationship denial. Mirrors the
+                // stored-side ordering used for locked-target authorization.
+                var namespaceAuthorizationBoundary = await _proposedNamespaceAuthorizationOrchestrator
+                    .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (namespaceAuthorizationBoundary.ImmediateResult is not null)
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return deferredPreconditionResult;
+                    return namespaceAuthorizationBoundary.ImmediateResult;
                 }
+
+                var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
+                    .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (proposedAuthorizationBoundary.ImmediateResult is not null)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return proposedAuthorizationBoundary.ImmediateResult;
+                }
+
+                mergeResult = proposedAuthorizationBoundary.MergeResult;
+            }
+            else
+            {
+                var proposedAuthorization = await _proposedAuthorizationPhase
+                    .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (proposedAuthorization.ImmediateResult is not null)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return proposedAuthorization.ImmediateResult;
+                }
+
+                mergeResult = proposedAuthorization.MergeResult;
+            }
+
+            if (deferredPreconditionResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return deferredPreconditionResult;
             }
 
             if (deferMissingDocumentReferenceFailures)
@@ -290,11 +329,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            if (
-                targetContext is RelationalWriteTargetContext.ExistingDocument guardedTarget
-                && mergeResult.SupportsGuardedNoOp
-                && RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult)
-            )
+            if (guardedNoOpTarget is { } guardedTarget)
             {
                 // The lock proof replaces the freshness re-read: the capture statement locked this
                 // row and the lock holds through commit, so no other transaction can have bumped

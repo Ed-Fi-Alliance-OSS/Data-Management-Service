@@ -71,10 +71,10 @@ public class Given_Default_Relational_Write_Executor
     }
 
     /// <summary>
-    /// Builds the executor under test with the fixture's fakes. The first phase is the sequential
-    /// test seam: it observes through the same fakeable resolver, adapter factory, and state loader
-    /// the pre-composite pipeline used, while its decisions run through the production first phase's
-    /// policy functions.
+    /// Builds the executor under test with the fixture's fakes. The first phase and the
+    /// authorization-only proposed-authorization phase are sequential test seams: they observe through
+    /// the same fakeable resolver, adapter factory, state loader, and persister the pre-composite
+    /// pipeline used, while their decisions run through the production policy functions.
     /// </summary>
     private DefaultRelationalWriteExecutor CreateExecutor(
         IRelationalWriteNoProfileMergeSynthesizer? noProfileMergeSynthesizer = null,
@@ -106,6 +106,10 @@ public class Given_Default_Relational_Write_Executor
                 relationalParameterConfigurator,
                 relationshipAuthorizationProviderFailureExtractor,
                 logger
+            ),
+            proposedAuthorizationPhase: new FakeSequentialRelationalWriteProposedAuthorization(
+                _noProfilePersister,
+                relationshipAuthorizationProviderFailureExtractor
             )
         );
 
@@ -6915,8 +6919,9 @@ public class Given_Default_Relational_Write_Executor
             ),
         };
 
-    private static RelationshipAuthorizationResult.Authorized CreateProposedSchoolIdRelationshipAuthorization(
-        RelationalWriteExecutorInput request
+    internal static RelationshipAuthorizationResult.Authorized CreateProposedSchoolIdRelationshipAuthorization(
+        RelationalWriteExecutorInput request,
+        long[]? claimEducationOrganizationIds = null
     )
     {
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -6965,7 +6970,7 @@ public class Given_Default_Relational_Write_Executor
             [checkSpec],
             AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
                 request.MappingSet.Key.Dialect,
-                [1234L],
+                claimEducationOrganizationIds ?? [1234L],
                 RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
             )
         );
@@ -8499,7 +8504,7 @@ public class Given_Default_Relational_Write_Executor
             };
     }
 
-    private static RelationalWriteMergeResult CreateMergeResult(
+    internal static RelationalWriteMergeResult CreateMergeResult(
         TableWritePlan rootTableWritePlan,
         int currentSchoolId,
         int mergedSchoolId,
