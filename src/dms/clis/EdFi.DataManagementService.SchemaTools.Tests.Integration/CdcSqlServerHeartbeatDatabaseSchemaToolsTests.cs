@@ -54,7 +54,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
-    public async Task MssqlCdcArtifacts_and_MssqlCdcCaptureInstances_should_enable_database_cdc_heartbeat_and_capture_instances_only_when_opted_in()
+    [Category("MssqlCdcAccessRetry")]
+    public async Task MssqlCdcAccessRetry_MssqlCdcArtifacts_and_MssqlCdcCaptureInstances_should_enable_database_cdc_heartbeat_and_capture_instances_only_when_opted_in()
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -116,7 +117,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
-    public async Task MssqlCdcPrincipalAccess_should_grant_and_validate_connector_principal_boundaries()
+    [Category("MssqlCdcAccessRetry")]
+    public async Task MssqlCdcPrincipalAccess_MssqlCdcAccessRetry_should_grant_and_validate_connector_principal_boundaries()
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -246,7 +248,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
-    public async Task It_should_exact_match_existing_database_cdc_and_heartbeat_without_mutating_heartbeat()
+    [Category("MssqlCdcAccessRetry")]
+    public async Task MssqlCdcAccessRetry_should_exact_match_existing_database_cdc_and_heartbeat_without_mutating_heartbeat()
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -276,7 +279,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
-    public async Task It_should_report_missing_database_cdc_in_validate_only_without_creating_it()
+    [Category("MssqlCdcAccessRetry")]
+    public async Task MssqlCdcAccessRetry_should_report_missing_database_cdc_in_validate_only_without_creating_it()
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -292,7 +296,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     }
 
     [Test]
-    public async Task MssqlCdcBindingAwareValidation_should_fail_before_enabling_cdc_when_source_fingerprint_mismatches()
+    [Category("MssqlCdcAccessRetry")]
+    public async Task MssqlCdcBindingAwareValidation_MssqlCdcAccessRetry_should_fail_before_enabling_cdc_when_source_fingerprint_mismatches()
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();

@@ -360,7 +360,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry",
       "Review SQL Server fixtures to ensure no test relies on dropping and recreating capture instances or CDC jobs as same-binding repair."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "full-verification",
