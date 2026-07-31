@@ -75,6 +75,13 @@ app.UseExceptionHandler(o => { });
 
 app.UseMiddleware<TenantResolutionMiddleware>();
 
+// Deliberately validated outside ReportInvalidConfiguration: that gate installs reporting middleware
+// and lets the host keep running, whereas a rejected connection-string encryption key must stop
+// startup before any schema deployment. Resolving it here also means a rejected key stops startup
+// even when another configuration section is invalid as well. The unhandled OptionsValidationException
+// exits non-zero and carries the validator's failure text.
+_ = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+
 if (!ReportInvalidConfiguration(app))
 {
     InitializeDatabase(app);

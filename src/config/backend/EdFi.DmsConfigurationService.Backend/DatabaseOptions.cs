@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend
@@ -15,6 +16,18 @@ namespace EdFi.DmsConfigurationService.Backend
 
     public class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
     {
+        /// <summary>
+        /// Only the first 32 characters of the configured key contribute to the AES-256 key, so the
+        /// rules below govern that prefix.
+        /// </summary>
+        private const int RequiredEncryptionKeyLength = 32;
+
+        /// <summary>
+        /// The value formerly shipped in appsettings.json. It is public in an open-source repository,
+        /// so any deployment left on it has decryptable connection strings.
+        /// </summary>
+        private const string ShippedDefaultEncryptionKey = "YourSecureEncryptionKey32Characters";
+
         public ValidateOptionsResult Validate(string? name, DatabaseOptions options)
         {
             if (string.IsNullOrWhiteSpace(options.DatabaseConnection))
@@ -27,6 +40,27 @@ namespace EdFi.DmsConfigurationService.Backend
             if (string.IsNullOrWhiteSpace(options.EncryptionKey))
             {
                 return ValidateOptionsResult.Fail("Missing required DatabaseSettings value: EncryptionKey");
+            }
+
+            if (string.Equals(options.EncryptionKey, ShippedDefaultEncryptionKey, StringComparison.Ordinal))
+            {
+                return ValidateOptionsResult.Fail(
+                    "DatabaseSettings:EncryptionKey must not be the known default value; provide a unique key."
+                );
+            }
+
+            if (options.EncryptionKey.Length < RequiredEncryptionKeyLength)
+            {
+                return ValidateOptionsResult.Fail(
+                    "DatabaseSettings:EncryptionKey must be at least 32 characters of ASCII key material."
+                );
+            }
+
+            if (!Ascii.IsValid(options.EncryptionKey.AsSpan(0, RequiredEncryptionKeyLength)))
+            {
+                return ValidateOptionsResult.Fail(
+                    "DatabaseSettings:EncryptionKey must use ASCII characters in its first 32 characters."
+                );
             }
 
             return ValidateOptionsResult.Success;
