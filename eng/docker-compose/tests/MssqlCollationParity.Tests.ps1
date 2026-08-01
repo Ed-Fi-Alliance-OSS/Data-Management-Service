@@ -13,8 +13,9 @@
 # DMS_MSSQL_COLLATION_FIXTURE_CONTAINER names a running SQL Server container (the sqlcmd inside
 # the container is the one dependency-free client this repo's tooling can rely on - pwsh ships no
 # SqlClient). DMS_MSSQL_COLLATION_FIXTURE_SA_PASSWORD overrides the documented local fixture
-# password. When the variable is absent - every CI lane and the Linux hermetic run - discovery
-# still parses this file and each It records an intentional skip; docker is never touched. Every
+# password. When the variable is absent - every CI lane and the Linux hermetic run - the
+# emitted-SQL contract test still RUNS (it needs no server: it inspects what the shared SQL
+# generator emits), and each live test records an intentional skip; docker is never touched. Every
 # probe is a SELECT, and the SQL travels to sqlcmd over STDIN: the suite copies no file into the
 # container and issues no CREATE or DROP, so pointing it at a shared server cannot mutate it in
 # any way. DB_ID corroboration is gated by a PRESENCE CHECK: when the reserved database does not
@@ -30,18 +31,74 @@ BeforeDiscovery {
     $script:parityEnabled = -not [string]::IsNullOrWhiteSpace($script:fixtureContainer)
 }
 
+BeforeAll {
+    # Shared by BOTH Describes below. This function is the ONE SQL-generation authority for the
+    # universe scans: the emitted-SQL contract Describe asserts against exactly what it returns,
+    # and the live Describe sends exactly what it returns, so the contract can never drift from
+    # the SQL actually used. Pure string construction - no docker, no server.
+    $script:pinnedCollation = 'SQL_Latin1_General_CP1_CI_AS'
+
+    function Script:Get-UniverseScanStatement {
+        # Every equality binds BOTH operands to the pinned collation explicitly: without the
+        # clause these literal/NCHAR comparisons inherit the CURRENT DATABASE's default
+        # collation - the login's default database decides which that is, sqlcmd selects none,
+        # and SERVERPROPERTY('Collation') binds nothing (measured: the unbound pair scan returns
+        # 26 in master and 0 in a Latin1_General_100_CS_AS database on the same server, while
+        # SERVERPROPERTY reports the pinned collation in both). The emitted-SQL contract test
+        # exists because for the space-class and expansion scans no database collation can
+        # expose a missing clause behaviorally: all 5,540 server collations agree on their
+        # results. The pair and zero-weight scans DO deviate - under Maori_100_CS_AS_SC_UTF8 the
+        # hyphen is ignorable and space compares equal to hyphen.
+        param([Parameter(Mandatory)][string]$PinnedCollation)
+
+        $pinnedCollate = "COLLATE $PinnedCollation"
+        [ordered]@{
+            'pair'        = @"
+SELECT 'pair=' + FORMAT(a.value, 'X2') + '-' + FORMAT(b.value, 'X2')
+FROM GENERATE_SERIES(32, 126) a CROSS JOIN GENERATE_SERIES(32, 126) b
+WHERE a.value < b.value AND NCHAR(a.value) $pinnedCollate = NCHAR(b.value) $pinnedCollate;
+"@
+            'zero-weight' = "SELECT 'ascii-zw=' + FORMAT(value, 'X2') FROM GENERATE_SERIES(32, 126) WHERE (N'a' + NCHAR(value) + N'b') $pinnedCollate = N'ab' $pinnedCollate;"
+            'space-class' = "SELECT 'ascii-sp=' + FORMAT(value, 'X2') FROM GENERATE_SERIES(32, 126) WHERE (N'a' + NCHAR(value) + N'b') $pinnedCollate = N'a b' $pinnedCollate;"
+            'expansion'   = @"
+SELECT 'expansion=' + FORMAT(a.value, 'X2') + '+' + FORMAT(b.value, 'X2') + '=' + FORMAT(c.value, 'X2')
+FROM (SELECT value FROM GENERATE_SERIES(95, 122) WHERE value = 95 OR value >= 97) a
+CROSS JOIN (SELECT value FROM GENERATE_SERIES(95, 122) WHERE value = 95 OR value >= 97) b
+CROSS JOIN (SELECT value FROM GENERATE_SERIES(95, 122) WHERE value = 95 OR value >= 97) c
+WHERE (NCHAR(a.value) + NCHAR(b.value)) $pinnedCollate = NCHAR(c.value) $pinnedCollate;
+"@
+        }
+    }
+}
+
+Describe "MSSQL collation parity: the emitted-SQL contract (no server required)" {
+    # Deliberately NO live-fixture gate on this Describe. For the space-class and expansion
+    # scans the emitted-SQL assertion is the ONLY permanent guard (no database collation can
+    # expose a stripped COLLATE behaviorally - measured across all 5,540), so it must run in
+    # every PR lane and in the hermetic check, not only when a live fixture is configured. It
+    # needs no docker and no server: it inspects the SQL the shared generator emits, which is
+    # byte-for-byte what the live Describe sends.
+    It "binds the pinned collation to BOTH operands of every universe scan equality" {
+        $statements = Get-UniverseScanStatement -PinnedCollation $script:pinnedCollation
+        @($statements.Keys).Count | Should -Be 4 -Because "the pair, zero-weight, space-class and expansion scans must all be generated"
+        foreach ($scanName in $statements.Keys) {
+            ([regex]::Matches($statements[$scanName], [regex]::Escape("COLLATE $($script:pinnedCollation)"))).Count |
+                Should -Be 2 -Because "the '$scanName' scan has one equality and must bind both of its operands explicitly; the current database's collation must never decide a proof comparison"
+        }
+    }
+}
+
 Describe "MSSQL collation parity: the fail-closed contract against a live server" -Skip:(-not $script:parityEnabled) {
     BeforeAll {
         # Re-read at RUN time: Pester's discovery phase (where BeforeDiscovery set the -Skip gate)
         # and its run phase do not share script variables, so the container name must be resolved
-        # again here or docker cp would receive an empty destination.
+        # again here or docker exec would receive an empty container name.
         $script:fixtureContainer = $env:DMS_MSSQL_COLLATION_FIXTURE_CONTAINER
 
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
 
         $script:reservedName = 'edfi_configurationservice'
-        $script:pinnedCollation = 'SQL_Latin1_General_CP1_CI_AS'
         $script:saPassword =
             if ([string]::IsNullOrWhiteSpace($env:DMS_MSSQL_COLLATION_FIXTURE_SA_PASSWORD)) { 'EdFi_Dms1!' }
             else { $env:DMS_MSSQL_COLLATION_FIXTURE_SA_PASSWORD }
@@ -145,33 +202,10 @@ Describe "MSSQL collation parity: the fail-closed contract against a live server
             [void]$sqlLines.Add("SELECT 'eq:$label=' + CASE WHEN ($expression) COLLATE $($script:pinnedCollation) = ($reservedExpression) COLLATE $($script:pinnedCollation) THEN '1' ELSE '0' END;")
             [void]$sqlLines.Add("SELECT 'dbid:$label=' + CASE WHEN DB_ID($expression) IS NULL THEN 'null' WHEN DB_ID($expression) = DB_ID($reservedExpression) THEN 'reserved' ELSE 'other' END;")
         }
-        # The four universe scans. Every equality binds BOTH operands to the pinned collation
-        # explicitly: without the clause these literal/NCHAR comparisons inherit the CURRENT
-        # DATABASE's default collation - the login's default database decides which that is,
-        # sqlcmd selects none, and SERVERPROPERTY('Collation') binds nothing (measured: the
-        # unbound pair scan returns 26 in master and 0 in a Latin1_General_100_CS_AS database on
-        # the same server, while SERVERPROPERTY reports the pinned collation in both). A separate
-        # test pins the emitted SQL below, because for the space-class and expansion scans no
-        # database collation can expose a missing clause behaviorally: all 5,540 server
-        # collations agree on their results. The pair and zero-weight scans DO deviate - under
-        # Maori_100_CS_AS the hyphen is ignorable and space compares equal to hyphen.
-        $pinnedCollate = "COLLATE $($script:pinnedCollation)"
-        $script:scanStatements = [ordered]@{
-            'pair'        = @"
-SELECT 'pair=' + FORMAT(a.value, 'X2') + '-' + FORMAT(b.value, 'X2')
-FROM GENERATE_SERIES(32, 126) a CROSS JOIN GENERATE_SERIES(32, 126) b
-WHERE a.value < b.value AND NCHAR(a.value) $pinnedCollate = NCHAR(b.value) $pinnedCollate;
-"@
-            'zero-weight' = "SELECT 'ascii-zw=' + FORMAT(value, 'X2') FROM GENERATE_SERIES(32, 126) WHERE (N'a' + NCHAR(value) + N'b') $pinnedCollate = N'ab' $pinnedCollate;"
-            'space-class' = "SELECT 'ascii-sp=' + FORMAT(value, 'X2') FROM GENERATE_SERIES(32, 126) WHERE (N'a' + NCHAR(value) + N'b') $pinnedCollate = N'a b' $pinnedCollate;"
-            'expansion'   = @"
-SELECT 'expansion=' + FORMAT(a.value, 'X2') + '+' + FORMAT(b.value, 'X2') + '=' + FORMAT(c.value, 'X2')
-FROM (SELECT value FROM GENERATE_SERIES(95, 122) WHERE value = 95 OR value >= 97) a
-CROSS JOIN (SELECT value FROM GENERATE_SERIES(95, 122) WHERE value = 95 OR value >= 97) b
-CROSS JOIN (SELECT value FROM GENERATE_SERIES(95, 122) WHERE value = 95 OR value >= 97) c
-WHERE (NCHAR(a.value) + NCHAR(b.value)) $pinnedCollate = NCHAR(c.value) $pinnedCollate;
-"@
-        }
+        # The four universe scans, from the ONE shared generator the emitted-SQL contract
+        # Describe asserts against - what travels to the server here is byte-for-byte what that
+        # contract inspected. See the generator for the measured collation-inheritance facts.
+        $script:scanStatements = Get-UniverseScanStatement -PinnedCollation $script:pinnedCollation
         foreach ($statement in $script:scanStatements.Values) { [void]$sqlLines.Add($statement) }
 
         $script:probeLines = Invoke-FixtureSql ($sqlLines -join [System.Environment]::NewLine)
@@ -235,20 +269,6 @@ WHERE (NCHAR(a.value) + NCHAR(b.value)) $pinnedCollate = NCHAR(c.value) $pinnedC
 
     It "still finds no expansion between single characters and digraphs of the reserved name's alphabet" {
         $script:expansionLines | Should -BeNullOrEmpty -Because "an expansion inside the universe (the way U+FB01 equals 'fi' outside it) would break the measured rule's exactness"
-    }
-
-    It "sends every universe scan with the pinned collation bound to BOTH operands of its equality" {
-        # The emitted-SQL pin - it inspects the SQL actually sent to the server, not this file's
-        # source text. For the pair and zero-weight scans a missing COLLATE is also caught
-        # behaviorally (database collations exist that flip their results - measured under
-        # Maori_100_CS_AS); for the space-class and expansion scans NO database collation can
-        # expose it (all 5,540 server collations agree on their results), so this artifact-level
-        # check is the standing guard that keeps their comparisons bound to the pinned collation
-        # rather than to whatever database the login happens to land in.
-        foreach ($scanName in $script:scanStatements.Keys) {
-            ([regex]::Matches($script:scanStatements[$scanName], [regex]::Escape("COLLATE $($script:pinnedCollation)"))).Count |
-                Should -Be 2 -Because "the '$scanName' scan has one equality and must bind both of its operands explicitly; the current database's collation must never decide a proof comparison"
-        }
     }
 
     It "corroborates the verdicts with DB_ID resolution when the reserved database exists" {
