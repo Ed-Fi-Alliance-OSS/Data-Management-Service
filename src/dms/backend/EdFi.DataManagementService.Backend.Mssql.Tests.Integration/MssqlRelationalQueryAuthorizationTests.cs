@@ -455,7 +455,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
         var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "authz",
             "AuthorizationStudentAcademicRecordResource",
             async () =>
@@ -713,7 +713,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
         var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "SchoolYearType",
             async () =>
@@ -756,7 +756,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
         var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "Student",
             async () =>
@@ -804,7 +804,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             seed.EntryGradeLevelDescriptor
         );
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "StudentSchoolAssociation",
             async () =>
@@ -850,7 +850,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
         var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "StudentAcademicRecord",
             async () =>
@@ -938,7 +938,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
             async () =>
@@ -977,7 +977,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             );
         }
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await Database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "ClassPeriod",
             async () =>
@@ -2211,61 +2211,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     identityElement.Value
                 )),
             ])
-        );
-    }
-
-    /// <summary>
-    /// Runs a raw root-table seeding statement with the table's triggers disabled, then re-asserts the
-    /// <c>dms.Document</c> metadata mirror on the seeded root row before re-enabling them.
-    /// </summary>
-    /// <remarks>
-    /// The root stamping trigger is what normally dual-writes <c>DocumentUuid</c>, the content stamp, and
-    /// the identity stamp from <c>dms.Document</c> onto the root row; disabling it leaves those mirrors at
-    /// their column defaults (<c>newid()</c> / <c>0</c> / <c>sysutcdatetime()</c>). Read paths now source
-    /// document metadata — including the GET-by-id target probe on <c>UX_&lt;Root&gt;_DocumentUuid</c> —
-    /// from those mirrors, so a seeder that bypasses the trigger must restore the invariant itself. The
-    /// mirror runs while triggers are still disabled so it does not itself bump the content stamp.
-    /// </remarks>
-    private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
-        string schema,
-        string table,
-        Func<Task> action,
-        long? mirrorMetadataForDocumentId = null
-    )
-    {
-        await Database.ExecuteNonQueryAsync($"""DISABLE TRIGGER ALL ON [{schema}].[{table}];""");
-
-        try
-        {
-            await action();
-
-            if (mirrorMetadataForDocumentId is { } documentId)
-            {
-                await MirrorDocumentMetadataOntoRootAsync(schema, table, documentId);
-            }
-        }
-        finally
-        {
-            await Database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
-        }
-    }
-
-    private async Task MirrorDocumentMetadataOntoRootAsync(string schema, string table, long documentId)
-    {
-        await Database.ExecuteNonQueryAsync(
-            $"""
-            UPDATE root
-            SET root.[DocumentUuid] = document.[DocumentUuid],
-                root.[ContentVersion] = document.[ContentVersion],
-                root.[ContentLastModifiedAt] = document.[ContentLastModifiedAt],
-                root.[IdentityVersion] = document.[IdentityVersion],
-                root.[IdentityLastModifiedAt] = document.[IdentityLastModifiedAt],
-                root.[CreatedAt] = document.[CreatedAt]
-            FROM [{schema}].[{table}] root
-            INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
-            WHERE root.[DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentId)
         );
     }
 

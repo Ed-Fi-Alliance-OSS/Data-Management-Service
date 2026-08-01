@@ -737,7 +737,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var documentId = await InsertDocumentAsync(schoolSeed.DocumentUuid.Value, resourceKeyId);
 
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
             async () =>
@@ -1061,61 +1061,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             new SqlParameter("@referentialId", referentialId.Value),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    /// <summary>
-    /// Runs a raw root-table seeding statement with the table's triggers disabled, then re-asserts the
-    /// <c>dms.Document</c> metadata mirror on the seeded root row before re-enabling them.
-    /// </summary>
-    /// <remarks>
-    /// The root stamping trigger is what normally dual-writes <c>DocumentUuid</c>, the content stamp, and
-    /// the identity stamp from <c>dms.Document</c> onto the root row; disabling it leaves those mirrors at
-    /// their column defaults (<c>newid()</c> / <c>0</c> / <c>sysutcdatetime()</c>). Read paths source
-    /// document metadata from those mirrors, so a seeder that bypasses the trigger must restore the
-    /// invariant itself. The mirror runs while triggers are still disabled so it does not itself bump the
-    /// content stamp.
-    /// </remarks>
-    private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
-        string schema,
-        string table,
-        Func<Task> action,
-        long? mirrorMetadataForDocumentId = null
-    )
-    {
-        await _database.ExecuteNonQueryAsync($"""DISABLE TRIGGER ALL ON [{schema}].[{table}];""");
-
-        try
-        {
-            await action();
-
-            if (mirrorMetadataForDocumentId is { } documentId)
-            {
-                await MirrorDocumentMetadataOntoRootAsync(schema, table, documentId);
-            }
-        }
-        finally
-        {
-            await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
-        }
-    }
-
-    private async Task MirrorDocumentMetadataOntoRootAsync(string schema, string table, long documentId)
-    {
-        await _database.ExecuteNonQueryAsync(
-            $"""
-            UPDATE root
-            SET root.[DocumentUuid] = document.[DocumentUuid],
-                root.[ContentVersion] = document.[ContentVersion],
-                root.[ContentLastModifiedAt] = document.[ContentLastModifiedAt],
-                root.[IdentityVersion] = document.[IdentityVersion],
-                root.[IdentityLastModifiedAt] = document.[IdentityLastModifiedAt],
-                root.[CreatedAt] = document.[CreatedAt]
-            FROM [{schema}].[{table}] root
-            INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
-            WHERE root.[DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentId)
         );
     }
 

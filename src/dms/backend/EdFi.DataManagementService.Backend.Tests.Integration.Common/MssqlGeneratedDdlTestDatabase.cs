@@ -336,9 +336,22 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 
                 await transaction.CommitAsync();
             }
-            catch
+            catch (Exception primary)
             {
-                await transaction.RollbackAsync();
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackFailure)
+                {
+                    throw new AggregateException(
+                        "Applying generated DDL failed and the rollback also failed; "
+                            + "the first inner exception is the original DDL failure.",
+                        primary,
+                        rollbackFailure
+                    );
+                }
+
                 throw;
             }
 

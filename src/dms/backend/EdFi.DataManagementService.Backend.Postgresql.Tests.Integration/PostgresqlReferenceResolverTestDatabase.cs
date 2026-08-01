@@ -136,9 +136,22 @@ public sealed class PostgresqlReferenceResolverTestDatabase : IAsyncDisposable
 
             await transaction.CommitAsync();
         }
-        catch
+        catch (Exception primary)
         {
-            await transaction.RollbackAsync();
+            try
+            {
+                await transaction.RollbackAsync();
+            }
+            catch (Exception rollbackFailure)
+            {
+                throw new AggregateException(
+                    "Seeding the reference resolver fixture failed and the rollback also failed; "
+                        + "the first inner exception is the original seeding failure.",
+                    primary,
+                    rollbackFailure
+                );
+            }
+
             throw;
         }
     }

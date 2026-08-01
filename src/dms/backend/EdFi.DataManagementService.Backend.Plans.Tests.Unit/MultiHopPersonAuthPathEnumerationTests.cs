@@ -28,6 +28,7 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration(SqlDialect dialect)
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
+        NewLine = "\n",
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
     };

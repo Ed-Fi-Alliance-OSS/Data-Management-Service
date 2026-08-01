@@ -499,11 +499,12 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             Guid.Parse("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             schoolResourceKeyId
         );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
             async () =>
-                await InsertSchoolAsync(schoolDocumentId, (int)EducationOrganizationId, "Alpha Academy")
+                await InsertSchoolAsync(schoolDocumentId, (int)EducationOrganizationId, "Alpha Academy"),
+            mirrorMetadataForDocumentId: schoolDocumentId
         );
         await InsertEducationOrganizationIdentityAsync(
             schoolDocumentId,
@@ -868,23 +869,5 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
-    }
-
-    private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
-        string schema,
-        string table,
-        Func<Task> action
-    )
-    {
-        await _database.ExecuteNonQueryAsync($"""DISABLE TRIGGER ALL ON [{schema}].[{table}];""");
-
-        try
-        {
-            await action();
-        }
-        finally
-        {
-            await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
-        }
     }
 }

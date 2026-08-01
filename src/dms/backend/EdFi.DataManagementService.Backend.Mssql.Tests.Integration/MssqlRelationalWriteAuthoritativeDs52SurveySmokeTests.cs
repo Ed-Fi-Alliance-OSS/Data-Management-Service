@@ -549,10 +549,11 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"),
             schoolResourceKeyId
         );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
-            async () => await InsertSchoolAsync(schoolDocumentId, SchoolId, "Sample High School")
+            async () => await InsertSchoolAsync(schoolDocumentId, SchoolId, "Sample High School"),
+            mirrorMetadataForDocumentId: schoolDocumentId
         );
 
         var fallSessionDocumentId = await InsertDocumentAsync(
@@ -901,24 +902,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             new SqlParameter("@sessionName", sessionName),
             new SqlParameter("@documentId", documentId)
         );
-    }
-
-    private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
-        string schema,
-        string table,
-        Func<Task> action
-    )
-    {
-        await _database.ExecuteNonQueryAsync($"""DISABLE TRIGGER ALL ON [{schema}].[{table}];""");
-
-        try
-        {
-            await action();
-        }
-        finally
-        {
-            await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
-        }
     }
 
     private static string ReadRequiredString(object? value) =>

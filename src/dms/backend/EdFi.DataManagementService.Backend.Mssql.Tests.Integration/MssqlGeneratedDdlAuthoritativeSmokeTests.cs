@@ -722,10 +722,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             Guid.Parse("23232323-2323-2323-2323-232323232323"),
             schoolResourceKeyId
         );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
-            async () => await InsertSchoolAsync(schoolDocumentId, 101, "North Ridge High")
+            async () => await InsertSchoolAsync(schoolDocumentId, 101, "North Ridge High"),
+            mirrorMetadataForDocumentId: schoolDocumentId
         );
 
         var before = await GetDocumentStampStateAsync(schoolDocumentId);
@@ -2546,10 +2547,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             schoolResourceKeyId
         );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
-            async () => await InsertSchoolAsync(schoolDocumentId, 100, "Sample High School")
+            async () => await InsertSchoolAsync(schoolDocumentId, 100, "Sample High School"),
+            mirrorMetadataForDocumentId: schoolDocumentId
         );
 
         var sessionDocumentId = await InsertDocumentAsync(
@@ -4007,32 +4009,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             Convert.ToInt32(row["SchoolYear_Unified"], CultureInfo.InvariantCulture),
             ReadRequiredString(row["Session_SessionName"])
         );
-    }
-
-    private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
-        string schema,
-        string table,
-        Func<Task> action
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            $"""
-            DISABLE TRIGGER ALL ON [{schema}].[{table}];
-            """
-        );
-
-        try
-        {
-            await action();
-        }
-        finally
-        {
-            await _database.ExecuteNonQueryAsync(
-                $"""
-                ENABLE TRIGGER ALL ON [{schema}].[{table}];
-                """
-            );
-        }
     }
 
     private async Task DelayForDistinctTimestampsAsync()

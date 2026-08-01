@@ -1029,7 +1029,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             Guid.Parse("99999999-0000-0000-0000-000000000001"),
             schoolResourceKeyId
         );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
+        await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
             async () =>
@@ -1040,7 +1040,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
                     (int)SchoolId,
                     "Ed-Fi:School"
                 );
-            }
+            },
+            mirrorMetadataForDocumentId: schoolDocumentId
         );
         await UpsertReferentialIdentityAsync(
             MssqlStudentSchoolAssociationIntegrationTestSupport.CreateReferentialId(
@@ -1508,23 +1509,5 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
-    }
-
-    private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
-        string schema,
-        string table,
-        Func<Task> action
-    )
-    {
-        await _database.ExecuteNonQueryAsync($"""DISABLE TRIGGER ALL ON [{schema}].[{table}];""");
-
-        try
-        {
-            await action();
-        }
-        finally
-        {
-            await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
-        }
     }
 }
