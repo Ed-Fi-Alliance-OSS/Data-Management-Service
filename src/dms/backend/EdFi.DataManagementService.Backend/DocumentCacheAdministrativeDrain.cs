@@ -162,12 +162,9 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        using CancellationTokenSource? linkedCancellationSource = CreateLinkedCancellationSource(
-            context,
-            cancellationToken
-        );
-        CancellationToken effectiveCancellationToken =
-            linkedCancellationSource?.Token ?? SelectEffectiveCancellationToken(context, cancellationToken);
+        using DocumentCacheAdministrativeWorkflowCancellationScope cancellationScope =
+            DocumentCacheAdministrativeWorkflow.CreateCancellationScope(context, cancellationToken);
+        CancellationToken effectiveCancellationToken = cancellationScope.Token;
 
         context.EnterPhase(DocumentCacheAdministrativeCommandPhase.DrainWork);
 
@@ -379,46 +376,16 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         CancellationToken cancellationToken
     )
     {
-        await using IRelationalWriteSession session = await context
-            .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+        return await DocumentCacheAdministrativeWorkflow
+            .ExecuteInTransactionAsync(
+                context.MutexLease,
+                IsolationLevel.ReadCommitted,
+                session => context.Primitives.ReadProjectedStateEmptinessAsync(session, cancellationToken),
+                commit: true,
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        try
-        {
-            DocumentCacheAdministrativeProjectedStateEmptinessResult result = await context
-                .Primitives.ReadProjectedStateEmptinessAsync(session, cancellationToken)
-                .ConfigureAwait(false);
-
-            await session.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return result;
-        }
-        catch
-        {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
     }
-
-    private static CancellationTokenSource? CreateLinkedCancellationSource(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!cancellationToken.CanBeCanceled || !context.WorkflowCancellationToken.CanBeCanceled)
-        {
-            return null;
-        }
-
-        return CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            context.WorkflowCancellationToken
-        );
-    }
-
-    private static CancellationToken SelectEffectiveCancellationToken(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    ) => cancellationToken.CanBeCanceled ? cancellationToken : context.WorkflowCancellationToken;
 }
 
 internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacity)

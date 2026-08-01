@@ -182,3 +182,8 @@ Completed diagnostics follow-up task for reference/design/backend-redesign/epics
 Key decisions: added baselineHighWaterBackpressure diagnostic category; baseline seeding now records backlog pressure separately from persistent poison; workflow timeout results keep workflowTimeout classification and seedBaseline backpressure context.
 Files changed: DocumentCacheAdministrativeContracts.cs; DocumentCacheBaselineSeeder.cs; baseline seeding and admin runner unit tests; PG/MSSQL administration integration tests; tasks.json; progress.txt.
 Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Simplification follow-up remains open.
+
+Completed simplification follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added shared administrative workflow helper for effective cancellation scope and mutex-owned short transaction commit/rollback; kept command-specific lifecycle and destructive gates in workflows.
+Files changed: DocumentCacheAdministrativeWorkflow.cs; guarded/offline/online/recovery/scrub/baseline/drain workflow files; tasks.json; progress.txt.
+Blockers/notes: none. Verification passed with DocumentCacheAdministrative unit filter.

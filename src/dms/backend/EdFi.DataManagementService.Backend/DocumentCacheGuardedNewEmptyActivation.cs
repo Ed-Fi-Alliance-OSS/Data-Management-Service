@@ -69,63 +69,63 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        using CancellationTokenSource? linkedCancellationSource = CreateLinkedCancellationSource(
-            context,
-            cancellationToken
-        );
-        CancellationToken effectiveCancellationToken =
-            linkedCancellationSource?.Token ?? SelectEffectiveCancellationToken(context, cancellationToken);
+        using DocumentCacheAdministrativeWorkflowCancellationScope cancellationScope =
+            DocumentCacheAdministrativeWorkflow.CreateCancellationScope(context, cancellationToken);
+        CancellationToken effectiveCancellationToken = cancellationScope.Token;
 
-        await using IRelationalWriteSession session = await context
-            .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, effectiveCancellationToken)
-            .ConfigureAwait(false);
+        (DocumentCacheAdministrativeCommandResult? Result, bool Commit) transaction =
+            await DocumentCacheAdministrativeWorkflow
+                .ExecuteInTransactionAsync(
+                    context.MutexLease,
+                    IsolationLevel.ReadCommitted,
+                    async session =>
+                    {
+                        DocumentCacheAdministrativeCommandResult? guardedRejection = await VerifyGuardAsync(
+                                context,
+                                session,
+                                effectiveCancellationToken
+                            )
+                            .ConfigureAwait(false);
+                        if (guardedRejection is not null)
+                        {
+                            return (Result: guardedRejection, Commit: false);
+                        }
 
-        try
-        {
-            DocumentCacheAdministrativeCommandResult? guardedRejection = await VerifyGuardAsync(
-                    context,
-                    session,
+                        context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
+
+                        DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
+                            .Primitives.TryTransitionLifecycleAsync(
+                                session,
+                                new DocumentCacheAdministrativeLifecycleTransitionRequest(
+                                    DocumentCacheLifecycleState.Disabled,
+                                    expectedCacheAheadRecoveryRequired: false,
+                                    DocumentCacheLifecycleState.Tracking,
+                                    nextCacheAheadRecoveryRequired: false
+                                ),
+                                effectiveCancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (!transition.Mutated)
+                        {
+                            return (Result: CreateTransitionGuardFailure(context, transition), Commit: false);
+                        }
+
+                        context.MarkMutated(transition.LifecycleReadResult.Lifecycle);
+                        return (Result: (DocumentCacheAdministrativeCommandResult?)null, Commit: true);
+                    },
+                    static transaction => transaction.Commit,
                     effectiveCancellationToken
                 )
                 .ConfigureAwait(false);
-            if (guardedRejection is not null)
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                return guardedRejection;
-            }
 
-            context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
-
-            DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
-                .Primitives.TryTransitionLifecycleAsync(
-                    session,
-                    new DocumentCacheAdministrativeLifecycleTransitionRequest(
-                        DocumentCacheLifecycleState.Disabled,
-                        expectedCacheAheadRecoveryRequired: false,
-                        DocumentCacheLifecycleState.Tracking,
-                        nextCacheAheadRecoveryRequired: false
-                    ),
-                    effectiveCancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (!transition.Mutated)
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                return CreateTransitionGuardFailure(context, transition);
-            }
-
-            context.MarkMutated(transition.LifecycleReadResult.Lifecycle);
-            await session.CommitAsync(effectiveCancellationToken).ConfigureAwait(false);
-            context.CompletePhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
-
-            return context.Completed();
-        }
-        catch
+        if (transaction.Result is not null)
         {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
+            return transaction.Result;
         }
+
+        context.CompletePhase(DocumentCacheAdministrativeCommandPhase.EnterTracking);
+        return context.Completed();
     }
 
     private static async Task<DocumentCacheAdministrativeCommandResult?> VerifyGuardAsync(
@@ -225,25 +225,4 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
     private static DocumentCacheGuardedNewEmptyActivationRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context
     ) => new(context.Request.TargetKey, context.Request.ExpectedPhysicalSourceFingerprint);
-
-    private static CancellationTokenSource? CreateLinkedCancellationSource(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!cancellationToken.CanBeCanceled || !context.WorkflowCancellationToken.CanBeCanceled)
-        {
-            return null;
-        }
-
-        return CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            context.WorkflowCancellationToken
-        );
-    }
-
-    private static CancellationToken SelectEffectiveCancellationToken(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    ) => cancellationToken.CanBeCanceled ? cancellationToken : context.WorkflowCancellationToken;
 }

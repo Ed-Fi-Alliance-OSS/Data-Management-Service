@@ -69,12 +69,9 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        using CancellationTokenSource? linkedCancellationSource = CreateLinkedCancellationSource(
-            context,
-            cancellationToken
-        );
-        CancellationToken effectiveCancellationToken =
-            linkedCancellationSource?.Token ?? SelectEffectiveCancellationToken(context, cancellationToken);
+        using DocumentCacheAdministrativeWorkflowCancellationScope cancellationScope =
+            DocumentCacheAdministrativeWorkflow.CreateCancellationScope(context, cancellationToken);
+        CancellationToken effectiveCancellationToken = cancellationScope.Token;
 
         DocumentCacheDownstreamPublicationHistoryProofResult downstreamProof =
             await ObserveAcceptedDownstreamProofAsync(context, effectiveCancellationToken)
@@ -174,7 +171,8 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            DocumentCacheAdministrativeClearBatchResult batch = await ExecuteInTransactionAsync(
+            DocumentCacheAdministrativeClearBatchResult batch = await DocumentCacheAdministrativeWorkflow
+                .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
                     session =>
@@ -216,7 +214,8 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            DocumentCacheAdministrativeClearBatchResult batch = await ExecuteInTransactionAsync(
+            DocumentCacheAdministrativeClearBatchResult batch = await DocumentCacheAdministrativeWorkflow
+                .ExecuteInTransactionAsync(
                     context.MutexLease,
                     IsolationLevel.ReadCommitted,
                     session =>
@@ -253,55 +252,62 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
     {
         context.EnterPhase(DocumentCacheAdministrativeCommandPhase.EnterDisabled);
 
-        await using IRelationalWriteSession session = await context
-            .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-            .ConfigureAwait(false);
+        (DocumentCacheAdministrativeCommandResult? Failure, bool Commit) transaction =
+            await DocumentCacheAdministrativeWorkflow
+                .ExecuteInTransactionAsync(
+                    context.MutexLease,
+                    IsolationLevel.ReadCommitted,
+                    async session =>
+                    {
+                        DocumentCacheAdministrativeProjectedStateEmptinessResult emptiness = await context
+                            .Primitives.ReadProjectedStateEmptinessAsync(session, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (!emptiness.CacheAndWorkEmpty)
+                        {
+                            return (
+                                Failure: CreateLifecycleFailure(
+                                    context,
+                                    DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                                    DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+                                    "Offline deactivation could not verify empty DocumentCache and DocumentProjectionWork before entering Disabled."
+                                ),
+                                Commit: false
+                            );
+                        }
 
-        try
-        {
-            DocumentCacheAdministrativeProjectedStateEmptinessResult emptiness = await context
-                .Primitives.ReadProjectedStateEmptinessAsync(session, cancellationToken)
-                .ConfigureAwait(false);
-            if (!emptiness.CacheAndWorkEmpty)
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                return CreateLifecycleFailure(
-                    context,
-                    DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
-                    DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
-                    "Offline deactivation could not verify empty DocumentCache and DocumentProjectionWork before entering Disabled."
-                );
-            }
+                        DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
+                            .Primitives.TryTransitionLifecycleAsync(
+                                session,
+                                new DocumentCacheAdministrativeLifecycleTransitionRequest(
+                                    DocumentCacheLifecycleState.Resetting,
+                                    expectedCacheAheadRecoveryRequired: false,
+                                    DocumentCacheLifecycleState.Disabled,
+                                    nextCacheAheadRecoveryRequired: false
+                                ),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
 
-            DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
-                .Primitives.TryTransitionLifecycleAsync(
-                    session,
-                    new DocumentCacheAdministrativeLifecycleTransitionRequest(
-                        DocumentCacheLifecycleState.Resetting,
-                        expectedCacheAheadRecoveryRequired: false,
-                        DocumentCacheLifecycleState.Disabled,
-                        nextCacheAheadRecoveryRequired: false
-                    ),
+                        if (!transition.Mutated)
+                        {
+                            return (Failure: CreateTransitionFailure(context, transition), Commit: false);
+                        }
+
+                        context.MarkMutated(transition.LifecycleReadResult.Lifecycle);
+                        return (Failure: (DocumentCacheAdministrativeCommandResult?)null, Commit: true);
+                    },
+                    static transaction => transaction.Commit,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            if (!transition.Mutated)
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                return CreateTransitionFailure(context, transition);
-            }
-
-            context.MarkMutated(transition.LifecycleReadResult.Lifecycle);
-            await session.CommitAsync(cancellationToken).ConfigureAwait(false);
-            context.CompletePhase(DocumentCacheAdministrativeCommandPhase.EnterDisabled);
-            return null;
-        }
-        catch
+        if (transaction.Failure is not null)
         {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
+            return transaction.Failure;
         }
+
+        context.CompletePhase(DocumentCacheAdministrativeCommandPhase.EnterDisabled);
+        return null;
     }
 
     private static async Task<DocumentCacheAdministrativeCommandResult?> TryTransitionAsync(
@@ -314,41 +320,46 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
     {
         context.EnterPhase(phase);
 
-        await using IRelationalWriteSession session = await context
-            .MutexLease.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-            .ConfigureAwait(false);
+        (DocumentCacheAdministrativeCommandResult? Failure, bool Commit) transaction =
+            await DocumentCacheAdministrativeWorkflow
+                .ExecuteInTransactionAsync(
+                    context.MutexLease,
+                    IsolationLevel.ReadCommitted,
+                    async session =>
+                    {
+                        DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
+                            .Primitives.TryTransitionLifecycleAsync(
+                                session,
+                                new DocumentCacheAdministrativeLifecycleTransitionRequest(
+                                    expectedLifecycle,
+                                    expectedCacheAheadRecoveryRequired: false,
+                                    nextLifecycle,
+                                    nextCacheAheadRecoveryRequired: false
+                                ),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
 
-        try
-        {
-            DocumentCacheAdministrativeLifecycleTransitionResult transition = await context
-                .Primitives.TryTransitionLifecycleAsync(
-                    session,
-                    new DocumentCacheAdministrativeLifecycleTransitionRequest(
-                        expectedLifecycle,
-                        expectedCacheAheadRecoveryRequired: false,
-                        nextLifecycle,
-                        nextCacheAheadRecoveryRequired: false
-                    ),
+                        if (!transition.Mutated)
+                        {
+                            return (Failure: CreateTransitionFailure(context, transition), Commit: false);
+                        }
+
+                        context.MarkMutated(transition.LifecycleReadResult.Lifecycle);
+                        return (Failure: (DocumentCacheAdministrativeCommandResult?)null, Commit: true);
+                    },
+                    static transaction => transaction.Commit,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            if (!transition.Mutated)
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                return CreateTransitionFailure(context, transition);
-            }
-
-            context.MarkMutated(transition.LifecycleReadResult.Lifecycle);
-            await session.CommitAsync(cancellationToken).ConfigureAwait(false);
-            context.CompletePhase(phase);
-            return null;
-        }
-        catch
+        if (transaction.Failure is not null)
         {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
+            return transaction.Failure;
         }
+
+        context.CompletePhase(phase);
+        return null;
     }
 
     private async Task<DocumentCacheDownstreamPublicationHistoryProofResult> ObserveAcceptedDownstreamProofAsync(
@@ -466,61 +477,4 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
             context.Request.OfflineWriterAdmission,
             context.Request.ExpectedPhysicalSourceFingerprint
         );
-
-    private static CancellationTokenSource? CreateLinkedCancellationSource(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!cancellationToken.CanBeCanceled || !context.WorkflowCancellationToken.CanBeCanceled)
-        {
-            return null;
-        }
-
-        return CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            context.WorkflowCancellationToken
-        );
-    }
-
-    private static CancellationToken SelectEffectiveCancellationToken(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    ) => cancellationToken.CanBeCanceled ? cancellationToken : context.WorkflowCancellationToken;
-
-    private static async Task<TResult> ExecuteInTransactionAsync<TResult>(
-        IDocumentCacheAdministrativeMutexLease mutexLease,
-        IsolationLevel isolationLevel,
-        Func<IRelationalWriteSession, Task<TResult>> executeAsync,
-        bool commit,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mutexLease);
-        ArgumentNullException.ThrowIfNull(executeAsync);
-
-        await using IRelationalWriteSession session = await mutexLease
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .ConfigureAwait(false);
-
-        try
-        {
-            TResult result = await executeAsync(session).ConfigureAwait(false);
-            if (commit)
-            {
-                await session.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-
-            return result;
-        }
-        catch
-        {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
-    }
 }

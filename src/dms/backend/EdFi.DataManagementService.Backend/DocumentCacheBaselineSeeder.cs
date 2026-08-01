@@ -122,12 +122,9 @@ internal sealed class DocumentCacheBaselineSeeder(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        using CancellationTokenSource? linkedCancellationSource = CreateLinkedCancellationSource(
-            context,
-            cancellationToken
-        );
-        CancellationToken effectiveCancellationToken =
-            linkedCancellationSource?.Token ?? SelectEffectiveCancellationToken(context, cancellationToken);
+        using DocumentCacheAdministrativeWorkflowCancellationScope cancellationScope =
+            DocumentCacheAdministrativeWorkflow.CreateCancellationScope(context, cancellationToken);
+        CancellationToken effectiveCancellationToken = cancellationScope.Token;
         int pageSize = context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize;
         int highWaterMark = context
             .TargetContext
@@ -136,7 +133,8 @@ internal sealed class DocumentCacheBaselineSeeder(
             .ProjectorBaselineHighWaterMark;
 
         context.EnterPhase(DocumentCacheAdministrativeCommandPhase.CaptureBoundary);
-        DocumentCacheAdministrativeBaselineBoundaryResult boundary = await ExecuteInTransactionAsync(
+        DocumentCacheAdministrativeBaselineBoundaryResult boundary = await DocumentCacheAdministrativeWorkflow
+            .ExecuteInTransactionAsync(
                 context.MutexLease,
                 IsolationLevel.ReadCommitted,
                 session =>
@@ -247,34 +245,13 @@ internal sealed class DocumentCacheBaselineSeeder(
         );
     }
 
-    private static CancellationTokenSource? CreateLinkedCancellationSource(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!cancellationToken.CanBeCanceled || !context.WorkflowCancellationToken.CanBeCanceled)
-        {
-            return null;
-        }
-
-        return CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            context.WorkflowCancellationToken
-        );
-    }
-
-    private static CancellationToken SelectEffectiveCancellationToken(
-        DocumentCacheAdministrativeCommandExecutionContext context,
-        CancellationToken cancellationToken
-    ) => cancellationToken.CanBeCanceled ? cancellationToken : context.WorkflowCancellationToken;
-
     private static Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveHighWaterAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         int highWaterMark,
         int pageSize,
         CancellationToken cancellationToken
     ) =>
-        ExecuteInTransactionAsync(
+        DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
             context.MutexLease,
             IsolationLevel.ReadCommitted,
             session =>
@@ -297,7 +274,7 @@ internal sealed class DocumentCacheBaselineSeeder(
         int pageSize,
         CancellationToken cancellationToken
     ) =>
-        ExecuteInTransactionAsync(
+        DocumentCacheAdministrativeWorkflow.ExecuteInTransactionAsync(
             context.MutexLease,
             IsolationLevel.Serializable,
             session =>
@@ -314,75 +291,4 @@ internal sealed class DocumentCacheBaselineSeeder(
                 page.Status != DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey,
             cancellationToken
         );
-
-    private static async Task<TResult> ExecuteInTransactionAsync<TResult>(
-        IDocumentCacheAdministrativeMutexLease mutexLease,
-        IsolationLevel isolationLevel,
-        Func<IRelationalWriteSession, Task<TResult>> executeAsync,
-        bool commit,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mutexLease);
-        ArgumentNullException.ThrowIfNull(executeAsync);
-
-        await using IRelationalWriteSession session = await mutexLease
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .ConfigureAwait(false);
-
-        try
-        {
-            TResult result = await executeAsync(session).ConfigureAwait(false);
-            if (commit)
-            {
-                await session.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-
-            return result;
-        }
-        catch
-        {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
-    }
-
-    private static async Task<TResult> ExecuteInTransactionAsync<TResult>(
-        IDocumentCacheAdministrativeMutexLease mutexLease,
-        IsolationLevel isolationLevel,
-        Func<IRelationalWriteSession, Task<TResult>> executeAsync,
-        Func<TResult, bool> shouldCommit,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(shouldCommit);
-
-        await using IRelationalWriteSession session = await mutexLease
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .ConfigureAwait(false);
-
-        try
-        {
-            TResult result = await executeAsync(session).ConfigureAwait(false);
-            if (shouldCommit(result))
-            {
-                await session.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-
-            return result;
-        }
-        catch
-        {
-            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
-    }
 }
