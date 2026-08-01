@@ -1610,6 +1610,14 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                     "this column is derived from another column in the same row, so any change to it is "
                         + "already detected through its source column"
                 );
+            // Both comparator forms are excluded: the loop above picks the cast form for string
+            // columns, but a future change that emitted the plain form would otherwise slip past.
+            _ddl.Should()
+                .NotContain(
+                    $"i.[{computedColumn}] <> del.[{computedColumn}]",
+                    "this column is derived from another column in the same row, so any change to it is "
+                        + "already detected through its source column"
+                );
         }
     }
 
