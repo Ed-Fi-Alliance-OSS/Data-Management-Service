@@ -168,12 +168,14 @@ file static class WriteSessionCommandStreamTestSupport
             ReferentialIdentityLookupCount: recorder.Commands.Count(command =>
                 command.CommandText.Contains("dms.\"ReferentialIdentity\"", StringComparison.Ordinal)
             ),
-            // The hydration batch is the only command that touches the root table and its child
-            // collection together; every persist command targets exactly one table. The same rule is
+            // The hydration batch reads the root table and its child collection together and modifies
+            // neither. Touching several tables no longer separates it from persistence, because the DML
+            // command co-batches every table's statements; being read-only still does. The same rule is
             // used by the SQL Server adapter so the two classifications stay comparable.
             HydrationBatchCount: recorder.Commands.Count(command =>
                 command.CommandText.Contains("\"edfi\".\"School\"", StringComparison.Ordinal)
                 && command.CommandText.Contains("\"edfi\".\"SchoolAddress\"", StringComparison.Ordinal)
+                && !ModifiesResourceTables(command.CommandText)
             ),
             // The PUT capture predicate is the only place the aliased dms."Document" row filters on
             // the external DocumentUuid; the POST capture reaches the same table through
@@ -183,6 +185,27 @@ file static class WriteSessionCommandStreamTestSupport
                 command.CommandText.Contains("d.\"DocumentUuid\" = @documentUuid", StringComparison.Ordinal)
             )
         );
+
+    /// <summary>
+    /// Whether any statement in the command modifies a resource table. Scoped to the resource schemas
+    /// deliberately: a hydration batch may materialize its keyset with a temporary insert of its own, which says
+    /// nothing about whether it persists anything.
+    /// </summary>
+    private static bool ModifiesResourceTables(string commandText) =>
+        Array.Exists(
+            ResourceTableDmlPrefixes,
+            prefix => commandText.Contains(prefix, StringComparison.OrdinalIgnoreCase)
+        );
+
+    private static readonly string[] ResourceTableDmlPrefixes =
+    [
+        "INSERT INTO \"edfi\".",
+        "INSERT INTO \"sample\".",
+        "UPDATE \"edfi\".",
+        "UPDATE \"sample\".",
+        "DELETE FROM \"edfi\".",
+        "DELETE FROM \"sample\".",
+    ];
 }
 
 public abstract class PostgresqlWriteSessionCommandStreamFixtureTestBase
@@ -287,7 +310,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_Create
     public void It_observes_the_in_session_target_lookup_that_the_recorder_previously_could_not_see() =>
         WriteSessionCommandStreamScenarios.AssertCreateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 5
+            expectedTotalCommandCount: 2
         );
 }
 
@@ -383,7 +406,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Put_Update
     public void It_observes_the_hydration_batch_and_the_in_session_put_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 3
+            expectedTotalCommandCount: 2
         );
 }
 
@@ -438,7 +461,7 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Post_As_Updat
     public void It_observes_the_hydration_batch_and_the_single_in_session_target_lookup() =>
         WriteSessionCommandStreamScenarios.AssertPostAsUpdateStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder),
-            expectedTotalCommandCount: 3
+            expectedTotalCommandCount: 2
         );
 }
 

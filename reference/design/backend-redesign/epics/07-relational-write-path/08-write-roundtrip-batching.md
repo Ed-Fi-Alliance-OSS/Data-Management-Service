@@ -58,10 +58,13 @@ precondition. **Both providers produced identical counts for every row.**
 
 | Scenario | Session commands | BEGIN | COMMIT | ROLLBACK | `dms.ReferentialIdentity` reads | `DocumentUuid` reads | Hydration batches |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| POST create, 2 collection rows | 6 | 1 | 1 | 0 | 1 | 0 | 1 |
-| PUT changed, 2 rows to 3 | 4 | 1 | 1 | 0 | 0 | 1 | 1 |
-| POST resolving to an existing document, 2 rows to 3 | 4 | 1 | 1 | 0 | 1 | 0 | 1 |
+| POST create, 2 collection rows | 2 | 1 | 1 | 0 | 1 | 0 | 1 |
+| PUT changed, 2 rows to 3 | 2 | 1 | 1 | 0 | 0 | 1 | 1 |
+| POST resolving to an existing document, 2 rows to 3 | 2 | 1 | 1 | 0 | 1 | 0 | 1 |
 | PUT missing target | 1 | 1 | 0 | 1 | 0 | 1 | 1 |
+
+These are the counts after second-command DML adoption; the pre-adoption values were 6, 4, 4, and 1. See
+"Production Second-Command Adoption" below.
 
 Reading these numbers:
 
@@ -71,11 +74,12 @@ Reading these numbers:
   The ordinary path co-batches stored authorization (vacuous here), reference lookup (absent here), and
   current-state hydration. On create and missing-target paths hydration owns empty result sets rather
   than re-observing a target.
-- The POST create stream is: first-phase composite; `dms.Document` insert; root insert;
-  `CollectionItemId` reservation; collection insert; `ContentVersion` read.
-- The PUT and POST-as-update streams are: first-phase composite; `CollectionItemId` reservation;
-  collection insert for the single added row; `ContentVersion` read. The root row is unchanged so it is
-  not rewritten. POST-as-update now performs its only target resolution inside the transaction.
+- The POST create stream is: first-phase composite; then one DML-mode composite carrying the
+  `dms.Document` insert, the root insert, the collection insert, and the `ContentVersion` read. No
+  `CollectionItemId` reservation is issued, because each collection row produces its own key inline.
+- The PUT and POST-as-update streams are: first-phase composite; then one DML-mode composite carrying the
+  collection insert for the single added row and the `ContentVersion` read. The root row is unchanged so
+  it is not rewritten. POST-as-update performs its only target resolution inside the transaction.
 - Missing PUT executes only the first-phase command, maps the absent capture to the unchanged not-exists
   result, and rolls back.
 - Reference resolution issues no command in these scenarios because the fixture body carries no
@@ -607,6 +611,65 @@ The AUTH1 tests prove the observable denial order: stored authorization still wi
 failure, and proposed authorization still wins over a stale precondition where the existing executor
 contract requires it. The final targets above are unchanged; this is only the first-phase adoption.
 
+### Production Second-Command Adoption
+
+The second command now exists in two modes behind one implementation, because one rule decides both
+whether it exists and what it holds. Authorization-only mode was adopted first. DML mode adds, behind
+the same two proposed `AUTH1` statements, the `dms.Document` insert, the resource tables' deletes and
+upserts in resolved dependency order, and the committed `ContentVersion` read.
+
+Statement order is owned by a planner that both the co-batched command and the per-statement path
+consume, so which statements a write owes — and the order it owes them in — cannot diverge between the
+two transports. The per-statement path splits a statement's rows at the table's compiled bulk-insert row
+cap; the co-batched path packs the same statements against the command's parameter budget.
+
+Measured after adoption, both providers, through the write-session command recorder, on the
+`focused/stable-key-update-semantics` fixture:
+
+| Scenario | Before | After |
+| --- | --- | --- |
+| POST create, 2 collection rows | 6 | 2 |
+| PUT changed, 2 rows to 3 | 4 | 2 |
+| POST resolving to an existing document, 2 rows to 3 | 4 | 2 |
+| PUT missing target | 1 | 1 |
+
+Those meet the agreed targets for POST create, PUT changed, and POST-as-update.
+
+Live verification after adoption:
+
+- PostgreSQL command-stream characterization: 8 passed, 0 failed.
+- PostgreSQL relational write family (multi-batch collections, aligned extension scopes, rollback
+  safety, create/update baselines): 54 passed, 0 failed.
+- SQL Server command-stream characterization and relational write family: 40 passed, 0 failed.
+- Backend unit suite: 2279 passed, 0 failed.
+
+#### Deviations Recorded By This Slice
+
+1. **The created `DocumentId` is re-derived by a scalar subquery, not a common table expression.** The
+   design proposed a CTE keyed on the unique `DocumentUuid`. A CTE belongs to the statement that declares
+   it and cannot be referenced from a following statement's `VALUES` list, so the portable equivalent is
+   a scalar subquery on `dms.Document` in the position the bind marker occupied. It compiles on both
+   dialects in every position the marker did. The uuid is bound once per command and reused by every
+   statement that derives the id.
+2. **The shared collection-key reservation precedes the authorization statements.** Its values must be
+   bound into the command that also carries the DML, so it cannot join that command, and it must run
+   before it. It creates no artifact — a consumed sequence value is not a row — so invariant 5 is
+   unaffected. This is the bounded dependency case's one extra command, not one per table.
+3. **A relationship check that cannot co-batch runs its ordered segment before the DML statements are
+   built.** SQL Server structured claims are the case that reaches it. Authorization therefore still
+   strictly precedes any created artifact, at the cost of one more command on that path.
+4. **The proposed relationship `AUTH1` is its own statement rather than a prefix on the `dms.Document`
+   insert.** With both checks co-batched ahead of the insert in the same command, the prefix form is
+   redundant; the ordering invariant it existed to satisfy is now satisfied by statement position.
+5. **Per-command parameter-count characterizations became per-provider statement and command counts.**
+   Asserting the parameter count of "the insert command" stops being well defined once statements share a
+   command. The replacements assert the packing algorithm's exact output for each provider's fixed
+   inputs — PostgreSQL reaches the row cap first, SQL Server the parameter cap — plus the invariant that
+   neither count grows with the number of tables.
+6. **The write-session recorder's hydration classifier is now read-only-based.** It previously identified
+   the hydration batch as the only command touching more than one resource table, a premise co-batching
+   removes; it now identifies it as the command that touches them without modifying any of them.
+
 ### Executor Test Removal And Replacement Audit
 
 The executor fixture now uses a sequential first-phase fake to keep later executor orchestration tests
@@ -642,6 +705,13 @@ replacement for the removed internal-call assertions.
 
 ## Follow-On Work
 
+- **Retiring the per-statement write path.** `RelationalWriteNoProfilePersister`,
+  `ProposedNamespaceAuthorizationOrchestrator`, and `ProposedRelationshipAuthorizationOrchestrator` no
+  longer serve a production request: the second command does. They remain because the executor's
+  orchestration fixture substitutes the sequential shape through them, which is what keeps its precedence
+  and result-shape assertions arranged the way they always were. Removing them means repointing that
+  fixture's arrangements at the second-command seam, and the same is true of the stale-no-op retry path
+  already recorded on this story. Both are their own change, not a test-cleanup afterthought.
 - Co-batching the authorized GET-by-id path, including the post-hydration read boundary.
 - `NpgsqlBatch` for per-statement plan caching on PostgreSQL, already an acceptance criterion on
   DMS-1065 (`reference/design/backend-redesign/epics/14-authorization/16-further-performance-optimizations.md`).

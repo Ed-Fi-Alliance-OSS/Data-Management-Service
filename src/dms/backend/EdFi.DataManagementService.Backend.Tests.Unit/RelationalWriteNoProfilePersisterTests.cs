@@ -2063,7 +2063,7 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static RelationalWriteExecutorRequest CreateRequest(
+    internal static RelationalWriteExecutorRequest CreateRequest(
         ResourceWritePlan writePlan,
         RelationalWriteOperationKind operationKind,
         SqlDialect dialect = SqlDialect.Pgsql
@@ -2177,7 +2177,7 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static ResourceWritePlan CreateWritePlan(IReadOnlyList<TableWritePlan> tablePlans)
+    internal static ResourceWritePlan CreateWritePlan(IReadOnlyList<TableWritePlan> tablePlans)
     {
         var rootTable = tablePlans[0].TableModel;
         var resourceModel = new RelationalResourceModel(
@@ -2210,7 +2210,7 @@ public class Given_Relational_Write_No_Profile_Persister
         };
     }
 
-    private static TableWritePlan CreateRootPlan(bool includeShortName = false)
+    internal static TableWritePlan CreateRootPlan(bool includeShortName = false)
     {
         List<DbColumnModel> columns =
         [
@@ -2302,7 +2302,7 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static TableWritePlan CreateRootExtensionPlan()
+    internal static TableWritePlan CreateRootExtensionPlan()
     {
         var tableModel = new DbTableModel(
             new DbTableName(new DbSchemaName("sample"), "SchoolExtension"),
@@ -2359,7 +2359,7 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static TableWritePlan CreateCollectionPlan()
+    internal static TableWritePlan CreateCollectionPlan()
     {
         var tableModel = new DbTableModel(
             new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
@@ -2462,7 +2462,7 @@ public class Given_Relational_Write_No_Profile_Persister
         };
     }
 
-    private static TableWritePlan CreatePeriodPlan()
+    internal static TableWritePlan CreatePeriodPlan()
     {
         var tableModel = new DbTableModel(
             new DbTableName(new DbSchemaName("edfi"), "SchoolAddressPeriod"),
@@ -2637,7 +2637,7 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static TableWritePlan CreateCollectionExtensionScopePlan()
+    internal static TableWritePlan CreateCollectionExtensionScopePlan()
     {
         var tableModel = new DbTableModel(
             new DbTableName(new DbSchemaName("sample"), "SchoolExtensionAddress"),
@@ -2797,7 +2797,7 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static RelationalWriteMergedTableRow CreateRow(params object?[] values)
+    internal static RelationalWriteMergedTableRow CreateRow(params object?[] values)
     {
         return new RelationalWriteMergedTableRow(
             values.Select(value =>
@@ -2817,7 +2817,7 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
+    internal static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
         FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
     private sealed record ReservedCollectionItemIdRow(int Ordinal, long CollectionItemId);

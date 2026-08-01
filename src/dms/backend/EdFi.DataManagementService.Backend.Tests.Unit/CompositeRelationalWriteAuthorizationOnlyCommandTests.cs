@@ -37,7 +37,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var request = CreateRequest(withNamespace: true, withRelationship: true);
         var session = new ScriptedWriteSession(CreateAuthorizedReader(namespaceCheckCount: 1));
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().ContainSingle();
@@ -49,7 +55,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var request = CreateRequest(withNamespace: true, withRelationship: true);
         var session = new ScriptedWriteSession(CreateAuthorizedReader(namespaceCheckCount: 1));
 
-        await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         // The command aborts at its first AUTH1, so emission order *is* the denial order the caller
         // observes. The allocator stamps each parameter with its statement's ordinal, which is how the
@@ -87,7 +99,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var request = CreateRequest(withNamespace: true, withRelationship: false);
         var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().ContainSingle();
@@ -100,7 +118,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var request = CreateRequest(withNamespace: false, withRelationship: true);
         var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().ContainSingle();
@@ -112,7 +136,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var request = CreateRequest(withNamespace: false, withRelationship: false);
         var session = new ScriptedWriteSession();
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().BeEmpty();
@@ -124,7 +154,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var request = CreateRequest(withNamespace: false, withRelationship: true);
         var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         // The DML path reads the runtime check off the merge result, so the phase must publish it even
         // though this path issues no DML of its own.
@@ -138,7 +174,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var request = baseRequest with { ProposedRelationshipAuthorization = CreateNoClaims(baseRequest) };
         var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         // Namespace AND-composes before the relationship OR-group, so the namespace statement still has
         // to run and win if it denies; the no-claims denial needs no statement of its own.
@@ -174,7 +216,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         };
         var session = new ScriptedWriteSession();
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         // Decided in process before any statement is built, so the relationship check is never sent
         // either: an unreconcilable plan fails closed rather than authorizing on a partial command.
@@ -200,7 +248,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
             CreateReader(CreateAuthorizedTable())
         );
 
-        var resolution = await CreateSut().ResolveAsync(request, CreateMergeResult(request), session);
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         // A table-valued claim list cannot be renamed into a co-batched statement, so it runs as its own
         // command on the same session and transaction. This is the recorded deviation from the
@@ -222,7 +276,12 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1"));
 
         var resolution = await CreateSut(new StubProviderFailureExtractor("AUTH1", payload))
-            .ResolveAsync(request, CreateMergeResult(request), session);
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         var notAuthorized = resolution
             .ImmediateResult.Should()
@@ -258,7 +317,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
 
         // The relationship denial is raised as the exception the executor already maps to a result, so
         // the mapping stays identical to the standalone and insert-prefixed emission sites.
-        var act = async () => await sut.ResolveAsync(request, CreateMergeResult(request), session);
+        var act = async () =>
+            await sut.ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         await act.Should().ThrowAsync<RelationalWriteRelationshipAuthorizationNotAuthorizedException>();
     }
@@ -271,7 +336,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         var session = new ScriptedWriteSession(providerFailure);
         var sut = CreateSut(new StubProviderFailureExtractor("23505", "duplicate key"));
 
-        var act = async () => await sut.ResolveAsync(request, CreateMergeResult(request), session);
+        var act = async () =>
+            await sut.ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
 
         (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(providerFailure);
     }
@@ -311,7 +382,7 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         );
     }
 
-    private static CompositeRelationalWriteProposedAuthorization CreateSut(
+    private static CompositeRelationalWriteSecondCommand CreateSut(
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
     ) => new(relationalParameterConfigurator: null, providerFailureExtractor);
 

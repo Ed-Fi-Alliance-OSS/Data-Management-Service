@@ -6,26 +6,24 @@
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 /// <summary>
-/// Runs proposed-value authorization as the two sequential commands the executor issued before the
-/// authorization-only second command existed: the namespace check through the session's command executor,
-/// then the relationship check through the persister.
+/// Runs the second command as the sequential commands the executor issued before it existed: the namespace
+/// check through the session's command executor, then the relationship check through the persister, then —
+/// in DML mode — persistence through the persister.
 /// </summary>
 /// <remarks>
 /// Executor orchestration tests assert precedence and result shape, not emitted SQL, and they arrange
 /// denials through the session's authorization command executor and the persister seam. Substituting the
 /// sequential shape keeps those arrangements meaningful and keeps each executor test focused on the
 /// ordering it exists to pin. The composite command's own statement order, ordered-segment fallback, and
-/// failure mapping are covered by <c>Given_The_Composite_Relational_Write_Proposed_Authorization</c>.
-/// <para>
-/// The relationship check is forced standalone because this phase only ever runs where no
-/// <c>dms.Document</c> insert follows, so there is nothing for the POST create path to prefix it onto.
-/// </para>
+/// failure mapping are covered by <c>Given_The_Composite_Relational_Write_Second_Command</c>.
 /// </remarks>
-internal sealed class FakeSequentialRelationalWriteProposedAuthorization(
+internal sealed class FakeSequentialRelationalWriteSecondCommand(
     IRelationalWritePersister persister,
     IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
-) : IRelationalWriteProposedAuthorizationPhase
+) : IRelationalWriteSecondCommandPhase
 {
+    private readonly IRelationalWritePersister _persister = persister;
+
     private readonly ProposedNamespaceAuthorizationOrchestrator _namespaceOrchestrator = new(
         providerFailureExtractor
     );
@@ -34,9 +32,10 @@ internal sealed class FakeSequentialRelationalWriteProposedAuthorization(
 
     public int ResolveCallCount { get; private set; }
 
-    public async Task<RelationalWriteProposedAuthorizationResolution> ResolveAsync(
+    public async Task<RelationalWriteSecondCommandResolution> ResolveAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
+        RelationalWriteSecondCommandMode mode,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken = default
     )
@@ -49,25 +48,43 @@ internal sealed class FakeSequentialRelationalWriteProposedAuthorization(
 
         if (namespaceBoundary.ImmediateResult is not null)
         {
-            return new RelationalWriteProposedAuthorizationResolution(
+            return new RelationalWriteSecondCommandResolution(
                 mergeResult,
+                null,
                 namespaceBoundary.ImmediateResult
             );
         }
 
+        // Authorization-only mode forces the standalone relationship check because it issues no
+        // dms.Document insert for the POST create path to prefix the check onto.
         var relationshipBoundary = await _relationshipOrchestrator
             .ResolveAsync(
                 request,
                 mergeResult,
                 writeSession,
                 cancellationToken,
-                forceStandaloneAuthorization: true
+                forceStandaloneAuthorization: mode is RelationalWriteSecondCommandMode.AuthorizationOnly
             )
             .ConfigureAwait(false);
 
-        return new RelationalWriteProposedAuthorizationResolution(
+        if (
+            relationshipBoundary.ImmediateResult is not null
+            || mode is RelationalWriteSecondCommandMode.AuthorizationOnly
+        )
+        {
+            return new RelationalWriteSecondCommandResolution(
+                relationshipBoundary.MergeResult,
+                null,
+                relationshipBoundary.ImmediateResult
+            );
+        }
+
+        return new RelationalWriteSecondCommandResolution(
             relationshipBoundary.MergeResult,
-            relationshipBoundary.ImmediateResult
+            await _persister
+                .PersistAsync(request, relationshipBoundary.MergeResult, writeSession, cancellationToken)
+                .ConfigureAwait(false),
+            null
         );
     }
 }

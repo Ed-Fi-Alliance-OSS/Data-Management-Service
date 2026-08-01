@@ -1670,7 +1670,7 @@ public sealed class RelationalDocumentStoreRepository(
 
             // NamespaceBased AND-composes before relationship OR strategies (auth.md). When a
             // proposed namespace check is also planned, defer NoClaims through Continue so the
-            // namespace check gets to deny first; ProposedRelationshipAuthorizationOrchestrator
+            // namespace check gets to deny first; the write path's second command
             // emits the NoClaims failure if namespace authorized. With no namespace check planned,
             // short-circuit at preflight to avoid a needless executor roundtrip.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
@@ -1974,7 +1974,7 @@ public sealed class RelationalDocumentStoreRepository(
             // NamespaceBased AND-composes before the relationship OR group (auth.md,
             // 08-namespace-auth-strategy.md). When a namespace check is planned, defer the stored
             // relationship NoClaims denial into the proposed-relationship slot so the stored-then-proposed
-            // namespace checks get to deny first; ProposedRelationshipAuthorizationOrchestrator emits the
+            // namespace checks get to deny first; the write path's second command emits the
             // NoClaims denial only after the proposed namespace check authorizes. With no namespace check
             // planned, keep NoClaims in the stored slot so the stored boundary emits it after the target
             // lock, preserving the existing 404-over-403 ordering for a missing PUT target.

@@ -217,36 +217,37 @@ public static class NoProfileMultiBatchCollectionScenarios
     }
 
     /// <summary>
-    /// Asserts the base-collection insert commands were still partitioned into exactly two batches at the
-    /// compiled row limit, and that neither batch paid an id-reservation round trip. No other table
-    /// consumes these rows' collection keys, so each insert produces its own key from the sequence
-    /// instead of binding a reserved one — which is also why each row binds one fewer parameter than the
-    /// compiled per-row count.
+    /// Asserts the base-collection insert was still split into exactly two row groups at the compiled row
+    /// limit, that both groups travelled in one command, and that neither paid an id-reservation round trip.
+    /// No other table consumes these rows' collection keys, so each insert produces its own key from the
+    /// sequence instead of binding a reserved one.
     /// </summary>
+    /// <remarks>
+    /// A row group is never split, but co-batching means a group is no longer a command: the parameter
+    /// budget, not the per-table row cap, decides where a command ends. The expected counts are therefore
+    /// the packing algorithm's exact output for one provider's fixed inputs and are supplied by the engine
+    /// adapter — PostgreSQL reaches the row cap first and SQL Server the parameter cap — while the shared
+    /// invariant is that neither count grows with the number of tables.
+    /// </remarks>
     public static void AssertCreateBatchPartitions(
         IReadOnlyList<int> reservationRowCounts,
-        IReadOnlyList<int> insertParameterCounts,
-        int maxRowsPerBatch,
-        int parametersPerRow
+        int insertStatementCount,
+        int insertCommandCount,
+        int expectedInsertStatementCount,
+        int expectedInsertCommandCount
     )
     {
-        var boundParametersPerRow = parametersPerRow - 1;
-
         reservationRowCounts.Should().BeEmpty();
-        insertParameterCounts
-            .Should()
-            .Equal(maxRowsPerBatch * boundParametersPerRow, 2 * boundParametersPerRow);
+        insertStatementCount.Should().Be(expectedInsertStatementCount);
+        insertCommandCount.Should().Be(expectedInsertCommandCount);
     }
 
     /// <summary>
-    /// Asserts the base-collection delete commands were partitioned into exactly two batches at the
-    /// compiled limit: delete parameter counts <c>[maxRowsPerBatch * parametersPerRow, parametersPerRow]</c>.
+    /// Asserts the base-collection deletes for a <c>maxRowsPerBatch + 2</c> rowset all travelled in one
+    /// command rather than one per row group.
     /// </summary>
-    public static void AssertDeleteBatchPartitions(
-        IReadOnlyList<int> deleteParameterCounts,
-        int maxRowsPerBatch,
-        int parametersPerRow
-    ) => deleteParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, parametersPerRow);
+    public static void AssertDeleteBatchPartitions(int deleteCommandCount) =>
+        deleteCommandCount.Should().Be(1);
 
     /// <summary>
     /// Asserts a changed PUT that replaces a non-identity attribute (the AddressType descriptor) on every one
@@ -332,14 +333,11 @@ public static class NoProfileMultiBatchCollectionScenarios
     }
 
     /// <summary>
-    /// Asserts the collection update-by-stable-row-identity commands were partitioned into exactly two batches
-    /// at the compiled limit: parameter counts <c>[maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow]</c>.
+    /// Asserts the collection update-by-stable-row-identity statements for a <c>maxRowsPerBatch + 2</c> rowset
+    /// all travelled in one command rather than one per row group.
     /// </summary>
-    public static void AssertUpdateBatchPartitions(
-        IReadOnlyList<int> updateParameterCounts,
-        int maxRowsPerBatch,
-        int parametersPerRow
-    ) => updateParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow);
+    public static void AssertUpdateBatchPartitions(int updateCommandCount) =>
+        updateCommandCount.Should().Be(1);
 
     /// <summary>
     /// Asserts a multi-batch delete/update reduced a large base collection to a single retained row: the
@@ -416,17 +414,19 @@ public static class NoProfileMultiBatchCollectionScenarios
     }
 
     /// <summary>
-    /// Asserts the collection-aligned extension insert commands were partitioned into exactly two
-    /// batches at the compiled limit: parameter counts <c>[maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow]</c>.
+    /// Asserts the collection-aligned extension insert was split into exactly two row groups at the compiled
+    /// row limit and that both travelled in one command.
     /// </summary>
     public static void AssertAlignedExtensionInsertBatchPartitions(
-        IReadOnlyList<int> extensionInsertParameterCounts,
-        int maxRowsPerBatch,
-        int parametersPerRow
-    ) =>
-        extensionInsertParameterCounts
-            .Should()
-            .Equal(maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow);
+        int extensionInsertStatementCount,
+        int extensionInsertCommandCount,
+        int expectedInsertStatementCount,
+        int expectedInsertCommandCount
+    )
+    {
+        extensionInsertStatementCount.Should().Be(expectedInsertStatementCount);
+        extensionInsertCommandCount.Should().Be(expectedInsertCommandCount);
+    }
 
     /// <summary>Asserts the authoritative payload is large enough to exercise real parameter pressure: exactly 28 collection rows and more than 300 insert parameters.</summary>
     public static void AssertParameterPressurePayload(int collectionRowCount, int insertParameterCount)

@@ -22,7 +22,6 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
     IRelationalWriteProfileMergeSynthesizer profileMergeSynthesizer,
-    IRelationalWritePersister persister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer,
@@ -36,7 +35,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
     IDataStoreSelection? dataStoreSelection = null,
     IRelationalWriteFirstPhase? writeFirstPhase = null,
-    IRelationalWriteProposedAuthorizationPhase? proposedAuthorizationPhase = null
+    IRelationalWriteSecondCommandPhase? secondCommandPhase = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -52,9 +51,6 @@ internal sealed class DefaultRelationalWriteExecutor(
         documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
 
     private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
-
-    private readonly IRelationalWritePersister _persister =
-        persister ?? throw new ArgumentNullException(nameof(persister));
 
     /// <summary>
     /// The composite first phase: target capture and lock, stored authorization, reference
@@ -81,22 +77,13 @@ internal sealed class DefaultRelationalWriteExecutor(
         profileMergeSynthesizer
     );
 
-    private readonly ProposedRelationshipAuthorizationOrchestrator _proposedRelationshipAuthorizationOrchestrator =
-        new(persister);
-
-    private readonly ProposedNamespaceAuthorizationOrchestrator _proposedNamespaceAuthorizationOrchestrator =
-        new(
-            relationshipAuthorizationProviderFailureExtractor
-                ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance
-        );
-
     /// <summary>
-    /// The second command in authorization-only mode: the proposed namespace and proposed relationship
-    /// <c>AUTH1</c> statements co-batched, used on every path that requires no data-modifying statement.
+    /// The second command: the proposed namespace and proposed relationship <c>AUTH1</c> statements, plus
+    /// the data-modifying statements and the committed <c>ContentVersion</c> read in DML mode.
     /// </summary>
-    private readonly IRelationalWriteProposedAuthorizationPhase _proposedAuthorizationPhase =
-        proposedAuthorizationPhase
-        ?? new CompositeRelationalWriteProposedAuthorization(
+    private readonly IRelationalWriteSecondCommandPhase _secondCommandPhase =
+        secondCommandPhase
+        ?? new CompositeRelationalWriteSecondCommand(
             relationalParameterConfigurator,
             relationshipAuthorizationProviderFailureExtractor,
             logger
@@ -272,46 +259,49 @@ internal sealed class DefaultRelationalWriteExecutor(
                 && !deferMissingDocumentReferenceFailures
                 && guardedNoOpTarget is null;
 
-            if (requiresDataModifyingStatements)
+            // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
+            // namespace denial surfaces over a concurrent relationship denial. Mirrors the stored-side
+            // ordering used for locked-target authorization. In DML mode the same command carries the
+            // document row, the resource tables, and the committed ContentVersion read behind those
+            // checks.
+            // The canonical persist now happens inside the second command's DML mode, so the
+            // canonical-writer wait is measured over that command rather than over a separate
+            // persister call. Authorization-only mode runs no data-modifying statement and is
+            // therefore not a canonical persist to report.
+            long canonicalPersistStartTimestamp = Stopwatch.GetTimestamp();
+            RelationalWriteSecondCommandResolution secondCommand;
+            try
             {
-                // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
-                // namespace denial surfaces over a concurrent relationship denial. Mirrors the
-                // stored-side ordering used for locked-target authorization.
-                var namespaceAuthorizationBoundary = await _proposedNamespaceAuthorizationOrchestrator
-                    .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                secondCommand = await _secondCommandPhase
+                    .ResolveAsync(
+                        executionRequest,
+                        mergeResult,
+                        requiresDataModifyingStatements
+                            ? RelationalWriteSecondCommandMode.Dml
+                            : RelationalWriteSecondCommandMode.AuthorizationOnly,
+                        writeSession,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
-
-                if (namespaceAuthorizationBoundary.ImmediateResult is not null)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return namespaceAuthorizationBoundary.ImmediateResult;
-                }
-
-                var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
-                    .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (proposedAuthorizationBoundary.ImmediateResult is not null)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return proposedAuthorizationBoundary.ImmediateResult;
-                }
-
-                mergeResult = proposedAuthorizationBoundary.MergeResult;
             }
-            else
+            catch
             {
-                var proposedAuthorization = await _proposedAuthorizationPhase
-                    .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (proposedAuthorization.ImmediateResult is not null)
+                if (requiresDataModifyingStatements)
                 {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return proposedAuthorization.ImmediateResult;
+                    RecordCanonicalWriterWait(
+                        executionRequest,
+                        DocumentCacheWriterTelemetryLabel.Failed,
+                        canonicalPersistStartTimestamp
+                    );
                 }
 
-                mergeResult = proposedAuthorization.MergeResult;
+                throw;
+            }
+
+            if (secondCommand.ImmediateResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return secondCommand.ImmediateResult;
             }
 
             if (deferredPreconditionResult is not null)
@@ -350,28 +340,17 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            long canonicalPersistStartTimestamp = Stopwatch.GetTimestamp();
-            RelationalWritePersistResult persistedTarget;
-            try
-            {
-                persistedTarget = await _persister
-                    .PersistAsync(executionRequest, mergeResult, writeSession, cancellationToken)
-                    .ConfigureAwait(false);
-                RecordCanonicalWriterWait(
-                    executionRequest,
-                    DocumentCacheWriterTelemetryLabel.AppliedWrite,
-                    canonicalPersistStartTimestamp
+            var persistedTarget =
+                secondCommand.PersistResult
+                ?? throw new InvalidOperationException(
+                    "The second command ran in DML mode but returned no persisted target."
                 );
-            }
-            catch
-            {
-                RecordCanonicalWriterWait(
-                    executionRequest,
-                    DocumentCacheWriterTelemetryLabel.Failed,
-                    canonicalPersistStartTimestamp
-                );
-                throw;
-            }
+
+            RecordCanonicalWriterWait(
+                executionRequest,
+                DocumentCacheWriterTelemetryLabel.AppliedWrite,
+                canonicalPersistStartTimestamp
+            );
 
             RelationalWritePersistedTargetValidator.Validate(executionRequest.TargetContext, persistedTarget);
 

@@ -72,7 +72,7 @@ public class Given_Default_Relational_Write_Executor
 
     /// <summary>
     /// Builds the executor under test with the fixture's fakes. The first phase and the
-    /// authorization-only proposed-authorization phase are sequential test seams: they observe through
+    /// second-command phase are sequential test seams: they observe through
     /// the same fakeable resolver, adapter factory, state loader, and persister the pre-composite
     /// pipeline used, while their decisions run through the production policy functions.
     /// </summary>
@@ -89,7 +89,6 @@ public class Given_Default_Relational_Write_Executor
             _writeFlattener,
             noProfileMergeSynthesizer ?? _noProfileMergeSynthesizer,
             _profileMergeSynthesizer,
-            _noProfilePersister,
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
@@ -107,7 +106,7 @@ public class Given_Default_Relational_Write_Executor
                 relationshipAuthorizationProviderFailureExtractor,
                 logger
             ),
-            proposedAuthorizationPhase: new FakeSequentialRelationalWriteProposedAuthorization(
+            secondCommandPhase: new FakeSequentialRelationalWriteSecondCommand(
                 _noProfilePersister,
                 relationshipAuthorizationProviderFailureExtractor
             )

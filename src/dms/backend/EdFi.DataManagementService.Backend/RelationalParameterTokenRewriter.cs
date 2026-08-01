@@ -117,6 +117,50 @@ internal static class RelationalParameterTokenRewriter
         return rewritten.ToString();
     }
 
+    /// <summary>
+    /// The bare names of every bind marker <paramref name="sql"/> executes, using the same lexer
+    /// <see cref="Rewrite"/> does, so a caller can drop a binding the statement never references.
+    /// </summary>
+    public static ISet<string> CollectParameterNames(string sql)
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+
+        HashSet<string> referencedBareNames = new(StringComparer.OrdinalIgnoreCase);
+
+        // Every token explains itself, so the rewrite cannot fail and its output is discarded.
+        Rewrite(sql, new CollectingReplacements(), referencedBareNames);
+
+        return referencedBareNames;
+    }
+
+    /// <summary>
+    /// A replacement map that explains every token as itself, so <see cref="Rewrite"/> can be used purely to
+    /// enumerate the markers a statement executes.
+    /// </summary>
+    private sealed class CollectingReplacements : IReadOnlyDictionary<string, string>
+    {
+        public string this[string key] => "@" + key;
+
+        public IEnumerable<string> Keys => [];
+
+        public IEnumerable<string> Values => [];
+
+        public int Count => 0;
+
+        public bool ContainsKey(string key) => true;
+
+        public bool TryGetValue(string key, out string value)
+        {
+            value = "@" + key;
+            return true;
+        }
+
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator() =>
+            Enumerable.Empty<KeyValuePair<string, string>>().GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     /// <summary>Strips a leading <c>@</c> so callers can key replacements consistently.</summary>
     public static string BareName(string parameterName)
     {
