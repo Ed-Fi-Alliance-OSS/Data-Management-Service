@@ -65,7 +65,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         _localEducationAgencyCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             documentUuid: Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
             resourceKeyId: _localEducationAgencyCategoryDescriptorResourceKeyId,
-            discriminator: "Ed-Fi:LocalEducationAgencyCategoryDescriptor",
+            discriminator: "LocalEducationAgencyCategoryDescriptor",
             uri: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
             @namespace: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
             codeValue: "Independent",

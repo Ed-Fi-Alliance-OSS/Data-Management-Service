@@ -451,7 +451,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new NpgsqlParameter("codeValue", codeValue),
-            new NpgsqlParameter("discriminator", "Ed-Fi:AddressTypeDescriptor"),
+            new NpgsqlParameter("discriminator", "AddressTypeDescriptor"),
             new NpgsqlParameter("uri", uri)
         );
 

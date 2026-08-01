@@ -362,7 +362,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         long descriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("c0000004-1000-0000-0000-000000000004"),
             resourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
+            "ProgramTypeDescriptor",
             ProgramTypeDescriptorUri,
             ProgramTypeDescriptorNamespace,
             ProgramTypeDescriptorCodeValue,
@@ -397,7 +397,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         long programTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("c0000006-1000-0000-0000-000000000006"),
             await GetResourceKeyIdAsync("Ed-Fi", "ProgramTypeDescriptor"),
-            "Ed-Fi:ProgramTypeDescriptor",
+            "ProgramTypeDescriptor",
             ProgramTypeDescriptorUri,
             ProgramTypeDescriptorNamespace,
             ProgramTypeDescriptorCodeValue,
@@ -505,7 +505,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.Parse("c0000001-1000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
+            "EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -514,7 +514,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.Parse("c0000002-1000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
+            "GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -1048,9 +1048,9 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     private const long AuthThirdEdOrgId = 255888888L;
     private const long AuthDirectOnlyEdOrgId = 255777777L;
     private const string AuthNamespacePrefix = "uri://ed-fi.org/";
-    private const string CrisisTypeDescriptorDiscriminator = "Ed-Fi:CrisisTypeDescriptor";
+    private const string CrisisTypeDescriptorDiscriminator = "CrisisTypeDescriptor";
     private const string NonMedicalImmunizationExemptionDescriptorDiscriminator =
-        "Ed-Fi:NonMedicalImmunizationExemptionDescriptor";
+        "NonMedicalImmunizationExemptionDescriptor";
 
     private static readonly QualifiedResourceName DisciplineActionResource = new("Ed-Fi", "DisciplineAction");
     private static readonly QualifiedResourceName StudentHealthResource = new("Ed-Fi", "StudentHealth");
@@ -1325,7 +1325,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         );
         // A descriptor of a different type with a matching namespace must be excluded by Discriminator.
         await InsertDescriptorTombstoneAsync(
-            "Ed-Fi:GradeLevelDescriptor",
+            "GradeLevelDescriptor",
             AuthNamespacePrefix + "GradeLevelDescriptor",
             "Tenth grade"
         );

@@ -1360,7 +1360,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             FallTermDescriptorUri,
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
@@ -1375,7 +1375,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var honorRollAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("55555555-5555-5555-5555-555555555555"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "AcademicHonorCategoryDescriptor",
             HonorRollAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "HonorRoll",
@@ -1394,7 +1394,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var scholarAthleteAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "AcademicHonorCategoryDescriptor",
             ScholarAthleteAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
@@ -1413,7 +1413,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var communityServiceAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("77777777-7777-7777-7777-777777777777"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "AcademicHonorCategoryDescriptor",
             CommunityServiceAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "CommunityService",
@@ -1432,7 +1432,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var standardDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("88888888-8888-8888-8888-888888888888"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
+            "DiplomaTypeDescriptor",
             StandardDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
@@ -1447,7 +1447,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var careerDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("99999999-9999-9999-9999-999999999999"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
+            "DiplomaTypeDescriptor",
             CareerDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "CareerDiploma",
@@ -1462,7 +1462,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var honorsDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
+            "DiplomaTypeDescriptor",
             HonorsDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
@@ -1477,7 +1477,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var cumulativeGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "GradePointAverageTypeDescriptor",
             CumulativeGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Cumulative",
@@ -1496,7 +1496,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var sessionGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "GradePointAverageTypeDescriptor",
             SessionGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
@@ -1515,7 +1515,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var weightedGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "GradePointAverageTypeDescriptor",
             WeightedGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Weighted",
@@ -1534,7 +1534,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var meritRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
+            "RecognitionTypeDescriptor",
             MeritRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
@@ -1553,7 +1553,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var leadershipRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
+            "RecognitionTypeDescriptor",
             LeadershipRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Leadership",
@@ -1572,7 +1572,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var attendanceRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("12121212-1212-1212-1212-121212121212"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
+            "RecognitionTypeDescriptor",
             AttendanceRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",
@@ -4196,7 +4196,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("44444444-0000-0000-0000-000000000004"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
@@ -4211,7 +4211,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var honorRollAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000005"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "AcademicHonorCategoryDescriptor",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "HonorRoll",
@@ -4230,7 +4230,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var scholarAthleteAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("66666666-0000-0000-0000-000000000006"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "AcademicHonorCategoryDescriptor",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
@@ -4249,7 +4249,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var communityServiceAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000007"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "AcademicHonorCategoryDescriptor",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "CommunityService",
@@ -4268,7 +4268,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var standardDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000008"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
+            "DiplomaTypeDescriptor",
             "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
@@ -4287,7 +4287,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var careerDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("99999999-0000-0000-0000-000000000009"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
+            "DiplomaTypeDescriptor",
             "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "CareerDiploma",
@@ -4306,7 +4306,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var honorsDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-0000-0000-0000-00000000000a"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
+            "DiplomaTypeDescriptor",
             "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
@@ -4325,7 +4325,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var cumulativeGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("bbbbbbbb-0000-0000-0000-00000000000b"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "GradePointAverageTypeDescriptor",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Cumulative",
@@ -4344,7 +4344,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var sessionGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-0000-0000-0000-00000000000c"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "GradePointAverageTypeDescriptor",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
@@ -4363,7 +4363,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var weightedGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("dddddddd-0000-0000-0000-00000000000d"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "GradePointAverageTypeDescriptor",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Weighted",
@@ -4382,7 +4382,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var meritRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-0000-0000-0000-00000000000e"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
+            "RecognitionTypeDescriptor",
             "uri://ed-fi.org/RecognitionTypeDescriptor#Merit",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
@@ -4401,7 +4401,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var leadershipRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("ffffffff-0000-0000-0000-00000000000f"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
+            "RecognitionTypeDescriptor",
             "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Leadership",
@@ -4420,7 +4420,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         var attendanceRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("12121212-0000-0000-0000-000000000010"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
+            "RecognitionTypeDescriptor",
             "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",

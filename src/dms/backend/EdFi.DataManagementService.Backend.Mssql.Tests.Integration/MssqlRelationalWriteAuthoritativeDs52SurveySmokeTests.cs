@@ -523,7 +523,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000001"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
@@ -532,7 +532,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         var springTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000002"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             "uri://ed-fi.org/TermDescriptor#Spring",
             "uri://ed-fi.org/TermDescriptor",
             "Spring",

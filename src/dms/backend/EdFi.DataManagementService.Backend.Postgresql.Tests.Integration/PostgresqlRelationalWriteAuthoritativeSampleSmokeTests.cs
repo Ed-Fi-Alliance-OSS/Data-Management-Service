@@ -1151,7 +1151,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var addressTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-cccccccccccc"),
             addressTypeDescriptorResourceKeyId,
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             "uri://ed-fi.org/AddressTypeDescriptor#Home",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
@@ -1169,7 +1169,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var stateAbbreviationDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("44444444-dddd-dddd-dddd-dddddddddddd"),
             stateAbbreviationDescriptorResourceKeyId,
-            "Ed-Fi:StateAbbreviationDescriptor",
+            "StateAbbreviationDescriptor",
             "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
@@ -1187,7 +1187,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("55555555-eeee-eeee-eeee-eeeeeeeeeeee"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
@@ -1201,7 +1201,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var programTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("66666666-ffff-ffff-ffff-ffffffffffff"),
             programTypeDescriptorResourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
+            "ProgramTypeDescriptor",
             "uri://ed-fi.org/ProgramTypeDescriptor#Extracurricular",
             "uri://ed-fi.org/ProgramTypeDescriptor",
             "Extracurricular",

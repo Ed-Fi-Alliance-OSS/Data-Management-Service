@@ -545,7 +545,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         var extracurricularProgramTypeDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-ccccccccccc1"),
             programTypeDescriptorResourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
+            "ProgramTypeDescriptor",
             ExtracurricularProgramTypeDescriptorUri,
             "uri://ed-fi.org/ProgramTypeDescriptor",
             "Extracurricular",

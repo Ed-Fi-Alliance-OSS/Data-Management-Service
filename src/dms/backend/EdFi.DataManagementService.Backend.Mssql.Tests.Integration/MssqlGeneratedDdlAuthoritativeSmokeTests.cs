@@ -447,11 +447,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             "Home"
         );
         var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+            "StateAbbreviationDescriptor",
             "TX"
         );
 
@@ -1332,7 +1332,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
+            "GradingPeriodDescriptor",
             $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
@@ -1464,7 +1464,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
+            "GradingPeriodDescriptor",
             $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
@@ -1567,7 +1567,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var originalDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
+            "GradingPeriodDescriptor",
             $"{DescriptorNamespace}#FourthSixWeeks",
             DescriptorNamespace,
             "FourthSixWeeks",
@@ -1576,7 +1576,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var replacementDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
+            "GradingPeriodDescriptor",
             $"{DescriptorNamespace}#FifthSixWeeks",
             DescriptorNamespace,
             "FifthSixWeeks",
@@ -1934,7 +1934,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [Test]
     public async Task It_should_insert_a_descriptor_tombstone_with_discriminator_on_delete()
     {
-        const string DescriptorDiscriminator = "Ed-Fi:TermDescriptor";
+        const string DescriptorDiscriminator = "TermDescriptor";
         const string DescriptorNamespace = "uri://ed-fi.org/TermDescriptor";
         const string DescriptorCodeValue = "Summer";
 
@@ -2147,14 +2147,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             "Home"
         );
         var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+            "StateAbbreviationDescriptor",
             "TX"
         );
-        var termDescriptorDocumentId = await GetDescriptorDocumentIdAsync("Ed-Fi:TermDescriptor", "Fall");
+        var termDescriptorDocumentId = await GetDescriptorDocumentIdAsync("TermDescriptor", "Fall");
 
         var addressCollectionItemId = await InsertStudentEducationOrganizationAssociationAddressAsync(
             associationDocumentId,
@@ -2509,7 +2509,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var addressTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
             addressTypeDescriptorResourceKeyId,
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             "uri://ed-fi.org/AddressTypeDescriptor#Home",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
@@ -2518,7 +2518,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var stateAbbreviationDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
             stateAbbreviationDescriptorResourceKeyId,
-            "Ed-Fi:StateAbbreviationDescriptor",
+            "StateAbbreviationDescriptor",
             "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
@@ -2527,7 +2527,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var termDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("55555555-5555-5555-5555-555555555555"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
@@ -2536,7 +2536,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var alternateTermDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             "uri://ed-fi.org/TermDescriptor#Spring",
             "uri://ed-fi.org/TermDescriptor",
             "Spring",

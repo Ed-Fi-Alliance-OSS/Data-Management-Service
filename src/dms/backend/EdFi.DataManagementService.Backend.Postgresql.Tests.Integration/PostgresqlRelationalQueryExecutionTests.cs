@@ -561,7 +561,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("10111111-1111-1111-1111-111111111111"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             "uri://ed-fi.org/AddressTypeDescriptor#Physical",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Physical",
@@ -570,7 +570,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("20222222-2222-2222-2222-222222222222"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Mailing",
@@ -579,7 +579,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("30333333-3333-3333-3333-333333333333"),
             "StateAbbreviationDescriptor",
-            "Ed-Fi:StateAbbreviationDescriptor",
+            "StateAbbreviationDescriptor",
             "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
@@ -588,7 +588,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("40444444-4444-4444-4444-444444444444"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
+            "EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -597,7 +597,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("50555555-5555-5555-5555-555555555555"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
+            "GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -606,7 +606,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("60666666-6666-6666-6666-666666666666"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
+            "GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",

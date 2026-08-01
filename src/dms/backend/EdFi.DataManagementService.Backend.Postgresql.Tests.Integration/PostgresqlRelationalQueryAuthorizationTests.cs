@@ -289,7 +289,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             Guid.Parse("40444444-4444-4444-4444-444444444444"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
+            "EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -298,7 +298,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             Guid.Parse("60666666-6666-6666-6666-666666666666"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
+            "GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
@@ -649,7 +649,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             "TermDescriptor",
-            "Ed-Fi:TermDescriptor",
+            "TermDescriptor",
             termDescriptor,
             "uri://ed-fi.org/TermDescriptor",
             termDescriptor[(termDescriptor.LastIndexOf('#') + 1)..],
@@ -662,7 +662,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             "StaffClassificationDescriptor",
-            "Ed-Fi:StaffClassificationDescriptor",
+            "StaffClassificationDescriptor",
             descriptor,
             "uri://ed-fi.org/StaffClassificationDescriptor",
             descriptor[(descriptor.LastIndexOf('#') + 1)..],
@@ -675,7 +675,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             "ResponsibilityDescriptor",
-            "Ed-Fi:ResponsibilityDescriptor",
+            "ResponsibilityDescriptor",
             descriptor,
             "uri://ed-fi.org/ResponsibilityDescriptor",
             descriptor[(descriptor.LastIndexOf('#') + 1)..],

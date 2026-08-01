@@ -75,7 +75,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         _localEducationAgencyCategoryDescriptorDocumentId = await InsertDescriptorAsync(
             documentUuid: Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
             resourceKeyId: _localEducationAgencyCategoryDescriptorResourceKeyId,
-            discriminator: "Ed-Fi:LocalEducationAgencyCategoryDescriptor",
+            discriminator: "LocalEducationAgencyCategoryDescriptor",
             uri: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
             @namespace: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
             codeValue: "Independent",

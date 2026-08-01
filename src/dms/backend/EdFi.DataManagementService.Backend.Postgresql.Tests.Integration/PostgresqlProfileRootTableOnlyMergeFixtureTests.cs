@@ -439,7 +439,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
         var uri = $"{@namespace}#{codeValue}";
-        const string discriminator = "Ed-Fi:SchoolTypeDescriptor";
+        const string discriminator = "SchoolTypeDescriptor";
         await database.ExecuteNonQueryAsync(
             """
             INSERT INTO "dms"."Descriptor" (

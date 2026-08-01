@@ -709,7 +709,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var homeAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaa1"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             HomeAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
@@ -718,7 +718,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var workAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("22222222-bbbb-bbbb-bbbb-bbbbbbbbbbb2"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             WorkAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Work",
@@ -727,7 +727,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var temporaryAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-ccccccccccc3"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
+            "AddressTypeDescriptor",
             TemporaryAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Temporary",
@@ -736,7 +736,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var stateAbbreviationDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("44444444-dddd-dddd-dddd-ddddddddddd4"),
             "StateAbbreviationDescriptor",
-            "Ed-Fi:StateAbbreviationDescriptor",
+            "StateAbbreviationDescriptor",
             StateAbbreviationDescriptorUri,
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",

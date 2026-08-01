@@ -451,7 +451,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@discriminator", "Ed-Fi:AddressTypeDescriptor"),
+            new SqlParameter("@discriminator", "AddressTypeDescriptor"),
             new SqlParameter("@uri", uri)
         );
 

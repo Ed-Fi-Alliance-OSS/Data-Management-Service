@@ -232,7 +232,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         await SeedDescriptorAsync(
             Guid.Parse("c2b00001-0000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
+            "EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -241,7 +241,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         await SeedDescriptorAsync(
             Guid.Parse("c2b00002-0000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
+            "GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",

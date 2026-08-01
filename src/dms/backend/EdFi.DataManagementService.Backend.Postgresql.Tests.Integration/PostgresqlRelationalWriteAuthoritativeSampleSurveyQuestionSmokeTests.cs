@@ -729,7 +729,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Guid.Parse("11111111-0000-0000-0000-000000000001"),
             questionFormDescriptorResourceKeyId,
             "QuestionFormDescriptor",
-            "Ed-Fi:QuestionFormDescriptor",
+            "QuestionFormDescriptor",
             QuestionFormDescriptorUri,
             "uri://ed-fi.org/QuestionFormDescriptor",
             "Matrix",
