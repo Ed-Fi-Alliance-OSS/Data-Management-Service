@@ -119,6 +119,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionItemProcessor,
+                DocumentCacheProjectionItemProcessor
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheProjectionScheduler, DocumentCacheProjectionScheduler>()
         );
         services.TryAdd(

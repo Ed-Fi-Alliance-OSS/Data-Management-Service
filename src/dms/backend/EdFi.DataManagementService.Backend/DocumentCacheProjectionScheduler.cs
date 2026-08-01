@@ -64,6 +64,7 @@ public enum DocumentCacheProjectionDrainPageOutcome
     NoEligibleWork = 2,
     TargetBackoff = 3,
     LifecycleFenced = 4,
+    TargetPaused = 5,
 }
 
 public sealed record DocumentCacheProjectionDrainPageResult
@@ -152,6 +153,14 @@ public sealed record DocumentCacheProjectionDrainPageResult
             backoffUntil,
             nextRetryAt: null
         );
+
+    public static DocumentCacheProjectionDrainPageResult TargetPaused(int processedItemCount) =>
+        new(
+            DocumentCacheProjectionDrainPageOutcome.TargetPaused,
+            processedItemCount,
+            backoffUntil: null,
+            nextRetryAt: null
+        );
 }
 
 public enum DocumentCacheProjectionSchedulerDispatchStatus
@@ -168,6 +177,7 @@ public enum DocumentCacheProjectionTargetReadinessBlockReason
     PollSleep = 3,
     CommandOwned = 4,
     LocalDrainActive = 5,
+    TargetPaused = 6,
 }
 
 public sealed record DocumentCacheProjectionSchedulerDispatchResult
@@ -339,10 +349,32 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
     private readonly object _sync = new();
     private ProjectionThroughputCounter _ordinaryPageThroughput;
     private ProjectionThroughputCounter _administrativeDrainThroughput;
+    private bool _targetPaused;
 
     public DateTimeOffset? TargetBackoffUntil { get; private set; }
 
     public DateTimeOffset? PollSleepUntil { get; private set; }
+
+    public bool IsTargetPaused
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _targetPaused;
+            }
+        }
+    }
+
+    public void PauseTarget()
+    {
+        lock (_sync)
+        {
+            _targetPaused = true;
+            TargetBackoffUntil = null;
+            PollSleepUntil = null;
+        }
+    }
 
     public void SetTargetBackoffUntil(DateTimeOffset backoffUntil)
     {
@@ -386,6 +418,11 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
 
         lock (_sync)
         {
+            if (_targetPaused)
+            {
+                return DocumentCacheProjectionTargetReadinessBlockReason.TargetPaused;
+            }
+
             if (TargetBackoffUntil is not null && TargetBackoffUntil > now)
             {
                 return DocumentCacheProjectionTargetReadinessBlockReason.TargetBackoff;
@@ -448,12 +485,15 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
                     PollSleepUntil = noWorkSleepUntil;
                     break;
 
-                case DocumentCacheProjectionDrainPageOutcome.LifecycleFenced:
-                    PollSleepUntil = completedAt + pollInterval;
-                    break;
-
                 case DocumentCacheProjectionDrainPageOutcome.TargetBackoff:
                     TargetBackoffUntil = result.BackoffUntil;
+                    PollSleepUntil = null;
+                    break;
+
+                case DocumentCacheProjectionDrainPageOutcome.LifecycleFenced:
+                case DocumentCacheProjectionDrainPageOutcome.TargetPaused:
+                    _targetPaused = true;
+                    TargetBackoffUntil = null;
                     PollSleepUntil = null;
                     break;
             }
@@ -534,10 +574,11 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
             {
                 CompletedCount = CompletedCount + 1,
                 ItemCount = ItemCount + result.ProcessedItemCount,
-                FailureCount =
-                    result.Outcome == DocumentCacheProjectionDrainPageOutcome.TargetBackoff
-                        ? FailureCount + 1
-                        : FailureCount,
+                FailureCount = result.Outcome
+                    is DocumentCacheProjectionDrainPageOutcome.TargetBackoff
+                        or DocumentCacheProjectionDrainPageOutcome.TargetPaused
+                    ? FailureCount + 1
+                    : FailureCount,
                 LastCompletedAt = completedAt,
                 LastDuration = completedAt - startedAt,
             };

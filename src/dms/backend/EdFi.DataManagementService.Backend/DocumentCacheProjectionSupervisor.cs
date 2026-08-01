@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -33,6 +35,7 @@ public interface IDocumentCacheProjectionTargetRuntimeContextFactory
 
 public sealed record DocumentCacheProjectionTargetProviderAdapters(
     RelationalProviderToken ProviderToken,
+    DocumentCacheMaterializationTargetContext MaterializationTargetContext,
     IDocumentCacheMaterializer Materializer,
     IDocumentCacheWriter Writer
 );
@@ -349,6 +352,9 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
 
     public IDocumentCacheWriter Writer => ProviderAdapters.Writer;
 
+    public DocumentCacheMaterializationTargetContext MaterializationTargetContext =>
+        ProviderAdapters.MaterializationTargetContext;
+
     public IDocumentCacheProjectionObservationSink ObservationSink { get; }
 
     public DocumentCacheProjectionCursorState Cursor { get; }
@@ -388,7 +394,7 @@ public sealed class DocumentCacheProjectionTargetRuntimeContextFactory(
     IDocumentCacheProjectionObservationSink observationSink
 ) : IDocumentCacheProjectionTargetRuntimeContextFactory
 {
-    public Task<DocumentCacheProjectionTargetRuntimeContext> CreateAsync(
+    public async Task<DocumentCacheProjectionTargetRuntimeContext> CreateAsync(
         DocumentCacheTargetExecutionContext executionContext,
         CancellationToken cancellationToken = default
     )
@@ -403,27 +409,83 @@ public sealed class DocumentCacheProjectionTargetRuntimeContextFactory(
                 serviceScope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>();
             IDocumentCacheWriter writer =
                 serviceScope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
+            DocumentCacheMaterializationTargetContext materializationTargetContext =
+                await CreateMaterializationTargetContextAsync(
+                        serviceScope.ServiceProvider,
+                        executionContext,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
 
             DocumentCacheProjectionTargetProviderAdapters providerAdapters = new(
                 executionContext.ProviderToken,
+                materializationTargetContext,
                 materializer,
                 writer
             );
 
-            return Task.FromResult(
-                new DocumentCacheProjectionTargetRuntimeContext(
-                    executionContext,
-                    providerAdapters,
-                    observationSink,
-                    serviceScope.DisposeAsync
-                )
+            return new DocumentCacheProjectionTargetRuntimeContext(
+                executionContext,
+                providerAdapters,
+                observationSink,
+                serviceScope.DisposeAsync
             );
         }
         catch
         {
-            serviceScope.Dispose();
+            await serviceScope.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static async Task<DocumentCacheMaterializationTargetContext> CreateMaterializationTargetContextAsync(
+        IServiceProvider serviceProvider,
+        DocumentCacheTargetExecutionContext executionContext,
+        CancellationToken cancellationToken
+    )
+    {
+        IMappingSetProvider mappingSetProvider = serviceProvider.GetRequiredService<IMappingSetProvider>();
+        IRuntimeMappingSetCompiler runtimeCompiler =
+            serviceProvider
+                .GetServices<IRuntimeMappingSetCompiler>()
+                .SingleOrDefault(compiler => compiler.Dialect == ToSqlDialect(executionContext.ProviderToken))
+            ?? throw new InvalidOperationException(
+                "DocumentCache projection target context creation requires one runtime mapping set "
+                    + $"compiler for provider '{executionContext.ProviderToken}'."
+            );
+
+        MappingSet mappingSet = await mappingSetProvider
+            .GetOrCreateAsync(runtimeCompiler.GetCurrentKey(), cancellationToken)
+            .ConfigureAwait(false);
+
+        return new DocumentCacheMaterializationTargetContext(
+            new DocumentCacheProjectionTargetKey(
+                executionContext.TargetKey.TenantKey,
+                new DataStoreId(executionContext.TargetKey.DataStoreId)
+            ),
+            mappingSet,
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+            executionContext.ConnectionInput.Value
+        );
+    }
+
+    private static SqlDialect ToSqlDialect(RelationalProviderToken providerToken)
+    {
+        ArgumentNullException.ThrowIfNull(providerToken);
+
+        if (providerToken == RelationalProviderToken.Postgresql)
+        {
+            return SqlDialect.Pgsql;
+        }
+
+        if (providerToken == RelationalProviderToken.SqlServer)
+        {
+            return SqlDialect.Mssql;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported DocumentCache projection provider token '{providerToken}'."
+        );
     }
 }
 

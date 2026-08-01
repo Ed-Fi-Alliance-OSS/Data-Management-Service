@@ -106,12 +106,15 @@ internal sealed record DocumentProjectionWorkPage
 
 internal sealed class DocumentCacheProjectionDrainPageProcessor(
     IDocumentProjectionWorkPager workPager,
+    IDocumentCacheProjectionItemProcessor itemProcessor,
     ILogger<DocumentCacheProjectionDrainPageProcessor> logger,
     TimeProvider timeProvider
 ) : IDocumentCacheProjectionDrainPageProcessor
 {
     private readonly IDocumentProjectionWorkPager _workPager =
         workPager ?? throw new ArgumentNullException(nameof(workPager));
+    private readonly IDocumentCacheProjectionItemProcessor _itemProcessor =
+        itemProcessor ?? throw new ArgumentNullException(nameof(itemProcessor));
     private readonly ILogger<DocumentCacheProjectionDrainPageProcessor> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly TimeProvider _timeProvider =
@@ -176,6 +179,35 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
 
             targetContext.FailureBackoffState.RecordEligibleWorkProcessed();
             processedItemCount++;
+            DocumentCacheProjectionItemProcessResult itemResult = await _itemProcessor
+                .ProcessItemAsync(
+                    new DocumentCacheProjectionItemProcessRequest(
+                        targetContext,
+                        item,
+                        request.InvocationKind
+                    ),
+                    effectiveCancellationToken
+                )
+                .ConfigureAwait(false);
+            if (itemResult.Outcome == DocumentCacheProjectionItemProcessOutcome.Continue)
+            {
+                continue;
+            }
+
+            targetContext.FailureBackoffState.RecordSuppressedTraversal(suppressedDocumentIds, observedAt);
+            ObserveTarget(targetContext, observedAt);
+            return itemResult.Outcome switch
+            {
+                DocumentCacheProjectionItemProcessOutcome.LifecycleFenced =>
+                    DocumentCacheProjectionDrainPageResult.LifecycleFenced,
+                DocumentCacheProjectionItemProcessOutcome.TargetBackoff =>
+                    DocumentCacheProjectionDrainPageResult.TargetBackoff(itemResult.BackoffUntil!.Value),
+                DocumentCacheProjectionItemProcessOutcome.TargetPaused =>
+                    DocumentCacheProjectionDrainPageResult.TargetPaused(processedItemCount),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported DocumentCache projection item outcome '{itemResult.Outcome}'."
+                ),
+            };
         }
 
         targetContext.FailureBackoffState.RecordSuppressedTraversal(suppressedDocumentIds, observedAt);

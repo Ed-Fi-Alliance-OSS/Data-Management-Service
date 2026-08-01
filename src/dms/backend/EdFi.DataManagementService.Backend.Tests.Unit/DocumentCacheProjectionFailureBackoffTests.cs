@@ -5,8 +5,11 @@
 
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -239,7 +242,13 @@ public class Given_DocumentCacheProjectionFailureBackoff
     private static DocumentCacheProjectionDrainPageProcessor CreateProcessor(
         IDocumentProjectionWorkPager pager,
         TimeProvider timeProvider
-    ) => new(pager, NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance, timeProvider);
+    ) =>
+        new(
+            pager,
+            new AcknowledgingItemProcessor(),
+            NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+            timeProvider
+        );
 
     private static DocumentProjectionWorkPage Page(params DocumentProjectionWorkPageItem[] items) =>
         new(items, pageSize: 3);
@@ -290,11 +299,68 @@ public class Given_DocumentCacheProjectionFailureBackoff
             executionContext,
             new DocumentCacheProjectionTargetProviderAdapters(
                 providerToken,
+                MaterializationTargetContext(targetKey, providerToken),
                 new StubDocumentCacheMaterializer(),
                 new StubDocumentCacheWriter()
             ),
             observationSink ?? new RecordingObservationSink()
         );
+    }
+
+    private static DocumentCacheMaterializationTargetContext MaterializationTargetContext(
+        DocumentCacheTargetKey targetKey,
+        RelationalProviderToken providerToken
+    ) =>
+        new(
+            new DocumentCacheProjectionTargetKey(targetKey.TenantKey, new DataStoreId(targetKey.DataStoreId)),
+            MappingSet(providerToken),
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+            "connection"
+        );
+
+    private static MappingSet MappingSet(RelationalProviderToken providerToken)
+    {
+        SqlDialect dialect =
+            providerToken == RelationalProviderToken.SqlServer ? SqlDialect.Mssql : SqlDialect.Pgsql;
+        EffectiveSchemaInfo effectiveSchema = new(
+            ApiSchemaFormatVersion: "5.2.0",
+            RelationalMappingVersion: "v2",
+            EffectiveSchemaHash: "schema-hash",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new MappingSet(
+            new MappingSetKey(
+                effectiveSchema.EffectiveSchemaHash,
+                dialect,
+                effectiveSchema.RelationalMappingVersion
+            ),
+            new DerivedRelationalModelSet(effectiveSchema, dialect, [], [], [], [], [], []),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private sealed class AcknowledgingItemProcessor : IDocumentCacheProjectionItemProcessor
+    {
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            request.TargetContext.FailureBackoffState.ClearFailure(request.WorkItem.DocumentId);
+            return Task.FromResult(DocumentCacheProjectionItemProcessResult.Continue);
+        }
     }
 
     private sealed class ScriptedWorkPager(

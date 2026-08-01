@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -168,6 +171,7 @@ public class Given_DocumentProjectionWorkPaging
     ) =>
         new(
             pager,
+            new AcknowledgingItemProcessor(),
             NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
             new FixedTimeProvider(FirstEnqueuedAt)
         );
@@ -218,11 +222,68 @@ public class Given_DocumentProjectionWorkPaging
             executionContext,
             new DocumentCacheProjectionTargetProviderAdapters(
                 providerToken,
+                MaterializationTargetContext(targetKey, providerToken),
                 new StubDocumentCacheMaterializer(),
                 new StubDocumentCacheWriter()
             ),
             new NoOpObservationSink()
         );
+    }
+
+    private static DocumentCacheMaterializationTargetContext MaterializationTargetContext(
+        DocumentCacheTargetKey targetKey,
+        RelationalProviderToken providerToken
+    ) =>
+        new(
+            new DocumentCacheProjectionTargetKey(targetKey.TenantKey, new DataStoreId(targetKey.DataStoreId)),
+            MappingSet(providerToken),
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+            "connection"
+        );
+
+    private static MappingSet MappingSet(RelationalProviderToken providerToken)
+    {
+        SqlDialect dialect =
+            providerToken == RelationalProviderToken.SqlServer ? SqlDialect.Mssql : SqlDialect.Pgsql;
+        EffectiveSchemaInfo effectiveSchema = new(
+            ApiSchemaFormatVersion: "5.2.0",
+            RelationalMappingVersion: "v2",
+            EffectiveSchemaHash: "schema-hash",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new MappingSet(
+            new MappingSetKey(
+                effectiveSchema.EffectiveSchemaHash,
+                dialect,
+                effectiveSchema.RelationalMappingVersion
+            ),
+            new DerivedRelationalModelSet(effectiveSchema, dialect, [], [], [], [], [], []),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private sealed class AcknowledgingItemProcessor : IDocumentCacheProjectionItemProcessor
+    {
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            request.TargetContext.FailureBackoffState.ClearFailure(request.WorkItem.DocumentId);
+            return Task.FromResult(DocumentCacheProjectionItemProcessResult.Continue);
+        }
     }
 
     private sealed class ScriptedWorkPager(

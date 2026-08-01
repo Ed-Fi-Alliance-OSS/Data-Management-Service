@@ -5,8 +5,11 @@
 
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -464,6 +467,7 @@ public class Given_DocumentCacheProjectionSupervisor
                 executionContext,
                 new DocumentCacheProjectionTargetProviderAdapters(
                     executionContext.ProviderToken,
+                    MaterializationTargetContext(executionContext.TargetKey, executionContext.ProviderToken),
                     Materializer,
                     Writer
                 ),
@@ -472,6 +476,52 @@ public class Given_DocumentCacheProjectionSupervisor
             CreatedContexts.Add(context);
 
             return Task.FromResult(context);
+        }
+
+        private static DocumentCacheMaterializationTargetContext MaterializationTargetContext(
+            DocumentCacheTargetKey targetKey,
+            RelationalProviderToken providerToken
+        ) =>
+            new(
+                new DocumentCacheProjectionTargetKey(
+                    targetKey.TenantKey,
+                    new DataStoreId(targetKey.DataStoreId)
+                ),
+                MappingSet(providerToken),
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+                "connection"
+            );
+
+        private static MappingSet MappingSet(RelationalProviderToken providerToken)
+        {
+            SqlDialect dialect =
+                providerToken == RelationalProviderToken.SqlServer ? SqlDialect.Mssql : SqlDialect.Pgsql;
+            EffectiveSchemaInfo effectiveSchema = new(
+                ApiSchemaFormatVersion: "5.2.0",
+                RelationalMappingVersion: "v2",
+                EffectiveSchemaHash: "schema-hash",
+                ResourceKeyCount: 0,
+                ResourceKeySeedHash: new byte[32],
+                SchemaComponentsInEndpointOrder: [],
+                ResourceKeysInIdOrder: []
+            );
+
+            return new MappingSet(
+                new MappingSetKey(
+                    effectiveSchema.EffectiveSchemaHash,
+                    dialect,
+                    effectiveSchema.RelationalMappingVersion
+                ),
+                new DerivedRelationalModelSet(effectiveSchema, dialect, [], [], [], [], [], []),
+                WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+                ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+                ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+                SecurableElementColumnPathsByResource: new Dictionary<
+                    QualifiedResourceName,
+                    IReadOnlyList<ResolvedSecurableElementPath>
+                >()
+            );
         }
     }
 

@@ -5,8 +5,11 @@
 
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -290,6 +293,38 @@ public class Given_DocumentCacheProjectionScheduler
     }
 
     [Test]
+    public async Task It_pauses_the_target_after_lifecycle_fenced_processing()
+    {
+        RecordingDrainPageProcessor drainPageProcessor = new(_ =>
+            DocumentCacheProjectionDrainPageResult.LifecycleFenced
+        );
+        RecordingObservationSink observationSink = new();
+        DocumentCacheProjectionScheduler scheduler = CreateScheduler(
+            drainPageProcessor,
+            observationSink,
+            maxConcurrentTargets: 1
+        );
+        DocumentCacheProjectionTargetRuntimeContext context = RuntimeContext(
+            DocumentCacheTargetKey.Create("Tenant-A", 1),
+            generation: 1,
+            observationSink
+        );
+
+        ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> firstPass =
+            await scheduler.RunReadyTargetsOnceAsync([context]);
+        ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> secondPass =
+            await scheduler.RunReadyTargetsOnceAsync([context]);
+
+        firstPass
+            .Should()
+            .ContainSingle()
+            .Which.DrainResult.Should()
+            .BeSameAs(DocumentCacheProjectionDrainPageResult.LifecycleFenced);
+        context.SchedulingState.IsTargetPaused.Should().BeTrue();
+        secondPass.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_lets_administrative_drain_own_the_per_target_executor()
     {
         BlockingDrainPageProcessor drainPageProcessor = new();
@@ -368,10 +403,51 @@ public class Given_DocumentCacheProjectionScheduler
             executionContext,
             new DocumentCacheProjectionTargetProviderAdapters(
                 RelationalProviderToken.Postgresql,
+                MaterializationTargetContext(targetKey),
                 new StubDocumentCacheMaterializer(),
                 new StubDocumentCacheWriter()
             ),
             observationSink ?? new RecordingObservationSink()
+        );
+    }
+
+    private static DocumentCacheMaterializationTargetContext MaterializationTargetContext(
+        DocumentCacheTargetKey targetKey
+    ) =>
+        new(
+            new DocumentCacheProjectionTargetKey(targetKey.TenantKey, new DataStoreId(targetKey.DataStoreId)),
+            MappingSet(),
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+            "connection"
+        );
+
+    private static MappingSet MappingSet()
+    {
+        EffectiveSchemaInfo effectiveSchema = new(
+            ApiSchemaFormatVersion: "5.2.0",
+            RelationalMappingVersion: "v2",
+            EffectiveSchemaHash: "schema-hash",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new MappingSet(
+            new MappingSetKey(
+                effectiveSchema.EffectiveSchemaHash,
+                SqlDialect.Pgsql,
+                effectiveSchema.RelationalMappingVersion
+            ),
+            new DerivedRelationalModelSet(effectiveSchema, SqlDialect.Pgsql, [], [], [], [], [], []),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 

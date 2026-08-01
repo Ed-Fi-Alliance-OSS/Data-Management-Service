@@ -32,3 +32,8 @@ Completed poison-backoff task for reference/design/backend-redesign/epics/18-doc
 Key decisions: filled target-generation local failure state with PageSize cap, exact clock+FailureBackoff retry, deterministic oldest-observed then DocumentId eviction, cursor-pass tracking, and bounded poison traversal snapshots; processor skips suppressed rows while advancing cursor and scheduler sleeps no-work pass until earlier retry or poll interval.
 Files changed: DocumentCacheProjectionSupervisor.cs; DocumentProjectionWorkPaging.cs; DocumentCacheProjectionScheduler.cs; DocumentCacheProjectionFailureBackoffTests.cs; DocumentProjectionWorkPagingTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Next likely item-processing to call RecordFailure/ClearFailure from writer/materializer outcomes, then lifecycle-fence refresh.
+
+Completed item-processing task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added item processor over pinned target materialization context; writer fast path runs before materialization; materializer no-candidate and benign writer race outcomes do no projector repair; WorkAnomaly/retry outcomes use document backoff; lifecycle fence stops slice; cache-ahead latch and deterministic invariant outcomes pause same generation; provider/runtime faults target-backoff.
+Files changed: DocumentCacheProjectionItemProcessor.cs; DocumentProjectionWorkPaging.cs; DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionScheduler.cs; DI registration; focused item/paging/backoff/scheduler/supervisor tests; tasks.json; progress.txt.
+Blockers/notes: lifecycle-fence refresh remains next likely task so writer fence pauses can resume from observed Tracking/Rebuilding clear latch.
