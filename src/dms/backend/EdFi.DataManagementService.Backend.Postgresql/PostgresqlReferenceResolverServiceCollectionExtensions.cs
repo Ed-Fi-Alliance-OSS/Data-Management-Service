@@ -38,14 +38,25 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, PostgresqlDocumentCacheWriter>());
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>()
+        );
 
-        return services.AddReferenceResolver<
+        services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,
             PostgresqlRelationalCommandExecutor,
             PostgresqlRelationalWriteSessionFactory,
             PostgresqlDocumentHydrator,
             PostgresqlSessionDocumentHydrator
         >();
+        services.Replace(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionDrainPageProcessor,
+                DocumentCacheProjectionDrainPageProcessor
+            >()
+        );
+
+        return services;
     }
 
     public static IServiceCollection AddPostgresqlRelationalTokenInfoEducationOrganizationLookup(

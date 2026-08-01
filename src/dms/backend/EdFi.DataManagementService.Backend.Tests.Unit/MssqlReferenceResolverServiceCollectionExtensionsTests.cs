@@ -60,6 +60,10 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var documentCacheWriter = scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
         var documentCacheWriterRetryAdapter =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
+        var documentProjectionWorkPager =
+            scope.ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>();
+        var documentCacheProjectionDrainPageProcessor =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
@@ -93,6 +97,10 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheMaterializationDataStore.Should().BeOfType<MssqlDocumentCacheMaterializationDataStore>();
         documentCacheWriter.Should().BeOfType<MssqlDocumentCacheWriter>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
+        documentProjectionWorkPager.Should().BeOfType<MssqlDocumentProjectionWorkPager>();
+        documentCacheProjectionDrainPageProcessor
+            .Should()
+            .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<MssqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
@@ -106,7 +114,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
-    public void DocumentCacheWriter_ServiceRegistration_registers_only_the_mssql_writer_adapter()
+    public void DocumentCacheWriter_ServiceRegistration_registers_mssql_writer_and_projection_pager_adapters()
     {
         var services = new ServiceCollection();
 
@@ -126,13 +134,20 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
                 && descriptor.ImplementationType == typeof(MssqlDocumentCacheWriter)
             );
         services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentProjectionWorkPager))
             .Should()
-            .NotContain(descriptor =>
-                (descriptor.ServiceType.FullName ?? descriptor.ServiceType.Name).Contains(
-                    "DocumentProjectionWork",
-                    StringComparison.Ordinal
-                )
+            .ContainSingle()
+            .Which.Should()
+            .Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Singleton
+                && descriptor.ImplementationType == typeof(MssqlDocumentProjectionWorkPager)
             );
+        services
+            .Single(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheProjectionDrainPageProcessor)
+            )
+            .ImplementationType.Should()
+            .Be<DocumentCacheProjectionDrainPageProcessor>();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
@@ -141,6 +156,10 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .ServiceProvider.GetRequiredService<IDocumentCacheWriter>()
             .Should()
             .BeOfType<MssqlDocumentCacheWriter>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>()
+            .Should()
+            .BeOfType<MssqlDocumentProjectionWorkPager>();
     }
 
     [Test]

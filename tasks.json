@@ -96,7 +96,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentProjectionWorkPaging\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentProjectionWorkPaging\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "poison-backoff",

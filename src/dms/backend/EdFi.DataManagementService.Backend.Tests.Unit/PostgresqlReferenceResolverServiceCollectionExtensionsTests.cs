@@ -64,6 +64,10 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var documentCacheWriter = scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
         var documentCacheWriterRetryAdapter =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
+        var documentProjectionWorkPager =
+            scope.ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>();
+        var documentCacheProjectionDrainPageProcessor =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
@@ -98,6 +102,10 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             .BeOfType<PostgresqlDocumentCacheMaterializationDataStore>();
         documentCacheWriter.Should().BeOfType<PostgresqlDocumentCacheWriter>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
+        documentProjectionWorkPager.Should().BeOfType<PostgresqlDocumentProjectionWorkPager>();
+        documentCacheProjectionDrainPageProcessor
+            .Should()
+            .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
@@ -111,7 +119,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
-    public void DocumentCacheWriter_ServiceRegistration_registers_only_the_postgresql_writer_adapter()
+    public void DocumentCacheWriter_ServiceRegistration_registers_postgresql_writer_and_projection_pager_adapters()
     {
         var services = new ServiceCollection();
 
@@ -134,13 +142,20 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
                 && descriptor.ImplementationType == typeof(PostgresqlDocumentCacheWriter)
             );
         services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentProjectionWorkPager))
             .Should()
-            .NotContain(descriptor =>
-                (descriptor.ServiceType.FullName ?? descriptor.ServiceType.Name).Contains(
-                    "DocumentProjectionWork",
-                    StringComparison.Ordinal
-                )
+            .ContainSingle()
+            .Which.Should()
+            .Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Singleton
+                && descriptor.ImplementationType == typeof(PostgresqlDocumentProjectionWorkPager)
             );
+        services
+            .Single(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheProjectionDrainPageProcessor)
+            )
+            .ImplementationType.Should()
+            .Be<DocumentCacheProjectionDrainPageProcessor>();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
@@ -149,6 +164,10 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             .ServiceProvider.GetRequiredService<IDocumentCacheWriter>()
             .Should()
             .BeOfType<PostgresqlDocumentCacheWriter>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>()
+            .Should()
+            .BeOfType<PostgresqlDocumentProjectionWorkPager>();
     }
 
     [Test]

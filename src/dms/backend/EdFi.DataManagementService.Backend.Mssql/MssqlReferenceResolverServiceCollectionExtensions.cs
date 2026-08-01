@@ -37,14 +37,25 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, MssqlDocumentCacheWriter>());
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>()
+        );
 
-        return services.AddReferenceResolver<
+        services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
             MssqlRelationalCommandExecutor,
             MssqlRelationalWriteSessionFactory,
             MssqlDocumentHydrator,
             MssqlSessionDocumentHydrator
         >();
+        services.Replace(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionDrainPageProcessor,
+                DocumentCacheProjectionDrainPageProcessor
+            >()
+        );
+
+        return services;
     }
 
     public static IServiceCollection AddMssqlRelationalTokenInfoEducationOrganizationLookup(
