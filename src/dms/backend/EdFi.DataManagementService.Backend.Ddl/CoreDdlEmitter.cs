@@ -1004,12 +1004,13 @@ public sealed class CoreDdlEmitter
 
     /// <summary>
     /// Emits the PostgreSQL descriptor stamping trigger function and trigger.
-    /// On INSERT, DELETE, or a real value change to any stored column of <c>dms.Descriptor</c>,
+    /// On INSERT or a real value change to any stored column of <c>dms.Descriptor</c>,
     /// bumps <c>dms.Document.ContentVersion</c> and <c>ContentLastModifiedAt</c> on
     /// the owning document row, then mirrors those captured stamps — plus
     /// <see cref="_descriptorMirroredDocumentColumns"/> — back to the descriptor
-    /// (INSERT copies the existing document stamp; DELETE stamps the document only, since
-    /// the descriptor row is already gone).
+    /// (INSERT copies the existing document stamp). DELETE writes only the tracked-change
+    /// tombstone, whose change version comes straight from <c>dms.ChangeVersionSequence</c>:
+    /// the descriptor row is already gone, so there is nothing left to stamp or mirror.
     /// A DB-level no-op guard (<c>IS DISTINCT FROM</c> across every stored column)
     /// short-circuits same-value UPDATEs so unchanged PUTs do not bump the stamps.
     /// </summary>
@@ -1113,39 +1114,41 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("ELSIF TG_OP = 'DELETE' THEN");
             using (writer.Indent())
             {
-                // DocumentId is the Descriptor PK and the row is already gone in the AFTER
-                // DELETE branch, so a mirror update can never match; stamp dms.Document only.
-                writer.Append("UPDATE ");
-                writer.AppendLine(documentTable);
-                writer.Append("SET ");
-                writer.Append(Quote("ContentVersion"));
-                writer.Append(" = nextval('");
-                writer.Append(sequenceName);
-                writer.Append("'), ");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.AppendLine(" = now()");
-                writer.Append("WHERE ");
-                writer.Append(Quote("DocumentId"));
-                writer.Append(" = OLD.");
-                writer.Append(Quote("DocumentId"));
                 if (_sharedDescriptorTrackedChangeTable is null)
                 {
+                    // DocumentId is the Descriptor PK and the row is already gone in the AFTER
+                    // DELETE branch, so a mirror update can never match; stamp dms.Document only.
+                    writer.Append("UPDATE ");
+                    writer.AppendLine(documentTable);
+                    writer.Append("SET ");
+                    writer.Append(Quote("ContentVersion"));
+                    writer.Append(" = nextval('");
+                    writer.Append(sequenceName);
+                    writer.Append("'), ");
+                    writer.Append(Quote("ContentLastModifiedAt"));
+                    writer.AppendLine(" = now()");
+                    writer.Append("WHERE ");
+                    writer.Append(Quote("DocumentId"));
+                    writer.Append(" = OLD.");
+                    writer.Append(Quote("DocumentId"));
                     writer.AppendLine(";");
                 }
                 else
                 {
-                    writer.AppendLine();
-                    writer.Append("RETURNING ");
-                    writer.Append(Quote("ContentVersion"));
-                    // STRICT: the stamp requires the dms.Document row, so a missing row must fail
-                    // loudly here rather than silently produce a NULL tombstone ChangeVersion.
-                    writer.AppendLine(" INTO STRICT _stampedContentVersion;");
+                    // The tombstone's ChangeVersion is a fresh sequence value taken right here. The
+                    // descriptor row is gone and its dms.Document row may already be gone too, so
+                    // there is nothing left to stamp and read back — which is what used to make the
+                    // delete statement order (dms.Descriptor before dms.Document) load-bearing.
+                    writer.Append("_stampedContentVersion := nextval('");
+                    writer.Append(sequenceName);
+                    writer.AppendLine("');");
                     TrackedChangeTriggerBodyEmitter.EmitDescriptorTombstoneInsert(
                         writer,
                         _dialect,
                         _sharedDescriptorTrackedChangeTable,
                         imageRef: "OLD",
-                        fromDeletedSet: false
+                        fromDeletedSet: false,
+                        sequenceName
                     );
                 }
                 writer.AppendLine("RETURN OLD;");
@@ -1202,8 +1205,9 @@ public sealed class CoreDdlEmitter
     /// <c>dms.Document</c> defaults into the descriptor mirror; UPDATE rows flow
     /// through the null-safe per-column diff predicates across every stored descriptor
     /// column, so no-op UPDATEs produce no CTE rows and the downstream stamp/mirror
-    /// updates stamp nothing. DELETE rows stamp the owning document before it is removed.
-    /// The mirror writes the content stamp pair plus
+    /// updates stamp nothing. DELETE rows are absent from the stamp workset entirely — they
+    /// write only the tracked-change tombstone, whose change version comes straight from
+    /// <c>dms.ChangeVersionSequence</c>. The mirror writes the content stamp pair plus
     /// <see cref="_descriptorMirroredDocumentColumns"/>.
     /// </summary>
     private void EmitMssqlDescriptorStampingTrigger(SqlWriter writer)
@@ -1276,19 +1280,22 @@ public sealed class CoreDdlEmitter
                 EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
                 writer.Append(")");
                 writer.AppendLine();
-                // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
-                // skips the dedup sort.
-                writer.AppendLine("UNION ALL");
-                writer.Append("SELECT del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.AppendLine("FROM deleted del");
-                writer.Append("LEFT JOIN inserted i ON i.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" = del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.Append("WHERE i.");
-                writer.Append(quotedKeyColumn);
-                writer.AppendLine(" IS NULL");
+                if (_sharedDescriptorTrackedChangeTable is null)
+                {
+                    // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
+                    // skips the dedup sort.
+                    writer.AppendLine("UNION ALL");
+                    writer.Append("SELECT del.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine("FROM deleted del");
+                    writer.Append("LEFT JOIN inserted i ON i.");
+                    writer.Append(quotedKeyColumn);
+                    writer.Append(" = del.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.Append("WHERE i.");
+                    writer.Append(quotedKeyColumn);
+                    writer.AppendLine(" IS NULL");
+                }
             }
             writer.AppendLine(")");
 
@@ -1364,7 +1371,8 @@ public sealed class CoreDdlEmitter
                         _dialect,
                         _sharedDescriptorTrackedChangeTable,
                         imageRef: "del",
-                        fromDeletedSet: true
+                        fromDeletedSet: true,
+                        sequenceName
                     );
                 }
                 writer.AppendLine("END");

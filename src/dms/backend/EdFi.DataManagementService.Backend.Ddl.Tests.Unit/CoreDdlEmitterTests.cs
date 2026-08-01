@@ -1858,33 +1858,47 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Pgsql
     }
 
     [Test]
-    public void It_should_declare_and_capture_the_content_stamp_for_the_tombstone()
+    public void It_should_declare_and_assign_the_change_version_for_the_tombstone()
     {
-        // The descriptor trigger function had no locals before the tombstone needed the post-bump
-        // ContentVersion; the DELETE-branch stamp now hands it back.
+        // The descriptor trigger function had no locals before the tombstone needed a post-delete
+        // ContentVersion; the DELETE branch now takes one straight from the change-version sequence
+        // instead of reading a stamp back out of dms.Document.
         _ddl.Should().Contain("DECLARE\n    _stampedContentVersion bigint;\n");
-        _ddl.Should().Contain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
+        _ddl.Should().Contain("_stampedContentVersion := nextval('\"dms\".\"ChangeVersionSequence\"');");
     }
 
     [Test]
-    public void It_should_place_tombstone_insert_after_document_update_and_before_return_old_in_delete_branch()
+    public void It_should_not_stamp_the_document_row_in_the_delete_branch()
+    {
+        var deleteStart = _ddl.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        deleteStart.Should().BeGreaterOrEqualTo(0);
+        var deleteEnd = _ddl.IndexOf("RETURN OLD;", deleteStart, StringComparison.Ordinal);
+        deleteEnd.Should().BeGreaterThan(deleteStart);
+
+        var deleteBranch = _ddl[deleteStart..deleteEnd];
+        deleteBranch.Should().NotContain("UPDATE \"dms\".\"Document\"");
+        deleteBranch.Should().NotContain("INTO STRICT _stampedContentVersion;");
+    }
+
+    [Test]
+    public void It_should_place_tombstone_insert_after_the_change_version_and_before_return_old_in_delete_branch()
     {
         var deleteStart = _ddl.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
         deleteStart.Should().BeGreaterOrEqualTo(0);
 
-        var documentUpdate = _ddl.IndexOf(
-            "RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;",
+        var changeVersionAssignment = _ddl.IndexOf(
+            "_stampedContentVersion := nextval('\"dms\".\"ChangeVersionSequence\"');",
             deleteStart,
             StringComparison.Ordinal
         );
-        documentUpdate.Should().BeGreaterThan(deleteStart);
+        changeVersionAssignment.Should().BeGreaterThan(deleteStart);
 
         var tombstoneInsert = _ddl.IndexOf(
             "INSERT INTO \"tracked_changes_edfi\".\"Descriptor\"",
             deleteStart,
             StringComparison.Ordinal
         );
-        tombstoneInsert.Should().BeGreaterThan(documentUpdate);
+        tombstoneInsert.Should().BeGreaterThan(changeVersionAssignment);
 
         var returnOld = _ddl.IndexOf("RETURN OLD;", deleteStart, StringComparison.Ordinal);
         returnOld.Should().BeGreaterThan(tombstoneInsert);
@@ -1931,7 +1945,7 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
     }
 
     [Test]
-    public void It_should_read_document_uuid_from_the_deleted_image_and_change_version_from_the_stamp()
+    public void It_should_read_document_uuid_from_the_deleted_image_and_change_version_from_the_sequence()
     {
         var tombstone = SharedDescriptorTrackedChangeFixture.TombstoneInsert(
             _ddl,
@@ -1939,15 +1953,30 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
         );
 
         tombstone.Should().Contain("del.[DocumentUuid],");
-        tombstone.Should().Contain("s.[ContentVersion]");
+        tombstone.Should().Contain("NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        tombstone.Should().NotContain("@stamped");
         tombstone.Should().NotContain("[dms].[Document]");
     }
 
     [Test]
-    public void It_should_join_deleted_del_and_the_stamp_table_in_from_clause()
+    public void It_should_select_the_tombstone_from_deleted_del_alone()
     {
-        _ddl.Should().Contain("FROM deleted del");
-        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];");
+        _ddl.Should().Contain("FROM deleted del;");
+        _ddl.Should().NotContain("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];");
+    }
+
+    [Test]
+    public void It_should_not_stamp_the_document_row_for_pure_descriptor_deletes()
+    {
+        // The delete arm of affectedDocs is gone: a pure delete allocates its change version from
+        // the sequence in the tombstone INSERT and leaves dms.Document alone.
+        var affectedDocsIdx = _ddl.IndexOf(";WITH affectedDocs AS (", StringComparison.Ordinal);
+        affectedDocsIdx.Should().BeGreaterOrEqualTo(0);
+
+        var updateIdx = _ddl.IndexOf("UPDATE d\n", affectedDocsIdx, StringComparison.Ordinal);
+        updateIdx.Should().BeGreaterThan(affectedDocsIdx);
+
+        _ddl[affectedDocsIdx..updateIdx].Should().NotContain("UNION");
     }
 
     [Test]

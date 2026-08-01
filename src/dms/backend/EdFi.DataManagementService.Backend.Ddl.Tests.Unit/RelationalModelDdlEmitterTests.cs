@@ -4517,37 +4517,49 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
     }
 
     [Test]
-    public void It_should_place_tombstone_insert_after_delete_branch_content_stamp_update()
+    public void It_should_place_tombstone_insert_after_the_delete_branch_change_version_assignment()
     {
-        // Locate the delete-branch marker, the content-stamp UPDATE that follows it,
-        // and the tombstone INSERT — the INSERT must come after the UPDATE.
+        // Locate the delete-branch marker, the change-version assignment that follows it,
+        // and the tombstone INSERT — the INSERT must come after the assignment that feeds it.
         var deleteBranchIdx = _ddl.IndexOf("IF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
         deleteBranchIdx.Should().BeGreaterThanOrEqualTo(0, "delete branch must be present");
 
-        // The UPDATE on dms."Document" inside the delete branch
-        var stampUpdateIdx = _ddl.IndexOf(
-            "UPDATE \"dms\".\"Document\"",
+        var changeVersionIdx = _ddl.IndexOf(
+            "_stampedContentVersion := nextval(",
             deleteBranchIdx,
             StringComparison.Ordinal
         );
-        stampUpdateIdx.Should().BeGreaterThanOrEqualTo(0, "content-stamp UPDATE must follow delete branch");
+        changeVersionIdx
+            .Should()
+            .BeGreaterThanOrEqualTo(0, "the change-version assignment must follow the delete branch");
 
         var tombstoneIdx = _ddl.IndexOf(
             "INSERT INTO \"tracked_changes_edfi\".",
-            stampUpdateIdx,
+            changeVersionIdx,
             StringComparison.Ordinal
         );
         tombstoneIdx
             .Should()
-            .BeGreaterThan(stampUpdateIdx, "tombstone INSERT must appear after the content-stamp UPDATE");
+            .BeGreaterThan(
+                changeVersionIdx,
+                "tombstone INSERT must appear after the change-version assignment"
+            );
     }
 
     [Test]
-    public void It_should_capture_the_delete_branch_content_stamp_for_the_tombstone()
+    public void It_should_source_the_delete_branch_change_version_from_the_sequence()
     {
-        // The tombstone's ChangeVersion must be the post-bump value, which only the stamp
-        // statement itself can hand back — the OLD row image carries the pre-bump value.
-        _ddl.Should().Contain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
+        // The tombstone's ChangeVersion is a fresh sequence value taken inside the trigger: the
+        // deleted row is gone and the dms.Document row may already be gone too, so nothing
+        // surviving can supply a post-delete stamp. Taking it here also means the delete order
+        // (root row before dms.Document) no longer decides whether a tombstone is written.
+        var deleteBranch = TrackedChangeTriggerFixture.PgsqlDeleteBranch(_ddl);
+
+        deleteBranch
+            .Should()
+            .Contain("_stampedContentVersion := nextval('\"dms\".\"ChangeVersionSequence\"');");
+        deleteBranch.Should().NotContain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
+        deleteBranch.Should().NotContain("UPDATE \"dms\".\"Document\"");
     }
 
     [Test]
@@ -4611,7 +4623,7 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
     }
 
     [Test]
-    public void It_should_read_tombstone_values_from_the_deleted_image_and_the_stamp_table()
+    public void It_should_read_tombstone_values_from_the_deleted_image_and_the_change_version_sequence()
     {
         var tombstone = TrackedChangeTriggerFixture.FirstTrackedChangeInsert(
             _ddl,
@@ -4619,27 +4631,44 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         );
 
         tombstone.Should().Contain("del.[DocumentUuid],");
-        tombstone.Should().Contain("s.[ContentVersion]");
-        tombstone.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]");
+        tombstone.Should().Contain("NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        tombstone.Should().NotContain("@stamped");
         tombstone.Should().NotContain("[dms].[Document]");
     }
 
     [Test]
-    public void It_should_declare_and_fill_the_stamp_table_before_the_tombstone_reads_it()
+    public void It_should_not_make_the_tombstone_depend_on_the_stamp_table()
     {
-        // The tombstone joins @stamped, so the capture table must already exist and hold the
-        // post-bump content stamp by the time the tombstone block runs.
-        var declareIdx = _ddl.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
-        declareIdx.Should().BeGreaterThanOrEqualTo(0, "@stamped must be declared");
+        // The stamp table still exists for the changed-UPDATE mirror — the guard below it is what
+        // bounds mirror recursion — but the tombstone no longer reads it, so no fill has to happen
+        // before the delete-only branch runs and the dms.Document row need not still be there.
+        var stampFillIdx = _ddl.IndexOf("OUTPUT inserted.", StringComparison.Ordinal);
+        stampFillIdx.Should().BeGreaterThanOrEqualTo(0, "the content stamp must OUTPUT into @stamped");
 
-        var fillIdx = _ddl.IndexOf(" INTO @stamped", declareIdx, StringComparison.Ordinal);
-        fillIdx.Should().BeGreaterThan(declareIdx, "the content stamp must OUTPUT into @stamped");
+        var mirrorGuardIdx = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        mirrorGuardIdx.Should().BeGreaterThan(stampFillIdx, "the mirror guard reads the filled table");
 
         var tombstoneBranchIdx = _ddl.IndexOf(
             "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
             StringComparison.Ordinal
         );
-        tombstoneBranchIdx.Should().BeGreaterThan(fillIdx);
+        tombstoneBranchIdx.Should().BeGreaterThan(mirrorGuardIdx);
+
+        _ddl[tombstoneBranchIdx..].Should().NotContain("@stamped");
+    }
+
+    [Test]
+    public void It_should_not_stamp_the_document_row_for_pure_deletes()
+    {
+        // The delete arm of affectedDocs is gone: a pure delete allocates its change version from
+        // the sequence in the tombstone INSERT and leaves dms.Document alone.
+        var affectedDocsIdx = _ddl.IndexOf(";WITH affectedDocs AS (", StringComparison.Ordinal);
+        affectedDocsIdx.Should().BeGreaterThanOrEqualTo(0, "the affectedDocs CTE must be present");
+
+        var updateIdx = _ddl.IndexOf("UPDATE d\n", affectedDocsIdx, StringComparison.Ordinal);
+        updateIdx.Should().BeGreaterThan(affectedDocsIdx);
+
+        _ddl[affectedDocsIdx..updateIdx].Should().NotContain("UNION");
     }
 }
 
@@ -4759,6 +4788,20 @@ internal static class TrackedChangeTriggerFixture
         var end = ddl.IndexOf(";\n", start, StringComparison.Ordinal);
         end.Should().BeGreaterThan(start, "the tracked-change INSERT must be terminated");
         return ddl[start..(end + 2)];
+    }
+
+    /// <summary>
+    /// Slices the PostgreSQL stamping trigger's <c>IF TG_OP = 'DELETE' THEN … RETURN OLD;</c> body out
+    /// of an emitted script, so a delete-branch assertion cannot match the INSERT/UPDATE branches that
+    /// legitimately still stamp <c>dms.Document</c> during the dual-write phase.
+    /// </summary>
+    internal static string PgsqlDeleteBranch(string ddl)
+    {
+        var start = ddl.IndexOf("IF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, "the delete branch must be present");
+        var end = ddl.IndexOf("RETURN OLD;", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start, "the delete branch must return OLD");
+        return ddl[start..end];
     }
 
     internal static DerivedRelationalModelSet BuildAttachedResource(SqlDialect dialect)

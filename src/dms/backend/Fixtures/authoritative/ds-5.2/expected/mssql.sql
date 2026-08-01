@@ -443,11 +443,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -481,9 +476,8 @@ BEGIN
             del.[Namespace],
             del.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
 END;
 GO
@@ -37104,11 +37098,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[TotalInstructionalDays] <> del.[TotalInstructionalDays] OR (i.[TotalInstructionalDays] IS NULL AND del.[TotalInstructionalDays] IS NOT NULL) OR (i.[TotalInstructionalDays] IS NOT NULL AND del.[TotalInstructionalDays] IS NULL)) OR (CAST(i.[WeekIdentifier] AS varbinary(max)) <> CAST(del.[WeekIdentifier] AS varbinary(max)) OR (i.[WeekIdentifier] IS NULL AND del.[WeekIdentifier] IS NOT NULL) OR (i.[WeekIdentifier] IS NOT NULL AND del.[WeekIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -37139,9 +37128,8 @@ BEGIN
             del.[School_SchoolId],
             del.[WeekIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -37242,11 +37230,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[Rating] AS varbinary(max)) <> CAST(del.[Rating] AS varbinary(max)) OR (i.[Rating] IS NULL AND del.[Rating] IS NOT NULL) OR (i.[Rating] IS NOT NULL AND del.[Rating] IS NULL)) OR (i.[RatingDate] <> del.[RatingDate] OR (i.[RatingDate] IS NULL AND del.[RatingDate] IS NOT NULL) OR (i.[RatingDate] IS NOT NULL AND del.[RatingDate] IS NULL)) OR (CAST(i.[RatingOrganization] AS varbinary(max)) <> CAST(del.[RatingOrganization] AS varbinary(max)) OR (i.[RatingOrganization] IS NULL AND del.[RatingOrganization] IS NOT NULL) OR (i.[RatingOrganization] IS NOT NULL AND del.[RatingOrganization] IS NULL)) OR (CAST(i.[RatingProgram] AS varbinary(max)) <> CAST(del.[RatingProgram] AS varbinary(max)) OR (i.[RatingProgram] IS NULL AND del.[RatingProgram] IS NOT NULL) OR (i.[RatingProgram] IS NOT NULL AND del.[RatingProgram] IS NULL)) OR (CAST(i.[RatingTitle] AS varbinary(max)) <> CAST(del.[RatingTitle] AS varbinary(max)) OR (i.[RatingTitle] IS NULL AND del.[RatingTitle] IS NOT NULL) OR (i.[RatingTitle] IS NOT NULL AND del.[RatingTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -37279,9 +37262,8 @@ BEGIN
             del.[RatingTitle],
             del.[SchoolYear_SchoolYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -37386,11 +37368,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[MandatingEducationOrganization_DocumentId] <> del.[MandatingEducationOrganization_DocumentId] OR (i.[MandatingEducationOrganization_DocumentId] IS NULL AND del.[MandatingEducationOrganization_DocumentId] IS NOT NULL) OR (i.[MandatingEducationOrganization_DocumentId] IS NOT NULL AND del.[MandatingEducationOrganization_DocumentId] IS NULL)) OR (i.[MandatingEducationOrganization_EducationOrganizationId] <> del.[MandatingEducationOrganization_EducationOrganizationId] OR (i.[MandatingEducationOrganization_EducationOrganizationId] IS NULL AND del.[MandatingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[MandatingEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[MandatingEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[AssessmentCategoryDescriptor_DescriptorId] <> del.[AssessmentCategoryDescriptor_DescriptorId] OR (i.[AssessmentCategoryDescriptor_DescriptorId] IS NULL AND del.[AssessmentCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AssessmentCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AssessmentCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[ContentStandardPublicationStatusDescriptor_DescriptorId] <> del.[ContentStandardPublicationStatusDescriptor_DescriptorId] OR (i.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NULL AND del.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NOT NULL AND del.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NULL)) OR (i.[AdaptiveAssessment] <> del.[AdaptiveAssessment] OR (i.[AdaptiveAssessment] IS NULL AND del.[AdaptiveAssessment] IS NOT NULL) OR (i.[AdaptiveAssessment] IS NOT NULL AND del.[AdaptiveAssessment] IS NULL)) OR (CAST(i.[AssessmentFamily] AS varbinary(max)) <> CAST(del.[AssessmentFamily] AS varbinary(max)) OR (i.[AssessmentFamily] IS NULL AND del.[AssessmentFamily] IS NOT NULL) OR (i.[AssessmentFamily] IS NOT NULL AND del.[AssessmentFamily] IS NULL)) OR (CAST(i.[AssessmentForm] AS varbinary(max)) <> CAST(del.[AssessmentForm] AS varbinary(max)) OR (i.[AssessmentForm] IS NULL AND del.[AssessmentForm] IS NOT NULL) OR (i.[AssessmentForm] IS NOT NULL AND del.[AssessmentForm] IS NULL)) OR (CAST(i.[AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentIdentifier] IS NULL AND del.[AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentIdentifier] IS NOT NULL AND del.[AssessmentIdentifier] IS NULL)) OR (CAST(i.[AssessmentTitle] AS varbinary(max)) <> CAST(del.[AssessmentTitle] AS varbinary(max)) OR (i.[AssessmentTitle] IS NULL AND del.[AssessmentTitle] IS NOT NULL) OR (i.[AssessmentTitle] IS NOT NULL AND del.[AssessmentTitle] IS NULL)) OR (i.[AssessmentVersion] <> del.[AssessmentVersion] OR (i.[AssessmentVersion] IS NULL AND del.[AssessmentVersion] IS NOT NULL) OR (i.[AssessmentVersion] IS NOT NULL AND del.[AssessmentVersion] IS NULL)) OR (i.[ContentStandardBeginDate] <> del.[ContentStandardBeginDate] OR (i.[ContentStandardBeginDate] IS NULL AND del.[ContentStandardBeginDate] IS NOT NULL) OR (i.[ContentStandardBeginDate] IS NOT NULL AND del.[ContentStandardBeginDate] IS NULL)) OR (i.[ContentStandardEndDate] <> del.[ContentStandardEndDate] OR (i.[ContentStandardEndDate] IS NULL AND del.[ContentStandardEndDate] IS NOT NULL) OR (i.[ContentStandardEndDate] IS NOT NULL AND del.[ContentStandardEndDate] IS NULL)) OR (i.[ContentStandardPublicationDate] <> del.[ContentStandardPublicationDate] OR (i.[ContentStandardPublicationDate] IS NULL AND del.[ContentStandardPublicationDate] IS NOT NULL) OR (i.[ContentStandardPublicationDate] IS NOT NULL AND del.[ContentStandardPublicationDate] IS NULL)) OR (i.[ContentStandardPublicationYear] <> del.[ContentStandardPublicationYear] OR (i.[ContentStandardPublicationYear] IS NULL AND del.[ContentStandardPublicationYear] IS NOT NULL) OR (i.[ContentStandardPublicationYear] IS NOT NULL AND del.[ContentStandardPublicationYear] IS NULL)) OR (CAST(i.[ContentStandardTitle] AS varbinary(max)) <> CAST(del.[ContentStandardTitle] AS varbinary(max)) OR (i.[ContentStandardTitle] IS NULL AND del.[ContentStandardTitle] IS NOT NULL) OR (i.[ContentStandardTitle] IS NOT NULL AND del.[ContentStandardTitle] IS NULL)) OR (CAST(i.[ContentStandardUri] AS varbinary(max)) <> CAST(del.[ContentStandardUri] AS varbinary(max)) OR (i.[ContentStandardUri] IS NULL AND del.[ContentStandardUri] IS NOT NULL) OR (i.[ContentStandardUri] IS NOT NULL AND del.[ContentStandardUri] IS NULL)) OR (CAST(i.[ContentStandardVersion] AS varbinary(max)) <> CAST(del.[ContentStandardVersion] AS varbinary(max)) OR (i.[ContentStandardVersion] IS NULL AND del.[ContentStandardVersion] IS NOT NULL) OR (i.[ContentStandardVersion] IS NOT NULL AND del.[ContentStandardVersion] IS NULL)) OR (i.[MaxRawScore] <> del.[MaxRawScore] OR (i.[MaxRawScore] IS NULL AND del.[MaxRawScore] IS NOT NULL) OR (i.[MaxRawScore] IS NOT NULL AND del.[MaxRawScore] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[Nomenclature] AS varbinary(max)) <> CAST(del.[Nomenclature] AS varbinary(max)) OR (i.[Nomenclature] IS NULL AND del.[Nomenclature] IS NOT NULL) OR (i.[Nomenclature] IS NOT NULL AND del.[Nomenclature] IS NULL)) OR (i.[RevisionDate] <> del.[RevisionDate] OR (i.[RevisionDate] IS NULL AND del.[RevisionDate] IS NOT NULL) OR (i.[RevisionDate] IS NOT NULL AND del.[RevisionDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -37421,9 +37398,8 @@ BEGIN
             del.[AssessmentIdentifier],
             del.[Namespace],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -37595,11 +37571,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Assessment_DocumentId] <> del.[Assessment_DocumentId] OR (i.[Assessment_DocumentId] IS NULL AND del.[Assessment_DocumentId] IS NOT NULL) OR (i.[Assessment_DocumentId] IS NOT NULL AND del.[Assessment_DocumentId] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL)) OR (i.[AssigningEducationOrganization_DocumentId] <> del.[AssigningEducationOrganization_DocumentId] OR (i.[AssigningEducationOrganization_DocumentId] IS NULL AND del.[AssigningEducationOrganization_DocumentId] IS NOT NULL) OR (i.[AssigningEducationOrganization_DocumentId] IS NOT NULL AND del.[AssigningEducationOrganization_DocumentId] IS NULL)) OR (i.[AssigningEducationOrganization_EducationOrganizationId] <> del.[AssigningEducationOrganization_EducationOrganizationId] OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND del.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[AssigningEducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[AdministrationIdentifier] AS varbinary(max)) OR (i.[AdministrationIdentifier] IS NULL AND del.[AdministrationIdentifier] IS NOT NULL) OR (i.[AdministrationIdentifier] IS NOT NULL AND del.[AdministrationIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -37634,9 +37605,8 @@ BEGIN
             del.[Assessment_Namespace],
             del.[AssigningEducationOrganization_EducationOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -37784,11 +37754,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AssessmentAdministration_DocumentId] <> del.[AssessmentAdministration_DocumentId] OR (i.[AssessmentAdministration_DocumentId] IS NULL AND del.[AssessmentAdministration_DocumentId] IS NOT NULL) OR (i.[AssessmentAdministration_DocumentId] IS NOT NULL AND del.[AssessmentAdministration_DocumentId] IS NULL)) OR (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND del.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND del.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> del.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (i.[ParticipatingEducationOrganization_DocumentId] <> del.[ParticipatingEducationOrganization_DocumentId] OR (i.[ParticipatingEducationOrganization_DocumentId] IS NULL AND del.[ParticipatingEducationOrganization_DocumentId] IS NOT NULL) OR (i.[ParticipatingEducationOrganization_DocumentId] IS NOT NULL AND del.[ParticipatingEducationOrganization_DocumentId] IS NULL)) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] <> del.[ParticipatingEducationOrganization_EducationOrganizationId] OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL AND del.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -37825,9 +37790,8 @@ BEGIN
             del.[AssessmentAdministration_Namespace],
             del.[ParticipatingEducationOrganization_EducationOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -38096,11 +38060,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Assessment_DocumentId] <> del.[Assessment_DocumentId] OR (i.[Assessment_DocumentId] IS NULL AND del.[Assessment_DocumentId] IS NOT NULL) OR (i.[Assessment_DocumentId] IS NOT NULL AND del.[Assessment_DocumentId] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL)) OR (CAST(i.[AssessmentBatteryPartName] AS varbinary(max)) <> CAST(del.[AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPartName] IS NULL AND del.[AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPartName] IS NOT NULL AND del.[AssessmentBatteryPartName] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -38133,9 +38092,8 @@ BEGIN
             del.[Assessment_AssessmentIdentifier],
             del.[Assessment_Namespace],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -38318,11 +38276,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Assessment_DocumentId] <> del.[Assessment_DocumentId] OR (i.[Assessment_DocumentId] IS NULL AND del.[Assessment_DocumentId] IS NOT NULL) OR (i.[Assessment_DocumentId] IS NOT NULL AND del.[Assessment_DocumentId] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL)) OR (i.[AssessmentItemCategoryDescriptor_DescriptorId] <> del.[AssessmentItemCategoryDescriptor_DescriptorId] OR (i.[AssessmentItemCategoryDescriptor_DescriptorId] IS NULL AND del.[AssessmentItemCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AssessmentItemCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AssessmentItemCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AssessmentItemURI] AS varbinary(max)) <> CAST(del.[AssessmentItemURI] AS varbinary(max)) OR (i.[AssessmentItemURI] IS NULL AND del.[AssessmentItemURI] IS NOT NULL) OR (i.[AssessmentItemURI] IS NOT NULL AND del.[AssessmentItemURI] IS NULL)) OR (CAST(i.[ExpectedTimeAssessed] AS varbinary(max)) <> CAST(del.[ExpectedTimeAssessed] AS varbinary(max)) OR (i.[ExpectedTimeAssessed] IS NULL AND del.[ExpectedTimeAssessed] IS NOT NULL) OR (i.[ExpectedTimeAssessed] IS NOT NULL AND del.[ExpectedTimeAssessed] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(del.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND del.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND del.[IdentificationCode] IS NULL)) OR (CAST(i.[ItemText] AS varbinary(max)) <> CAST(del.[ItemText] AS varbinary(max)) OR (i.[ItemText] IS NULL AND del.[ItemText] IS NOT NULL) OR (i.[ItemText] IS NOT NULL AND del.[ItemText] IS NULL)) OR (i.[MaxRawScore] <> del.[MaxRawScore] OR (i.[MaxRawScore] IS NULL AND del.[MaxRawScore] IS NOT NULL) OR (i.[MaxRawScore] IS NOT NULL AND del.[MaxRawScore] IS NULL)) OR (CAST(i.[Nomenclature] AS varbinary(max)) <> CAST(del.[Nomenclature] AS varbinary(max)) OR (i.[Nomenclature] IS NULL AND del.[Nomenclature] IS NOT NULL) OR (i.[Nomenclature] IS NOT NULL AND del.[Nomenclature] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -38355,9 +38308,8 @@ BEGIN
             del.[Assessment_Namespace],
             del.[IdentificationCode],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -38774,11 +38726,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND del.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND del.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (i.[Assessment_DocumentId] <> del.[Assessment_DocumentId] OR (i.[Assessment_DocumentId] IS NULL AND del.[Assessment_DocumentId] IS NOT NULL) OR (i.[Assessment_DocumentId] IS NOT NULL AND del.[Assessment_DocumentId] IS NULL)) OR (i.[ObjectiveAssessment_DocumentId] <> del.[ObjectiveAssessment_DocumentId] OR (i.[ObjectiveAssessment_DocumentId] IS NULL AND del.[ObjectiveAssessment_DocumentId] IS NOT NULL) OR (i.[ObjectiveAssessment_DocumentId] IS NOT NULL AND del.[ObjectiveAssessment_DocumentId] IS NULL)) OR (CAST(i.[ObjectiveAssessment_IdentificationCode] AS varbinary(max)) <> CAST(del.[ObjectiveAssessment_IdentificationCode] AS varbinary(max)) OR (i.[ObjectiveAssessment_IdentificationCode] IS NULL AND del.[ObjectiveAssessment_IdentificationCode] IS NOT NULL) OR (i.[ObjectiveAssessment_IdentificationCode] IS NOT NULL AND del.[ObjectiveAssessment_IdentificationCode] IS NULL)) OR (i.[AssessmentReportingMethodDescriptor_DescriptorId] <> del.[AssessmentReportingMethodDescriptor_DescriptorId] OR (i.[AssessmentReportingMethodDescriptor_DescriptorId] IS NULL AND del.[AssessmentReportingMethodDescriptor_DescriptorId] IS NOT NULL) OR (i.[AssessmentReportingMethodDescriptor_DescriptorId] IS NOT NULL AND del.[AssessmentReportingMethodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[MaximumScore] AS varbinary(max)) <> CAST(del.[MaximumScore] AS varbinary(max)) OR (i.[MaximumScore] IS NULL AND del.[MaximumScore] IS NOT NULL) OR (i.[MaximumScore] IS NOT NULL AND del.[MaximumScore] IS NULL)) OR (CAST(i.[MinimumScore] AS varbinary(max)) <> CAST(del.[MinimumScore] AS varbinary(max)) OR (i.[MinimumScore] IS NULL AND del.[MinimumScore] IS NOT NULL) OR (i.[MinimumScore] IS NOT NULL AND del.[MinimumScore] IS NULL)) OR (CAST(i.[ScoreRangeId] AS varbinary(max)) <> CAST(del.[ScoreRangeId] AS varbinary(max)) OR (i.[ScoreRangeId] IS NULL AND del.[ScoreRangeId] IS NOT NULL) OR (i.[ScoreRangeId] IS NOT NULL AND del.[ScoreRangeId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -38811,9 +38758,8 @@ BEGIN
             del.[Namespace_Unified],
             del.[ScoreRangeId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -38996,11 +38942,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -39031,9 +38972,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39173,11 +39113,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (CAST(i.[AlternateDayName] AS varbinary(max)) <> CAST(del.[AlternateDayName] AS varbinary(max)) OR (i.[AlternateDayName] IS NULL AND del.[AlternateDayName] IS NOT NULL) OR (i.[AlternateDayName] IS NOT NULL AND del.[AlternateDayName] IS NULL)) OR (CAST(i.[BellScheduleName] AS varbinary(max)) <> CAST(del.[BellScheduleName] AS varbinary(max)) OR (i.[BellScheduleName] IS NULL AND del.[BellScheduleName] IS NOT NULL) OR (i.[BellScheduleName] IS NOT NULL AND del.[BellScheduleName] IS NULL)) OR (i.[EndTime] <> del.[EndTime] OR (i.[EndTime] IS NULL AND del.[EndTime] IS NOT NULL) OR (i.[EndTime] IS NOT NULL AND del.[EndTime] IS NULL)) OR (i.[StartTime] <> del.[StartTime] OR (i.[StartTime] IS NULL AND del.[StartTime] IS NOT NULL) OR (i.[StartTime] IS NOT NULL AND del.[StartTime] IS NULL)) OR (i.[TotalInstructionalTime] <> del.[TotalInstructionalTime] OR (i.[TotalInstructionalTime] IS NULL AND del.[TotalInstructionalTime] IS NOT NULL) OR (i.[TotalInstructionalTime] IS NOT NULL AND del.[TotalInstructionalTime] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -39208,9 +39143,8 @@ BEGIN
             del.[BellScheduleName],
             del.[School_SchoolId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39428,11 +39362,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[CalendarTypeDescriptor_DescriptorId] <> del.[CalendarTypeDescriptor_DescriptorId] OR (i.[CalendarTypeDescriptor_DescriptorId] IS NULL AND del.[CalendarTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CalendarTypeDescriptor_DescriptorId] IS NOT NULL AND del.[CalendarTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CalendarCode] AS varbinary(max)) <> CAST(del.[CalendarCode] AS varbinary(max)) OR (i.[CalendarCode] IS NULL AND del.[CalendarCode] IS NOT NULL) OR (i.[CalendarCode] IS NOT NULL AND del.[CalendarCode] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -39465,9 +39394,8 @@ BEGIN
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39572,11 +39500,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Calendar_DocumentId] <> del.[Calendar_DocumentId] OR (i.[Calendar_DocumentId] IS NULL AND del.[Calendar_DocumentId] IS NOT NULL) OR (i.[Calendar_DocumentId] IS NOT NULL AND del.[Calendar_DocumentId] IS NULL)) OR (CAST(i.[Calendar_CalendarCode] AS varbinary(max)) <> CAST(del.[Calendar_CalendarCode] AS varbinary(max)) OR (i.[Calendar_CalendarCode] IS NULL AND del.[Calendar_CalendarCode] IS NOT NULL) OR (i.[Calendar_CalendarCode] IS NOT NULL AND del.[Calendar_CalendarCode] IS NULL)) OR (i.[Calendar_SchoolId] <> del.[Calendar_SchoolId] OR (i.[Calendar_SchoolId] IS NULL AND del.[Calendar_SchoolId] IS NOT NULL) OR (i.[Calendar_SchoolId] IS NOT NULL AND del.[Calendar_SchoolId] IS NULL)) OR (i.[Calendar_SchoolYear] <> del.[Calendar_SchoolYear] OR (i.[Calendar_SchoolYear] IS NULL AND del.[Calendar_SchoolYear] IS NOT NULL) OR (i.[Calendar_SchoolYear] IS NOT NULL AND del.[Calendar_SchoolYear] IS NULL)) OR (i.[Date] <> del.[Date] OR (i.[Date] IS NULL AND del.[Date] IS NOT NULL) OR (i.[Date] IS NOT NULL AND del.[Date] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -39611,9 +39534,8 @@ BEGIN
             del.[Calendar_SchoolYear],
             del.[Date],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39824,11 +39746,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[FiscalYear_Unified] <> del.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND del.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND del.[FiscalYear_Unified] IS NULL)) OR (i.[BalanceSheetBalanceSheetDimension_DocumentId] <> del.[BalanceSheetBalanceSheetDimension_DocumentId] OR (i.[BalanceSheetBalanceSheetDimension_DocumentId] IS NULL AND del.[BalanceSheetBalanceSheetDimension_DocumentId] IS NOT NULL) OR (i.[BalanceSheetBalanceSheetDimension_DocumentId] IS NOT NULL AND del.[BalanceSheetBalanceSheetDimension_DocumentId] IS NULL)) OR (CAST(i.[BalanceSheetBalanceSheetDimension_Code] AS varbinary(max)) <> CAST(del.[BalanceSheetBalanceSheetDimension_Code] AS varbinary(max)) OR (i.[BalanceSheetBalanceSheetDimension_Code] IS NULL AND del.[BalanceSheetBalanceSheetDimension_Code] IS NOT NULL) OR (i.[BalanceSheetBalanceSheetDimension_Code] IS NOT NULL AND del.[BalanceSheetBalanceSheetDimension_Code] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FunctionFunctionDimension_DocumentId] <> del.[FunctionFunctionDimension_DocumentId] OR (i.[FunctionFunctionDimension_DocumentId] IS NULL AND del.[FunctionFunctionDimension_DocumentId] IS NOT NULL) OR (i.[FunctionFunctionDimension_DocumentId] IS NOT NULL AND del.[FunctionFunctionDimension_DocumentId] IS NULL)) OR (CAST(i.[FunctionFunctionDimension_Code] AS varbinary(max)) <> CAST(del.[FunctionFunctionDimension_Code] AS varbinary(max)) OR (i.[FunctionFunctionDimension_Code] IS NULL AND del.[FunctionFunctionDimension_Code] IS NOT NULL) OR (i.[FunctionFunctionDimension_Code] IS NOT NULL AND del.[FunctionFunctionDimension_Code] IS NULL)) OR (i.[FundFundDimension_DocumentId] <> del.[FundFundDimension_DocumentId] OR (i.[FundFundDimension_DocumentId] IS NULL AND del.[FundFundDimension_DocumentId] IS NOT NULL) OR (i.[FundFundDimension_DocumentId] IS NOT NULL AND del.[FundFundDimension_DocumentId] IS NULL)) OR (CAST(i.[FundFundDimension_Code] AS varbinary(max)) <> CAST(del.[FundFundDimension_Code] AS varbinary(max)) OR (i.[FundFundDimension_Code] IS NULL AND del.[FundFundDimension_Code] IS NOT NULL) OR (i.[FundFundDimension_Code] IS NOT NULL AND del.[FundFundDimension_Code] IS NULL)) OR (i.[ObjectObjectDimension_DocumentId] <> del.[ObjectObjectDimension_DocumentId] OR (i.[ObjectObjectDimension_DocumentId] IS NULL AND del.[ObjectObjectDimension_DocumentId] IS NOT NULL) OR (i.[ObjectObjectDimension_DocumentId] IS NOT NULL AND del.[ObjectObjectDimension_DocumentId] IS NULL)) OR (CAST(i.[ObjectObjectDimension_Code] AS varbinary(max)) <> CAST(del.[ObjectObjectDimension_Code] AS varbinary(max)) OR (i.[ObjectObjectDimension_Code] IS NULL AND del.[ObjectObjectDimension_Code] IS NOT NULL) OR (i.[ObjectObjectDimension_Code] IS NOT NULL AND del.[ObjectObjectDimension_Code] IS NULL)) OR (i.[OperationalUnitOperationalUnitDimension_DocumentId] <> del.[OperationalUnitOperationalUnitDimension_DocumentId] OR (i.[OperationalUnitOperationalUnitDimension_DocumentId] IS NULL AND del.[OperationalUnitOperationalUnitDimension_DocumentId] IS NOT NULL) OR (i.[OperationalUnitOperationalUnitDimension_DocumentId] IS NOT NULL AND del.[OperationalUnitOperationalUnitDimension_DocumentId] IS NULL)) OR (CAST(i.[OperationalUnitOperationalUnitDimension_Code] AS varbinary(max)) <> CAST(del.[OperationalUnitOperationalUnitDimension_Code] AS varbinary(max)) OR (i.[OperationalUnitOperationalUnitDimension_Code] IS NULL AND del.[OperationalUnitOperationalUnitDimension_Code] IS NOT NULL) OR (i.[OperationalUnitOperationalUnitDimension_Code] IS NOT NULL AND del.[OperationalUnitOperationalUnitDimension_Code] IS NULL)) OR (i.[ProgramProgramDimension_DocumentId] <> del.[ProgramProgramDimension_DocumentId] OR (i.[ProgramProgramDimension_DocumentId] IS NULL AND del.[ProgramProgramDimension_DocumentId] IS NOT NULL) OR (i.[ProgramProgramDimension_DocumentId] IS NOT NULL AND del.[ProgramProgramDimension_DocumentId] IS NULL)) OR (CAST(i.[ProgramProgramDimension_Code] AS varbinary(max)) <> CAST(del.[ProgramProgramDimension_Code] AS varbinary(max)) OR (i.[ProgramProgramDimension_Code] IS NULL AND del.[ProgramProgramDimension_Code] IS NOT NULL) OR (i.[ProgramProgramDimension_Code] IS NOT NULL AND del.[ProgramProgramDimension_Code] IS NULL)) OR (i.[ProjectProjectDimension_DocumentId] <> del.[ProjectProjectDimension_DocumentId] OR (i.[ProjectProjectDimension_DocumentId] IS NULL AND del.[ProjectProjectDimension_DocumentId] IS NOT NULL) OR (i.[ProjectProjectDimension_DocumentId] IS NOT NULL AND del.[ProjectProjectDimension_DocumentId] IS NULL)) OR (CAST(i.[ProjectProjectDimension_Code] AS varbinary(max)) <> CAST(del.[ProjectProjectDimension_Code] AS varbinary(max)) OR (i.[ProjectProjectDimension_Code] IS NULL AND del.[ProjectProjectDimension_Code] IS NOT NULL) OR (i.[ProjectProjectDimension_Code] IS NOT NULL AND del.[ProjectProjectDimension_Code] IS NULL)) OR (i.[SourceSourceDimension_DocumentId] <> del.[SourceSourceDimension_DocumentId] OR (i.[SourceSourceDimension_DocumentId] IS NULL AND del.[SourceSourceDimension_DocumentId] IS NOT NULL) OR (i.[SourceSourceDimension_DocumentId] IS NOT NULL AND del.[SourceSourceDimension_DocumentId] IS NULL)) OR (CAST(i.[SourceSourceDimension_Code] AS varbinary(max)) <> CAST(del.[SourceSourceDimension_Code] AS varbinary(max)) OR (i.[SourceSourceDimension_Code] IS NULL AND del.[SourceSourceDimension_Code] IS NOT NULL) OR (i.[SourceSourceDimension_Code] IS NOT NULL AND del.[SourceSourceDimension_Code] IS NULL)) OR (i.[AccountTypeDescriptor_DescriptorId] <> del.[AccountTypeDescriptor_DescriptorId] OR (i.[AccountTypeDescriptor_DescriptorId] IS NULL AND del.[AccountTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[AccountTypeDescriptor_DescriptorId] IS NOT NULL AND del.[AccountTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(del.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND del.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND del.[AccountIdentifier] IS NULL)) OR (CAST(i.[AccountName] AS varbinary(max)) <> CAST(del.[AccountName] AS varbinary(max)) OR (i.[AccountName] IS NULL AND del.[AccountName] IS NOT NULL) OR (i.[AccountName] IS NOT NULL AND del.[AccountName] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -39861,9 +39778,8 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[FiscalYear_Unified],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40047,11 +39963,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(del.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND del.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND del.[ClassPeriodName] IS NULL)) OR (i.[OfficialAttendancePeriod] <> del.[OfficialAttendancePeriod] OR (i.[OfficialAttendancePeriod] IS NULL AND del.[OfficialAttendancePeriod] IS NOT NULL) OR (i.[OfficialAttendancePeriod] IS NOT NULL AND del.[OfficialAttendancePeriod] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -40082,9 +39993,8 @@ BEGIN
             del.[ClassPeriodName],
             del.[School_SchoolId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40264,11 +40174,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[AcademicSubjectDescriptor_DescriptorId] <> del.[AcademicSubjectDescriptor_DescriptorId] OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NULL AND del.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL) OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL AND del.[AcademicSubjectDescriptor_DescriptorId] IS NULL)) OR (i.[CohortScopeDescriptor_DescriptorId] <> del.[CohortScopeDescriptor_DescriptorId] OR (i.[CohortScopeDescriptor_DescriptorId] IS NULL AND del.[CohortScopeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CohortScopeDescriptor_DescriptorId] IS NOT NULL AND del.[CohortScopeDescriptor_DescriptorId] IS NULL)) OR (i.[CohortTypeDescriptor_DescriptorId] <> del.[CohortTypeDescriptor_DescriptorId] OR (i.[CohortTypeDescriptor_DescriptorId] IS NULL AND del.[CohortTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CohortTypeDescriptor_DescriptorId] IS NOT NULL AND del.[CohortTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CohortDescription] AS varbinary(max)) <> CAST(del.[CohortDescription] AS varbinary(max)) OR (i.[CohortDescription] IS NULL AND del.[CohortDescription] IS NOT NULL) OR (i.[CohortDescription] IS NOT NULL AND del.[CohortDescription] IS NULL)) OR (CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(del.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND del.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND del.[CohortIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -40299,9 +40204,8 @@ BEGIN
             del.[CohortIdentifier],
             del.[EducationOrganization_EducationOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40517,11 +40421,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (i.[CommunityOrganizationId] <> del.[CommunityOrganizationId] OR (i.[CommunityOrganizationId] IS NULL AND del.[CommunityOrganizationId] IS NOT NULL) OR (i.[CommunityOrganizationId] IS NOT NULL AND del.[CommunityOrganizationId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -40550,9 +40449,8 @@ BEGIN
         SELECT
             del.[CommunityOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([CommunityOrganizationId]))
     BEGIN
@@ -41128,11 +41026,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CommunityOrganization_DocumentId] <> del.[CommunityOrganization_DocumentId] OR (i.[CommunityOrganization_DocumentId] IS NULL AND del.[CommunityOrganization_DocumentId] IS NOT NULL) OR (i.[CommunityOrganization_DocumentId] IS NOT NULL AND del.[CommunityOrganization_DocumentId] IS NULL)) OR (i.[CommunityOrganization_CommunityOrganizationId] <> del.[CommunityOrganization_CommunityOrganizationId] OR (i.[CommunityOrganization_CommunityOrganizationId] IS NULL AND del.[CommunityOrganization_CommunityOrganizationId] IS NOT NULL) OR (i.[CommunityOrganization_CommunityOrganizationId] IS NOT NULL AND del.[CommunityOrganization_CommunityOrganizationId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (i.[ProviderCategoryDescriptor_DescriptorId] <> del.[ProviderCategoryDescriptor_DescriptorId] OR (i.[ProviderCategoryDescriptor_DescriptorId] IS NULL AND del.[ProviderCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProviderCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[ProviderCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[ProviderProfitabilityDescriptor_DescriptorId] <> del.[ProviderProfitabilityDescriptor_DescriptorId] OR (i.[ProviderProfitabilityDescriptor_DescriptorId] IS NULL AND del.[ProviderProfitabilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProviderProfitabilityDescriptor_DescriptorId] IS NOT NULL AND del.[ProviderProfitabilityDescriptor_DescriptorId] IS NULL)) OR (i.[ProviderStatusDescriptor_DescriptorId] <> del.[ProviderStatusDescriptor_DescriptorId] OR (i.[ProviderStatusDescriptor_DescriptorId] IS NULL AND del.[ProviderStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProviderStatusDescriptor_DescriptorId] IS NOT NULL AND del.[ProviderStatusDescriptor_DescriptorId] IS NULL)) OR (i.[CommunityProviderId] <> del.[CommunityProviderId] OR (i.[CommunityProviderId] IS NULL AND del.[CommunityProviderId] IS NOT NULL) OR (i.[CommunityProviderId] IS NOT NULL AND del.[CommunityProviderId] IS NULL)) OR (i.[LicenseExemptIndicator] <> del.[LicenseExemptIndicator] OR (i.[LicenseExemptIndicator] IS NULL AND del.[LicenseExemptIndicator] IS NOT NULL) OR (i.[LicenseExemptIndicator] IS NOT NULL AND del.[LicenseExemptIndicator] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolIndicator] <> del.[SchoolIndicator] OR (i.[SchoolIndicator] IS NULL AND del.[SchoolIndicator] IS NOT NULL) OR (i.[SchoolIndicator] IS NOT NULL AND del.[SchoolIndicator] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -41161,9 +41054,8 @@ BEGIN
         SELECT
             del.[CommunityProviderId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([CommunityProviderId]))
     BEGIN
@@ -41553,11 +41445,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CommunityProvider_DocumentId] <> del.[CommunityProvider_DocumentId] OR (i.[CommunityProvider_DocumentId] IS NULL AND del.[CommunityProvider_DocumentId] IS NOT NULL) OR (i.[CommunityProvider_DocumentId] IS NOT NULL AND del.[CommunityProvider_DocumentId] IS NULL)) OR (i.[CommunityProvider_CommunityProviderId] <> del.[CommunityProvider_CommunityProviderId] OR (i.[CommunityProvider_CommunityProviderId] IS NULL AND del.[CommunityProvider_CommunityProviderId] IS NOT NULL) OR (i.[CommunityProvider_CommunityProviderId] IS NOT NULL AND del.[CommunityProvider_CommunityProviderId] IS NULL)) OR (i.[LicenseStatusDescriptor_DescriptorId] <> del.[LicenseStatusDescriptor_DescriptorId] OR (i.[LicenseStatusDescriptor_DescriptorId] IS NULL AND del.[LicenseStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[LicenseStatusDescriptor_DescriptorId] IS NOT NULL AND del.[LicenseStatusDescriptor_DescriptorId] IS NULL)) OR (i.[LicenseTypeDescriptor_DescriptorId] <> del.[LicenseTypeDescriptor_DescriptorId] OR (i.[LicenseTypeDescriptor_DescriptorId] IS NULL AND del.[LicenseTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[LicenseTypeDescriptor_DescriptorId] IS NOT NULL AND del.[LicenseTypeDescriptor_DescriptorId] IS NULL)) OR (i.[AuthorizedFacilityCapacity] <> del.[AuthorizedFacilityCapacity] OR (i.[AuthorizedFacilityCapacity] IS NULL AND del.[AuthorizedFacilityCapacity] IS NOT NULL) OR (i.[AuthorizedFacilityCapacity] IS NOT NULL AND del.[AuthorizedFacilityCapacity] IS NULL)) OR (i.[LicenseEffectiveDate] <> del.[LicenseEffectiveDate] OR (i.[LicenseEffectiveDate] IS NULL AND del.[LicenseEffectiveDate] IS NOT NULL) OR (i.[LicenseEffectiveDate] IS NOT NULL AND del.[LicenseEffectiveDate] IS NULL)) OR (i.[LicenseExpirationDate] <> del.[LicenseExpirationDate] OR (i.[LicenseExpirationDate] IS NULL AND del.[LicenseExpirationDate] IS NOT NULL) OR (i.[LicenseExpirationDate] IS NOT NULL AND del.[LicenseExpirationDate] IS NULL)) OR (CAST(i.[LicenseIdentifier] AS varbinary(max)) <> CAST(del.[LicenseIdentifier] AS varbinary(max)) OR (i.[LicenseIdentifier] IS NULL AND del.[LicenseIdentifier] IS NOT NULL) OR (i.[LicenseIdentifier] IS NOT NULL AND del.[LicenseIdentifier] IS NULL)) OR (i.[LicenseIssueDate] <> del.[LicenseIssueDate] OR (i.[LicenseIssueDate] IS NULL AND del.[LicenseIssueDate] IS NOT NULL) OR (i.[LicenseIssueDate] IS NOT NULL AND del.[LicenseIssueDate] IS NULL)) OR (CAST(i.[LicensingOrganization] AS varbinary(max)) <> CAST(del.[LicensingOrganization] AS varbinary(max)) OR (i.[LicensingOrganization] IS NULL AND del.[LicensingOrganization] IS NOT NULL) OR (i.[LicensingOrganization] IS NOT NULL AND del.[LicensingOrganization] IS NULL)) OR (i.[OldestAgeAuthorizedToServe] <> del.[OldestAgeAuthorizedToServe] OR (i.[OldestAgeAuthorizedToServe] IS NULL AND del.[OldestAgeAuthorizedToServe] IS NOT NULL) OR (i.[OldestAgeAuthorizedToServe] IS NOT NULL AND del.[OldestAgeAuthorizedToServe] IS NULL)) OR (i.[YoungestAgeAuthorizedToServe] <> del.[YoungestAgeAuthorizedToServe] OR (i.[YoungestAgeAuthorizedToServe] IS NULL AND del.[YoungestAgeAuthorizedToServe] IS NOT NULL) OR (i.[YoungestAgeAuthorizedToServe] IS NOT NULL AND del.[YoungestAgeAuthorizedToServe] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -41590,9 +41477,8 @@ BEGIN
             del.[LicenseIdentifier],
             del.[LicensingOrganization],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41721,11 +41607,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] <> del.[ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND del.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CompetencyObjectiveId] AS varbinary(max)) <> CAST(del.[CompetencyObjectiveId] AS varbinary(max)) OR (i.[CompetencyObjectiveId] IS NULL AND del.[CompetencyObjectiveId] IS NOT NULL) OR (i.[CompetencyObjectiveId] IS NOT NULL AND del.[CompetencyObjectiveId] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (CAST(i.[Objective] AS varbinary(max)) <> CAST(del.[Objective] AS varbinary(max)) OR (i.[Objective] IS NULL AND del.[Objective] IS NOT NULL) OR (i.[Objective] IS NOT NULL AND del.[Objective] IS NULL)) OR (CAST(i.[SuccessCriteria] AS varbinary(max)) <> CAST(del.[SuccessCriteria] AS varbinary(max)) OR (i.[SuccessCriteria] IS NULL AND del.[SuccessCriteria] IS NOT NULL) OR (i.[SuccessCriteria] IS NOT NULL AND del.[SuccessCriteria] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -41760,9 +41641,8 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -41874,11 +41754,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Person_DocumentId] <> del.[Person_DocumentId] OR (i.[Person_DocumentId] IS NULL AND del.[Person_DocumentId] IS NOT NULL) OR (i.[Person_DocumentId] IS NOT NULL AND del.[Person_DocumentId] IS NULL)) OR (CAST(i.[Person_PersonId] AS varbinary(max)) <> CAST(del.[Person_PersonId] AS varbinary(max)) OR (i.[Person_PersonId] IS NULL AND del.[Person_PersonId] IS NOT NULL) OR (i.[Person_PersonId] IS NOT NULL AND del.[Person_PersonId] IS NULL)) OR (i.[Person_SourceSystemDescriptor_DescriptorId] <> del.[Person_SourceSystemDescriptor_DescriptorId] OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NULL AND del.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND del.[Person_SourceSystemDescriptor_DescriptorId] IS NULL)) OR (i.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] <> del.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] OR (i.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NULL AND del.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NOT NULL) OR (i.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NOT NULL AND del.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NULL)) OR (i.[SexDescriptor_DescriptorId] <> del.[SexDescriptor_DescriptorId] OR (i.[SexDescriptor_DescriptorId] IS NULL AND del.[SexDescriptor_DescriptorId] IS NOT NULL) OR (i.[SexDescriptor_DescriptorId] IS NOT NULL AND del.[SexDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ContactUniqueId] AS varbinary(max)) <> CAST(del.[ContactUniqueId] AS varbinary(max)) OR (i.[ContactUniqueId] IS NULL AND del.[ContactUniqueId] IS NOT NULL) OR (i.[ContactUniqueId] IS NOT NULL AND del.[ContactUniqueId] IS NULL)) OR (CAST(i.[FirstName] AS varbinary(max)) <> CAST(del.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (CAST(i.[GenderIdentity] AS varbinary(max)) <> CAST(del.[GenderIdentity] AS varbinary(max)) OR (i.[GenderIdentity] IS NULL AND del.[GenderIdentity] IS NOT NULL) OR (i.[GenderIdentity] IS NOT NULL AND del.[GenderIdentity] IS NULL)) OR (CAST(i.[GenerationCodeSuffix] AS varbinary(max)) <> CAST(del.[GenerationCodeSuffix] AS varbinary(max)) OR (i.[GenerationCodeSuffix] IS NULL AND del.[GenerationCodeSuffix] IS NOT NULL) OR (i.[GenerationCodeSuffix] IS NOT NULL AND del.[GenerationCodeSuffix] IS NULL)) OR (CAST(i.[LastSurname] AS varbinary(max)) <> CAST(del.[LastSurname] AS varbinary(max)) OR (i.[LastSurname] IS NULL AND del.[LastSurname] IS NOT NULL) OR (i.[LastSurname] IS NOT NULL AND del.[LastSurname] IS NULL)) OR (CAST(i.[LoginId] AS varbinary(max)) <> CAST(del.[LoginId] AS varbinary(max)) OR (i.[LoginId] IS NULL AND del.[LoginId] IS NOT NULL) OR (i.[LoginId] IS NOT NULL AND del.[LoginId] IS NULL)) OR (CAST(i.[MaidenName] AS varbinary(max)) <> CAST(del.[MaidenName] AS varbinary(max)) OR (i.[MaidenName] IS NULL AND del.[MaidenName] IS NOT NULL) OR (i.[MaidenName] IS NOT NULL AND del.[MaidenName] IS NULL)) OR (CAST(i.[MiddleName] AS varbinary(max)) <> CAST(del.[MiddleName] AS varbinary(max)) OR (i.[MiddleName] IS NULL AND del.[MiddleName] IS NOT NULL) OR (i.[MiddleName] IS NOT NULL AND del.[MiddleName] IS NULL)) OR (CAST(i.[PersonalTitlePrefix] AS varbinary(max)) <> CAST(del.[PersonalTitlePrefix] AS varbinary(max)) OR (i.[PersonalTitlePrefix] IS NULL AND del.[PersonalTitlePrefix] IS NOT NULL) OR (i.[PersonalTitlePrefix] IS NOT NULL AND del.[PersonalTitlePrefix] IS NULL)) OR (CAST(i.[PreferredFirstName] AS varbinary(max)) <> CAST(del.[PreferredFirstName] AS varbinary(max)) OR (i.[PreferredFirstName] IS NULL AND del.[PreferredFirstName] IS NOT NULL) OR (i.[PreferredFirstName] IS NOT NULL AND del.[PreferredFirstName] IS NULL)) OR (CAST(i.[PreferredLastSurname] AS varbinary(max)) <> CAST(del.[PreferredLastSurname] AS varbinary(max)) OR (i.[PreferredLastSurname] IS NULL AND del.[PreferredLastSurname] IS NOT NULL) OR (i.[PreferredLastSurname] IS NOT NULL AND del.[PreferredLastSurname] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -41909,9 +41784,8 @@ BEGIN
             del.[ContactUniqueId],
             del.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42411,11 +42285,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[CareerPathwayDescriptor_DescriptorId] <> del.[CareerPathwayDescriptor_DescriptorId] OR (i.[CareerPathwayDescriptor_DescriptorId] IS NULL AND del.[CareerPathwayDescriptor_DescriptorId] IS NOT NULL) OR (i.[CareerPathwayDescriptor_DescriptorId] IS NOT NULL AND del.[CareerPathwayDescriptor_DescriptorId] IS NULL)) OR (i.[CourseDefinedByDescriptor_DescriptorId] <> del.[CourseDefinedByDescriptor_DescriptorId] OR (i.[CourseDefinedByDescriptor_DescriptorId] IS NULL AND del.[CourseDefinedByDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseDefinedByDescriptor_DescriptorId] IS NOT NULL AND del.[CourseDefinedByDescriptor_DescriptorId] IS NULL)) OR (i.[CourseGPAApplicabilityDescriptor_DescriptorId] <> del.[CourseGPAApplicabilityDescriptor_DescriptorId] OR (i.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NULL AND del.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NOT NULL AND del.[CourseGPAApplicabilityDescriptor_DescriptorId] IS NULL)) OR (i.[MaximumAvailableCreditTypeDescriptor_DescriptorId] <> del.[MaximumAvailableCreditTypeDescriptor_DescriptorId] OR (i.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NULL AND del.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[MaximumAvailableCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[MinimumAvailableCreditTypeDescriptor_DescriptorId] <> del.[MinimumAvailableCreditTypeDescriptor_DescriptorId] OR (i.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NULL AND del.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[MinimumAvailableCreditTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CourseCode] AS varbinary(max)) <> CAST(del.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND del.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND del.[CourseCode] IS NULL)) OR (CAST(i.[CourseDescription] AS varbinary(max)) <> CAST(del.[CourseDescription] AS varbinary(max)) OR (i.[CourseDescription] IS NULL AND del.[CourseDescription] IS NOT NULL) OR (i.[CourseDescription] IS NOT NULL AND del.[CourseDescription] IS NULL)) OR (CAST(i.[CourseTitle] AS varbinary(max)) <> CAST(del.[CourseTitle] AS varbinary(max)) OR (i.[CourseTitle] IS NULL AND del.[CourseTitle] IS NOT NULL) OR (i.[CourseTitle] IS NOT NULL AND del.[CourseTitle] IS NULL)) OR (i.[DateCourseAdopted] <> del.[DateCourseAdopted] OR (i.[DateCourseAdopted] IS NULL AND del.[DateCourseAdopted] IS NOT NULL) OR (i.[DateCourseAdopted] IS NOT NULL AND del.[DateCourseAdopted] IS NULL)) OR (i.[HighSchoolCourseRequirement] <> del.[HighSchoolCourseRequirement] OR (i.[HighSchoolCourseRequirement] IS NULL AND del.[HighSchoolCourseRequirement] IS NOT NULL) OR (i.[HighSchoolCourseRequirement] IS NOT NULL AND del.[HighSchoolCourseRequirement] IS NULL)) OR (i.[MaxCompletionsForCredit] <> del.[MaxCompletionsForCredit] OR (i.[MaxCompletionsForCredit] IS NULL AND del.[MaxCompletionsForCredit] IS NOT NULL) OR (i.[MaxCompletionsForCredit] IS NOT NULL AND del.[MaxCompletionsForCredit] IS NULL)) OR (i.[MaximumAvailableCreditConversion] <> del.[MaximumAvailableCreditConversion] OR (i.[MaximumAvailableCreditConversion] IS NULL AND del.[MaximumAvailableCreditConversion] IS NOT NULL) OR (i.[MaximumAvailableCreditConversion] IS NOT NULL AND del.[MaximumAvailableCreditConversion] IS NULL)) OR (i.[MaximumAvailableCredits] <> del.[MaximumAvailableCredits] OR (i.[MaximumAvailableCredits] IS NULL AND del.[MaximumAvailableCredits] IS NOT NULL) OR (i.[MaximumAvailableCredits] IS NOT NULL AND del.[MaximumAvailableCredits] IS NULL)) OR (i.[MinimumAvailableCreditConversion] <> del.[MinimumAvailableCreditConversion] OR (i.[MinimumAvailableCreditConversion] IS NULL AND del.[MinimumAvailableCreditConversion] IS NOT NULL) OR (i.[MinimumAvailableCreditConversion] IS NOT NULL AND del.[MinimumAvailableCreditConversion] IS NULL)) OR (i.[MinimumAvailableCredits] <> del.[MinimumAvailableCredits] OR (i.[MinimumAvailableCredits] IS NULL AND del.[MinimumAvailableCredits] IS NOT NULL) OR (i.[MinimumAvailableCredits] IS NOT NULL AND del.[MinimumAvailableCredits] IS NULL)) OR (i.[NumberOfParts] <> del.[NumberOfParts] OR (i.[NumberOfParts] IS NULL AND del.[NumberOfParts] IS NOT NULL) OR (i.[NumberOfParts] IS NOT NULL AND del.[NumberOfParts] IS NULL)) OR (i.[TimeRequiredForCompletion] <> del.[TimeRequiredForCompletion] OR (i.[TimeRequiredForCompletion] IS NULL AND del.[TimeRequiredForCompletion] IS NOT NULL) OR (i.[TimeRequiredForCompletion] IS NOT NULL AND del.[TimeRequiredForCompletion] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -42446,9 +42315,8 @@ BEGIN
             del.[CourseCode],
             del.[EducationOrganization_EducationOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42807,11 +42675,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[Course_DocumentId] <> del.[Course_DocumentId] OR (i.[Course_DocumentId] IS NULL AND del.[Course_DocumentId] IS NOT NULL) OR (i.[Course_DocumentId] IS NOT NULL AND del.[Course_DocumentId] IS NULL)) OR (CAST(i.[Course_CourseCode] AS varbinary(max)) <> CAST(del.[Course_CourseCode] AS varbinary(max)) OR (i.[Course_CourseCode] IS NULL AND del.[Course_CourseCode] IS NOT NULL) OR (i.[Course_CourseCode] IS NOT NULL AND del.[Course_CourseCode] IS NULL)) OR (i.[Course_EducationOrganizationId] <> del.[Course_EducationOrganizationId] OR (i.[Course_EducationOrganizationId] IS NULL AND del.[Course_EducationOrganizationId] IS NOT NULL) OR (i.[Course_EducationOrganizationId] IS NOT NULL AND del.[Course_EducationOrganizationId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[Session_DocumentId] <> del.[Session_DocumentId] OR (i.[Session_DocumentId] IS NULL AND del.[Session_DocumentId] IS NOT NULL) OR (i.[Session_DocumentId] IS NOT NULL AND del.[Session_DocumentId] IS NULL)) OR (i.[Session_SchoolYear] <> del.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND del.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND del.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(del.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND del.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND del.[Session_SessionName] IS NULL)) OR (i.[InstructionalTimePlanned] <> del.[InstructionalTimePlanned] OR (i.[InstructionalTimePlanned] IS NULL AND del.[InstructionalTimePlanned] IS NOT NULL) OR (i.[InstructionalTimePlanned] IS NOT NULL AND del.[InstructionalTimePlanned] IS NULL)) OR (CAST(i.[LocalCourseCode] AS varbinary(max)) <> CAST(del.[LocalCourseCode] AS varbinary(max)) OR (i.[LocalCourseCode] IS NULL AND del.[LocalCourseCode] IS NOT NULL) OR (i.[LocalCourseCode] IS NOT NULL AND del.[LocalCourseCode] IS NULL)) OR (CAST(i.[LocalCourseTitle] AS varbinary(max)) <> CAST(del.[LocalCourseTitle] AS varbinary(max)) OR (i.[LocalCourseTitle] IS NULL AND del.[LocalCourseTitle] IS NOT NULL) OR (i.[LocalCourseTitle] IS NOT NULL AND del.[LocalCourseTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -42846,9 +42709,8 @@ BEGIN
             del.[Session_SchoolYear],
             del.[Session_SessionName],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43074,11 +42936,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CourseCourse_DocumentId] <> del.[CourseCourse_DocumentId] OR (i.[CourseCourse_DocumentId] IS NULL AND del.[CourseCourse_DocumentId] IS NOT NULL) OR (i.[CourseCourse_DocumentId] IS NOT NULL AND del.[CourseCourse_DocumentId] IS NULL)) OR (CAST(i.[CourseCourse_CourseCode] AS varbinary(max)) <> CAST(del.[CourseCourse_CourseCode] AS varbinary(max)) OR (i.[CourseCourse_CourseCode] IS NULL AND del.[CourseCourse_CourseCode] IS NOT NULL) OR (i.[CourseCourse_CourseCode] IS NOT NULL AND del.[CourseCourse_CourseCode] IS NULL)) OR (i.[CourseCourse_EducationOrganizationId] <> del.[CourseCourse_EducationOrganizationId] OR (i.[CourseCourse_EducationOrganizationId] IS NULL AND del.[CourseCourse_EducationOrganizationId] IS NOT NULL) OR (i.[CourseCourse_EducationOrganizationId] IS NOT NULL AND del.[CourseCourse_EducationOrganizationId] IS NULL)) OR (i.[ExternalEducationOrganization_DocumentId] <> del.[ExternalEducationOrganization_DocumentId] OR (i.[ExternalEducationOrganization_DocumentId] IS NULL AND del.[ExternalEducationOrganization_DocumentId] IS NOT NULL) OR (i.[ExternalEducationOrganization_DocumentId] IS NOT NULL AND del.[ExternalEducationOrganization_DocumentId] IS NULL)) OR (i.[ExternalEducationOrganization_EducationOrganizationId] <> del.[ExternalEducationOrganization_EducationOrganizationId] OR (i.[ExternalEducationOrganization_EducationOrganizationId] IS NULL AND del.[ExternalEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ExternalEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[ExternalEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ResponsibleTeacherStaff_DocumentId] <> del.[ResponsibleTeacherStaff_DocumentId] OR (i.[ResponsibleTeacherStaff_DocumentId] IS NULL AND del.[ResponsibleTeacherStaff_DocumentId] IS NOT NULL) OR (i.[ResponsibleTeacherStaff_DocumentId] IS NOT NULL AND del.[ResponsibleTeacherStaff_DocumentId] IS NULL)) OR (CAST(i.[ResponsibleTeacherStaff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[ResponsibleTeacherStaff_StaffUniqueId] AS varbinary(max)) OR (i.[ResponsibleTeacherStaff_StaffUniqueId] IS NULL AND del.[ResponsibleTeacherStaff_StaffUniqueId] IS NOT NULL) OR (i.[ResponsibleTeacherStaff_StaffUniqueId] IS NOT NULL AND del.[ResponsibleTeacherStaff_StaffUniqueId] IS NULL)) OR (i.[StudentAcademicRecord_DocumentId] <> del.[StudentAcademicRecord_DocumentId] OR (i.[StudentAcademicRecord_DocumentId] IS NULL AND del.[StudentAcademicRecord_DocumentId] IS NOT NULL) OR (i.[StudentAcademicRecord_DocumentId] IS NOT NULL AND del.[StudentAcademicRecord_DocumentId] IS NULL)) OR (i.[StudentAcademicRecord_EducationOrganizationId] <> del.[StudentAcademicRecord_EducationOrganizationId] OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NULL AND del.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL AND del.[StudentAcademicRecord_EducationOrganizationId] IS NULL)) OR (i.[StudentAcademicRecord_SchoolYear] <> del.[StudentAcademicRecord_SchoolYear] OR (i.[StudentAcademicRecord_SchoolYear] IS NULL AND del.[StudentAcademicRecord_SchoolYear] IS NOT NULL) OR (i.[StudentAcademicRecord_SchoolYear] IS NOT NULL AND del.[StudentAcademicRecord_SchoolYear] IS NULL)) OR (CAST(i.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NULL AND del.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL AND del.[StudentAcademicRecord_StudentUniqueId] IS NULL)) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] <> del.[StudentAcademicRecord_TermDescriptor_DescriptorId] OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL AND del.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL AND del.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL)) OR (i.[AttemptedCreditTypeDescriptor_DescriptorId] <> del.[AttemptedCreditTypeDescriptor_DescriptorId] OR (i.[AttemptedCreditTypeDescriptor_DescriptorId] IS NULL AND del.[AttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[AttemptedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[CourseAttemptResultDescriptor_DescriptorId] <> del.[CourseAttemptResultDescriptor_DescriptorId] OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NULL AND del.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL AND del.[CourseAttemptResultDescriptor_DescriptorId] IS NULL)) OR (i.[CourseRepeatCodeDescriptor_DescriptorId] <> del.[CourseRepeatCodeDescriptor_DescriptorId] OR (i.[CourseRepeatCodeDescriptor_DescriptorId] IS NULL AND del.[CourseRepeatCodeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseRepeatCodeDescriptor_DescriptorId] IS NOT NULL AND del.[CourseRepeatCodeDescriptor_DescriptorId] IS NULL)) OR (i.[EarnedCreditTypeDescriptor_DescriptorId] <> del.[EarnedCreditTypeDescriptor_DescriptorId] OR (i.[EarnedCreditTypeDescriptor_DescriptorId] IS NULL AND del.[EarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[EarnedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[MethodCreditEarnedDescriptor_DescriptorId] <> del.[MethodCreditEarnedDescriptor_DescriptorId] OR (i.[MethodCreditEarnedDescriptor_DescriptorId] IS NULL AND del.[MethodCreditEarnedDescriptor_DescriptorId] IS NOT NULL) OR (i.[MethodCreditEarnedDescriptor_DescriptorId] IS NOT NULL AND del.[MethodCreditEarnedDescriptor_DescriptorId] IS NULL)) OR (i.[WhenTakenGradeLevelDescriptor_DescriptorId] <> del.[WhenTakenGradeLevelDescriptor_DescriptorId] OR (i.[WhenTakenGradeLevelDescriptor_DescriptorId] IS NULL AND del.[WhenTakenGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[WhenTakenGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[WhenTakenGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AlternativeCourseTitle] AS varbinary(max)) <> CAST(del.[AlternativeCourseTitle] AS varbinary(max)) OR (i.[AlternativeCourseTitle] IS NULL AND del.[AlternativeCourseTitle] IS NOT NULL) OR (i.[AlternativeCourseTitle] IS NOT NULL AND del.[AlternativeCourseTitle] IS NULL)) OR (CAST(i.[AssigningOrganizationIdentificationCode] AS varbinary(max)) <> CAST(del.[AssigningOrganizationIdentificationCode] AS varbinary(max)) OR (i.[AssigningOrganizationIdentificationCode] IS NULL AND del.[AssigningOrganizationIdentificationCode] IS NOT NULL) OR (i.[AssigningOrganizationIdentificationCode] IS NOT NULL AND del.[AssigningOrganizationIdentificationCode] IS NULL)) OR (i.[AttemptedCreditConversion] <> del.[AttemptedCreditConversion] OR (i.[AttemptedCreditConversion] IS NULL AND del.[AttemptedCreditConversion] IS NOT NULL) OR (i.[AttemptedCreditConversion] IS NOT NULL AND del.[AttemptedCreditConversion] IS NULL)) OR (i.[AttemptedCredits] <> del.[AttemptedCredits] OR (i.[AttemptedCredits] IS NULL AND del.[AttemptedCredits] IS NOT NULL) OR (i.[AttemptedCredits] IS NOT NULL AND del.[AttemptedCredits] IS NULL)) OR (CAST(i.[CourseCatalogURL] AS varbinary(max)) <> CAST(del.[CourseCatalogURL] AS varbinary(max)) OR (i.[CourseCatalogURL] IS NULL AND del.[CourseCatalogURL] IS NOT NULL) OR (i.[CourseCatalogURL] IS NOT NULL AND del.[CourseCatalogURL] IS NULL)) OR (CAST(i.[CourseTitle] AS varbinary(max)) <> CAST(del.[CourseTitle] AS varbinary(max)) OR (i.[CourseTitle] IS NULL AND del.[CourseTitle] IS NOT NULL) OR (i.[CourseTitle] IS NOT NULL AND del.[CourseTitle] IS NULL)) OR (i.[EarnedCreditConversion] <> del.[EarnedCreditConversion] OR (i.[EarnedCreditConversion] IS NULL AND del.[EarnedCreditConversion] IS NOT NULL) OR (i.[EarnedCreditConversion] IS NOT NULL AND del.[EarnedCreditConversion] IS NULL)) OR (i.[EarnedCredits] <> del.[EarnedCredits] OR (i.[EarnedCredits] IS NULL AND del.[EarnedCredits] IS NOT NULL) OR (i.[EarnedCredits] IS NOT NULL AND del.[EarnedCredits] IS NULL)) OR (CAST(i.[ExternalEducationOrganizationNameOfInstitution] AS varbinary(max)) <> CAST(del.[ExternalEducationOrganizationNameOfInstitution] AS varbinary(max)) OR (i.[ExternalEducationOrganizationNameOfInstitution] IS NULL AND del.[ExternalEducationOrganizationNameOfInstitution] IS NOT NULL) OR (i.[ExternalEducationOrganizationNameOfInstitution] IS NOT NULL AND del.[ExternalEducationOrganizationNameOfInstitution] IS NULL)) OR (CAST(i.[FinalLetterGradeEarned] AS varbinary(max)) <> CAST(del.[FinalLetterGradeEarned] AS varbinary(max)) OR (i.[FinalLetterGradeEarned] IS NULL AND del.[FinalLetterGradeEarned] IS NOT NULL) OR (i.[FinalLetterGradeEarned] IS NOT NULL AND del.[FinalLetterGradeEarned] IS NULL)) OR (i.[FinalNumericGradeEarned] <> del.[FinalNumericGradeEarned] OR (i.[FinalNumericGradeEarned] IS NULL AND del.[FinalNumericGradeEarned] IS NOT NULL) OR (i.[FinalNumericGradeEarned] IS NOT NULL AND del.[FinalNumericGradeEarned] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -43125,9 +42982,8 @@ BEGIN
             oldDj1.[CodeValue],
             oldPj0s1.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentAcademicRecord] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAcademicRecord_DocumentId]
@@ -43545,11 +43401,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CredentialFieldDescriptor_DescriptorId] <> del.[CredentialFieldDescriptor_DescriptorId] OR (i.[CredentialFieldDescriptor_DescriptorId] IS NULL AND del.[CredentialFieldDescriptor_DescriptorId] IS NOT NULL) OR (i.[CredentialFieldDescriptor_DescriptorId] IS NOT NULL AND del.[CredentialFieldDescriptor_DescriptorId] IS NULL)) OR (i.[CredentialTypeDescriptor_DescriptorId] <> del.[CredentialTypeDescriptor_DescriptorId] OR (i.[CredentialTypeDescriptor_DescriptorId] IS NULL AND del.[CredentialTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CredentialTypeDescriptor_DescriptorId] IS NOT NULL AND del.[CredentialTypeDescriptor_DescriptorId] IS NULL)) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] <> del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL AND del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL)) OR (i.[TeachingCredentialBasisDescriptor_DescriptorId] <> del.[TeachingCredentialBasisDescriptor_DescriptorId] OR (i.[TeachingCredentialBasisDescriptor_DescriptorId] IS NULL AND del.[TeachingCredentialBasisDescriptor_DescriptorId] IS NOT NULL) OR (i.[TeachingCredentialBasisDescriptor_DescriptorId] IS NOT NULL AND del.[TeachingCredentialBasisDescriptor_DescriptorId] IS NULL)) OR (i.[TeachingCredentialDescriptor_DescriptorId] <> del.[TeachingCredentialDescriptor_DescriptorId] OR (i.[TeachingCredentialDescriptor_DescriptorId] IS NULL AND del.[TeachingCredentialDescriptor_DescriptorId] IS NOT NULL) OR (i.[TeachingCredentialDescriptor_DescriptorId] IS NOT NULL AND del.[TeachingCredentialDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CredentialIdentifier] AS varbinary(max)) <> CAST(del.[CredentialIdentifier] AS varbinary(max)) OR (i.[CredentialIdentifier] IS NULL AND del.[CredentialIdentifier] IS NOT NULL) OR (i.[CredentialIdentifier] IS NOT NULL AND del.[CredentialIdentifier] IS NULL)) OR (i.[EffectiveDate] <> del.[EffectiveDate] OR (i.[EffectiveDate] IS NULL AND del.[EffectiveDate] IS NOT NULL) OR (i.[EffectiveDate] IS NOT NULL AND del.[EffectiveDate] IS NULL)) OR (i.[ExpirationDate] <> del.[ExpirationDate] OR (i.[ExpirationDate] IS NULL AND del.[ExpirationDate] IS NOT NULL) OR (i.[ExpirationDate] IS NOT NULL AND del.[ExpirationDate] IS NULL)) OR (i.[IssuanceDate] <> del.[IssuanceDate] OR (i.[IssuanceDate] IS NULL AND del.[IssuanceDate] IS NOT NULL) OR (i.[IssuanceDate] IS NOT NULL AND del.[IssuanceDate] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -43584,9 +43435,8 @@ BEGIN
             oldDj0.[CodeValue],
             del.[Namespace],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -43815,11 +43665,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CrisisTypeDescriptor_DescriptorId] <> del.[CrisisTypeDescriptor_DescriptorId] OR (i.[CrisisTypeDescriptor_DescriptorId] IS NULL AND del.[CrisisTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CrisisTypeDescriptor_DescriptorId] IS NOT NULL AND del.[CrisisTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CrisisDescription] AS varbinary(max)) <> CAST(del.[CrisisDescription] AS varbinary(max)) OR (i.[CrisisDescription] IS NULL AND del.[CrisisDescription] IS NOT NULL) OR (i.[CrisisDescription] IS NOT NULL AND del.[CrisisDescription] IS NULL)) OR (i.[CrisisEndDate] <> del.[CrisisEndDate] OR (i.[CrisisEndDate] IS NULL AND del.[CrisisEndDate] IS NOT NULL) OR (i.[CrisisEndDate] IS NOT NULL AND del.[CrisisEndDate] IS NULL)) OR (CAST(i.[CrisisEventName] AS varbinary(max)) <> CAST(del.[CrisisEventName] AS varbinary(max)) OR (i.[CrisisEventName] IS NULL AND del.[CrisisEventName] IS NOT NULL) OR (i.[CrisisEventName] IS NOT NULL AND del.[CrisisEventName] IS NULL)) OR (i.[CrisisStartDate] <> del.[CrisisStartDate] OR (i.[CrisisStartDate] IS NULL AND del.[CrisisStartDate] IS NOT NULL) OR (i.[CrisisStartDate] IS NOT NULL AND del.[CrisisStartDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -43848,9 +43693,8 @@ BEGIN
         SELECT
             del.[CrisisEventName],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43947,11 +43791,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[MappedNamespace] AS varbinary(max)) <> CAST(del.[MappedNamespace] AS varbinary(max)) OR (i.[MappedNamespace] IS NULL AND del.[MappedNamespace] IS NOT NULL) OR (i.[MappedNamespace] IS NOT NULL AND del.[MappedNamespace] IS NULL)) OR (CAST(i.[MappedValue] AS varbinary(max)) <> CAST(del.[MappedValue] AS varbinary(max)) OR (i.[MappedValue] IS NULL AND del.[MappedValue] IS NOT NULL) OR (i.[MappedValue] IS NOT NULL AND del.[MappedValue] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[Value] AS varbinary(max)) <> CAST(del.[Value] AS varbinary(max)) OR (i.[Value] IS NULL AND del.[Value] IS NOT NULL) OR (i.[Value] IS NOT NULL AND del.[Value] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -43986,9 +43825,8 @@ BEGIN
             del.[Namespace],
             del.[Value],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44136,11 +43974,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AssignmentSchool_DocumentId] <> del.[AssignmentSchool_DocumentId] OR (i.[AssignmentSchool_DocumentId] IS NULL AND del.[AssignmentSchool_DocumentId] IS NOT NULL) OR (i.[AssignmentSchool_DocumentId] IS NOT NULL AND del.[AssignmentSchool_DocumentId] IS NULL)) OR (i.[AssignmentSchool_SchoolId] <> del.[AssignmentSchool_SchoolId] OR (i.[AssignmentSchool_SchoolId] IS NULL AND del.[AssignmentSchool_SchoolId] IS NOT NULL) OR (i.[AssignmentSchool_SchoolId] IS NOT NULL AND del.[AssignmentSchool_SchoolId] IS NULL)) OR (i.[ResponsibilitySchool_DocumentId] <> del.[ResponsibilitySchool_DocumentId] OR (i.[ResponsibilitySchool_DocumentId] IS NULL AND del.[ResponsibilitySchool_DocumentId] IS NOT NULL) OR (i.[ResponsibilitySchool_DocumentId] IS NOT NULL AND del.[ResponsibilitySchool_DocumentId] IS NULL)) OR (i.[ResponsibilitySchool_SchoolId] <> del.[ResponsibilitySchool_SchoolId] OR (i.[ResponsibilitySchool_SchoolId] IS NULL AND del.[ResponsibilitySchool_SchoolId] IS NOT NULL) OR (i.[ResponsibilitySchool_SchoolId] IS NOT NULL AND del.[ResponsibilitySchool_SchoolId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] <> del.[DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] OR (i.[DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] IS NULL AND del.[DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] IS NOT NULL AND del.[DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] IS NULL)) OR (i.[ActualDisciplineActionLength] <> del.[ActualDisciplineActionLength] OR (i.[ActualDisciplineActionLength] IS NULL AND del.[ActualDisciplineActionLength] IS NOT NULL) OR (i.[ActualDisciplineActionLength] IS NOT NULL AND del.[ActualDisciplineActionLength] IS NULL)) OR (CAST(i.[DisciplineActionIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineActionIdentifier] AS varbinary(max)) OR (i.[DisciplineActionIdentifier] IS NULL AND del.[DisciplineActionIdentifier] IS NOT NULL) OR (i.[DisciplineActionIdentifier] IS NOT NULL AND del.[DisciplineActionIdentifier] IS NULL)) OR (i.[DisciplineActionLength] <> del.[DisciplineActionLength] OR (i.[DisciplineActionLength] IS NULL AND del.[DisciplineActionLength] IS NOT NULL) OR (i.[DisciplineActionLength] IS NOT NULL AND del.[DisciplineActionLength] IS NULL)) OR (i.[DisciplineDate] <> del.[DisciplineDate] OR (i.[DisciplineDate] IS NULL AND del.[DisciplineDate] IS NOT NULL) OR (i.[DisciplineDate] IS NOT NULL AND del.[DisciplineDate] IS NULL)) OR (i.[IepPlacementMeetingIndicator] <> del.[IepPlacementMeetingIndicator] OR (i.[IepPlacementMeetingIndicator] IS NULL AND del.[IepPlacementMeetingIndicator] IS NOT NULL) OR (i.[IepPlacementMeetingIndicator] IS NOT NULL AND del.[IepPlacementMeetingIndicator] IS NULL)) OR (i.[RelatedToZeroTolerancePolicy] <> del.[RelatedToZeroTolerancePolicy] OR (i.[RelatedToZeroTolerancePolicy] IS NULL AND del.[RelatedToZeroTolerancePolicy] IS NOT NULL) OR (i.[RelatedToZeroTolerancePolicy] IS NOT NULL AND del.[RelatedToZeroTolerancePolicy] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -44177,9 +44010,8 @@ BEGIN
             del.[ResponsibilitySchool_SchoolId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -44412,11 +44244,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[IncidentLocationDescriptor_DescriptorId] <> del.[IncidentLocationDescriptor_DescriptorId] OR (i.[IncidentLocationDescriptor_DescriptorId] IS NULL AND del.[IncidentLocationDescriptor_DescriptorId] IS NOT NULL) OR (i.[IncidentLocationDescriptor_DescriptorId] IS NOT NULL AND del.[IncidentLocationDescriptor_DescriptorId] IS NULL)) OR (i.[ReporterDescriptionDescriptor_DescriptorId] <> del.[ReporterDescriptionDescriptor_DescriptorId] OR (i.[ReporterDescriptionDescriptor_DescriptorId] IS NULL AND del.[ReporterDescriptionDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReporterDescriptionDescriptor_DescriptorId] IS NOT NULL AND del.[ReporterDescriptionDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CaseNumber] AS varbinary(max)) <> CAST(del.[CaseNumber] AS varbinary(max)) OR (i.[CaseNumber] IS NULL AND del.[CaseNumber] IS NOT NULL) OR (i.[CaseNumber] IS NOT NULL AND del.[CaseNumber] IS NULL)) OR (i.[IncidentCost] <> del.[IncidentCost] OR (i.[IncidentCost] IS NULL AND del.[IncidentCost] IS NOT NULL) OR (i.[IncidentCost] IS NOT NULL AND del.[IncidentCost] IS NULL)) OR (i.[IncidentDate] <> del.[IncidentDate] OR (i.[IncidentDate] IS NULL AND del.[IncidentDate] IS NOT NULL) OR (i.[IncidentDate] IS NOT NULL AND del.[IncidentDate] IS NULL)) OR (CAST(i.[IncidentDescription] AS varbinary(max)) <> CAST(del.[IncidentDescription] AS varbinary(max)) OR (i.[IncidentDescription] IS NULL AND del.[IncidentDescription] IS NOT NULL) OR (i.[IncidentDescription] IS NOT NULL AND del.[IncidentDescription] IS NULL)) OR (CAST(i.[IncidentIdentifier] AS varbinary(max)) <> CAST(del.[IncidentIdentifier] AS varbinary(max)) OR (i.[IncidentIdentifier] IS NULL AND del.[IncidentIdentifier] IS NOT NULL) OR (i.[IncidentIdentifier] IS NOT NULL AND del.[IncidentIdentifier] IS NULL)) OR (i.[IncidentTime] <> del.[IncidentTime] OR (i.[IncidentTime] IS NULL AND del.[IncidentTime] IS NOT NULL) OR (i.[IncidentTime] IS NOT NULL AND del.[IncidentTime] IS NULL)) OR (i.[ReportedToLawEnforcement] <> del.[ReportedToLawEnforcement] OR (i.[ReportedToLawEnforcement] IS NULL AND del.[ReportedToLawEnforcement] IS NOT NULL) OR (i.[ReportedToLawEnforcement] IS NOT NULL AND del.[ReportedToLawEnforcement] IS NULL)) OR (CAST(i.[ReporterName] AS varbinary(max)) <> CAST(del.[ReporterName] AS varbinary(max)) OR (i.[ReporterName] IS NULL AND del.[ReporterName] IS NOT NULL) OR (i.[ReporterName] IS NOT NULL AND del.[ReporterName] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -44447,9 +44274,8 @@ BEGIN
             del.[IncidentIdentifier],
             del.[School_SchoolId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44667,11 +44493,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[LearningResourceChoiceLearningResourceLearningStandard_DocumentId] <> del.[LearningResourceChoiceLearningResourceLearningStandard_DocumentId] OR (i.[LearningResourceChoiceLearningResourceLearningStandard_DocumentId] IS NULL AND del.[LearningResourceChoiceLearningResourceLearningStandard_DocumentId] IS NOT NULL) OR (i.[LearningResourceChoiceLearningResourceLearningStandard_DocumentId] IS NOT NULL AND del.[LearningResourceChoiceLearningResourceLearningStandard_DocumentId] IS NULL)) OR (CAST(i.[LearningResourceChoiceLearningResourceLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(del.[LearningResourceChoiceLearningResourceLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[LearningResourceChoiceLearningResourceLearningStandard_LearningStandardId] IS NULL AND del.[LearningResourceChoiceLearningResourceLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[LearningResourceChoiceLearningResourceLearningStandard_LearningStandardId] IS NOT NULL AND del.[LearningResourceChoiceLearningResourceLearningStandard_LearningStandardId] IS NULL)) OR (i.[ContentClassDescriptor_DescriptorId] <> del.[ContentClassDescriptor_DescriptorId] OR (i.[ContentClassDescriptor_DescriptorId] IS NULL AND del.[ContentClassDescriptor_DescriptorId] IS NOT NULL) OR (i.[ContentClassDescriptor_DescriptorId] IS NOT NULL AND del.[ContentClassDescriptor_DescriptorId] IS NULL)) OR (i.[CostRateDescriptor_DescriptorId] <> del.[CostRateDescriptor_DescriptorId] OR (i.[CostRateDescriptor_DescriptorId] IS NULL AND del.[CostRateDescriptor_DescriptorId] IS NOT NULL) OR (i.[CostRateDescriptor_DescriptorId] IS NOT NULL AND del.[CostRateDescriptor_DescriptorId] IS NULL)) OR (i.[InteractivityStyleDescriptor_DescriptorId] <> del.[InteractivityStyleDescriptor_DescriptorId] OR (i.[InteractivityStyleDescriptor_DescriptorId] IS NULL AND del.[InteractivityStyleDescriptor_DescriptorId] IS NOT NULL) OR (i.[InteractivityStyleDescriptor_DescriptorId] IS NOT NULL AND del.[InteractivityStyleDescriptor_DescriptorId] IS NULL)) OR (i.[AdditionalAuthorsIndicator] <> del.[AdditionalAuthorsIndicator] OR (i.[AdditionalAuthorsIndicator] IS NULL AND del.[AdditionalAuthorsIndicator] IS NOT NULL) OR (i.[AdditionalAuthorsIndicator] IS NOT NULL AND del.[AdditionalAuthorsIndicator] IS NULL)) OR (CAST(i.[ContentIdentifier] AS varbinary(max)) <> CAST(del.[ContentIdentifier] AS varbinary(max)) OR (i.[ContentIdentifier] IS NULL AND del.[ContentIdentifier] IS NOT NULL) OR (i.[ContentIdentifier] IS NOT NULL AND del.[ContentIdentifier] IS NULL)) OR (i.[Cost] <> del.[Cost] OR (i.[Cost] IS NULL AND del.[Cost] IS NOT NULL) OR (i.[Cost] IS NOT NULL AND del.[Cost] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (CAST(i.[LearningResourceMetadataURI] AS varbinary(max)) <> CAST(del.[LearningResourceMetadataURI] AS varbinary(max)) OR (i.[LearningResourceMetadataURI] IS NULL AND del.[LearningResourceMetadataURI] IS NOT NULL) OR (i.[LearningResourceMetadataURI] IS NOT NULL AND del.[LearningResourceMetadataURI] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (i.[PublicationDate] <> del.[PublicationDate] OR (i.[PublicationDate] IS NULL AND del.[PublicationDate] IS NOT NULL) OR (i.[PublicationDate] IS NOT NULL AND del.[PublicationDate] IS NULL)) OR (i.[PublicationYear] <> del.[PublicationYear] OR (i.[PublicationYear] IS NULL AND del.[PublicationYear] IS NOT NULL) OR (i.[PublicationYear] IS NOT NULL AND del.[PublicationYear] IS NULL)) OR (CAST(i.[Publisher] AS varbinary(max)) <> CAST(del.[Publisher] AS varbinary(max)) OR (i.[Publisher] IS NULL AND del.[Publisher] IS NOT NULL) OR (i.[Publisher] IS NOT NULL AND del.[Publisher] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[TimeRequired] AS varbinary(max)) <> CAST(del.[TimeRequired] AS varbinary(max)) OR (i.[TimeRequired] IS NULL AND del.[TimeRequired] IS NOT NULL) OR (i.[TimeRequired] IS NOT NULL AND del.[TimeRequired] IS NULL)) OR (CAST(i.[UseRightsURL] AS varbinary(max)) <> CAST(del.[UseRightsURL] AS varbinary(max)) OR (i.[UseRightsURL] IS NULL AND del.[UseRightsURL] IS NOT NULL) OR (i.[UseRightsURL] IS NOT NULL AND del.[UseRightsURL] IS NULL)) OR (CAST(i.[Version] AS varbinary(max)) <> CAST(del.[Version] AS varbinary(max)) OR (i.[Version] IS NULL AND del.[Version] IS NOT NULL) OR (i.[Version] IS NOT NULL AND del.[Version] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -44702,9 +44523,8 @@ BEGIN
             del.[ContentIdentifier],
             del.[Namespace],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45526,11 +45346,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[InterventionPrescriptionInterventionPrescription_DocumentId] <> del.[InterventionPrescriptionInterventionPrescription_DocumentId] OR (i.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NULL)) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] <> del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -45563,9 +45378,8 @@ BEGIN
             del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId],
             del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45746,11 +45560,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[NetworkPurposeDescriptor_DescriptorId] <> del.[NetworkPurposeDescriptor_DescriptorId] OR (i.[NetworkPurposeDescriptor_DescriptorId] IS NULL AND del.[NetworkPurposeDescriptor_DescriptorId] IS NOT NULL) OR (i.[NetworkPurposeDescriptor_DescriptorId] IS NOT NULL AND del.[NetworkPurposeDescriptor_DescriptorId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganizationNetworkId] <> del.[EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetworkId] IS NULL AND del.[EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetworkId] IS NOT NULL AND del.[EducationOrganizationNetworkId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -45779,9 +45588,8 @@ BEGIN
         SELECT
             del.[EducationOrganizationNetworkId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationOrganizationNetworkId]))
     BEGIN
@@ -45937,11 +45745,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationNetwork_DocumentId] <> del.[EducationOrganizationNetwork_DocumentId] OR (i.[EducationOrganizationNetwork_DocumentId] IS NULL AND del.[EducationOrganizationNetwork_DocumentId] IS NOT NULL) OR (i.[EducationOrganizationNetwork_DocumentId] IS NOT NULL AND del.[EducationOrganizationNetwork_DocumentId] IS NULL)) OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] <> del.[EducationOrganizationNetwork_EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL AND del.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL AND del.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL)) OR (i.[MemberEducationOrganization_DocumentId] <> del.[MemberEducationOrganization_DocumentId] OR (i.[MemberEducationOrganization_DocumentId] IS NULL AND del.[MemberEducationOrganization_DocumentId] IS NOT NULL) OR (i.[MemberEducationOrganization_DocumentId] IS NOT NULL AND del.[MemberEducationOrganization_DocumentId] IS NULL)) OR (i.[MemberEducationOrganization_EducationOrganizationId] <> del.[MemberEducationOrganization_EducationOrganizationId] OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NULL AND del.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[MemberEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -45972,9 +45775,8 @@ BEGIN
             del.[EducationOrganizationNetwork_EducationOrganizationNetworkId],
             del.[MemberEducationOrganization_EducationOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46309,11 +46111,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[PeerEducationOrganization_DocumentId] <> del.[PeerEducationOrganization_DocumentId] OR (i.[PeerEducationOrganization_DocumentId] IS NULL AND del.[PeerEducationOrganization_DocumentId] IS NOT NULL) OR (i.[PeerEducationOrganization_DocumentId] IS NOT NULL AND del.[PeerEducationOrganization_DocumentId] IS NULL)) OR (i.[PeerEducationOrganization_EducationOrganizationId] <> del.[PeerEducationOrganization_EducationOrganizationId] OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NULL AND del.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[PeerEducationOrganization_EducationOrganizationId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -46344,9 +46141,8 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[PeerEducationOrganization_EducationOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46633,11 +46429,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StateEducationAgency_DocumentId] <> del.[StateEducationAgency_DocumentId] OR (i.[StateEducationAgency_DocumentId] IS NULL AND del.[StateEducationAgency_DocumentId] IS NOT NULL) OR (i.[StateEducationAgency_DocumentId] IS NOT NULL AND del.[StateEducationAgency_DocumentId] IS NULL)) OR (i.[StateEducationAgency_StateEducationAgencyId] <> del.[StateEducationAgency_StateEducationAgencyId] OR (i.[StateEducationAgency_StateEducationAgencyId] IS NULL AND del.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL) OR (i.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL AND del.[StateEducationAgency_StateEducationAgencyId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (i.[EducationServiceCenterId] <> del.[EducationServiceCenterId] OR (i.[EducationServiceCenterId] IS NULL AND del.[EducationServiceCenterId] IS NOT NULL) OR (i.[EducationServiceCenterId] IS NOT NULL AND del.[EducationServiceCenterId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -46666,9 +46457,8 @@ BEGIN
         SELECT
             del.[EducationServiceCenterId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationServiceCenterId]))
     BEGIN
@@ -47058,11 +46848,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ProgramEvaluationElement_DocumentId] <> del.[ProgramEvaluationElement_DocumentId] OR (i.[ProgramEvaluationElement_DocumentId] IS NULL AND del.[ProgramEvaluationElement_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluationElement_DocumentId] IS NOT NULL AND del.[ProgramEvaluationElement_DocumentId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] <> del.[ProgramEvaluationElement_ProgramEducationOrganizationId] OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL AND del.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramName] IS NULL AND del.[ProgramEvaluationElement_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramName] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramName] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EvaluationRubricRatingLevelDescriptor_DescriptorId] <> del.[EvaluationRubricRatingLevelDescriptor_DescriptorId] OR (i.[EvaluationRubricRatingLevelDescriptor_DescriptorId] IS NULL AND del.[EvaluationRubricRatingLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationRubricRatingLevelDescriptor_DescriptorId] IS NOT NULL AND del.[EvaluationRubricRatingLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[EvaluationCriterionDescription] AS varbinary(max)) <> CAST(del.[EvaluationCriterionDescription] AS varbinary(max)) OR (i.[EvaluationCriterionDescription] IS NULL AND del.[EvaluationCriterionDescription] IS NOT NULL) OR (i.[EvaluationCriterionDescription] IS NOT NULL AND del.[EvaluationCriterionDescription] IS NULL)) OR (i.[EvaluationRubricRating] <> del.[EvaluationRubricRating] OR (i.[EvaluationRubricRating] IS NULL AND del.[EvaluationRubricRating] IS NOT NULL) OR (i.[EvaluationRubricRating] IS NOT NULL AND del.[EvaluationRubricRating] IS NULL)) OR (i.[RubricDimensionSortOrder] <> del.[RubricDimensionSortOrder] OR (i.[RubricDimensionSortOrder] IS NULL AND del.[RubricDimensionSortOrder] IS NOT NULL) OR (i.[RubricDimensionSortOrder] IS NOT NULL AND del.[RubricDimensionSortOrder] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -47111,9 +46896,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId];
@@ -47259,11 +47043,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[FeederSchool_DocumentId] <> del.[FeederSchool_DocumentId] OR (i.[FeederSchool_DocumentId] IS NULL AND del.[FeederSchool_DocumentId] IS NOT NULL) OR (i.[FeederSchool_DocumentId] IS NOT NULL AND del.[FeederSchool_DocumentId] IS NULL)) OR (i.[FeederSchool_SchoolId] <> del.[FeederSchool_SchoolId] OR (i.[FeederSchool_SchoolId] IS NULL AND del.[FeederSchool_SchoolId] IS NOT NULL) OR (i.[FeederSchool_SchoolId] IS NOT NULL AND del.[FeederSchool_SchoolId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (CAST(i.[FeederRelationshipDescription] AS varbinary(max)) <> CAST(del.[FeederRelationshipDescription] AS varbinary(max)) OR (i.[FeederRelationshipDescription] IS NULL AND del.[FeederRelationshipDescription] IS NOT NULL) OR (i.[FeederRelationshipDescription] IS NOT NULL AND del.[FeederRelationshipDescription] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -47296,9 +47075,8 @@ BEGIN
             del.[FeederSchool_SchoolId],
             del.[School_SchoolId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47403,11 +47181,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -47438,9 +47211,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47580,11 +47352,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -47615,9 +47382,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47805,11 +47571,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[GradingPeriodGradingPeriod_DocumentId] <> del.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[StudentSectionAssociation_DocumentId] <> del.[StudentSectionAssociation_DocumentId] OR (i.[StudentSectionAssociation_DocumentId] IS NULL AND del.[StudentSectionAssociation_DocumentId] IS NOT NULL) OR (i.[StudentSectionAssociation_DocumentId] IS NOT NULL AND del.[StudentSectionAssociation_DocumentId] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> del.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND del.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND del.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND del.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND del.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NULL)) OR (i.[GradeTypeDescriptor_DescriptorId] <> del.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] <> del.[PerformanceBaseConversionDescriptor_DescriptorId] OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL)) OR (i.[CurrentGradeAsOfDate] <> del.[CurrentGradeAsOfDate] OR (i.[CurrentGradeAsOfDate] IS NULL AND del.[CurrentGradeAsOfDate] IS NOT NULL) OR (i.[CurrentGradeAsOfDate] IS NOT NULL AND del.[CurrentGradeAsOfDate] IS NULL)) OR (i.[CurrentGradeIndicator] <> del.[CurrentGradeIndicator] OR (i.[CurrentGradeIndicator] IS NULL AND del.[CurrentGradeIndicator] IS NOT NULL) OR (i.[CurrentGradeIndicator] IS NOT NULL AND del.[CurrentGradeIndicator] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(del.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND del.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND del.[DiagnosticStatement] IS NULL)) OR (CAST(i.[GradeEarnedDescription] AS varbinary(max)) <> CAST(del.[GradeEarnedDescription] AS varbinary(max)) OR (i.[GradeEarnedDescription] IS NULL AND del.[GradeEarnedDescription] IS NOT NULL) OR (i.[GradeEarnedDescription] IS NOT NULL AND del.[GradeEarnedDescription] IS NULL)) OR (CAST(i.[LetterGradeEarned] AS varbinary(max)) <> CAST(del.[LetterGradeEarned] AS varbinary(max)) OR (i.[LetterGradeEarned] IS NULL AND del.[LetterGradeEarned] IS NOT NULL) OR (i.[LetterGradeEarned] IS NOT NULL AND del.[LetterGradeEarned] IS NULL)) OR (i.[NumericGradeEarned] <> del.[NumericGradeEarned] OR (i.[NumericGradeEarned] IS NULL AND del.[NumericGradeEarned] IS NOT NULL) OR (i.[NumericGradeEarned] IS NOT NULL AND del.[NumericGradeEarned] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -47862,9 +47623,8 @@ BEGIN
             del.[StudentSectionAssociation_StudentUniqueId],
             oldPj0s1.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]
@@ -48084,11 +47844,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[GradingPeriod_DocumentId] <> del.[GradingPeriod_DocumentId] OR (i.[GradingPeriod_DocumentId] IS NULL AND del.[GradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriod_DocumentId] IS NOT NULL AND del.[GradingPeriod_DocumentId] IS NULL)) OR (i.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriod_GradingPeriodName] IS NULL)) OR (i.[Section_DocumentId] <> del.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND del.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND del.[Section_DocumentId] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (i.[GradebookEntryTypeDescriptor_DescriptorId] <> del.[GradebookEntryTypeDescriptor_DescriptorId] OR (i.[GradebookEntryTypeDescriptor_DescriptorId] IS NULL AND del.[GradebookEntryTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradebookEntryTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GradebookEntryTypeDescriptor_DescriptorId] IS NULL)) OR (i.[DateAssigned] <> del.[DateAssigned] OR (i.[DateAssigned] IS NULL AND del.[DateAssigned] IS NOT NULL) OR (i.[DateAssigned] IS NOT NULL AND del.[DateAssigned] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[DueDate] <> del.[DueDate] OR (i.[DueDate] IS NULL AND del.[DueDate] IS NOT NULL) OR (i.[DueDate] IS NOT NULL AND del.[DueDate] IS NULL)) OR (i.[DueTime] <> del.[DueTime] OR (i.[DueTime] IS NULL AND del.[DueTime] IS NOT NULL) OR (i.[DueTime] IS NOT NULL AND del.[DueTime] IS NULL)) OR (CAST(i.[GradebookEntryIdentifier] AS varbinary(max)) <> CAST(del.[GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntryIdentifier] IS NULL AND del.[GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntryIdentifier] IS NOT NULL AND del.[GradebookEntryIdentifier] IS NULL)) OR (i.[MaxPoints] <> del.[MaxPoints] OR (i.[MaxPoints] IS NULL AND del.[MaxPoints] IS NOT NULL) OR (i.[MaxPoints] IS NOT NULL AND del.[MaxPoints] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[SourceSectionIdentifier] AS varbinary(max)) <> CAST(del.[SourceSectionIdentifier] AS varbinary(max)) OR (i.[SourceSectionIdentifier] IS NULL AND del.[SourceSectionIdentifier] IS NOT NULL) OR (i.[SourceSectionIdentifier] IS NOT NULL AND del.[SourceSectionIdentifier] IS NULL)) OR (CAST(i.[Title] AS varbinary(max)) <> CAST(del.[Title] AS varbinary(max)) OR (i.[Title] IS NULL AND del.[Title] IS NOT NULL) OR (i.[Title] IS NOT NULL AND del.[Title] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -48119,9 +47874,8 @@ BEGIN
             del.[GradebookEntryIdentifier],
             del.[Namespace],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48261,11 +48015,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (CAST(i.[GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodName] IS NULL AND del.[GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodName] IS NOT NULL AND del.[GradingPeriodName] IS NULL)) OR (i.[PeriodSequence] <> del.[PeriodSequence] OR (i.[PeriodSequence] IS NULL AND del.[PeriodSequence] IS NOT NULL) OR (i.[PeriodSequence] IS NOT NULL AND del.[PeriodSequence] IS NULL)) OR (i.[TotalInstructionalDays] <> del.[TotalInstructionalDays] OR (i.[TotalInstructionalDays] IS NULL AND del.[TotalInstructionalDays] IS NOT NULL) OR (i.[TotalInstructionalDays] IS NOT NULL AND del.[TotalInstructionalDays] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -48302,9 +48051,8 @@ BEGIN
             del.[School_SchoolId],
             del.[SchoolYear_SchoolYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -48452,11 +48200,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GraduationSchoolYear_DocumentId] <> del.[GraduationSchoolYear_DocumentId] OR (i.[GraduationSchoolYear_DocumentId] IS NULL AND del.[GraduationSchoolYear_DocumentId] IS NOT NULL) OR (i.[GraduationSchoolYear_DocumentId] IS NOT NULL AND del.[GraduationSchoolYear_DocumentId] IS NULL)) OR (i.[GraduationSchoolYear_GraduationSchoolYear] <> del.[GraduationSchoolYear_GraduationSchoolYear] OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NULL AND del.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL AND del.[GraduationSchoolYear_GraduationSchoolYear] IS NULL)) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] <> del.[GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND del.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[TotalRequiredCreditTypeDescriptor_DescriptorId] <> del.[TotalRequiredCreditTypeDescriptor_DescriptorId] OR (i.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NULL AND del.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[TotalRequiredCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[IndividualPlan] <> del.[IndividualPlan] OR (i.[IndividualPlan] IS NULL AND del.[IndividualPlan] IS NOT NULL) OR (i.[IndividualPlan] IS NOT NULL AND del.[IndividualPlan] IS NULL)) OR (i.[TotalRequiredCreditConversion] <> del.[TotalRequiredCreditConversion] OR (i.[TotalRequiredCreditConversion] IS NULL AND del.[TotalRequiredCreditConversion] IS NOT NULL) OR (i.[TotalRequiredCreditConversion] IS NOT NULL AND del.[TotalRequiredCreditConversion] IS NULL)) OR (i.[TotalRequiredCredits] <> del.[TotalRequiredCredits] OR (i.[TotalRequiredCredits] IS NULL AND del.[TotalRequiredCredits] IS NOT NULL) OR (i.[TotalRequiredCredits] IS NOT NULL AND del.[TotalRequiredCredits] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -48491,9 +48234,8 @@ BEGIN
             oldDj0.[CodeValue],
             del.[GraduationSchoolYear_GraduationSchoolYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlanTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -48871,11 +48613,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[DeliveryMethodDescriptor_DescriptorId] <> del.[DeliveryMethodDescriptor_DescriptorId] OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NULL AND del.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL) OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL AND del.[DeliveryMethodDescriptor_DescriptorId] IS NULL)) OR (i.[InterventionClassDescriptor_DescriptorId] <> del.[InterventionClassDescriptor_DescriptorId] OR (i.[InterventionClassDescriptor_DescriptorId] IS NULL AND del.[InterventionClassDescriptor_DescriptorId] IS NOT NULL) OR (i.[InterventionClassDescriptor_DescriptorId] IS NOT NULL AND del.[InterventionClassDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (CAST(i.[InterventionIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionIdentificationCode] AS varbinary(max)) OR (i.[InterventionIdentificationCode] IS NULL AND del.[InterventionIdentificationCode] IS NOT NULL) OR (i.[InterventionIdentificationCode] IS NOT NULL AND del.[InterventionIdentificationCode] IS NULL)) OR (i.[MaxDosage] <> del.[MaxDosage] OR (i.[MaxDosage] IS NULL AND del.[MaxDosage] IS NOT NULL) OR (i.[MaxDosage] IS NOT NULL AND del.[MaxDosage] IS NULL)) OR (i.[MinDosage] <> del.[MinDosage] OR (i.[MinDosage] IS NULL AND del.[MinDosage] IS NOT NULL) OR (i.[MinDosage] IS NOT NULL AND del.[MinDosage] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -48906,9 +48643,8 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionIdentificationCode],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49361,11 +49097,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[DeliveryMethodDescriptor_DescriptorId] <> del.[DeliveryMethodDescriptor_DescriptorId] OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NULL AND del.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL) OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL AND del.[DeliveryMethodDescriptor_DescriptorId] IS NULL)) OR (i.[InterventionClassDescriptor_DescriptorId] <> del.[InterventionClassDescriptor_DescriptorId] OR (i.[InterventionClassDescriptor_DescriptorId] IS NULL AND del.[InterventionClassDescriptor_DescriptorId] IS NOT NULL) OR (i.[InterventionClassDescriptor_DescriptorId] IS NOT NULL AND del.[InterventionClassDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND del.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND del.[InterventionPrescriptionIdentificationCode] IS NULL)) OR (i.[MaxDosage] <> del.[MaxDosage] OR (i.[MaxDosage] IS NULL AND del.[MaxDosage] IS NOT NULL) OR (i.[MaxDosage] IS NOT NULL AND del.[MaxDosage] IS NULL)) OR (i.[MinDosage] <> del.[MinDosage] OR (i.[MinDosage] IS NULL AND del.[MinDosage] IS NOT NULL) OR (i.[MinDosage] IS NOT NULL AND del.[MinDosage] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -49396,9 +49127,8 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionPrescriptionIdentificationCode],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49811,11 +49541,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[InterventionPrescriptionInterventionPrescription_DocumentId] <> del.[InterventionPrescriptionInterventionPrescription_DocumentId] OR (i.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_DocumentId] IS NULL)) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] <> del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL)) OR (i.[DeliveryMethodDescriptor_DescriptorId] <> del.[DeliveryMethodDescriptor_DescriptorId] OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NULL AND del.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL) OR (i.[DeliveryMethodDescriptor_DescriptorId] IS NOT NULL AND del.[DeliveryMethodDescriptor_DescriptorId] IS NULL)) OR (i.[InterventionClassDescriptor_DescriptorId] <> del.[InterventionClassDescriptor_DescriptorId] OR (i.[InterventionClassDescriptor_DescriptorId] IS NULL AND del.[InterventionClassDescriptor_DescriptorId] IS NOT NULL) OR (i.[InterventionClassDescriptor_DescriptorId] IS NOT NULL AND del.[InterventionClassDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[InterventionStudyIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionStudyIdentificationCode] AS varbinary(max)) OR (i.[InterventionStudyIdentificationCode] IS NULL AND del.[InterventionStudyIdentificationCode] IS NOT NULL) OR (i.[InterventionStudyIdentificationCode] IS NOT NULL AND del.[InterventionStudyIdentificationCode] IS NULL)) OR (i.[Participants] <> del.[Participants] OR (i.[Participants] IS NULL AND del.[Participants] IS NOT NULL) OR (i.[Participants] IS NOT NULL AND del.[Participants] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -49846,9 +49571,8 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[InterventionStudyIdentificationCode],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50300,11 +50024,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[MandatingEducationOrganization_DocumentId] <> del.[MandatingEducationOrganization_DocumentId] OR (i.[MandatingEducationOrganization_DocumentId] IS NULL AND del.[MandatingEducationOrganization_DocumentId] IS NOT NULL) OR (i.[MandatingEducationOrganization_DocumentId] IS NOT NULL AND del.[MandatingEducationOrganization_DocumentId] IS NULL)) OR (i.[MandatingEducationOrganization_EducationOrganizationId] <> del.[MandatingEducationOrganization_EducationOrganizationId] OR (i.[MandatingEducationOrganization_EducationOrganizationId] IS NULL AND del.[MandatingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[MandatingEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[MandatingEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ParentLearningStandard_DocumentId] <> del.[ParentLearningStandard_DocumentId] OR (i.[ParentLearningStandard_DocumentId] IS NULL AND del.[ParentLearningStandard_DocumentId] IS NOT NULL) OR (i.[ParentLearningStandard_DocumentId] IS NOT NULL AND del.[ParentLearningStandard_DocumentId] IS NULL)) OR (CAST(i.[ParentLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(del.[ParentLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[ParentLearningStandard_LearningStandardId] IS NULL AND del.[ParentLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[ParentLearningStandard_LearningStandardId] IS NOT NULL AND del.[ParentLearningStandard_LearningStandardId] IS NULL)) OR (i.[ContentStandardPublicationStatusDescriptor_DescriptorId] <> del.[ContentStandardPublicationStatusDescriptor_DescriptorId] OR (i.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NULL AND del.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NOT NULL AND del.[ContentStandardPublicationStatusDescriptor_DescriptorId] IS NULL)) OR (i.[LearningStandardCategoryDescriptor_DescriptorId] <> del.[LearningStandardCategoryDescriptor_DescriptorId] OR (i.[LearningStandardCategoryDescriptor_DescriptorId] IS NULL AND del.[LearningStandardCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[LearningStandardCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[LearningStandardCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[LearningStandardScopeDescriptor_DescriptorId] <> del.[LearningStandardScopeDescriptor_DescriptorId] OR (i.[LearningStandardScopeDescriptor_DescriptorId] IS NULL AND del.[LearningStandardScopeDescriptor_DescriptorId] IS NOT NULL) OR (i.[LearningStandardScopeDescriptor_DescriptorId] IS NOT NULL AND del.[LearningStandardScopeDescriptor_DescriptorId] IS NULL)) OR (i.[ContentStandardBeginDate] <> del.[ContentStandardBeginDate] OR (i.[ContentStandardBeginDate] IS NULL AND del.[ContentStandardBeginDate] IS NOT NULL) OR (i.[ContentStandardBeginDate] IS NOT NULL AND del.[ContentStandardBeginDate] IS NULL)) OR (i.[ContentStandardEndDate] <> del.[ContentStandardEndDate] OR (i.[ContentStandardEndDate] IS NULL AND del.[ContentStandardEndDate] IS NOT NULL) OR (i.[ContentStandardEndDate] IS NOT NULL AND del.[ContentStandardEndDate] IS NULL)) OR (i.[ContentStandardPublicationDate] <> del.[ContentStandardPublicationDate] OR (i.[ContentStandardPublicationDate] IS NULL AND del.[ContentStandardPublicationDate] IS NOT NULL) OR (i.[ContentStandardPublicationDate] IS NOT NULL AND del.[ContentStandardPublicationDate] IS NULL)) OR (i.[ContentStandardPublicationYear] <> del.[ContentStandardPublicationYear] OR (i.[ContentStandardPublicationYear] IS NULL AND del.[ContentStandardPublicationYear] IS NOT NULL) OR (i.[ContentStandardPublicationYear] IS NOT NULL AND del.[ContentStandardPublicationYear] IS NULL)) OR (CAST(i.[ContentStandardTitle] AS varbinary(max)) <> CAST(del.[ContentStandardTitle] AS varbinary(max)) OR (i.[ContentStandardTitle] IS NULL AND del.[ContentStandardTitle] IS NOT NULL) OR (i.[ContentStandardTitle] IS NOT NULL AND del.[ContentStandardTitle] IS NULL)) OR (CAST(i.[ContentStandardUri] AS varbinary(max)) <> CAST(del.[ContentStandardUri] AS varbinary(max)) OR (i.[ContentStandardUri] IS NULL AND del.[ContentStandardUri] IS NOT NULL) OR (i.[ContentStandardUri] IS NOT NULL AND del.[ContentStandardUri] IS NULL)) OR (CAST(i.[ContentStandardVersion] AS varbinary(max)) <> CAST(del.[ContentStandardVersion] AS varbinary(max)) OR (i.[ContentStandardVersion] IS NULL AND del.[ContentStandardVersion] IS NOT NULL) OR (i.[ContentStandardVersion] IS NOT NULL AND del.[ContentStandardVersion] IS NULL)) OR (CAST(i.[CourseTitle] AS varbinary(max)) <> CAST(del.[CourseTitle] AS varbinary(max)) OR (i.[CourseTitle] IS NULL AND del.[CourseTitle] IS NOT NULL) OR (i.[CourseTitle] IS NOT NULL AND del.[CourseTitle] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (CAST(i.[LearningStandardId] AS varbinary(max)) <> CAST(del.[LearningStandardId] AS varbinary(max)) OR (i.[LearningStandardId] IS NULL AND del.[LearningStandardId] IS NOT NULL) OR (i.[LearningStandardId] IS NOT NULL AND del.[LearningStandardId] IS NULL)) OR (CAST(i.[LearningStandardItemCode] AS varbinary(max)) <> CAST(del.[LearningStandardItemCode] AS varbinary(max)) OR (i.[LearningStandardItemCode] IS NULL AND del.[LearningStandardItemCode] IS NOT NULL) OR (i.[LearningStandardItemCode] IS NOT NULL AND del.[LearningStandardItemCode] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[SuccessCriteria] AS varbinary(max)) <> CAST(del.[SuccessCriteria] AS varbinary(max)) OR (i.[SuccessCriteria] IS NULL AND del.[SuccessCriteria] IS NOT NULL) OR (i.[SuccessCriteria] IS NOT NULL AND del.[SuccessCriteria] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -50335,9 +50054,8 @@ BEGIN
             del.[LearningStandardId],
             del.[Namespace],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50516,11 +50234,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SourceLearningStandard_DocumentId] <> del.[SourceLearningStandard_DocumentId] OR (i.[SourceLearningStandard_DocumentId] IS NULL AND del.[SourceLearningStandard_DocumentId] IS NOT NULL) OR (i.[SourceLearningStandard_DocumentId] IS NOT NULL AND del.[SourceLearningStandard_DocumentId] IS NULL)) OR (CAST(i.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(del.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[SourceLearningStandard_LearningStandardId] IS NULL AND del.[SourceLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[SourceLearningStandard_LearningStandardId] IS NOT NULL AND del.[SourceLearningStandard_LearningStandardId] IS NULL)) OR (i.[TargetLearningStandard_DocumentId] <> del.[TargetLearningStandard_DocumentId] OR (i.[TargetLearningStandard_DocumentId] IS NULL AND del.[TargetLearningStandard_DocumentId] IS NOT NULL) OR (i.[TargetLearningStandard_DocumentId] IS NOT NULL AND del.[TargetLearningStandard_DocumentId] IS NULL)) OR (CAST(i.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(del.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[TargetLearningStandard_LearningStandardId] IS NULL AND del.[TargetLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[TargetLearningStandard_LearningStandardId] IS NOT NULL AND del.[TargetLearningStandard_LearningStandardId] IS NULL)) OR (i.[LearningStandardEquivalenceStrengthDescriptor_DescriptorId] <> del.[LearningStandardEquivalenceStrengthDescriptor_DescriptorId] OR (i.[LearningStandardEquivalenceStrengthDescriptor_DescriptorId] IS NULL AND del.[LearningStandardEquivalenceStrengthDescriptor_DescriptorId] IS NOT NULL) OR (i.[LearningStandardEquivalenceStrengthDescriptor_DescriptorId] IS NOT NULL AND del.[LearningStandardEquivalenceStrengthDescriptor_DescriptorId] IS NULL)) OR (i.[EffectiveDate] <> del.[EffectiveDate] OR (i.[EffectiveDate] IS NULL AND del.[EffectiveDate] IS NOT NULL) OR (i.[EffectiveDate] IS NOT NULL AND del.[EffectiveDate] IS NULL)) OR (CAST(i.[LearningStandardEquivalenceStrengthDescription] AS varbinary(max)) <> CAST(del.[LearningStandardEquivalenceStrengthDescription] AS varbinary(max)) OR (i.[LearningStandardEquivalenceStrengthDescription] IS NULL AND del.[LearningStandardEquivalenceStrengthDescription] IS NOT NULL) OR (i.[LearningStandardEquivalenceStrengthDescription] IS NOT NULL AND del.[LearningStandardEquivalenceStrengthDescription] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -50553,9 +50266,8 @@ BEGIN
             del.[SourceLearningStandard_LearningStandardId],
             del.[TargetLearningStandard_LearningStandardId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50794,11 +50506,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[FiscalYear_Unified] <> del.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND del.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND del.[FiscalYear_Unified] IS NULL)) OR (i.[ChartOfAccountChartOfAccount_DocumentId] <> del.[ChartOfAccountChartOfAccount_DocumentId] OR (i.[ChartOfAccountChartOfAccount_DocumentId] IS NULL AND del.[ChartOfAccountChartOfAccount_DocumentId] IS NOT NULL) OR (i.[ChartOfAccountChartOfAccount_DocumentId] IS NOT NULL AND del.[ChartOfAccountChartOfAccount_DocumentId] IS NULL)) OR (CAST(i.[ChartOfAccountChartOfAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[ChartOfAccountChartOfAccount_AccountIdentifier] AS varbinary(max)) OR (i.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NULL AND del.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NOT NULL) OR (i.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NOT NULL AND del.[ChartOfAccountChartOfAccount_AccountIdentifier] IS NULL)) OR (i.[ChartOfAccountChartOfAccount_EducationOrganizationId] <> del.[ChartOfAccountChartOfAccount_EducationOrganizationId] OR (i.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NULL AND del.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NOT NULL) OR (i.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NOT NULL AND del.[ChartOfAccountChartOfAccount_EducationOrganizationId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(del.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND del.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND del.[AccountIdentifier] IS NULL)) OR (CAST(i.[AccountName] AS varbinary(max)) <> CAST(del.[AccountName] AS varbinary(max)) OR (i.[AccountName] IS NULL AND del.[AccountName] IS NOT NULL) OR (i.[AccountName] IS NOT NULL AND del.[AccountName] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -50831,9 +50538,8 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[FiscalYear_Unified],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50977,11 +50683,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[LocalAccount_DocumentId] <> del.[LocalAccount_DocumentId] OR (i.[LocalAccount_DocumentId] IS NULL AND del.[LocalAccount_DocumentId] IS NOT NULL) OR (i.[LocalAccount_DocumentId] IS NOT NULL AND del.[LocalAccount_DocumentId] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL)) OR (i.[FinancialCollectionDescriptor_DescriptorId] <> del.[FinancialCollectionDescriptor_DescriptorId] OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL) OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NULL)) OR (i.[Amount] <> del.[Amount] OR (i.[Amount] IS NULL AND del.[Amount] IS NOT NULL) OR (i.[Amount] IS NOT NULL AND del.[Amount] IS NULL)) OR (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -51016,9 +50717,8 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51127,11 +50827,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[LocalAccount_DocumentId] <> del.[LocalAccount_DocumentId] OR (i.[LocalAccount_DocumentId] IS NULL AND del.[LocalAccount_DocumentId] IS NOT NULL) OR (i.[LocalAccount_DocumentId] IS NOT NULL AND del.[LocalAccount_DocumentId] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL)) OR (i.[FinancialCollectionDescriptor_DescriptorId] <> del.[FinancialCollectionDescriptor_DescriptorId] OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL) OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NULL)) OR (i.[Amount] <> del.[Amount] OR (i.[Amount] IS NULL AND del.[Amount] IS NOT NULL) OR (i.[Amount] IS NOT NULL AND del.[Amount] IS NULL)) OR (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -51166,9 +50861,8 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51277,11 +50971,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[LocalAccount_DocumentId] <> del.[LocalAccount_DocumentId] OR (i.[LocalAccount_DocumentId] IS NULL AND del.[LocalAccount_DocumentId] IS NOT NULL) OR (i.[LocalAccount_DocumentId] IS NOT NULL AND del.[LocalAccount_DocumentId] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[FinancialCollectionDescriptor_DescriptorId] <> del.[FinancialCollectionDescriptor_DescriptorId] OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL) OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NULL)) OR (i.[Amount] <> del.[Amount] OR (i.[Amount] IS NULL AND del.[Amount] IS NOT NULL) OR (i.[Amount] IS NOT NULL AND del.[Amount] IS NULL)) OR (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -51320,9 +51009,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -51718,11 +51406,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationServiceCenter_DocumentId] <> del.[EducationServiceCenter_DocumentId] OR (i.[EducationServiceCenter_DocumentId] IS NULL AND del.[EducationServiceCenter_DocumentId] IS NOT NULL) OR (i.[EducationServiceCenter_DocumentId] IS NOT NULL AND del.[EducationServiceCenter_DocumentId] IS NULL)) OR (i.[EducationServiceCenter_EducationServiceCenterId] <> del.[EducationServiceCenter_EducationServiceCenterId] OR (i.[EducationServiceCenter_EducationServiceCenterId] IS NULL AND del.[EducationServiceCenter_EducationServiceCenterId] IS NOT NULL) OR (i.[EducationServiceCenter_EducationServiceCenterId] IS NOT NULL AND del.[EducationServiceCenter_EducationServiceCenterId] IS NULL)) OR (i.[ParentLocalEducationAgency_DocumentId] <> del.[ParentLocalEducationAgency_DocumentId] OR (i.[ParentLocalEducationAgency_DocumentId] IS NULL AND del.[ParentLocalEducationAgency_DocumentId] IS NOT NULL) OR (i.[ParentLocalEducationAgency_DocumentId] IS NOT NULL AND del.[ParentLocalEducationAgency_DocumentId] IS NULL)) OR (i.[ParentLocalEducationAgency_LocalEducationAgencyId] <> del.[ParentLocalEducationAgency_LocalEducationAgencyId] OR (i.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NULL AND del.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NOT NULL) OR (i.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NOT NULL AND del.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NULL)) OR (i.[StateEducationAgency_DocumentId] <> del.[StateEducationAgency_DocumentId] OR (i.[StateEducationAgency_DocumentId] IS NULL AND del.[StateEducationAgency_DocumentId] IS NOT NULL) OR (i.[StateEducationAgency_DocumentId] IS NOT NULL AND del.[StateEducationAgency_DocumentId] IS NULL)) OR (i.[StateEducationAgency_StateEducationAgencyId] <> del.[StateEducationAgency_StateEducationAgencyId] OR (i.[StateEducationAgency_StateEducationAgencyId] IS NULL AND del.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL) OR (i.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL AND del.[StateEducationAgency_StateEducationAgencyId] IS NULL)) OR (i.[CharterStatusDescriptor_DescriptorId] <> del.[CharterStatusDescriptor_DescriptorId] OR (i.[CharterStatusDescriptor_DescriptorId] IS NULL AND del.[CharterStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[CharterStatusDescriptor_DescriptorId] IS NOT NULL AND del.[CharterStatusDescriptor_DescriptorId] IS NULL)) OR (i.[LocalEducationAgencyCategoryDescriptor_DescriptorId] <> del.[LocalEducationAgencyCategoryDescriptor_DescriptorId] OR (i.[LocalEducationAgencyCategoryDescriptor_DescriptorId] IS NULL AND del.[LocalEducationAgencyCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[LocalEducationAgencyCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[LocalEducationAgencyCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (i.[LocalEducationAgencyId] <> del.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND del.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND del.[LocalEducationAgencyId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -51751,9 +51434,8 @@ BEGIN
         SELECT
             del.[LocalEducationAgencyId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([LocalEducationAgencyId]))
     BEGIN
@@ -52221,11 +51903,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[LocalAccount_DocumentId] <> del.[LocalAccount_DocumentId] OR (i.[LocalAccount_DocumentId] IS NULL AND del.[LocalAccount_DocumentId] IS NOT NULL) OR (i.[LocalAccount_DocumentId] IS NOT NULL AND del.[LocalAccount_DocumentId] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL)) OR (i.[FinancialCollectionDescriptor_DescriptorId] <> del.[FinancialCollectionDescriptor_DescriptorId] OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL) OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NULL)) OR (i.[Amount] <> del.[Amount] OR (i.[Amount] IS NULL AND del.[Amount] IS NOT NULL) OR (i.[Amount] IS NOT NULL AND del.[Amount] IS NULL)) OR (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -52260,9 +51937,8 @@ BEGIN
             del.[LocalAccount_EducationOrganizationId],
             del.[LocalAccount_FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52371,11 +52047,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[LocalAccount_DocumentId] <> del.[LocalAccount_DocumentId] OR (i.[LocalAccount_DocumentId] IS NULL AND del.[LocalAccount_DocumentId] IS NOT NULL) OR (i.[LocalAccount_DocumentId] IS NOT NULL AND del.[LocalAccount_DocumentId] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[FinancialCollectionDescriptor_DescriptorId] <> del.[FinancialCollectionDescriptor_DescriptorId] OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL) OR (i.[FinancialCollectionDescriptor_DescriptorId] IS NOT NULL AND del.[FinancialCollectionDescriptor_DescriptorId] IS NULL)) OR (i.[Amount] <> del.[Amount] OR (i.[Amount] IS NULL AND del.[Amount] IS NOT NULL) OR (i.[Amount] IS NOT NULL AND del.[Amount] IS NULL)) OR (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -52414,9 +52085,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -52560,11 +52230,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (CAST(i.[ClassroomIdentificationCode] AS varbinary(max)) <> CAST(del.[ClassroomIdentificationCode] AS varbinary(max)) OR (i.[ClassroomIdentificationCode] IS NULL AND del.[ClassroomIdentificationCode] IS NOT NULL) OR (i.[ClassroomIdentificationCode] IS NOT NULL AND del.[ClassroomIdentificationCode] IS NULL)) OR (i.[MaximumNumberOfSeats] <> del.[MaximumNumberOfSeats] OR (i.[MaximumNumberOfSeats] IS NULL AND del.[MaximumNumberOfSeats] IS NOT NULL) OR (i.[MaximumNumberOfSeats] IS NOT NULL AND del.[MaximumNumberOfSeats] IS NULL)) OR (i.[OptimalNumberOfSeats] <> del.[OptimalNumberOfSeats] OR (i.[OptimalNumberOfSeats] IS NULL AND del.[OptimalNumberOfSeats] IS NOT NULL) OR (i.[OptimalNumberOfSeats] IS NOT NULL AND del.[OptimalNumberOfSeats] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -52595,9 +52260,8 @@ BEGIN
             del.[ClassroomIdentificationCode],
             del.[School_SchoolId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52698,11 +52362,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -52733,9 +52392,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52875,11 +52533,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND del.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND del.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (i.[Assessment_DocumentId] <> del.[Assessment_DocumentId] OR (i.[Assessment_DocumentId] IS NULL AND del.[Assessment_DocumentId] IS NOT NULL) OR (i.[Assessment_DocumentId] IS NOT NULL AND del.[Assessment_DocumentId] IS NULL)) OR (i.[ParentObjectiveAssessment_DocumentId] <> del.[ParentObjectiveAssessment_DocumentId] OR (i.[ParentObjectiveAssessment_DocumentId] IS NULL AND del.[ParentObjectiveAssessment_DocumentId] IS NOT NULL) OR (i.[ParentObjectiveAssessment_DocumentId] IS NOT NULL AND del.[ParentObjectiveAssessment_DocumentId] IS NULL)) OR (CAST(i.[ParentObjectiveAssessment_IdentificationCode] AS varbinary(max)) <> CAST(del.[ParentObjectiveAssessment_IdentificationCode] AS varbinary(max)) OR (i.[ParentObjectiveAssessment_IdentificationCode] IS NULL AND del.[ParentObjectiveAssessment_IdentificationCode] IS NOT NULL) OR (i.[ParentObjectiveAssessment_IdentificationCode] IS NOT NULL AND del.[ParentObjectiveAssessment_IdentificationCode] IS NULL)) OR (i.[AcademicSubjectDescriptor_DescriptorId] <> del.[AcademicSubjectDescriptor_DescriptorId] OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NULL AND del.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL) OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL AND del.[AcademicSubjectDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(del.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND del.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND del.[IdentificationCode] IS NULL)) OR (i.[MaxRawScore] <> del.[MaxRawScore] OR (i.[MaxRawScore] IS NULL AND del.[MaxRawScore] IS NOT NULL) OR (i.[MaxRawScore] IS NOT NULL AND del.[MaxRawScore] IS NULL)) OR (CAST(i.[Nomenclature] AS varbinary(max)) <> CAST(del.[Nomenclature] AS varbinary(max)) OR (i.[Nomenclature] IS NULL AND del.[Nomenclature] IS NOT NULL) OR (i.[Nomenclature] IS NOT NULL AND del.[Nomenclature] IS NULL)) OR (i.[PercentOfAssessment] <> del.[PercentOfAssessment] OR (i.[PercentOfAssessment] IS NULL AND del.[PercentOfAssessment] IS NOT NULL) OR (i.[PercentOfAssessment] IS NOT NULL AND del.[PercentOfAssessment] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -52912,9 +52565,8 @@ BEGIN
             del.[Namespace_Unified],
             del.[IdentificationCode],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53175,11 +52827,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EmploymentStatusDescriptor_DescriptorId] <> del.[EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NULL AND del.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND del.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[PostingResultDescriptor_DescriptorId] <> del.[PostingResultDescriptor_DescriptorId] OR (i.[PostingResultDescriptor_DescriptorId] IS NULL AND del.[PostingResultDescriptor_DescriptorId] IS NOT NULL) OR (i.[PostingResultDescriptor_DescriptorId] IS NOT NULL AND del.[PostingResultDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramAssignmentDescriptor_DescriptorId] <> del.[ProgramAssignmentDescriptor_DescriptorId] OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NULL AND del.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramAssignmentDescriptor_DescriptorId] IS NULL)) OR (i.[StaffClassificationDescriptor_DescriptorId] <> del.[StaffClassificationDescriptor_DescriptorId] OR (i.[StaffClassificationDescriptor_DescriptorId] IS NULL AND del.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL AND del.[StaffClassificationDescriptor_DescriptorId] IS NULL)) OR (i.[DatePosted] <> del.[DatePosted] OR (i.[DatePosted] IS NULL AND del.[DatePosted] IS NOT NULL) OR (i.[DatePosted] IS NOT NULL AND del.[DatePosted] IS NULL)) OR (i.[DatePostingRemoved] <> del.[DatePostingRemoved] OR (i.[DatePostingRemoved] IS NULL AND del.[DatePostingRemoved] IS NOT NULL) OR (i.[DatePostingRemoved] IS NOT NULL AND del.[DatePostingRemoved] IS NULL)) OR (CAST(i.[PositionTitle] AS varbinary(max)) <> CAST(del.[PositionTitle] AS varbinary(max)) OR (i.[PositionTitle] IS NULL AND del.[PositionTitle] IS NOT NULL) OR (i.[PositionTitle] IS NOT NULL AND del.[PositionTitle] IS NULL)) OR (CAST(i.[RequisitionNumber] AS varbinary(max)) <> CAST(del.[RequisitionNumber] AS varbinary(max)) OR (i.[RequisitionNumber] IS NULL AND del.[RequisitionNumber] IS NOT NULL) OR (i.[RequisitionNumber] IS NOT NULL AND del.[RequisitionNumber] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -53210,9 +52857,8 @@ BEGIN
             del.[EducationOrganization_EducationOrganizationId],
             del.[RequisitionNumber],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53391,11 +53037,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -53426,9 +53067,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53754,11 +53394,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ParentEducationOrganization_DocumentId] <> del.[ParentEducationOrganization_DocumentId] OR (i.[ParentEducationOrganization_DocumentId] IS NULL AND del.[ParentEducationOrganization_DocumentId] IS NOT NULL) OR (i.[ParentEducationOrganization_DocumentId] IS NOT NULL AND del.[ParentEducationOrganization_DocumentId] IS NULL)) OR (i.[ParentEducationOrganization_EducationOrganizationId] <> del.[ParentEducationOrganization_EducationOrganizationId] OR (i.[ParentEducationOrganization_EducationOrganizationId] IS NULL AND del.[ParentEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ParentEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[ParentEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[AcademicSubjectDescriptor_DescriptorId] <> del.[AcademicSubjectDescriptor_DescriptorId] OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NULL AND del.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL) OR (i.[AcademicSubjectDescriptor_DescriptorId] IS NOT NULL AND del.[AcademicSubjectDescriptor_DescriptorId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[OrganizationDepartmentId] <> del.[OrganizationDepartmentId] OR (i.[OrganizationDepartmentId] IS NULL AND del.[OrganizationDepartmentId] IS NOT NULL) OR (i.[OrganizationDepartmentId] IS NOT NULL AND del.[OrganizationDepartmentId] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -53789,9 +53424,8 @@ BEGIN
             del.[OrganizationDepartmentId],
             del.[ParentEducationOrganization_EducationOrganizationId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([OrganizationDepartmentId]))
     BEGIN
@@ -54181,11 +53815,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SourceSystemDescriptor_DescriptorId] <> del.[SourceSystemDescriptor_DescriptorId] OR (i.[SourceSystemDescriptor_DescriptorId] IS NULL AND del.[SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[SourceSystemDescriptor_DescriptorId] IS NOT NULL AND del.[SourceSystemDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[PersonId] AS varbinary(max)) <> CAST(del.[PersonId] AS varbinary(max)) OR (i.[PersonId] IS NULL AND del.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND del.[PersonId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -54218,9 +53847,8 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[SourceSystemDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -54328,11 +53956,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[PostSecondaryInstitution_DocumentId] <> del.[PostSecondaryInstitution_DocumentId] OR (i.[PostSecondaryInstitution_DocumentId] IS NULL AND del.[PostSecondaryInstitution_DocumentId] IS NOT NULL) OR (i.[PostSecondaryInstitution_DocumentId] IS NOT NULL AND del.[PostSecondaryInstitution_DocumentId] IS NULL)) OR (i.[PostSecondaryInstitution_PostSecondaryInstitutionId] <> del.[PostSecondaryInstitution_PostSecondaryInstitutionId] OR (i.[PostSecondaryInstitution_PostSecondaryInstitutionId] IS NULL AND del.[PostSecondaryInstitution_PostSecondaryInstitutionId] IS NOT NULL) OR (i.[PostSecondaryInstitution_PostSecondaryInstitutionId] IS NOT NULL AND del.[PostSecondaryInstitution_PostSecondaryInstitutionId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] <> del.[PostSecondaryEventCategoryDescriptor_DescriptorId] OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL AND del.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -54369,9 +53992,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -54566,11 +54188,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AdministrativeFundingControlDescriptor_DescriptorId] <> del.[AdministrativeFundingControlDescriptor_DescriptorId] OR (i.[AdministrativeFundingControlDescriptor_DescriptorId] IS NULL AND del.[AdministrativeFundingControlDescriptor_DescriptorId] IS NOT NULL) OR (i.[AdministrativeFundingControlDescriptor_DescriptorId] IS NOT NULL AND del.[AdministrativeFundingControlDescriptor_DescriptorId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (i.[PostSecondaryInstitutionLevelDescriptor_DescriptorId] <> del.[PostSecondaryInstitutionLevelDescriptor_DescriptorId] OR (i.[PostSecondaryInstitutionLevelDescriptor_DescriptorId] IS NULL AND del.[PostSecondaryInstitutionLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[PostSecondaryInstitutionLevelDescriptor_DescriptorId] IS NOT NULL AND del.[PostSecondaryInstitutionLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[PostSecondaryInstitutionId] <> del.[PostSecondaryInstitutionId] OR (i.[PostSecondaryInstitutionId] IS NULL AND del.[PostSecondaryInstitutionId] IS NOT NULL) OR (i.[PostSecondaryInstitutionId] IS NOT NULL AND del.[PostSecondaryInstitutionId] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -54599,9 +54216,8 @@ BEGIN
         SELECT
             del.[PostSecondaryInstitutionId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([PostSecondaryInstitutionId]))
     BEGIN
@@ -55214,11 +54830,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> del.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramId] AS varbinary(max)) <> CAST(del.[ProgramId] AS varbinary(max)) OR (i.[ProgramId] IS NULL AND del.[ProgramId] IS NOT NULL) OR (i.[ProgramId] IS NOT NULL AND del.[ProgramId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(del.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND del.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND del.[ProgramName] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -55253,9 +54864,8 @@ BEGIN
             oldDj0.[Namespace],
             oldDj0.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -55406,11 +55016,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -55441,9 +55046,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55623,11 +55227,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EvaluationMaxNumericRating] <> del.[EvaluationMaxNumericRating] OR (i.[EvaluationMaxNumericRating] IS NULL AND del.[EvaluationMaxNumericRating] IS NOT NULL) OR (i.[EvaluationMaxNumericRating] IS NOT NULL AND del.[EvaluationMaxNumericRating] IS NULL)) OR (i.[EvaluationMinNumericRating] <> del.[EvaluationMinNumericRating] OR (i.[EvaluationMinNumericRating] IS NULL AND del.[EvaluationMinNumericRating] IS NOT NULL) OR (i.[EvaluationMinNumericRating] IS NOT NULL AND del.[EvaluationMinNumericRating] IS NULL)) OR (CAST(i.[ProgramEvaluationDescription] AS varbinary(max)) <> CAST(del.[ProgramEvaluationDescription] AS varbinary(max)) OR (i.[ProgramEvaluationDescription] IS NULL AND del.[ProgramEvaluationDescription] IS NOT NULL) OR (i.[ProgramEvaluationDescription] IS NOT NULL AND del.[ProgramEvaluationDescription] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluationTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -55672,9 +55271,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
@@ -55844,11 +55442,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ProgramEducationOrganizationId_Unified] <> del.[ProgramEducationOrganizationId_Unified] OR (i.[ProgramEducationOrganizationId_Unified] IS NULL AND del.[ProgramEducationOrganizationId_Unified] IS NOT NULL) OR (i.[ProgramEducationOrganizationId_Unified] IS NOT NULL AND del.[ProgramEducationOrganizationId_Unified] IS NULL)) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] <> del.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND del.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle_Unified] AS varbinary(max)) <> CAST(del.[ProgramEvaluationTitle_Unified] AS varbinary(max)) OR (i.[ProgramEvaluationTitle_Unified] IS NULL AND del.[ProgramEvaluationTitle_Unified] IS NOT NULL) OR (i.[ProgramEvaluationTitle_Unified] IS NOT NULL AND del.[ProgramEvaluationTitle_Unified] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] <> del.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND del.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramName_Unified] AS varbinary(max)) <> CAST(del.[ProgramName_Unified] AS varbinary(max)) OR (i.[ProgramName_Unified] IS NULL AND del.[ProgramName_Unified] IS NOT NULL) OR (i.[ProgramName_Unified] IS NOT NULL AND del.[ProgramName_Unified] IS NULL)) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] <> del.[ProgramTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL AND del.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND del.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[ProgramEvaluationObjective_DocumentId] <> del.[ProgramEvaluationObjective_DocumentId] OR (i.[ProgramEvaluationObjective_DocumentId] IS NULL AND del.[ProgramEvaluationObjective_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluationObjective_DocumentId] IS NOT NULL AND del.[ProgramEvaluationObjective_DocumentId] IS NULL)) OR (CAST(i.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NULL AND del.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NOT NULL AND del.[ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] IS NULL)) OR (i.[ProgramEvaluation_DocumentId] <> del.[ProgramEvaluation_DocumentId] OR (i.[ProgramEvaluation_DocumentId] IS NULL AND del.[ProgramEvaluation_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluation_DocumentId] IS NOT NULL AND del.[ProgramEvaluation_DocumentId] IS NULL)) OR (i.[ElementMaxNumericRating] <> del.[ElementMaxNumericRating] OR (i.[ElementMaxNumericRating] IS NULL AND del.[ElementMaxNumericRating] IS NOT NULL) OR (i.[ElementMaxNumericRating] IS NOT NULL AND del.[ElementMaxNumericRating] IS NULL)) OR (i.[ElementMinNumericRating] <> del.[ElementMinNumericRating] OR (i.[ElementMinNumericRating] IS NULL AND del.[ElementMinNumericRating] IS NOT NULL) OR (i.[ElementMinNumericRating] IS NOT NULL AND del.[ElementMinNumericRating] IS NULL)) OR (i.[ElementSortOrder] <> del.[ElementSortOrder] OR (i.[ElementSortOrder] IS NULL AND del.[ElementSortOrder] IS NOT NULL) OR (i.[ElementSortOrder] IS NOT NULL AND del.[ElementSortOrder] IS NULL)) OR (CAST(i.[ProgramEvaluationElementDescription] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElementDescription] AS varbinary(max)) OR (i.[ProgramEvaluationElementDescription] IS NULL AND del.[ProgramEvaluationElementDescription] IS NOT NULL) OR (i.[ProgramEvaluationElementDescription] IS NOT NULL AND del.[ProgramEvaluationElementDescription] IS NULL)) OR (CAST(i.[ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElementTitle] IS NULL AND del.[ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElementTitle] IS NOT NULL AND del.[ProgramEvaluationElementTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -55895,9 +55488,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
@@ -56149,11 +55741,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ProgramEvaluation_DocumentId] <> del.[ProgramEvaluation_DocumentId] OR (i.[ProgramEvaluation_DocumentId] IS NULL AND del.[ProgramEvaluation_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluation_DocumentId] IS NOT NULL AND del.[ProgramEvaluation_DocumentId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> del.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND del.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND del.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ObjectiveMaxNumericRating] <> del.[ObjectiveMaxNumericRating] OR (i.[ObjectiveMaxNumericRating] IS NULL AND del.[ObjectiveMaxNumericRating] IS NOT NULL) OR (i.[ObjectiveMaxNumericRating] IS NOT NULL AND del.[ObjectiveMaxNumericRating] IS NULL)) OR (i.[ObjectiveMinNumericRating] <> del.[ObjectiveMinNumericRating] OR (i.[ObjectiveMinNumericRating] IS NULL AND del.[ObjectiveMinNumericRating] IS NOT NULL) OR (i.[ObjectiveMinNumericRating] IS NOT NULL AND del.[ObjectiveMinNumericRating] IS NULL)) OR (i.[ObjectiveSortOrder] <> del.[ObjectiveSortOrder] OR (i.[ObjectiveSortOrder] IS NULL AND del.[ObjectiveSortOrder] IS NOT NULL) OR (i.[ObjectiveSortOrder] IS NOT NULL AND del.[ObjectiveSortOrder] IS NULL)) OR (CAST(i.[ProgramEvaluationObjectiveDescription] AS varbinary(max)) <> CAST(del.[ProgramEvaluationObjectiveDescription] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveDescription] IS NULL AND del.[ProgramEvaluationObjectiveDescription] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveDescription] IS NOT NULL AND del.[ProgramEvaluationObjectiveDescription] IS NULL)) OR (CAST(i.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveTitle] IS NULL AND del.[ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveTitle] IS NOT NULL AND del.[ProgramEvaluationObjectiveTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -56200,9 +55787,8 @@ BEGIN
             oldDj2.[Namespace],
             oldDj2.[CodeValue],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
@@ -56461,11 +56047,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -56496,9 +56077,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56662,11 +56242,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_DocumentId] <> del.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> del.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> del.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[NumberOfDaysAbsent] <> del.[NumberOfDaysAbsent] OR (i.[NumberOfDaysAbsent] IS NULL AND del.[NumberOfDaysAbsent] IS NOT NULL) OR (i.[NumberOfDaysAbsent] IS NOT NULL AND del.[NumberOfDaysAbsent] IS NULL)) OR (i.[NumberOfDaysInAttendance] <> del.[NumberOfDaysInAttendance] OR (i.[NumberOfDaysInAttendance] IS NULL AND del.[NumberOfDaysInAttendance] IS NOT NULL) OR (i.[NumberOfDaysInAttendance] IS NOT NULL AND del.[NumberOfDaysInAttendance] IS NULL)) OR (i.[NumberOfDaysTardy] <> del.[NumberOfDaysTardy] OR (i.[NumberOfDaysTardy] IS NULL AND del.[NumberOfDaysTardy] IS NOT NULL) OR (i.[NumberOfDaysTardy] IS NOT NULL AND del.[NumberOfDaysTardy] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -56709,9 +56284,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -56959,11 +56533,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[DisciplineIncident_DocumentId] <> del.[DisciplineIncident_DocumentId] OR (i.[DisciplineIncident_DocumentId] IS NULL AND del.[DisciplineIncident_DocumentId] IS NOT NULL) OR (i.[DisciplineIncident_DocumentId] IS NOT NULL AND del.[DisciplineIncident_DocumentId] IS NULL)) OR (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] <> del.[EducationalEnvironmentDescriptor_DescriptorId] OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (CAST(i.[RestraintEventIdentifier] AS varbinary(max)) <> CAST(del.[RestraintEventIdentifier] AS varbinary(max)) OR (i.[RestraintEventIdentifier] IS NULL AND del.[RestraintEventIdentifier] IS NOT NULL) OR (i.[RestraintEventIdentifier] IS NOT NULL AND del.[RestraintEventIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -56998,9 +56567,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -57376,11 +56944,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CharterApprovalSchoolYear_DocumentId] <> del.[CharterApprovalSchoolYear_DocumentId] OR (i.[CharterApprovalSchoolYear_DocumentId] IS NULL AND del.[CharterApprovalSchoolYear_DocumentId] IS NOT NULL) OR (i.[CharterApprovalSchoolYear_DocumentId] IS NOT NULL AND del.[CharterApprovalSchoolYear_DocumentId] IS NULL)) OR (i.[CharterApprovalSchoolYear_CharterApprovalSchoolYear] <> del.[CharterApprovalSchoolYear_CharterApprovalSchoolYear] OR (i.[CharterApprovalSchoolYear_CharterApprovalSchoolYear] IS NULL AND del.[CharterApprovalSchoolYear_CharterApprovalSchoolYear] IS NOT NULL) OR (i.[CharterApprovalSchoolYear_CharterApprovalSchoolYear] IS NOT NULL AND del.[CharterApprovalSchoolYear_CharterApprovalSchoolYear] IS NULL)) OR (i.[LocalEducationAgency_DocumentId] <> del.[LocalEducationAgency_DocumentId] OR (i.[LocalEducationAgency_DocumentId] IS NULL AND del.[LocalEducationAgency_DocumentId] IS NOT NULL) OR (i.[LocalEducationAgency_DocumentId] IS NOT NULL AND del.[LocalEducationAgency_DocumentId] IS NULL)) OR (i.[LocalEducationAgency_LocalEducationAgencyId] <> del.[LocalEducationAgency_LocalEducationAgencyId] OR (i.[LocalEducationAgency_LocalEducationAgencyId] IS NULL AND del.[LocalEducationAgency_LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgency_LocalEducationAgencyId] IS NOT NULL AND del.[LocalEducationAgency_LocalEducationAgencyId] IS NULL)) OR (i.[AdministrativeFundingControlDescriptor_DescriptorId] <> del.[AdministrativeFundingControlDescriptor_DescriptorId] OR (i.[AdministrativeFundingControlDescriptor_DescriptorId] IS NULL AND del.[AdministrativeFundingControlDescriptor_DescriptorId] IS NOT NULL) OR (i.[AdministrativeFundingControlDescriptor_DescriptorId] IS NOT NULL AND del.[AdministrativeFundingControlDescriptor_DescriptorId] IS NULL)) OR (i.[CharterApprovalAgencyTypeDescriptor_DescriptorId] <> del.[CharterApprovalAgencyTypeDescriptor_DescriptorId] OR (i.[CharterApprovalAgencyTypeDescriptor_DescriptorId] IS NULL AND del.[CharterApprovalAgencyTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CharterApprovalAgencyTypeDescriptor_DescriptorId] IS NOT NULL AND del.[CharterApprovalAgencyTypeDescriptor_DescriptorId] IS NULL)) OR (i.[CharterStatusDescriptor_DescriptorId] <> del.[CharterStatusDescriptor_DescriptorId] OR (i.[CharterStatusDescriptor_DescriptorId] IS NULL AND del.[CharterStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[CharterStatusDescriptor_DescriptorId] IS NOT NULL AND del.[CharterStatusDescriptor_DescriptorId] IS NULL)) OR (i.[InternetAccessDescriptor_DescriptorId] <> del.[InternetAccessDescriptor_DescriptorId] OR (i.[InternetAccessDescriptor_DescriptorId] IS NULL AND del.[InternetAccessDescriptor_DescriptorId] IS NOT NULL) OR (i.[InternetAccessDescriptor_DescriptorId] IS NOT NULL AND del.[InternetAccessDescriptor_DescriptorId] IS NULL)) OR (i.[MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] <> del.[MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] OR (i.[MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] IS NULL AND del.[MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] IS NOT NULL) OR (i.[MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] IS NOT NULL AND del.[MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (i.[SchoolTypeDescriptor_DescriptorId] <> del.[SchoolTypeDescriptor_DescriptorId] OR (i.[SchoolTypeDescriptor_DescriptorId] IS NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NULL)) OR (i.[TitleIPartASchoolDesignationDescriptor_DescriptorId] <> del.[TitleIPartASchoolDesignationDescriptor_DescriptorId] OR (i.[TitleIPartASchoolDesignationDescriptor_DescriptorId] IS NULL AND del.[TitleIPartASchoolDesignationDescriptor_DescriptorId] IS NOT NULL) OR (i.[TitleIPartASchoolDesignationDescriptor_DescriptorId] IS NOT NULL AND del.[TitleIPartASchoolDesignationDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -57409,9 +56972,8 @@ BEGIN
         SELECT
             del.[SchoolId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN
@@ -57879,11 +57441,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CurrentSchoolYear] <> del.[CurrentSchoolYear] OR (i.[CurrentSchoolYear] IS NULL AND del.[CurrentSchoolYear] IS NOT NULL) OR (i.[CurrentSchoolYear] IS NOT NULL AND del.[CurrentSchoolYear] IS NULL)) OR (i.[SchoolYear] <> del.[SchoolYear] OR (i.[SchoolYear] IS NULL AND del.[SchoolYear] IS NOT NULL) OR (i.[SchoolYear] IS NOT NULL AND del.[SchoolYear] IS NULL)) OR (CAST(i.[SchoolYearDescription] AS varbinary(max)) <> CAST(del.[SchoolYearDescription] AS varbinary(max)) OR (i.[SchoolYearDescription] IS NULL AND del.[SchoolYearDescription] IS NOT NULL) OR (i.[SchoolYearDescription] IS NOT NULL AND del.[SchoolYearDescription] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -57912,9 +57469,8 @@ BEGIN
         SELECT
             del.[SchoolYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58099,11 +57655,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_U35501e03_Unified] <> del.[SchoolId_U35501e03_Unified] OR (i.[SchoolId_U35501e03_Unified] IS NULL AND del.[SchoolId_U35501e03_Unified] IS NOT NULL) OR (i.[SchoolId_U35501e03_Unified] IS NOT NULL AND del.[SchoolId_U35501e03_Unified] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_DocumentId] <> del.[CourseOffering_DocumentId] OR (i.[CourseOffering_DocumentId] IS NULL AND del.[CourseOffering_DocumentId] IS NOT NULL) OR (i.[CourseOffering_DocumentId] IS NOT NULL AND del.[CourseOffering_DocumentId] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(del.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> del.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND del.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND del.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(del.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND del.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND del.[CourseOffering_SessionName] IS NULL)) OR (i.[LocationLocation_DocumentId] <> del.[LocationLocation_DocumentId] OR (i.[LocationLocation_DocumentId] IS NULL AND del.[LocationLocation_DocumentId] IS NOT NULL) OR (i.[LocationLocation_DocumentId] IS NOT NULL AND del.[LocationLocation_DocumentId] IS NULL)) OR (CAST(i.[LocationLocation_ClassroomIdentificationCode] AS varbinary(max)) <> CAST(del.[LocationLocation_ClassroomIdentificationCode] AS varbinary(max)) OR (i.[LocationLocation_ClassroomIdentificationCode] IS NULL AND del.[LocationLocation_ClassroomIdentificationCode] IS NOT NULL) OR (i.[LocationLocation_ClassroomIdentificationCode] IS NOT NULL AND del.[LocationLocation_ClassroomIdentificationCode] IS NULL)) OR (i.[LocationSchool_DocumentId] <> del.[LocationSchool_DocumentId] OR (i.[LocationSchool_DocumentId] IS NULL AND del.[LocationSchool_DocumentId] IS NOT NULL) OR (i.[LocationSchool_DocumentId] IS NOT NULL AND del.[LocationSchool_DocumentId] IS NULL)) OR (i.[AvailableCreditTypeDescriptor_DescriptorId] <> del.[AvailableCreditTypeDescriptor_DescriptorId] OR (i.[AvailableCreditTypeDescriptor_DescriptorId] IS NULL AND del.[AvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[AvailableCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[AvailableCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] <> del.[EducationalEnvironmentDescriptor_DescriptorId] OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL)) OR (i.[InstructionLanguageDescriptor_DescriptorId] <> del.[InstructionLanguageDescriptor_DescriptorId] OR (i.[InstructionLanguageDescriptor_DescriptorId] IS NULL AND del.[InstructionLanguageDescriptor_DescriptorId] IS NOT NULL) OR (i.[InstructionLanguageDescriptor_DescriptorId] IS NOT NULL AND del.[InstructionLanguageDescriptor_DescriptorId] IS NULL)) OR (i.[MediumOfInstructionDescriptor_DescriptorId] <> del.[MediumOfInstructionDescriptor_DescriptorId] OR (i.[MediumOfInstructionDescriptor_DescriptorId] IS NULL AND del.[MediumOfInstructionDescriptor_DescriptorId] IS NOT NULL) OR (i.[MediumOfInstructionDescriptor_DescriptorId] IS NOT NULL AND del.[MediumOfInstructionDescriptor_DescriptorId] IS NULL)) OR (i.[PopulationServedDescriptor_DescriptorId] <> del.[PopulationServedDescriptor_DescriptorId] OR (i.[PopulationServedDescriptor_DescriptorId] IS NULL AND del.[PopulationServedDescriptor_DescriptorId] IS NOT NULL) OR (i.[PopulationServedDescriptor_DescriptorId] IS NOT NULL AND del.[PopulationServedDescriptor_DescriptorId] IS NULL)) OR (i.[SectionTypeDescriptor_DescriptorId] <> del.[SectionTypeDescriptor_DescriptorId] OR (i.[SectionTypeDescriptor_DescriptorId] IS NULL AND del.[SectionTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SectionTypeDescriptor_DescriptorId] IS NOT NULL AND del.[SectionTypeDescriptor_DescriptorId] IS NULL)) OR (i.[AvailableCreditConversion] <> del.[AvailableCreditConversion] OR (i.[AvailableCreditConversion] IS NULL AND del.[AvailableCreditConversion] IS NOT NULL) OR (i.[AvailableCreditConversion] IS NOT NULL AND del.[AvailableCreditConversion] IS NULL)) OR (i.[AvailableCredits] <> del.[AvailableCredits] OR (i.[AvailableCredits] IS NULL AND del.[AvailableCredits] IS NOT NULL) OR (i.[AvailableCredits] IS NOT NULL AND del.[AvailableCredits] IS NULL)) OR (i.[OfficialAttendancePeriod] <> del.[OfficialAttendancePeriod] OR (i.[OfficialAttendancePeriod] IS NULL AND del.[OfficialAttendancePeriod] IS NOT NULL) OR (i.[OfficialAttendancePeriod] IS NOT NULL AND del.[OfficialAttendancePeriod] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(del.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND del.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND del.[SectionIdentifier] IS NULL)) OR (CAST(i.[SectionName] AS varbinary(max)) <> CAST(del.[SectionName] AS varbinary(max)) OR (i.[SectionName] IS NULL AND del.[SectionName] IS NOT NULL) OR (i.[SectionName] IS NOT NULL AND del.[SectionName] IS NULL)) OR (i.[SequenceOfCourse] <> del.[SequenceOfCourse] OR (i.[SequenceOfCourse] IS NULL AND del.[SequenceOfCourse] IS NOT NULL) OR (i.[SequenceOfCourse] IS NOT NULL AND del.[SequenceOfCourse] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -58140,9 +57691,8 @@ BEGIN
             del.[CourseOffering_SessionName],
             del.[SectionIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58255,11 +57805,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[CalendarDate_DocumentId] <> del.[CalendarDate_DocumentId] OR (i.[CalendarDate_DocumentId] IS NULL AND del.[CalendarDate_DocumentId] IS NOT NULL) OR (i.[CalendarDate_DocumentId] IS NOT NULL AND del.[CalendarDate_DocumentId] IS NULL)) OR (CAST(i.[CalendarDate_CalendarCode] AS varbinary(max)) <> CAST(del.[CalendarDate_CalendarCode] AS varbinary(max)) OR (i.[CalendarDate_CalendarCode] IS NULL AND del.[CalendarDate_CalendarCode] IS NOT NULL) OR (i.[CalendarDate_CalendarCode] IS NOT NULL AND del.[CalendarDate_CalendarCode] IS NULL)) OR (i.[CalendarDate_Date] <> del.[CalendarDate_Date] OR (i.[CalendarDate_Date] IS NULL AND del.[CalendarDate_Date] IS NOT NULL) OR (i.[CalendarDate_Date] IS NOT NULL AND del.[CalendarDate_Date] IS NULL)) OR (i.[Section_DocumentId] <> del.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND del.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND del.[Section_DocumentId] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -58300,9 +57845,8 @@ BEGIN
             del.[Section_SectionIdentifier],
             del.[Section_SessionName],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58658,11 +58202,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> del.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND del.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND del.[TermDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(del.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND del.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND del.[SessionName] IS NULL)) OR (i.[TotalInstructionalDays] <> del.[TotalInstructionalDays] OR (i.[TotalInstructionalDays] IS NULL AND del.[TotalInstructionalDays] IS NOT NULL) OR (i.[TotalInstructionalDays] IS NOT NULL AND del.[TotalInstructionalDays] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -58695,9 +58234,8 @@ BEGIN
             del.[SchoolYear_SchoolYear],
             del.[SessionName],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58880,11 +58418,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (CAST(i.[CodeName] AS varbinary(max)) <> CAST(del.[CodeName] AS varbinary(max)) OR (i.[CodeName] IS NULL AND del.[CodeName] IS NOT NULL) OR (i.[CodeName] IS NOT NULL AND del.[CodeName] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -58915,9 +58448,8 @@ BEGIN
             del.[Code],
             del.[FiscalYear],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59057,11 +58589,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Person_DocumentId] <> del.[Person_DocumentId] OR (i.[Person_DocumentId] IS NULL AND del.[Person_DocumentId] IS NOT NULL) OR (i.[Person_DocumentId] IS NOT NULL AND del.[Person_DocumentId] IS NULL)) OR (CAST(i.[Person_PersonId] AS varbinary(max)) <> CAST(del.[Person_PersonId] AS varbinary(max)) OR (i.[Person_PersonId] IS NULL AND del.[Person_PersonId] IS NOT NULL) OR (i.[Person_PersonId] IS NOT NULL AND del.[Person_PersonId] IS NULL)) OR (i.[Person_SourceSystemDescriptor_DescriptorId] <> del.[Person_SourceSystemDescriptor_DescriptorId] OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NULL AND del.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND del.[Person_SourceSystemDescriptor_DescriptorId] IS NULL)) OR (i.[CitizenshipStatusDescriptor_DescriptorId] <> del.[CitizenshipStatusDescriptor_DescriptorId] OR (i.[CitizenshipStatusDescriptor_DescriptorId] IS NULL AND del.[CitizenshipStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[CitizenshipStatusDescriptor_DescriptorId] IS NOT NULL AND del.[CitizenshipStatusDescriptor_DescriptorId] IS NULL)) OR (i.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] <> del.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] OR (i.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NULL AND del.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NOT NULL) OR (i.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NOT NULL AND del.[HighestCompletedLevelOfEducationDescriptor_DescriptorId] IS NULL)) OR (i.[SexDescriptor_DescriptorId] <> del.[SexDescriptor_DescriptorId] OR (i.[SexDescriptor_DescriptorId] IS NULL AND del.[SexDescriptor_DescriptorId] IS NOT NULL) OR (i.[SexDescriptor_DescriptorId] IS NOT NULL AND del.[SexDescriptor_DescriptorId] IS NULL)) OR (i.[BirthDate] <> del.[BirthDate] OR (i.[BirthDate] IS NULL AND del.[BirthDate] IS NOT NULL) OR (i.[BirthDate] IS NOT NULL AND del.[BirthDate] IS NULL)) OR (CAST(i.[FirstName] AS varbinary(max)) <> CAST(del.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (CAST(i.[GenderIdentity] AS varbinary(max)) <> CAST(del.[GenderIdentity] AS varbinary(max)) OR (i.[GenderIdentity] IS NULL AND del.[GenderIdentity] IS NOT NULL) OR (i.[GenderIdentity] IS NOT NULL AND del.[GenderIdentity] IS NULL)) OR (CAST(i.[GenerationCodeSuffix] AS varbinary(max)) <> CAST(del.[GenerationCodeSuffix] AS varbinary(max)) OR (i.[GenerationCodeSuffix] IS NULL AND del.[GenerationCodeSuffix] IS NOT NULL) OR (i.[GenerationCodeSuffix] IS NOT NULL AND del.[GenerationCodeSuffix] IS NULL)) OR (i.[HighlyQualifiedTeacher] <> del.[HighlyQualifiedTeacher] OR (i.[HighlyQualifiedTeacher] IS NULL AND del.[HighlyQualifiedTeacher] IS NOT NULL) OR (i.[HighlyQualifiedTeacher] IS NOT NULL AND del.[HighlyQualifiedTeacher] IS NULL)) OR (i.[HispanicLatinoEthnicity] <> del.[HispanicLatinoEthnicity] OR (i.[HispanicLatinoEthnicity] IS NULL AND del.[HispanicLatinoEthnicity] IS NOT NULL) OR (i.[HispanicLatinoEthnicity] IS NOT NULL AND del.[HispanicLatinoEthnicity] IS NULL)) OR (CAST(i.[LastSurname] AS varbinary(max)) <> CAST(del.[LastSurname] AS varbinary(max)) OR (i.[LastSurname] IS NULL AND del.[LastSurname] IS NOT NULL) OR (i.[LastSurname] IS NOT NULL AND del.[LastSurname] IS NULL)) OR (CAST(i.[LoginId] AS varbinary(max)) <> CAST(del.[LoginId] AS varbinary(max)) OR (i.[LoginId] IS NULL AND del.[LoginId] IS NOT NULL) OR (i.[LoginId] IS NOT NULL AND del.[LoginId] IS NULL)) OR (CAST(i.[MaidenName] AS varbinary(max)) <> CAST(del.[MaidenName] AS varbinary(max)) OR (i.[MaidenName] IS NULL AND del.[MaidenName] IS NOT NULL) OR (i.[MaidenName] IS NOT NULL AND del.[MaidenName] IS NULL)) OR (CAST(i.[MiddleName] AS varbinary(max)) <> CAST(del.[MiddleName] AS varbinary(max)) OR (i.[MiddleName] IS NULL AND del.[MiddleName] IS NOT NULL) OR (i.[MiddleName] IS NOT NULL AND del.[MiddleName] IS NULL)) OR (CAST(i.[PersonalTitlePrefix] AS varbinary(max)) <> CAST(del.[PersonalTitlePrefix] AS varbinary(max)) OR (i.[PersonalTitlePrefix] IS NULL AND del.[PersonalTitlePrefix] IS NOT NULL) OR (i.[PersonalTitlePrefix] IS NOT NULL AND del.[PersonalTitlePrefix] IS NULL)) OR (CAST(i.[PreferredFirstName] AS varbinary(max)) <> CAST(del.[PreferredFirstName] AS varbinary(max)) OR (i.[PreferredFirstName] IS NULL AND del.[PreferredFirstName] IS NOT NULL) OR (i.[PreferredFirstName] IS NOT NULL AND del.[PreferredFirstName] IS NULL)) OR (CAST(i.[PreferredLastSurname] AS varbinary(max)) <> CAST(del.[PreferredLastSurname] AS varbinary(max)) OR (i.[PreferredLastSurname] IS NULL AND del.[PreferredLastSurname] IS NOT NULL) OR (i.[PreferredLastSurname] IS NOT NULL AND del.[PreferredLastSurname] IS NULL)) OR (CAST(i.[StaffUniqueId] AS varbinary(max)) <> CAST(del.[StaffUniqueId] AS varbinary(max)) OR (i.[StaffUniqueId] IS NULL AND del.[StaffUniqueId] IS NOT NULL) OR (i.[StaffUniqueId] IS NOT NULL AND del.[StaffUniqueId] IS NULL)) OR (i.[YearsOfPriorProfessionalExperience] <> del.[YearsOfPriorProfessionalExperience] OR (i.[YearsOfPriorProfessionalExperience] IS NULL AND del.[YearsOfPriorProfessionalExperience] IS NOT NULL) OR (i.[YearsOfPriorProfessionalExperience] IS NOT NULL AND del.[YearsOfPriorProfessionalExperience] IS NULL)) OR (i.[YearsOfPriorTeachingExperience] <> del.[YearsOfPriorTeachingExperience] OR (i.[YearsOfPriorTeachingExperience] IS NULL AND del.[YearsOfPriorTeachingExperience] IS NOT NULL) OR (i.[YearsOfPriorTeachingExperience] IS NOT NULL AND del.[YearsOfPriorTeachingExperience] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -59092,9 +58619,8 @@ BEGIN
             del.[StaffUniqueId],
             del.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59195,11 +58721,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] <> del.[AbsenceEventCategoryDescriptor_DescriptorId] OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AbsenceEventReason] AS varbinary(max)) <> CAST(del.[AbsenceEventReason] AS varbinary(max)) OR (i.[AbsenceEventReason] IS NULL AND del.[AbsenceEventReason] IS NOT NULL) OR (i.[AbsenceEventReason] IS NOT NULL AND del.[AbsenceEventReason] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[HoursAbsent] <> del.[HoursAbsent] OR (i.[HoursAbsent] IS NULL AND del.[HoursAbsent] IS NOT NULL) OR (i.[HoursAbsent] IS NOT NULL AND del.[HoursAbsent] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -59236,9 +58757,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -59474,11 +58994,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Cohort_DocumentId] <> del.[Cohort_DocumentId] OR (i.[Cohort_DocumentId] IS NULL AND del.[Cohort_DocumentId] IS NOT NULL) OR (i.[Cohort_DocumentId] IS NOT NULL AND del.[Cohort_DocumentId] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(del.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND del.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND del.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> del.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND del.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND del.[Cohort_EducationOrganizationId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[StudentRecordAccess] <> del.[StudentRecordAccess] OR (i.[StudentRecordAccess] IS NULL AND del.[StudentRecordAccess] IS NOT NULL) OR (i.[StudentRecordAccess] IS NOT NULL AND del.[StudentRecordAccess] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -59515,9 +59030,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -59672,11 +59186,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DisciplineIncident_DocumentId] <> del.[DisciplineIncident_DocumentId] OR (i.[DisciplineIncident_DocumentId] IS NULL AND del.[DisciplineIncident_DocumentId] IS NOT NULL) OR (i.[DisciplineIncident_DocumentId] IS NOT NULL AND del.[DisciplineIncident_DocumentId] IS NULL)) OR (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> del.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND del.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND del.[DisciplineIncident_SchoolId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -59711,9 +59220,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -59864,11 +59372,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[StaffUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StaffUniqueId_Unified] AS varbinary(max)) OR (i.[StaffUniqueId_Unified] IS NULL AND del.[StaffUniqueId_Unified] IS NOT NULL) OR (i.[StaffUniqueId_Unified] IS NOT NULL AND del.[StaffUniqueId_Unified] IS NULL)) OR (i.[Credential_DocumentId] <> del.[Credential_DocumentId] OR (i.[Credential_DocumentId] IS NULL AND del.[Credential_DocumentId] IS NOT NULL) OR (i.[Credential_DocumentId] IS NOT NULL AND del.[Credential_DocumentId] IS NULL)) OR (CAST(i.[Credential_CredentialIdentifier] AS varbinary(max)) <> CAST(del.[Credential_CredentialIdentifier] AS varbinary(max)) OR (i.[Credential_CredentialIdentifier] IS NULL AND del.[Credential_CredentialIdentifier] IS NOT NULL) OR (i.[Credential_CredentialIdentifier] IS NOT NULL AND del.[Credential_CredentialIdentifier] IS NULL)) OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] <> del.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL AND del.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND del.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] <> del.[EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] IS NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] IS NOT NULL) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] IS NOT NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] IS NULL)) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] <> del.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] IS NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] IS NOT NULL) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] IS NOT NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] IS NULL)) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] <> del.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] IS NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] <> del.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] IS NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] IS NOT NULL) OR (i.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] IS NOT NULL AND del.[EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (i.[StaffClassificationDescriptor_DescriptorId] <> del.[StaffClassificationDescriptor_DescriptorId] OR (i.[StaffClassificationDescriptor_DescriptorId] IS NULL AND del.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL AND del.[StaffClassificationDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[FullTimeEquivalency] <> del.[FullTimeEquivalency] OR (i.[FullTimeEquivalency] IS NULL AND del.[FullTimeEquivalency] IS NOT NULL) OR (i.[FullTimeEquivalency] IS NOT NULL AND del.[FullTimeEquivalency] IS NULL)) OR (i.[OrderOfAssignment] <> del.[OrderOfAssignment] OR (i.[OrderOfAssignment] IS NULL AND del.[OrderOfAssignment] IS NOT NULL) OR (i.[OrderOfAssignment] IS NOT NULL AND del.[OrderOfAssignment] IS NULL)) OR (CAST(i.[PositionTitle] AS varbinary(max)) <> CAST(del.[PositionTitle] AS varbinary(max)) OR (i.[PositionTitle] IS NULL AND del.[PositionTitle] IS NOT NULL) OR (i.[PositionTitle] IS NOT NULL AND del.[PositionTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -59907,9 +59410,8 @@ BEGIN
             del.[StaffUniqueId_Unified],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -60032,11 +59534,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[AddressAddressTypeDescriptor_DescriptorId] <> del.[AddressAddressTypeDescriptor_DescriptorId] OR (i.[AddressAddressTypeDescriptor_DescriptorId] IS NULL AND del.[AddressAddressTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[AddressAddressTypeDescriptor_DescriptorId] IS NOT NULL AND del.[AddressAddressTypeDescriptor_DescriptorId] IS NULL)) OR (i.[AddressLocaleDescriptor_DescriptorId] <> del.[AddressLocaleDescriptor_DescriptorId] OR (i.[AddressLocaleDescriptor_DescriptorId] IS NULL AND del.[AddressLocaleDescriptor_DescriptorId] IS NOT NULL) OR (i.[AddressLocaleDescriptor_DescriptorId] IS NOT NULL AND del.[AddressLocaleDescriptor_DescriptorId] IS NULL)) OR (i.[AddressStateAbbreviationDescriptor_DescriptorId] <> del.[AddressStateAbbreviationDescriptor_DescriptorId] OR (i.[AddressStateAbbreviationDescriptor_DescriptorId] IS NULL AND del.[AddressStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[AddressStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND del.[AddressStateAbbreviationDescriptor_DescriptorId] IS NULL)) OR (i.[ContactTypeDescriptor_DescriptorId] <> del.[ContactTypeDescriptor_DescriptorId] OR (i.[ContactTypeDescriptor_DescriptorId] IS NULL AND del.[ContactTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ContactTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ContactTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AddressApartmentRoomSuiteNumber] AS varbinary(max)) <> CAST(del.[AddressApartmentRoomSuiteNumber] AS varbinary(max)) OR (i.[AddressApartmentRoomSuiteNumber] IS NULL AND del.[AddressApartmentRoomSuiteNumber] IS NOT NULL) OR (i.[AddressApartmentRoomSuiteNumber] IS NOT NULL AND del.[AddressApartmentRoomSuiteNumber] IS NULL)) OR (CAST(i.[AddressBuildingSiteNumber] AS varbinary(max)) <> CAST(del.[AddressBuildingSiteNumber] AS varbinary(max)) OR (i.[AddressBuildingSiteNumber] IS NULL AND del.[AddressBuildingSiteNumber] IS NOT NULL) OR (i.[AddressBuildingSiteNumber] IS NOT NULL AND del.[AddressBuildingSiteNumber] IS NULL)) OR (CAST(i.[AddressCity] AS varbinary(max)) <> CAST(del.[AddressCity] AS varbinary(max)) OR (i.[AddressCity] IS NULL AND del.[AddressCity] IS NOT NULL) OR (i.[AddressCity] IS NOT NULL AND del.[AddressCity] IS NULL)) OR (CAST(i.[AddressCongressionalDistrict] AS varbinary(max)) <> CAST(del.[AddressCongressionalDistrict] AS varbinary(max)) OR (i.[AddressCongressionalDistrict] IS NULL AND del.[AddressCongressionalDistrict] IS NOT NULL) OR (i.[AddressCongressionalDistrict] IS NOT NULL AND del.[AddressCongressionalDistrict] IS NULL)) OR (CAST(i.[AddressCountyFIPSCode] AS varbinary(max)) <> CAST(del.[AddressCountyFIPSCode] AS varbinary(max)) OR (i.[AddressCountyFIPSCode] IS NULL AND del.[AddressCountyFIPSCode] IS NOT NULL) OR (i.[AddressCountyFIPSCode] IS NOT NULL AND del.[AddressCountyFIPSCode] IS NULL)) OR (i.[AddressDoNotPublishIndicator] <> del.[AddressDoNotPublishIndicator] OR (i.[AddressDoNotPublishIndicator] IS NULL AND del.[AddressDoNotPublishIndicator] IS NOT NULL) OR (i.[AddressDoNotPublishIndicator] IS NOT NULL AND del.[AddressDoNotPublishIndicator] IS NULL)) OR (CAST(i.[AddressLatitude] AS varbinary(max)) <> CAST(del.[AddressLatitude] AS varbinary(max)) OR (i.[AddressLatitude] IS NULL AND del.[AddressLatitude] IS NOT NULL) OR (i.[AddressLatitude] IS NOT NULL AND del.[AddressLatitude] IS NULL)) OR (CAST(i.[AddressLongitude] AS varbinary(max)) <> CAST(del.[AddressLongitude] AS varbinary(max)) OR (i.[AddressLongitude] IS NULL AND del.[AddressLongitude] IS NOT NULL) OR (i.[AddressLongitude] IS NOT NULL AND del.[AddressLongitude] IS NULL)) OR (CAST(i.[AddressNameOfCounty] AS varbinary(max)) <> CAST(del.[AddressNameOfCounty] AS varbinary(max)) OR (i.[AddressNameOfCounty] IS NULL AND del.[AddressNameOfCounty] IS NOT NULL) OR (i.[AddressNameOfCounty] IS NOT NULL AND del.[AddressNameOfCounty] IS NULL)) OR (CAST(i.[AddressPostalCode] AS varbinary(max)) <> CAST(del.[AddressPostalCode] AS varbinary(max)) OR (i.[AddressPostalCode] IS NULL AND del.[AddressPostalCode] IS NOT NULL) OR (i.[AddressPostalCode] IS NOT NULL AND del.[AddressPostalCode] IS NULL)) OR (CAST(i.[AddressStreetNumberName] AS varbinary(max)) <> CAST(del.[AddressStreetNumberName] AS varbinary(max)) OR (i.[AddressStreetNumberName] IS NULL AND del.[AddressStreetNumberName] IS NOT NULL) OR (i.[AddressStreetNumberName] IS NOT NULL AND del.[AddressStreetNumberName] IS NULL)) OR (CAST(i.[ContactTitle] AS varbinary(max)) <> CAST(del.[ContactTitle] AS varbinary(max)) OR (i.[ContactTitle] IS NULL AND del.[ContactTitle] IS NOT NULL) OR (i.[ContactTitle] IS NOT NULL AND del.[ContactTitle] IS NULL)) OR (CAST(i.[ElectronicMailAddress] AS varbinary(max)) <> CAST(del.[ElectronicMailAddress] AS varbinary(max)) OR (i.[ElectronicMailAddress] IS NULL AND del.[ElectronicMailAddress] IS NOT NULL) OR (i.[ElectronicMailAddress] IS NOT NULL AND del.[ElectronicMailAddress] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -60071,9 +59568,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -60287,11 +59783,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Credential_DocumentId] <> del.[Credential_DocumentId] OR (i.[Credential_DocumentId] IS NULL AND del.[Credential_DocumentId] IS NOT NULL) OR (i.[Credential_DocumentId] IS NOT NULL AND del.[Credential_DocumentId] IS NULL)) OR (CAST(i.[Credential_CredentialIdentifier] AS varbinary(max)) <> CAST(del.[Credential_CredentialIdentifier] AS varbinary(max)) OR (i.[Credential_CredentialIdentifier] IS NULL AND del.[Credential_CredentialIdentifier] IS NOT NULL) OR (i.[Credential_CredentialIdentifier] IS NOT NULL AND del.[Credential_CredentialIdentifier] IS NULL)) OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] <> del.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL AND del.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND del.[Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[EmploymentStatusDescriptor_DescriptorId] <> del.[EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NULL AND del.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND del.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[SeparationDescriptor_DescriptorId] <> del.[SeparationDescriptor_DescriptorId] OR (i.[SeparationDescriptor_DescriptorId] IS NULL AND del.[SeparationDescriptor_DescriptorId] IS NOT NULL) OR (i.[SeparationDescriptor_DescriptorId] IS NOT NULL AND del.[SeparationDescriptor_DescriptorId] IS NULL)) OR (i.[SeparationReasonDescriptor_DescriptorId] <> del.[SeparationReasonDescriptor_DescriptorId] OR (i.[SeparationReasonDescriptor_DescriptorId] IS NULL AND del.[SeparationReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[SeparationReasonDescriptor_DescriptorId] IS NOT NULL AND del.[SeparationReasonDescriptor_DescriptorId] IS NULL)) OR (i.[AnnualWage] <> del.[AnnualWage] OR (i.[AnnualWage] IS NULL AND del.[AnnualWage] IS NOT NULL) OR (i.[AnnualWage] IS NOT NULL AND del.[AnnualWage] IS NULL)) OR (CAST(i.[Department] AS varbinary(max)) <> CAST(del.[Department] AS varbinary(max)) OR (i.[Department] IS NULL AND del.[Department] IS NOT NULL) OR (i.[Department] IS NOT NULL AND del.[Department] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[FullTimeEquivalency] <> del.[FullTimeEquivalency] OR (i.[FullTimeEquivalency] IS NULL AND del.[FullTimeEquivalency] IS NOT NULL) OR (i.[FullTimeEquivalency] IS NOT NULL AND del.[FullTimeEquivalency] IS NULL)) OR (i.[HireDate] <> del.[HireDate] OR (i.[HireDate] IS NULL AND del.[HireDate] IS NOT NULL) OR (i.[HireDate] IS NOT NULL AND del.[HireDate] IS NULL)) OR (i.[HourlyWage] <> del.[HourlyWage] OR (i.[HourlyWage] IS NULL AND del.[HourlyWage] IS NOT NULL) OR (i.[HourlyWage] IS NOT NULL AND del.[HourlyWage] IS NULL)) OR (i.[OfferDate] <> del.[OfferDate] OR (i.[OfferDate] IS NULL AND del.[OfferDate] IS NOT NULL) OR (i.[OfferDate] IS NOT NULL AND del.[OfferDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -60330,9 +59821,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -60689,11 +60179,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] <> del.[StaffLeaveEventCategoryDescriptor_DescriptorId] OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL AND del.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (CAST(i.[Reason] AS varbinary(max)) <> CAST(del.[Reason] AS varbinary(max)) OR (i.[Reason] IS NULL AND del.[Reason] IS NOT NULL) OR (i.[Reason] IS NOT NULL AND del.[Reason] IS NULL)) OR (i.[SubstituteAssigned] <> del.[SubstituteAssigned] OR (i.[SubstituteAssigned] IS NULL AND del.[SubstituteAssigned] IS NOT NULL) OR (i.[SubstituteAssigned] IS NOT NULL AND del.[SubstituteAssigned] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -60730,9 +60215,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -60929,11 +60413,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[StudentRecordAccess] <> del.[StudentRecordAccess] OR (i.[StudentRecordAccess] IS NULL AND del.[StudentRecordAccess] IS NOT NULL) OR (i.[StudentRecordAccess] IS NOT NULL AND del.[StudentRecordAccess] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -60974,9 +60453,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -61181,11 +60659,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[Calendar_DocumentId] <> del.[Calendar_DocumentId] OR (i.[Calendar_DocumentId] IS NULL AND del.[Calendar_DocumentId] IS NOT NULL) OR (i.[Calendar_DocumentId] IS NOT NULL AND del.[Calendar_DocumentId] IS NULL)) OR (CAST(i.[Calendar_CalendarCode] AS varbinary(max)) <> CAST(del.[Calendar_CalendarCode] AS varbinary(max)) OR (i.[Calendar_CalendarCode] IS NULL AND del.[Calendar_CalendarCode] IS NOT NULL) OR (i.[Calendar_CalendarCode] IS NOT NULL AND del.[Calendar_CalendarCode] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[ProgramAssignmentDescriptor_DescriptorId] <> del.[ProgramAssignmentDescriptor_DescriptorId] OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NULL AND del.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramAssignmentDescriptor_DescriptorId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -61222,9 +60695,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
@@ -61421,11 +60893,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Section_DocumentId] <> del.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND del.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND del.[Section_DocumentId] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[ClassroomPositionDescriptor_DescriptorId] <> del.[ClassroomPositionDescriptor_DescriptorId] OR (i.[ClassroomPositionDescriptor_DescriptorId] IS NULL AND del.[ClassroomPositionDescriptor_DescriptorId] IS NOT NULL) OR (i.[ClassroomPositionDescriptor_DescriptorId] IS NOT NULL AND del.[ClassroomPositionDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[HighlyQualifiedTeacher] <> del.[HighlyQualifiedTeacher] OR (i.[HighlyQualifiedTeacher] IS NULL AND del.[HighlyQualifiedTeacher] IS NOT NULL) OR (i.[HighlyQualifiedTeacher] IS NOT NULL AND del.[HighlyQualifiedTeacher] IS NULL)) OR (i.[PercentageContribution] <> del.[PercentageContribution] OR (i.[PercentageContribution] IS NULL AND del.[PercentageContribution] IS NOT NULL) OR (i.[PercentageContribution] IS NOT NULL AND del.[PercentageContribution] IS NULL)) OR (i.[TeacherStudentDataLinkExclusion] <> del.[TeacherStudentDataLinkExclusion] OR (i.[TeacherStudentDataLinkExclusion] IS NULL AND del.[TeacherStudentDataLinkExclusion] IS NOT NULL) OR (i.[TeacherStudentDataLinkExclusion] IS NOT NULL AND del.[TeacherStudentDataLinkExclusion] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -61468,9 +60935,8 @@ BEGIN
             del.[Staff_StaffUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -61791,11 +61257,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[OperationalStatusDescriptor_DescriptorId] <> del.[OperationalStatusDescriptor_DescriptorId] OR (i.[OperationalStatusDescriptor_DescriptorId] IS NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[OperationalStatusDescriptor_DescriptorId] IS NOT NULL AND del.[OperationalStatusDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (CAST(i.[ShortNameOfInstitution] AS varbinary(max)) <> CAST(del.[ShortNameOfInstitution] AS varbinary(max)) OR (i.[ShortNameOfInstitution] IS NULL AND del.[ShortNameOfInstitution] IS NOT NULL) OR (i.[ShortNameOfInstitution] IS NOT NULL AND del.[ShortNameOfInstitution] IS NULL)) OR (i.[StateEducationAgencyId] <> del.[StateEducationAgencyId] OR (i.[StateEducationAgencyId] IS NULL AND del.[StateEducationAgencyId] IS NOT NULL) OR (i.[StateEducationAgencyId] IS NOT NULL AND del.[StateEducationAgencyId] IS NULL)) OR (CAST(i.[WebSite] AS varbinary(max)) <> CAST(del.[WebSite] AS varbinary(max)) OR (i.[WebSite] IS NULL AND del.[WebSite] IS NOT NULL) OR (i.[WebSite] IS NOT NULL AND del.[WebSite] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -61824,9 +61285,8 @@ BEGIN
         SELECT
             del.[StateEducationAgencyId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StateEducationAgencyId]))
     BEGIN
@@ -62294,11 +61754,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Person_DocumentId] <> del.[Person_DocumentId] OR (i.[Person_DocumentId] IS NULL AND del.[Person_DocumentId] IS NOT NULL) OR (i.[Person_DocumentId] IS NOT NULL AND del.[Person_DocumentId] IS NULL)) OR (CAST(i.[Person_PersonId] AS varbinary(max)) <> CAST(del.[Person_PersonId] AS varbinary(max)) OR (i.[Person_PersonId] IS NULL AND del.[Person_PersonId] IS NOT NULL) OR (i.[Person_PersonId] IS NOT NULL AND del.[Person_PersonId] IS NULL)) OR (i.[Person_SourceSystemDescriptor_DescriptorId] <> del.[Person_SourceSystemDescriptor_DescriptorId] OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NULL AND del.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND del.[Person_SourceSystemDescriptor_DescriptorId] IS NULL)) OR (i.[BirthCountryDescriptor_DescriptorId] <> del.[BirthCountryDescriptor_DescriptorId] OR (i.[BirthCountryDescriptor_DescriptorId] IS NULL AND del.[BirthCountryDescriptor_DescriptorId] IS NOT NULL) OR (i.[BirthCountryDescriptor_DescriptorId] IS NOT NULL AND del.[BirthCountryDescriptor_DescriptorId] IS NULL)) OR (i.[BirthSexDescriptor_DescriptorId] <> del.[BirthSexDescriptor_DescriptorId] OR (i.[BirthSexDescriptor_DescriptorId] IS NULL AND del.[BirthSexDescriptor_DescriptorId] IS NOT NULL) OR (i.[BirthSexDescriptor_DescriptorId] IS NOT NULL AND del.[BirthSexDescriptor_DescriptorId] IS NULL)) OR (i.[BirthStateAbbreviationDescriptor_DescriptorId] <> del.[BirthStateAbbreviationDescriptor_DescriptorId] OR (i.[BirthStateAbbreviationDescriptor_DescriptorId] IS NULL AND del.[BirthStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[BirthStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND del.[BirthStateAbbreviationDescriptor_DescriptorId] IS NULL)) OR (i.[CitizenshipStatusDescriptor_DescriptorId] <> del.[CitizenshipStatusDescriptor_DescriptorId] OR (i.[CitizenshipStatusDescriptor_DescriptorId] IS NULL AND del.[CitizenshipStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[CitizenshipStatusDescriptor_DescriptorId] IS NOT NULL AND del.[CitizenshipStatusDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[BirthCity] AS varbinary(max)) <> CAST(del.[BirthCity] AS varbinary(max)) OR (i.[BirthCity] IS NULL AND del.[BirthCity] IS NOT NULL) OR (i.[BirthCity] IS NOT NULL AND del.[BirthCity] IS NULL)) OR (i.[BirthDate] <> del.[BirthDate] OR (i.[BirthDate] IS NULL AND del.[BirthDate] IS NOT NULL) OR (i.[BirthDate] IS NOT NULL AND del.[BirthDate] IS NULL)) OR (CAST(i.[BirthInternationalProvince] AS varbinary(max)) <> CAST(del.[BirthInternationalProvince] AS varbinary(max)) OR (i.[BirthInternationalProvince] IS NULL AND del.[BirthInternationalProvince] IS NOT NULL) OR (i.[BirthInternationalProvince] IS NOT NULL AND del.[BirthInternationalProvince] IS NULL)) OR (i.[DateEnteredUS] <> del.[DateEnteredUS] OR (i.[DateEnteredUS] IS NULL AND del.[DateEnteredUS] IS NOT NULL) OR (i.[DateEnteredUS] IS NOT NULL AND del.[DateEnteredUS] IS NULL)) OR (CAST(i.[FirstName] AS varbinary(max)) <> CAST(del.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (CAST(i.[GenerationCodeSuffix] AS varbinary(max)) <> CAST(del.[GenerationCodeSuffix] AS varbinary(max)) OR (i.[GenerationCodeSuffix] IS NULL AND del.[GenerationCodeSuffix] IS NOT NULL) OR (i.[GenerationCodeSuffix] IS NOT NULL AND del.[GenerationCodeSuffix] IS NULL)) OR (CAST(i.[LastSurname] AS varbinary(max)) <> CAST(del.[LastSurname] AS varbinary(max)) OR (i.[LastSurname] IS NULL AND del.[LastSurname] IS NOT NULL) OR (i.[LastSurname] IS NOT NULL AND del.[LastSurname] IS NULL)) OR (CAST(i.[MaidenName] AS varbinary(max)) <> CAST(del.[MaidenName] AS varbinary(max)) OR (i.[MaidenName] IS NULL AND del.[MaidenName] IS NOT NULL) OR (i.[MaidenName] IS NOT NULL AND del.[MaidenName] IS NULL)) OR (CAST(i.[MiddleName] AS varbinary(max)) <> CAST(del.[MiddleName] AS varbinary(max)) OR (i.[MiddleName] IS NULL AND del.[MiddleName] IS NOT NULL) OR (i.[MiddleName] IS NOT NULL AND del.[MiddleName] IS NULL)) OR (i.[MultipleBirthStatus] <> del.[MultipleBirthStatus] OR (i.[MultipleBirthStatus] IS NULL AND del.[MultipleBirthStatus] IS NOT NULL) OR (i.[MultipleBirthStatus] IS NOT NULL AND del.[MultipleBirthStatus] IS NULL)) OR (CAST(i.[PersonalTitlePrefix] AS varbinary(max)) <> CAST(del.[PersonalTitlePrefix] AS varbinary(max)) OR (i.[PersonalTitlePrefix] IS NULL AND del.[PersonalTitlePrefix] IS NOT NULL) OR (i.[PersonalTitlePrefix] IS NOT NULL AND del.[PersonalTitlePrefix] IS NULL)) OR (CAST(i.[PreferredFirstName] AS varbinary(max)) <> CAST(del.[PreferredFirstName] AS varbinary(max)) OR (i.[PreferredFirstName] IS NULL AND del.[PreferredFirstName] IS NOT NULL) OR (i.[PreferredFirstName] IS NOT NULL AND del.[PreferredFirstName] IS NULL)) OR (CAST(i.[PreferredLastSurname] AS varbinary(max)) <> CAST(del.[PreferredLastSurname] AS varbinary(max)) OR (i.[PreferredLastSurname] IS NULL AND del.[PreferredLastSurname] IS NOT NULL) OR (i.[PreferredLastSurname] IS NOT NULL AND del.[PreferredLastSurname] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -62329,9 +61784,8 @@ BEGIN
             del.[StudentUniqueId],
             del.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62456,11 +61910,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] <> del.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] OR (i.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NULL AND del.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[CumulativeAttemptedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] <> del.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] OR (i.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NULL AND del.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[CumulativeEarnedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[SessionAttemptedCreditTypeDescriptor_DescriptorId] <> del.[SessionAttemptedCreditTypeDescriptor_DescriptorId] OR (i.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NULL AND del.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[SessionAttemptedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[SessionEarnedCreditTypeDescriptor_DescriptorId] <> del.[SessionEarnedCreditTypeDescriptor_DescriptorId] OR (i.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NULL AND del.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[SessionEarnedCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> del.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND del.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND del.[TermDescriptor_DescriptorId] IS NULL)) OR (i.[ClassRankingClassRank] <> del.[ClassRankingClassRank] OR (i.[ClassRankingClassRank] IS NULL AND del.[ClassRankingClassRank] IS NOT NULL) OR (i.[ClassRankingClassRank] IS NOT NULL AND del.[ClassRankingClassRank] IS NULL)) OR (i.[ClassRankingClassRankingDate] <> del.[ClassRankingClassRankingDate] OR (i.[ClassRankingClassRankingDate] IS NULL AND del.[ClassRankingClassRankingDate] IS NOT NULL) OR (i.[ClassRankingClassRankingDate] IS NOT NULL AND del.[ClassRankingClassRankingDate] IS NULL)) OR (i.[ClassRankingPercentageRanking] <> del.[ClassRankingPercentageRanking] OR (i.[ClassRankingPercentageRanking] IS NULL AND del.[ClassRankingPercentageRanking] IS NOT NULL) OR (i.[ClassRankingPercentageRanking] IS NOT NULL AND del.[ClassRankingPercentageRanking] IS NULL)) OR (i.[ClassRankingTotalNumberInClass] <> del.[ClassRankingTotalNumberInClass] OR (i.[ClassRankingTotalNumberInClass] IS NULL AND del.[ClassRankingTotalNumberInClass] IS NOT NULL) OR (i.[ClassRankingTotalNumberInClass] IS NOT NULL AND del.[ClassRankingTotalNumberInClass] IS NULL)) OR (i.[CumulativeAttemptedCreditConversion] <> del.[CumulativeAttemptedCreditConversion] OR (i.[CumulativeAttemptedCreditConversion] IS NULL AND del.[CumulativeAttemptedCreditConversion] IS NOT NULL) OR (i.[CumulativeAttemptedCreditConversion] IS NOT NULL AND del.[CumulativeAttemptedCreditConversion] IS NULL)) OR (i.[CumulativeAttemptedCredits] <> del.[CumulativeAttemptedCredits] OR (i.[CumulativeAttemptedCredits] IS NULL AND del.[CumulativeAttemptedCredits] IS NOT NULL) OR (i.[CumulativeAttemptedCredits] IS NOT NULL AND del.[CumulativeAttemptedCredits] IS NULL)) OR (i.[CumulativeEarnedCreditConversion] <> del.[CumulativeEarnedCreditConversion] OR (i.[CumulativeEarnedCreditConversion] IS NULL AND del.[CumulativeEarnedCreditConversion] IS NOT NULL) OR (i.[CumulativeEarnedCreditConversion] IS NOT NULL AND del.[CumulativeEarnedCreditConversion] IS NULL)) OR (i.[CumulativeEarnedCredits] <> del.[CumulativeEarnedCredits] OR (i.[CumulativeEarnedCredits] IS NULL AND del.[CumulativeEarnedCredits] IS NOT NULL) OR (i.[CumulativeEarnedCredits] IS NOT NULL AND del.[CumulativeEarnedCredits] IS NULL)) OR (i.[ProjectedGraduationDate] <> del.[ProjectedGraduationDate] OR (i.[ProjectedGraduationDate] IS NULL AND del.[ProjectedGraduationDate] IS NOT NULL) OR (i.[ProjectedGraduationDate] IS NOT NULL AND del.[ProjectedGraduationDate] IS NULL)) OR (i.[SessionAttemptedCreditConversion] <> del.[SessionAttemptedCreditConversion] OR (i.[SessionAttemptedCreditConversion] IS NULL AND del.[SessionAttemptedCreditConversion] IS NOT NULL) OR (i.[SessionAttemptedCreditConversion] IS NOT NULL AND del.[SessionAttemptedCreditConversion] IS NULL)) OR (i.[SessionAttemptedCredits] <> del.[SessionAttemptedCredits] OR (i.[SessionAttemptedCredits] IS NULL AND del.[SessionAttemptedCredits] IS NOT NULL) OR (i.[SessionAttemptedCredits] IS NOT NULL AND del.[SessionAttemptedCredits] IS NULL)) OR (i.[SessionEarnedCreditConversion] <> del.[SessionEarnedCreditConversion] OR (i.[SessionEarnedCreditConversion] IS NULL AND del.[SessionEarnedCreditConversion] IS NOT NULL) OR (i.[SessionEarnedCreditConversion] IS NOT NULL AND del.[SessionEarnedCreditConversion] IS NULL)) OR (i.[SessionEarnedCredits] <> del.[SessionEarnedCredits] OR (i.[SessionEarnedCredits] IS NULL AND del.[SessionEarnedCredits] IS NOT NULL) OR (i.[SessionEarnedCredits] IS NOT NULL AND del.[SessionEarnedCredits] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -62499,9 +61948,8 @@ BEGIN
             oldDj0.[CodeValue],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -62819,11 +62267,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Assessment_DocumentId] <> del.[Assessment_DocumentId] OR (i.[Assessment_DocumentId] IS NULL AND del.[Assessment_DocumentId] IS NOT NULL) OR (i.[Assessment_DocumentId] IS NOT NULL AND del.[Assessment_DocumentId] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL)) OR (i.[ReportedSchool_DocumentId] <> del.[ReportedSchool_DocumentId] OR (i.[ReportedSchool_DocumentId] IS NULL AND del.[ReportedSchool_DocumentId] IS NOT NULL) OR (i.[ReportedSchool_DocumentId] IS NOT NULL AND del.[ReportedSchool_DocumentId] IS NULL)) OR (i.[ReportedSchool_SchoolId] <> del.[ReportedSchool_SchoolId] OR (i.[ReportedSchool_SchoolId] IS NULL AND del.[ReportedSchool_SchoolId] IS NOT NULL) OR (i.[ReportedSchool_SchoolId] IS NOT NULL AND del.[ReportedSchool_SchoolId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[AdministrationEnvironmentDescriptor_DescriptorId] <> del.[AdministrationEnvironmentDescriptor_DescriptorId] OR (i.[AdministrationEnvironmentDescriptor_DescriptorId] IS NULL AND del.[AdministrationEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[AdministrationEnvironmentDescriptor_DescriptorId] IS NOT NULL AND del.[AdministrationEnvironmentDescriptor_DescriptorId] IS NULL)) OR (i.[AdministrationLanguageDescriptor_DescriptorId] <> del.[AdministrationLanguageDescriptor_DescriptorId] OR (i.[AdministrationLanguageDescriptor_DescriptorId] IS NULL AND del.[AdministrationLanguageDescriptor_DescriptorId] IS NOT NULL) OR (i.[AdministrationLanguageDescriptor_DescriptorId] IS NOT NULL AND del.[AdministrationLanguageDescriptor_DescriptorId] IS NULL)) OR (i.[EventCircumstanceDescriptor_DescriptorId] <> del.[EventCircumstanceDescriptor_DescriptorId] OR (i.[EventCircumstanceDescriptor_DescriptorId] IS NULL AND del.[EventCircumstanceDescriptor_DescriptorId] IS NOT NULL) OR (i.[EventCircumstanceDescriptor_DescriptorId] IS NOT NULL AND del.[EventCircumstanceDescriptor_DescriptorId] IS NULL)) OR (i.[PeriodAssessmentPeriodDescriptor_DescriptorId] <> del.[PeriodAssessmentPeriodDescriptor_DescriptorId] OR (i.[PeriodAssessmentPeriodDescriptor_DescriptorId] IS NULL AND del.[PeriodAssessmentPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[PeriodAssessmentPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[PeriodAssessmentPeriodDescriptor_DescriptorId] IS NULL)) OR (i.[PlatformTypeDescriptor_DescriptorId] <> del.[PlatformTypeDescriptor_DescriptorId] OR (i.[PlatformTypeDescriptor_DescriptorId] IS NULL AND del.[PlatformTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[PlatformTypeDescriptor_DescriptorId] IS NOT NULL AND del.[PlatformTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ReasonNotTestedDescriptor_DescriptorId] <> del.[ReasonNotTestedDescriptor_DescriptorId] OR (i.[ReasonNotTestedDescriptor_DescriptorId] IS NULL AND del.[ReasonNotTestedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonNotTestedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonNotTestedDescriptor_DescriptorId] IS NULL)) OR (i.[RetestIndicatorDescriptor_DescriptorId] <> del.[RetestIndicatorDescriptor_DescriptorId] OR (i.[RetestIndicatorDescriptor_DescriptorId] IS NULL AND del.[RetestIndicatorDescriptor_DescriptorId] IS NOT NULL) OR (i.[RetestIndicatorDescriptor_DescriptorId] IS NOT NULL AND del.[RetestIndicatorDescriptor_DescriptorId] IS NULL)) OR (i.[WhenAssessedGradeLevelDescriptor_DescriptorId] <> del.[WhenAssessedGradeLevelDescriptor_DescriptorId] OR (i.[WhenAssessedGradeLevelDescriptor_DescriptorId] IS NULL AND del.[WhenAssessedGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[WhenAssessedGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[WhenAssessedGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[AdministrationDate] <> del.[AdministrationDate] OR (i.[AdministrationDate] IS NULL AND del.[AdministrationDate] IS NOT NULL) OR (i.[AdministrationDate] IS NOT NULL AND del.[AdministrationDate] IS NULL)) OR (i.[AdministrationEndDate] <> del.[AdministrationEndDate] OR (i.[AdministrationEndDate] IS NULL AND del.[AdministrationEndDate] IS NOT NULL) OR (i.[AdministrationEndDate] IS NOT NULL AND del.[AdministrationEndDate] IS NULL)) OR (i.[AssessedMinutes] <> del.[AssessedMinutes] OR (i.[AssessedMinutes] IS NULL AND del.[AssessedMinutes] IS NOT NULL) OR (i.[AssessedMinutes] IS NOT NULL AND del.[AssessedMinutes] IS NULL)) OR (CAST(i.[EventDescription] AS varbinary(max)) <> CAST(del.[EventDescription] AS varbinary(max)) OR (i.[EventDescription] IS NULL AND del.[EventDescription] IS NOT NULL) OR (i.[EventDescription] IS NOT NULL AND del.[EventDescription] IS NULL)) OR (i.[PeriodBeginDate] <> del.[PeriodBeginDate] OR (i.[PeriodBeginDate] IS NULL AND del.[PeriodBeginDate] IS NOT NULL) OR (i.[PeriodBeginDate] IS NOT NULL AND del.[PeriodBeginDate] IS NULL)) OR (i.[PeriodEndDate] <> del.[PeriodEndDate] OR (i.[PeriodEndDate] IS NULL AND del.[PeriodEndDate] IS NOT NULL) OR (i.[PeriodEndDate] IS NOT NULL AND del.[PeriodEndDate] IS NULL)) OR (CAST(i.[ReportedSchoolIdentifier] AS varbinary(max)) <> CAST(del.[ReportedSchoolIdentifier] AS varbinary(max)) OR (i.[ReportedSchoolIdentifier] IS NULL AND del.[ReportedSchoolIdentifier] IS NOT NULL) OR (i.[ReportedSchoolIdentifier] IS NOT NULL AND del.[ReportedSchoolIdentifier] IS NULL)) OR (CAST(i.[SerialNumber] AS varbinary(max)) <> CAST(del.[SerialNumber] AS varbinary(max)) OR (i.[SerialNumber] IS NULL AND del.[SerialNumber] IS NOT NULL) OR (i.[SerialNumber] IS NOT NULL AND del.[SerialNumber] IS NULL)) OR (CAST(i.[StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentIdentifier] IS NULL AND del.[StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessmentIdentifier] IS NOT NULL AND del.[StudentAssessmentIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -62862,9 +62305,8 @@ BEGIN
             del.[ReportedSchool_SchoolId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -63023,11 +62465,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (i.[StudentAssessment_DocumentId] <> del.[StudentAssessment_DocumentId] OR (i.[StudentAssessment_DocumentId] IS NULL AND del.[StudentAssessment_DocumentId] IS NOT NULL) OR (i.[StudentAssessment_DocumentId] IS NOT NULL AND del.[StudentAssessment_DocumentId] IS NULL)) OR (CAST(i.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_AssessmentIdentifier] IS NULL AND del.[StudentAssessment_AssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_AssessmentIdentifier] IS NOT NULL AND del.[StudentAssessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_Namespace] AS varbinary(max)) <> CAST(del.[StudentAssessment_Namespace] AS varbinary(max)) OR (i.[StudentAssessment_Namespace] IS NULL AND del.[StudentAssessment_Namespace] IS NOT NULL) OR (i.[StudentAssessment_Namespace] IS NOT NULL AND del.[StudentAssessment_Namespace] IS NULL)) OR (CAST(i.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NULL AND del.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL AND del.[StudentAssessment_StudentAssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentAssessment_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessment_StudentUniqueId] IS NULL AND del.[StudentAssessment_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessment_StudentUniqueId] IS NOT NULL AND del.[StudentAssessment_StudentUniqueId] IS NULL)) OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] <> del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL AND del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -63070,9 +62507,8 @@ BEGIN
             del.[StudentAssessment_StudentUniqueId],
             oldPj0s1.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[StudentAssessment] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessment_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
@@ -63308,11 +62744,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (i.[AssessmentAdministration_DocumentId] <> del.[AssessmentAdministration_DocumentId] OR (i.[AssessmentAdministration_DocumentId] IS NULL AND del.[AssessmentAdministration_DocumentId] IS NOT NULL) OR (i.[AssessmentAdministration_DocumentId] IS NOT NULL AND del.[AssessmentAdministration_DocumentId] IS NULL)) OR (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND del.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND del.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> del.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (i.[ReportingEducationOrganization_DocumentId] <> del.[ReportingEducationOrganization_DocumentId] OR (i.[ReportingEducationOrganization_DocumentId] IS NULL AND del.[ReportingEducationOrganization_DocumentId] IS NOT NULL) OR (i.[ReportingEducationOrganization_DocumentId] IS NOT NULL AND del.[ReportingEducationOrganization_DocumentId] IS NULL)) OR (i.[ReportingEducationOrganization_EducationOrganizationId] <> del.[ReportingEducationOrganization_EducationOrganizationId] OR (i.[ReportingEducationOrganization_EducationOrganizationId] IS NULL AND del.[ReportingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ReportingEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[ReportingEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] <> del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NULL AND del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NOT NULL) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NOT NULL AND del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] IS NULL)) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] <> del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NULL AND del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NOT NULL) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NOT NULL AND del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] IS NULL)) OR (CAST(i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] AS varbinary(max)) <> CAST(del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] AS varbinary(max)) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NULL AND del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NOT NULL) OR (i.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NOT NULL AND del.[ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_DocumentId] <> del.[StudentEducationOrganizationAssociation_DocumentId] OR (i.[StudentEducationOrganizationAssociation_DocumentId] IS NULL AND del.[StudentEducationOrganizationAssociation_DocumentId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_DocumentId] IS NOT NULL AND del.[StudentEducationOrganizationAssociation_DocumentId] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] <> del.[StudentEducationOrganizationAssociation_EducationOrganizationId] OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL AND del.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL AND del.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL)) OR (i.[StudentSchoolAssociation_DocumentId] <> del.[StudentSchoolAssociation_DocumentId] OR (i.[StudentSchoolAssociation_DocumentId] IS NULL AND del.[StudentSchoolAssociation_DocumentId] IS NOT NULL) OR (i.[StudentSchoolAssociation_DocumentId] IS NOT NULL AND del.[StudentSchoolAssociation_DocumentId] IS NULL)) OR (i.[StudentSchoolAssociation_EntryDate] <> del.[StudentSchoolAssociation_EntryDate] OR (i.[StudentSchoolAssociation_EntryDate] IS NULL AND del.[StudentSchoolAssociation_EntryDate] IS NOT NULL) OR (i.[StudentSchoolAssociation_EntryDate] IS NOT NULL AND del.[StudentSchoolAssociation_EntryDate] IS NULL)) OR (i.[StudentSchoolAssociation_SchoolId] <> del.[StudentSchoolAssociation_SchoolId] OR (i.[StudentSchoolAssociation_SchoolId] IS NULL AND del.[StudentSchoolAssociation_SchoolId] IS NOT NULL) OR (i.[StudentSchoolAssociation_SchoolId] IS NOT NULL AND del.[StudentSchoolAssociation_SchoolId] IS NULL)) OR (i.[TestingEducationOrganization_DocumentId] <> del.[TestingEducationOrganization_DocumentId] OR (i.[TestingEducationOrganization_DocumentId] IS NULL AND del.[TestingEducationOrganization_DocumentId] IS NOT NULL) OR (i.[TestingEducationOrganization_DocumentId] IS NOT NULL AND del.[TestingEducationOrganization_DocumentId] IS NULL)) OR (i.[TestingEducationOrganization_EducationOrganizationId] <> del.[TestingEducationOrganization_EducationOrganizationId] OR (i.[TestingEducationOrganization_EducationOrganizationId] IS NULL AND del.[TestingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[TestingEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[TestingEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[AssessmentGradeLevelDescriptor_DescriptorId] <> del.[AssessmentGradeLevelDescriptor_DescriptorId] OR (i.[AssessmentGradeLevelDescriptor_DescriptorId] IS NULL AND del.[AssessmentGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[AssessmentGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[AssessmentGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[PlatformTypeDescriptor_DescriptorId] <> del.[PlatformTypeDescriptor_DescriptorId] OR (i.[PlatformTypeDescriptor_DescriptorId] IS NULL AND del.[PlatformTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[PlatformTypeDescriptor_DescriptorId] IS NOT NULL AND del.[PlatformTypeDescriptor_DescriptorId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -63353,9 +62784,8 @@ BEGIN
             del.[StudentUniqueId_Unified],
             oldPj0s1.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentEducationOrganizationAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId];
     END
@@ -63560,11 +62990,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND del.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND del.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (i.[AssessmentBatteryPart_DocumentId] <> del.[AssessmentBatteryPart_DocumentId] OR (i.[AssessmentBatteryPart_DocumentId] IS NULL AND del.[AssessmentBatteryPart_DocumentId] IS NOT NULL) OR (i.[AssessmentBatteryPart_DocumentId] IS NOT NULL AND del.[AssessmentBatteryPart_DocumentId] IS NULL)) OR (CAST(i.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) <> CAST(del.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL AND del.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL AND del.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL)) OR (i.[StudentAssessmentRegistration_DocumentId] <> del.[StudentAssessmentRegistration_DocumentId] OR (i.[StudentAssessmentRegistration_DocumentId] IS NULL AND del.[StudentAssessmentRegistration_DocumentId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_DocumentId] IS NOT NULL AND del.[StudentAssessmentRegistration_DocumentId] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL AND del.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL AND del.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL)) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] <> del.[StudentAssessmentRegistration_AssigningEducationOrganizationId] OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL AND del.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL AND del.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL)) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] <> del.[StudentAssessmentRegistration_EducationOrganizationId] OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL AND del.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL AND del.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NULL AND del.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL AND del.[StudentAssessmentRegistration_StudentUniqueId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -63607,9 +63032,8 @@ BEGIN
             del.[StudentAssessmentRegistration_StudentUniqueId],
             oldPj0s2.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[StudentAssessmentRegistration] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessmentRegistration_DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[StudentEducationOrganizationAssociation_DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s2 ON oldPj0s2.[DocumentId] = oldPj0s1.[Student_DocumentId];
@@ -63988,11 +63412,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[TechnicalSkillsAssessmentDescriptor_DescriptorId] <> del.[TechnicalSkillsAssessmentDescriptor_DescriptorId] OR (i.[TechnicalSkillsAssessmentDescriptor_DescriptorId] IS NULL AND del.[TechnicalSkillsAssessmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[TechnicalSkillsAssessmentDescriptor_DescriptorId] IS NOT NULL AND del.[TechnicalSkillsAssessmentDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[NonTraditionalGenderStatus] <> del.[NonTraditionalGenderStatus] OR (i.[NonTraditionalGenderStatus] IS NULL AND del.[NonTraditionalGenderStatus] IS NOT NULL) OR (i.[NonTraditionalGenderStatus] IS NOT NULL AND del.[NonTraditionalGenderStatus] IS NULL)) OR (i.[PrivateCTEProgram] <> del.[PrivateCTEProgram] OR (i.[PrivateCTEProgram] IS NULL AND del.[PrivateCTEProgram] IS NOT NULL) OR (i.[PrivateCTEProgram] IS NOT NULL AND del.[PrivateCTEProgram] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -64035,9 +63454,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -64195,11 +63613,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Cohort_DocumentId] <> del.[Cohort_DocumentId] OR (i.[Cohort_DocumentId] IS NULL AND del.[Cohort_DocumentId] IS NOT NULL) OR (i.[Cohort_DocumentId] IS NOT NULL AND del.[Cohort_DocumentId] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(del.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND del.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND del.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> del.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND del.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND del.[Cohort_EducationOrganizationId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -64236,9 +63649,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -64417,11 +63829,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_DocumentId] <> del.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> del.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> del.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[ObjectiveCompetencyObjective_DocumentId] <> del.[ObjectiveCompetencyObjective_DocumentId] OR (i.[ObjectiveCompetencyObjective_DocumentId] IS NULL AND del.[ObjectiveCompetencyObjective_DocumentId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_DocumentId] IS NOT NULL AND del.[ObjectiveCompetencyObjective_DocumentId] IS NULL)) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] <> del.[ObjectiveCompetencyObjective_EducationOrganizationId] OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL AND del.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL AND del.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL)) OR (CAST(i.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) <> CAST(del.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) OR (i.[ObjectiveCompetencyObjective_Objective] IS NULL AND del.[ObjectiveCompetencyObjective_Objective] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_Objective] IS NOT NULL AND del.[ObjectiveCompetencyObjective_Objective] IS NULL)) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] <> del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[CompetencyLevelDescriptor_DescriptorId] <> del.[CompetencyLevelDescriptor_DescriptorId] OR (i.[CompetencyLevelDescriptor_DescriptorId] IS NULL AND del.[CompetencyLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[CompetencyLevelDescriptor_DescriptorId] IS NOT NULL AND del.[CompetencyLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(del.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND del.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND del.[DiagnosticStatement] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -64470,9 +63877,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
@@ -64696,11 +64102,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Contact_DocumentId] <> del.[Contact_DocumentId] OR (i.[Contact_DocumentId] IS NULL AND del.[Contact_DocumentId] IS NOT NULL) OR (i.[Contact_DocumentId] IS NOT NULL AND del.[Contact_DocumentId] IS NULL)) OR (CAST(i.[Contact_ContactUniqueId] AS varbinary(max)) <> CAST(del.[Contact_ContactUniqueId] AS varbinary(max)) OR (i.[Contact_ContactUniqueId] IS NULL AND del.[Contact_ContactUniqueId] IS NOT NULL) OR (i.[Contact_ContactUniqueId] IS NOT NULL AND del.[Contact_ContactUniqueId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[RelationDescriptor_DescriptorId] <> del.[RelationDescriptor_DescriptorId] OR (i.[RelationDescriptor_DescriptorId] IS NULL AND del.[RelationDescriptor_DescriptorId] IS NOT NULL) OR (i.[RelationDescriptor_DescriptorId] IS NOT NULL AND del.[RelationDescriptor_DescriptorId] IS NULL)) OR (i.[ContactPriority] <> del.[ContactPriority] OR (i.[ContactPriority] IS NULL AND del.[ContactPriority] IS NOT NULL) OR (i.[ContactPriority] IS NOT NULL AND del.[ContactPriority] IS NULL)) OR (CAST(i.[ContactRestrictions] AS varbinary(max)) <> CAST(del.[ContactRestrictions] AS varbinary(max)) OR (i.[ContactRestrictions] IS NULL AND del.[ContactRestrictions] IS NOT NULL) OR (i.[ContactRestrictions] IS NOT NULL AND del.[ContactRestrictions] IS NULL)) OR (i.[EmergencyContactStatus] <> del.[EmergencyContactStatus] OR (i.[EmergencyContactStatus] IS NULL AND del.[EmergencyContactStatus] IS NOT NULL) OR (i.[EmergencyContactStatus] IS NOT NULL AND del.[EmergencyContactStatus] IS NULL)) OR (i.[LegalGuardian] <> del.[LegalGuardian] OR (i.[LegalGuardian] IS NULL AND del.[LegalGuardian] IS NOT NULL) OR (i.[LegalGuardian] IS NOT NULL AND del.[LegalGuardian] IS NULL)) OR (i.[LivesWith] <> del.[LivesWith] OR (i.[LivesWith] IS NULL AND del.[LivesWith] IS NOT NULL) OR (i.[LivesWith] IS NOT NULL AND del.[LivesWith] IS NULL)) OR (i.[PrimaryContactStatus] <> del.[PrimaryContactStatus] OR (i.[PrimaryContactStatus] IS NULL AND del.[PrimaryContactStatus] IS NOT NULL) OR (i.[PrimaryContactStatus] IS NOT NULL AND del.[PrimaryContactStatus] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -64735,9 +64136,8 @@ BEGIN
             oldPj1s0.[DocumentId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Contact] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Contact_DocumentId]
         INNER JOIN [edfi].[Student] oldPj1s0 ON oldPj1s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -64852,11 +64252,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DisciplineIncident_DocumentId] <> del.[DisciplineIncident_DocumentId] OR (i.[DisciplineIncident_DocumentId] IS NULL AND del.[DisciplineIncident_DocumentId] IS NOT NULL) OR (i.[DisciplineIncident_DocumentId] IS NOT NULL AND del.[DisciplineIncident_DocumentId] IS NULL)) OR (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> del.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND del.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND del.[DisciplineIncident_SchoolId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[BehaviorDescriptor_DescriptorId] <> del.[BehaviorDescriptor_DescriptorId] OR (i.[BehaviorDescriptor_DescriptorId] IS NULL AND del.[BehaviorDescriptor_DescriptorId] IS NOT NULL) OR (i.[BehaviorDescriptor_DescriptorId] IS NOT NULL AND del.[BehaviorDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[BehaviorDetailedDescription] AS varbinary(max)) <> CAST(del.[BehaviorDetailedDescription] AS varbinary(max)) OR (i.[BehaviorDetailedDescription] IS NULL AND del.[BehaviorDetailedDescription] IS NOT NULL) OR (i.[BehaviorDetailedDescription] IS NOT NULL AND del.[BehaviorDetailedDescription] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -64895,9 +64290,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -65098,11 +64492,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DisciplineIncident_DocumentId] <> del.[DisciplineIncident_DocumentId] OR (i.[DisciplineIncident_DocumentId] IS NULL AND del.[DisciplineIncident_DocumentId] IS NOT NULL) OR (i.[DisciplineIncident_DocumentId] IS NOT NULL AND del.[DisciplineIncident_DocumentId] IS NULL)) OR (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> del.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND del.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND del.[DisciplineIncident_SchoolId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -65137,9 +64526,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -65314,11 +64702,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -65351,9 +64734,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -65524,11 +64906,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] <> del.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] OR (i.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NULL AND del.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NOT NULL) OR (i.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NOT NULL AND del.[BarrierToInternetAccessInResidenceDescriptor_DescriptorId] IS NULL)) OR (i.[InternetAccessTypeInResidenceDescriptor_DescriptorId] <> del.[InternetAccessTypeInResidenceDescriptor_DescriptorId] OR (i.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NULL AND del.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NOT NULL) OR (i.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NOT NULL AND del.[InternetAccessTypeInResidenceDescriptor_DescriptorId] IS NULL)) OR (i.[InternetPerformanceInResidenceDescriptor_DescriptorId] <> del.[InternetPerformanceInResidenceDescriptor_DescriptorId] OR (i.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NULL AND del.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NOT NULL) OR (i.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NOT NULL AND del.[InternetPerformanceInResidenceDescriptor_DescriptorId] IS NULL)) OR (i.[LimitedEnglishProficiencyDescriptor_DescriptorId] <> del.[LimitedEnglishProficiencyDescriptor_DescriptorId] OR (i.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NULL AND del.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NOT NULL) OR (i.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NOT NULL AND del.[LimitedEnglishProficiencyDescriptor_DescriptorId] IS NULL)) OR (i.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] <> del.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] OR (i.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NULL AND del.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NOT NULL) OR (i.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NOT NULL AND del.[PrimaryLearningDeviceAccessDescriptor_DescriptorId] IS NULL)) OR (i.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] <> del.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] OR (i.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NULL AND del.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NOT NULL) OR (i.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NOT NULL AND del.[PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] IS NULL)) OR (i.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] <> del.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] OR (i.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NULL AND del.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NOT NULL) OR (i.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NOT NULL AND del.[PrimaryLearningDeviceProviderDescriptor_DescriptorId] IS NULL)) OR (i.[SexDescriptor_DescriptorId] <> del.[SexDescriptor_DescriptorId] OR (i.[SexDescriptor_DescriptorId] IS NULL AND del.[SexDescriptor_DescriptorId] IS NOT NULL) OR (i.[SexDescriptor_DescriptorId] IS NOT NULL AND del.[SexDescriptor_DescriptorId] IS NULL)) OR (i.[SupporterMilitaryConnectionDescriptor_DescriptorId] <> del.[SupporterMilitaryConnectionDescriptor_DescriptorId] OR (i.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NULL AND del.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NOT NULL) OR (i.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NOT NULL AND del.[SupporterMilitaryConnectionDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GenderIdentity] AS varbinary(max)) <> CAST(del.[GenderIdentity] AS varbinary(max)) OR (i.[GenderIdentity] IS NULL AND del.[GenderIdentity] IS NOT NULL) OR (i.[GenderIdentity] IS NOT NULL AND del.[GenderIdentity] IS NULL)) OR (i.[HispanicLatinoEthnicity] <> del.[HispanicLatinoEthnicity] OR (i.[HispanicLatinoEthnicity] IS NULL AND del.[HispanicLatinoEthnicity] IS NOT NULL) OR (i.[HispanicLatinoEthnicity] IS NOT NULL AND del.[HispanicLatinoEthnicity] IS NULL)) OR (i.[InternetAccessInResidence] <> del.[InternetAccessInResidence] OR (i.[InternetAccessInResidence] IS NULL AND del.[InternetAccessInResidence] IS NOT NULL) OR (i.[InternetAccessInResidence] IS NOT NULL AND del.[InternetAccessInResidence] IS NULL)) OR (CAST(i.[LoginId] AS varbinary(max)) <> CAST(del.[LoginId] AS varbinary(max)) OR (i.[LoginId] IS NULL AND del.[LoginId] IS NOT NULL) OR (i.[LoginId] IS NOT NULL AND del.[LoginId] IS NULL)) OR (CAST(i.[ProfileThumbnail] AS varbinary(max)) <> CAST(del.[ProfileThumbnail] AS varbinary(max)) OR (i.[ProfileThumbnail] IS NULL AND del.[ProfileThumbnail] IS NOT NULL) OR (i.[ProfileThumbnail] IS NOT NULL AND del.[ProfileThumbnail] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -65561,9 +64938,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -66412,11 +65788,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ResponsibilityDescriptor_DescriptorId] <> del.[ResponsibilityDescriptor_DescriptorId] OR (i.[ResponsibilityDescriptor_DescriptorId] IS NULL AND del.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL AND del.[ResponsibilityDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -66455,9 +65826,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -66580,11 +65950,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[GradebookEntry_DocumentId] <> del.[GradebookEntry_DocumentId] OR (i.[GradebookEntry_DocumentId] IS NULL AND del.[GradebookEntry_DocumentId] IS NOT NULL) OR (i.[GradebookEntry_DocumentId] IS NOT NULL AND del.[GradebookEntry_DocumentId] IS NULL)) OR (CAST(i.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) <> CAST(del.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NULL AND del.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL AND del.[GradebookEntry_GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[GradebookEntry_Namespace] AS varbinary(max)) <> CAST(del.[GradebookEntry_Namespace] AS varbinary(max)) OR (i.[GradebookEntry_Namespace] IS NULL AND del.[GradebookEntry_Namespace] IS NOT NULL) OR (i.[GradebookEntry_Namespace] IS NOT NULL AND del.[GradebookEntry_Namespace] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[AssignmentLateStatusDescriptor_DescriptorId] <> del.[AssignmentLateStatusDescriptor_DescriptorId] OR (i.[AssignmentLateStatusDescriptor_DescriptorId] IS NULL AND del.[AssignmentLateStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[AssignmentLateStatusDescriptor_DescriptorId] IS NOT NULL AND del.[AssignmentLateStatusDescriptor_DescriptorId] IS NULL)) OR (i.[CompetencyLevelDescriptor_DescriptorId] <> del.[CompetencyLevelDescriptor_DescriptorId] OR (i.[CompetencyLevelDescriptor_DescriptorId] IS NULL AND del.[CompetencyLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[CompetencyLevelDescriptor_DescriptorId] IS NOT NULL AND del.[CompetencyLevelDescriptor_DescriptorId] IS NULL)) OR (i.[SubmissionStatusDescriptor_DescriptorId] <> del.[SubmissionStatusDescriptor_DescriptorId] OR (i.[SubmissionStatusDescriptor_DescriptorId] IS NULL AND del.[SubmissionStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[SubmissionStatusDescriptor_DescriptorId] IS NOT NULL AND del.[SubmissionStatusDescriptor_DescriptorId] IS NULL)) OR (i.[DateFulfilled] <> del.[DateFulfilled] OR (i.[DateFulfilled] IS NULL AND del.[DateFulfilled] IS NOT NULL) OR (i.[DateFulfilled] IS NOT NULL AND del.[DateFulfilled] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(del.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND del.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND del.[DiagnosticStatement] IS NULL)) OR (CAST(i.[LetterGradeEarned] AS varbinary(max)) <> CAST(del.[LetterGradeEarned] AS varbinary(max)) OR (i.[LetterGradeEarned] IS NULL AND del.[LetterGradeEarned] IS NOT NULL) OR (i.[LetterGradeEarned] IS NOT NULL AND del.[LetterGradeEarned] IS NULL)) OR (i.[NumericGradeEarned] <> del.[NumericGradeEarned] OR (i.[NumericGradeEarned] IS NULL AND del.[NumericGradeEarned] IS NOT NULL) OR (i.[NumericGradeEarned] IS NOT NULL AND del.[NumericGradeEarned] IS NULL)) OR (i.[PointsEarned] <> del.[PointsEarned] OR (i.[PointsEarned] IS NULL AND del.[PointsEarned] IS NOT NULL) OR (i.[PointsEarned] IS NOT NULL AND del.[PointsEarned] IS NULL)) OR (i.[TimeFulfilled] <> del.[TimeFulfilled] OR (i.[TimeFulfilled] IS NULL AND del.[TimeFulfilled] IS NOT NULL) OR (i.[TimeFulfilled] IS NOT NULL AND del.[TimeFulfilled] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -66619,9 +65984,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -66733,11 +66097,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[NonMedicalImmunizationExemptionDescriptor_DescriptorId] <> del.[NonMedicalImmunizationExemptionDescriptor_DescriptorId] OR (i.[NonMedicalImmunizationExemptionDescriptor_DescriptorId] IS NULL AND del.[NonMedicalImmunizationExemptionDescriptor_DescriptorId] IS NOT NULL) OR (i.[NonMedicalImmunizationExemptionDescriptor_DescriptorId] IS NOT NULL AND del.[NonMedicalImmunizationExemptionDescriptor_DescriptorId] IS NULL)) OR (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)) OR (i.[NonMedicalImmunizationExemptionDate] <> del.[NonMedicalImmunizationExemptionDate] OR (i.[NonMedicalImmunizationExemptionDate] IS NULL AND del.[NonMedicalImmunizationExemptionDate] IS NOT NULL) OR (i.[NonMedicalImmunizationExemptionDate] IS NOT NULL AND del.[NonMedicalImmunizationExemptionDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -66770,9 +66129,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -67086,11 +66444,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] <> del.[HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] OR (i.[HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] IS NULL AND del.[HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] IS NOT NULL) OR (i.[HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] IS NOT NULL AND del.[HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[AwaitingFosterCare] <> del.[AwaitingFosterCare] OR (i.[AwaitingFosterCare] IS NULL AND del.[AwaitingFosterCare] IS NOT NULL) OR (i.[AwaitingFosterCare] IS NOT NULL AND del.[AwaitingFosterCare] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[HomelessUnaccompaniedYouth] <> del.[HomelessUnaccompaniedYouth] OR (i.[HomelessUnaccompaniedYouth] IS NULL AND del.[HomelessUnaccompaniedYouth] IS NOT NULL) OR (i.[HomelessUnaccompaniedYouth] IS NOT NULL AND del.[HomelessUnaccompaniedYouth] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -67133,9 +66486,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -67332,11 +66684,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CohortCohort_DocumentId] <> del.[CohortCohort_DocumentId] OR (i.[CohortCohort_DocumentId] IS NULL AND del.[CohortCohort_DocumentId] IS NOT NULL) OR (i.[CohortCohort_DocumentId] IS NOT NULL AND del.[CohortCohort_DocumentId] IS NULL)) OR (CAST(i.[CohortCohort_CohortIdentifier] AS varbinary(max)) <> CAST(del.[CohortCohort_CohortIdentifier] AS varbinary(max)) OR (i.[CohortCohort_CohortIdentifier] IS NULL AND del.[CohortCohort_CohortIdentifier] IS NOT NULL) OR (i.[CohortCohort_CohortIdentifier] IS NOT NULL AND del.[CohortCohort_CohortIdentifier] IS NULL)) OR (i.[CohortCohort_EducationOrganizationId] <> del.[CohortCohort_EducationOrganizationId] OR (i.[CohortCohort_EducationOrganizationId] IS NULL AND del.[CohortCohort_EducationOrganizationId] IS NOT NULL) OR (i.[CohortCohort_EducationOrganizationId] IS NOT NULL AND del.[CohortCohort_EducationOrganizationId] IS NULL)) OR (i.[Intervention_DocumentId] <> del.[Intervention_DocumentId] OR (i.[Intervention_DocumentId] IS NULL AND del.[Intervention_DocumentId] IS NOT NULL) OR (i.[Intervention_DocumentId] IS NOT NULL AND del.[Intervention_DocumentId] IS NULL)) OR (i.[Intervention_EducationOrganizationId] <> del.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND del.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND del.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(del.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND del.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND del.[Intervention_InterventionIdentificationCode] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(del.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND del.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND del.[DiagnosticStatement] IS NULL)) OR (i.[Dosage] <> del.[Dosage] OR (i.[Dosage] IS NULL AND del.[Dosage] IS NOT NULL) OR (i.[Dosage] IS NOT NULL AND del.[Dosage] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -67371,9 +66718,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -67524,11 +66870,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Intervention_DocumentId] <> del.[Intervention_DocumentId] OR (i.[Intervention_DocumentId] IS NULL AND del.[Intervention_DocumentId] IS NOT NULL) OR (i.[Intervention_DocumentId] IS NOT NULL AND del.[Intervention_DocumentId] IS NULL)) OR (i.[Intervention_EducationOrganizationId] <> del.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND del.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND del.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(del.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND del.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND del.[Intervention_InterventionIdentificationCode] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] <> del.[EducationalEnvironmentDescriptor_DescriptorId] OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AttendanceEventReason] AS varbinary(max)) <> CAST(del.[AttendanceEventReason] AS varbinary(max)) OR (i.[AttendanceEventReason] IS NULL AND del.[AttendanceEventReason] IS NOT NULL) OR (i.[AttendanceEventReason] IS NOT NULL AND del.[AttendanceEventReason] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[EventDuration] <> del.[EventDuration] OR (i.[EventDuration] IS NULL AND del.[EventDuration] IS NOT NULL) OR (i.[EventDuration] IS NOT NULL AND del.[EventDuration] IS NULL)) OR (i.[InterventionDuration] <> del.[InterventionDuration] OR (i.[InterventionDuration] IS NULL AND del.[InterventionDuration] IS NOT NULL) OR (i.[InterventionDuration] IS NOT NULL AND del.[InterventionDuration] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -67569,9 +66910,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -67748,11 +67088,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[Dosage] <> del.[Dosage] OR (i.[Dosage] IS NULL AND del.[Dosage] IS NOT NULL) OR (i.[Dosage] IS NOT NULL AND del.[Dosage] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[EnglishLearnerParticipation] <> del.[EnglishLearnerParticipation] OR (i.[EnglishLearnerParticipation] IS NULL AND del.[EnglishLearnerParticipation] IS NOT NULL) OR (i.[EnglishLearnerParticipation] IS NOT NULL AND del.[EnglishLearnerParticipation] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -67795,9 +67130,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -68044,11 +67378,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ContinuationOfServicesReasonDescriptor_DescriptorId] <> del.[ContinuationOfServicesReasonDescriptor_DescriptorId] OR (i.[ContinuationOfServicesReasonDescriptor_DescriptorId] IS NULL AND del.[ContinuationOfServicesReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[ContinuationOfServicesReasonDescriptor_DescriptorId] IS NOT NULL AND del.[ContinuationOfServicesReasonDescriptor_DescriptorId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EligibilityExpirationDate] <> del.[EligibilityExpirationDate] OR (i.[EligibilityExpirationDate] IS NULL AND del.[EligibilityExpirationDate] IS NOT NULL) OR (i.[EligibilityExpirationDate] IS NOT NULL AND del.[EligibilityExpirationDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[LastQualifyingMove] <> del.[LastQualifyingMove] OR (i.[LastQualifyingMove] IS NULL AND del.[LastQualifyingMove] IS NOT NULL) OR (i.[LastQualifyingMove] IS NOT NULL AND del.[LastQualifyingMove] IS NULL)) OR (i.[PriorityForServices] <> del.[PriorityForServices] OR (i.[PriorityForServices] IS NULL AND del.[PriorityForServices] IS NOT NULL) OR (i.[PriorityForServices] IS NOT NULL AND del.[PriorityForServices] IS NULL)) OR (i.[QualifyingArrivalDate] <> del.[QualifyingArrivalDate] OR (i.[QualifyingArrivalDate] IS NULL AND del.[QualifyingArrivalDate] IS NOT NULL) OR (i.[QualifyingArrivalDate] IS NOT NULL AND del.[QualifyingArrivalDate] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)) OR (i.[StateResidencyDate] <> del.[StateResidencyDate] OR (i.[StateResidencyDate] IS NULL AND del.[StateResidencyDate] IS NOT NULL) OR (i.[StateResidencyDate] IS NOT NULL AND del.[StateResidencyDate] IS NULL)) OR (i.[UsInitialEntry] <> del.[UsInitialEntry] OR (i.[UsInitialEntry] IS NULL AND del.[UsInitialEntry] IS NOT NULL) OR (i.[UsInitialEntry] IS NOT NULL AND del.[UsInitialEntry] IS NULL)) OR (i.[UsInitialSchoolEntry] <> del.[UsInitialSchoolEntry] OR (i.[UsInitialSchoolEntry] IS NULL AND del.[UsInitialSchoolEntry] IS NOT NULL) OR (i.[UsInitialSchoolEntry] IS NOT NULL AND del.[UsInitialSchoolEntry] IS NULL)) OR (i.[UsMostRecentEntry] <> del.[UsMostRecentEntry] OR (i.[UsMostRecentEntry] IS NULL AND del.[UsMostRecentEntry] IS NOT NULL) OR (i.[UsMostRecentEntry] IS NOT NULL AND del.[UsMostRecentEntry] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -68091,9 +67420,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -68301,11 +67629,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ElaProgressLevelDescriptor_DescriptorId] <> del.[ElaProgressLevelDescriptor_DescriptorId] OR (i.[ElaProgressLevelDescriptor_DescriptorId] IS NULL AND del.[ElaProgressLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ElaProgressLevelDescriptor_DescriptorId] IS NOT NULL AND del.[ElaProgressLevelDescriptor_DescriptorId] IS NULL)) OR (i.[MathematicsProgressLevelDescriptor_DescriptorId] <> del.[MathematicsProgressLevelDescriptor_DescriptorId] OR (i.[MathematicsProgressLevelDescriptor_DescriptorId] IS NULL AND del.[MathematicsProgressLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[MathematicsProgressLevelDescriptor_DescriptorId] IS NOT NULL AND del.[MathematicsProgressLevelDescriptor_DescriptorId] IS NULL)) OR (i.[NeglectedOrDelinquentProgramDescriptor_DescriptorId] <> del.[NeglectedOrDelinquentProgramDescriptor_DescriptorId] OR (i.[NeglectedOrDelinquentProgramDescriptor_DescriptorId] IS NULL AND del.[NeglectedOrDelinquentProgramDescriptor_DescriptorId] IS NOT NULL) OR (i.[NeglectedOrDelinquentProgramDescriptor_DescriptorId] IS NOT NULL AND del.[NeglectedOrDelinquentProgramDescriptor_DescriptorId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -68348,9 +67671,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -68636,11 +67958,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -68683,9 +68000,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -68843,11 +68159,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] <> del.[EducationalEnvironmentDescriptor_DescriptorId] OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[AttendanceEventReason] AS varbinary(max)) <> CAST(del.[AttendanceEventReason] AS varbinary(max)) OR (i.[AttendanceEventReason] IS NULL AND del.[AttendanceEventReason] IS NOT NULL) OR (i.[AttendanceEventReason] IS NOT NULL AND del.[AttendanceEventReason] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[EventDuration] <> del.[EventDuration] OR (i.[EventDuration] IS NULL AND del.[EventDuration] IS NOT NULL) OR (i.[EventDuration] IS NOT NULL AND del.[EventDuration] IS NULL)) OR (i.[ProgramAttendanceDuration] <> del.[ProgramAttendanceDuration] OR (i.[ProgramAttendanceDuration] IS NULL AND del.[ProgramAttendanceDuration] IS NOT NULL) OR (i.[ProgramAttendanceDuration] IS NOT NULL AND del.[ProgramAttendanceDuration] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -68894,9 +68205,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
@@ -69038,11 +68348,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_DocumentId] <> del.[ProgramEvaluation_DocumentId] OR (i.[ProgramEvaluation_DocumentId] IS NULL AND del.[ProgramEvaluation_DocumentId] IS NOT NULL) OR (i.[ProgramEvaluation_DocumentId] IS NOT NULL AND del.[ProgramEvaluation_DocumentId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> del.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND del.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND del.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[StaffEvaluatorStaff_DocumentId] <> del.[StaffEvaluatorStaff_DocumentId] OR (i.[StaffEvaluatorStaff_DocumentId] IS NULL AND del.[StaffEvaluatorStaff_DocumentId] IS NOT NULL) OR (i.[StaffEvaluatorStaff_DocumentId] IS NOT NULL AND del.[StaffEvaluatorStaff_DocumentId] IS NULL)) OR (CAST(i.[StaffEvaluatorStaff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[StaffEvaluatorStaff_StaffUniqueId] AS varbinary(max)) OR (i.[StaffEvaluatorStaff_StaffUniqueId] IS NULL AND del.[StaffEvaluatorStaff_StaffUniqueId] IS NOT NULL) OR (i.[StaffEvaluatorStaff_StaffUniqueId] IS NOT NULL AND del.[StaffEvaluatorStaff_StaffUniqueId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[SummaryEvaluationRatingLevelDescriptor_DescriptorId] <> del.[SummaryEvaluationRatingLevelDescriptor_DescriptorId] OR (i.[SummaryEvaluationRatingLevelDescriptor_DescriptorId] IS NULL AND del.[SummaryEvaluationRatingLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[SummaryEvaluationRatingLevelDescriptor_DescriptorId] IS NOT NULL AND del.[SummaryEvaluationRatingLevelDescriptor_DescriptorId] IS NULL)) OR (i.[EvaluationDate] <> del.[EvaluationDate] OR (i.[EvaluationDate] IS NULL AND del.[EvaluationDate] IS NOT NULL) OR (i.[EvaluationDate] IS NOT NULL AND del.[EvaluationDate] IS NULL)) OR (i.[EvaluationDuration] <> del.[EvaluationDuration] OR (i.[EvaluationDuration] IS NULL AND del.[EvaluationDuration] IS NOT NULL) OR (i.[EvaluationDuration] IS NOT NULL AND del.[EvaluationDuration] IS NULL)) OR (CAST(i.[SummaryEvaluationComment] AS varbinary(max)) <> CAST(del.[SummaryEvaluationComment] AS varbinary(max)) OR (i.[SummaryEvaluationComment] IS NULL AND del.[SummaryEvaluationComment] IS NOT NULL) OR (i.[SummaryEvaluationComment] IS NOT NULL AND del.[SummaryEvaluationComment] IS NULL)) OR (i.[SummaryEvaluationNumericRating] <> del.[SummaryEvaluationNumericRating] OR (i.[SummaryEvaluationNumericRating] IS NULL AND del.[SummaryEvaluationNumericRating] IS NOT NULL) OR (i.[SummaryEvaluationNumericRating] IS NOT NULL AND del.[SummaryEvaluationNumericRating] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -69093,9 +68398,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
         INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
@@ -69389,11 +68693,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[Calendar_DocumentId] <> del.[Calendar_DocumentId] OR (i.[Calendar_DocumentId] IS NULL AND del.[Calendar_DocumentId] IS NOT NULL) OR (i.[Calendar_DocumentId] IS NOT NULL AND del.[Calendar_DocumentId] IS NULL)) OR (CAST(i.[Calendar_CalendarCode] AS varbinary(max)) <> CAST(del.[Calendar_CalendarCode] AS varbinary(max)) OR (i.[Calendar_CalendarCode] IS NULL AND del.[Calendar_CalendarCode] IS NOT NULL) OR (i.[Calendar_CalendarCode] IS NOT NULL AND del.[Calendar_CalendarCode] IS NULL)) OR (i.[ClassOfSchoolYear_DocumentId] <> del.[ClassOfSchoolYear_DocumentId] OR (i.[ClassOfSchoolYear_DocumentId] IS NULL AND del.[ClassOfSchoolYear_DocumentId] IS NOT NULL) OR (i.[ClassOfSchoolYear_DocumentId] IS NOT NULL AND del.[ClassOfSchoolYear_DocumentId] IS NULL)) OR (i.[ClassOfSchoolYear_ClassOfSchoolYear] <> del.[ClassOfSchoolYear_ClassOfSchoolYear] OR (i.[ClassOfSchoolYear_ClassOfSchoolYear] IS NULL AND del.[ClassOfSchoolYear_ClassOfSchoolYear] IS NOT NULL) OR (i.[ClassOfSchoolYear_ClassOfSchoolYear] IS NOT NULL AND del.[ClassOfSchoolYear_ClassOfSchoolYear] IS NULL)) OR (i.[GraduationPlan_DocumentId] <> del.[GraduationPlan_DocumentId] OR (i.[GraduationPlan_DocumentId] IS NULL AND del.[GraduationPlan_DocumentId] IS NOT NULL) OR (i.[GraduationPlan_DocumentId] IS NOT NULL AND del.[GraduationPlan_DocumentId] IS NULL)) OR (i.[GraduationPlan_EducationOrganizationId] <> del.[GraduationPlan_EducationOrganizationId] OR (i.[GraduationPlan_EducationOrganizationId] IS NULL AND del.[GraduationPlan_EducationOrganizationId] IS NOT NULL) OR (i.[GraduationPlan_EducationOrganizationId] IS NOT NULL AND del.[GraduationPlan_EducationOrganizationId] IS NULL)) OR (i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] <> del.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND del.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GraduationPlan_GraduationSchoolYear] <> del.[GraduationPlan_GraduationSchoolYear] OR (i.[GraduationPlan_GraduationSchoolYear] IS NULL AND del.[GraduationPlan_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationPlan_GraduationSchoolYear] IS NOT NULL AND del.[GraduationPlan_GraduationSchoolYear] IS NULL)) OR (i.[NextYearSchool_DocumentId] <> del.[NextYearSchool_DocumentId] OR (i.[NextYearSchool_DocumentId] IS NULL AND del.[NextYearSchool_DocumentId] IS NOT NULL) OR (i.[NextYearSchool_DocumentId] IS NOT NULL AND del.[NextYearSchool_DocumentId] IS NULL)) OR (i.[NextYearSchool_SchoolId] <> del.[NextYearSchool_SchoolId] OR (i.[NextYearSchool_SchoolId] IS NULL AND del.[NextYearSchool_SchoolId] IS NOT NULL) OR (i.[NextYearSchool_SchoolId] IS NOT NULL AND del.[NextYearSchool_SchoolId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[EnrollmentTypeDescriptor_DescriptorId] <> del.[EnrollmentTypeDescriptor_DescriptorId] OR (i.[EnrollmentTypeDescriptor_DescriptorId] IS NULL AND del.[EnrollmentTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EnrollmentTypeDescriptor_DescriptorId] IS NOT NULL AND del.[EnrollmentTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EntryGradeLevelDescriptor_DescriptorId] <> del.[EntryGradeLevelDescriptor_DescriptorId] OR (i.[EntryGradeLevelDescriptor_DescriptorId] IS NULL AND del.[EntryGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[EntryGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[EntryGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[EntryGradeLevelReasonDescriptor_DescriptorId] <> del.[EntryGradeLevelReasonDescriptor_DescriptorId] OR (i.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NULL AND del.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NOT NULL AND del.[EntryGradeLevelReasonDescriptor_DescriptorId] IS NULL)) OR (i.[EntryTypeDescriptor_DescriptorId] <> del.[EntryTypeDescriptor_DescriptorId] OR (i.[EntryTypeDescriptor_DescriptorId] IS NULL AND del.[EntryTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EntryTypeDescriptor_DescriptorId] IS NOT NULL AND del.[EntryTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ExitWithdrawTypeDescriptor_DescriptorId] <> del.[ExitWithdrawTypeDescriptor_DescriptorId] OR (i.[ExitWithdrawTypeDescriptor_DescriptorId] IS NULL AND del.[ExitWithdrawTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ExitWithdrawTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ExitWithdrawTypeDescriptor_DescriptorId] IS NULL)) OR (i.[NextYearGradeLevelDescriptor_DescriptorId] <> del.[NextYearGradeLevelDescriptor_DescriptorId] OR (i.[NextYearGradeLevelDescriptor_DescriptorId] IS NULL AND del.[NextYearGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[NextYearGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[NextYearGradeLevelDescriptor_DescriptorId] IS NULL)) OR (i.[ResidencyStatusDescriptor_DescriptorId] <> del.[ResidencyStatusDescriptor_DescriptorId] OR (i.[ResidencyStatusDescriptor_DescriptorId] IS NULL AND del.[ResidencyStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[ResidencyStatusDescriptor_DescriptorId] IS NOT NULL AND del.[ResidencyStatusDescriptor_DescriptorId] IS NULL)) OR (i.[SchoolChoiceBasisDescriptor_DescriptorId] <> del.[SchoolChoiceBasisDescriptor_DescriptorId] OR (i.[SchoolChoiceBasisDescriptor_DescriptorId] IS NULL AND del.[SchoolChoiceBasisDescriptor_DescriptorId] IS NOT NULL) OR (i.[SchoolChoiceBasisDescriptor_DescriptorId] IS NOT NULL AND del.[SchoolChoiceBasisDescriptor_DescriptorId] IS NULL)) OR (i.[EmployedWhileEnrolled] <> del.[EmployedWhileEnrolled] OR (i.[EmployedWhileEnrolled] IS NULL AND del.[EmployedWhileEnrolled] IS NOT NULL) OR (i.[EmployedWhileEnrolled] IS NOT NULL AND del.[EmployedWhileEnrolled] IS NULL)) OR (i.[EntryDate] <> del.[EntryDate] OR (i.[EntryDate] IS NULL AND del.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND del.[EntryDate] IS NULL)) OR (i.[ExitWithdrawDate] <> del.[ExitWithdrawDate] OR (i.[ExitWithdrawDate] IS NULL AND del.[ExitWithdrawDate] IS NOT NULL) OR (i.[ExitWithdrawDate] IS NOT NULL AND del.[ExitWithdrawDate] IS NULL)) OR (i.[FullTimeEquivalency] <> del.[FullTimeEquivalency] OR (i.[FullTimeEquivalency] IS NULL AND del.[FullTimeEquivalency] IS NOT NULL) OR (i.[FullTimeEquivalency] IS NOT NULL AND del.[FullTimeEquivalency] IS NULL)) OR (i.[PrimarySchool] <> del.[PrimarySchool] OR (i.[PrimarySchool] IS NULL AND del.[PrimarySchool] IS NOT NULL) OR (i.[PrimarySchool] IS NOT NULL AND del.[PrimarySchool] IS NULL)) OR (i.[RepeatGradeIndicator] <> del.[RepeatGradeIndicator] OR (i.[RepeatGradeIndicator] IS NULL AND del.[RepeatGradeIndicator] IS NOT NULL) OR (i.[RepeatGradeIndicator] IS NOT NULL AND del.[RepeatGradeIndicator] IS NULL)) OR (i.[SchoolChoice] <> del.[SchoolChoice] OR (i.[SchoolChoice] IS NULL AND del.[SchoolChoice] IS NOT NULL) OR (i.[SchoolChoice] IS NOT NULL AND del.[SchoolChoice] IS NULL)) OR (i.[SchoolChoiceTransfer] <> del.[SchoolChoiceTransfer] OR (i.[SchoolChoiceTransfer] IS NULL AND del.[SchoolChoiceTransfer] IS NOT NULL) OR (i.[SchoolChoiceTransfer] IS NOT NULL AND del.[SchoolChoiceTransfer] IS NULL)) OR (i.[TermCompletionIndicator] <> del.[TermCompletionIndicator] OR (i.[TermCompletionIndicator] IS NULL AND del.[TermCompletionIndicator] IS NOT NULL) OR (i.[TermCompletionIndicator] IS NOT NULL AND del.[TermCompletionIndicator] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -69428,9 +68727,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -69620,11 +68918,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[Session_DocumentId] <> del.[Session_DocumentId] OR (i.[Session_DocumentId] IS NULL AND del.[Session_DocumentId] IS NOT NULL) OR (i.[Session_DocumentId] IS NOT NULL AND del.[Session_DocumentId] IS NULL)) OR (i.[Session_SchoolYear] <> del.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND del.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND del.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(del.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND del.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND del.[Session_SessionName] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] <> del.[EducationalEnvironmentDescriptor_DescriptorId] OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL)) OR (i.[ArrivalTime] <> del.[ArrivalTime] OR (i.[ArrivalTime] IS NULL AND del.[ArrivalTime] IS NOT NULL) OR (i.[ArrivalTime] IS NOT NULL AND del.[ArrivalTime] IS NULL)) OR (CAST(i.[AttendanceEventReason] AS varbinary(max)) <> CAST(del.[AttendanceEventReason] AS varbinary(max)) OR (i.[AttendanceEventReason] IS NULL AND del.[AttendanceEventReason] IS NOT NULL) OR (i.[AttendanceEventReason] IS NOT NULL AND del.[AttendanceEventReason] IS NULL)) OR (i.[DepartureTime] <> del.[DepartureTime] OR (i.[DepartureTime] IS NULL AND del.[DepartureTime] IS NOT NULL) OR (i.[DepartureTime] IS NOT NULL AND del.[DepartureTime] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[EventDuration] <> del.[EventDuration] OR (i.[EventDuration] IS NULL AND del.[EventDuration] IS NOT NULL) OR (i.[EventDuration] IS NOT NULL AND del.[EventDuration] IS NULL)) OR (i.[SchoolAttendanceDuration] <> del.[SchoolAttendanceDuration] OR (i.[SchoolAttendanceDuration] IS NULL AND del.[SchoolAttendanceDuration] IS NOT NULL) OR (i.[SchoolAttendanceDuration] IS NOT NULL AND del.[SchoolAttendanceDuration] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -69667,9 +68960,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -69850,11 +69142,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[DirectCertification] <> del.[DirectCertification] OR (i.[DirectCertification] IS NULL AND del.[DirectCertification] IS NOT NULL) OR (i.[DirectCertification] IS NOT NULL AND del.[DirectCertification] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -69897,9 +69184,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -70107,11 +69393,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[Section504DisabilityDescriptor_DescriptorId] <> del.[Section504DisabilityDescriptor_DescriptorId] OR (i.[Section504DisabilityDescriptor_DescriptorId] IS NULL AND del.[Section504DisabilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[Section504DisabilityDescriptor_DescriptorId] IS NOT NULL AND del.[Section504DisabilityDescriptor_DescriptorId] IS NULL)) OR (i.[AccommodationPlan] <> del.[AccommodationPlan] OR (i.[AccommodationPlan] IS NULL AND del.[AccommodationPlan] IS NOT NULL) OR (i.[AccommodationPlan] IS NOT NULL AND del.[AccommodationPlan] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[Section504Eligibility] <> del.[Section504Eligibility] OR (i.[Section504Eligibility] IS NULL AND del.[Section504Eligibility] IS NOT NULL) OR (i.[Section504Eligibility] IS NOT NULL AND del.[Section504Eligibility] IS NULL)) OR (i.[Section504EligibilityDecisionDate] <> del.[Section504EligibilityDecisionDate] OR (i.[Section504EligibilityDecisionDate] IS NULL AND del.[Section504EligibilityDecisionDate] IS NOT NULL) OR (i.[Section504EligibilityDecisionDate] IS NOT NULL AND del.[Section504EligibilityDecisionDate] IS NULL)) OR (i.[Section504MeetingDate] <> del.[Section504MeetingDate] OR (i.[Section504MeetingDate] IS NULL AND del.[Section504MeetingDate] IS NOT NULL) OR (i.[Section504MeetingDate] IS NOT NULL AND del.[Section504MeetingDate] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -70154,9 +69435,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -70307,11 +69587,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DualCreditEducationOrganization_DocumentId] <> del.[DualCreditEducationOrganization_DocumentId] OR (i.[DualCreditEducationOrganization_DocumentId] IS NULL AND del.[DualCreditEducationOrganization_DocumentId] IS NOT NULL) OR (i.[DualCreditEducationOrganization_DocumentId] IS NOT NULL AND del.[DualCreditEducationOrganization_DocumentId] IS NULL)) OR (i.[DualCreditEducationOrganization_EducationOrganizationId] <> del.[DualCreditEducationOrganization_EducationOrganizationId] OR (i.[DualCreditEducationOrganization_EducationOrganizationId] IS NULL AND del.[DualCreditEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[DualCreditEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[DualCreditEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[Section_DocumentId] <> del.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND del.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND del.[Section_DocumentId] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[AttemptStatusDescriptor_DescriptorId] <> del.[AttemptStatusDescriptor_DescriptorId] OR (i.[AttemptStatusDescriptor_DescriptorId] IS NULL AND del.[AttemptStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttemptStatusDescriptor_DescriptorId] IS NOT NULL AND del.[AttemptStatusDescriptor_DescriptorId] IS NULL)) OR (i.[DualCreditInstitutionDescriptor_DescriptorId] <> del.[DualCreditInstitutionDescriptor_DescriptorId] OR (i.[DualCreditInstitutionDescriptor_DescriptorId] IS NULL AND del.[DualCreditInstitutionDescriptor_DescriptorId] IS NOT NULL) OR (i.[DualCreditInstitutionDescriptor_DescriptorId] IS NOT NULL AND del.[DualCreditInstitutionDescriptor_DescriptorId] IS NULL)) OR (i.[DualCreditTypeDescriptor_DescriptorId] <> del.[DualCreditTypeDescriptor_DescriptorId] OR (i.[DualCreditTypeDescriptor_DescriptorId] IS NULL AND del.[DualCreditTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[DualCreditTypeDescriptor_DescriptorId] IS NOT NULL AND del.[DualCreditTypeDescriptor_DescriptorId] IS NULL)) OR (i.[RepeatIdentifierDescriptor_DescriptorId] <> del.[RepeatIdentifierDescriptor_DescriptorId] OR (i.[RepeatIdentifierDescriptor_DescriptorId] IS NULL AND del.[RepeatIdentifierDescriptor_DescriptorId] IS NOT NULL) OR (i.[RepeatIdentifierDescriptor_DescriptorId] IS NOT NULL AND del.[RepeatIdentifierDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[DualCreditIndicator] <> del.[DualCreditIndicator] OR (i.[DualCreditIndicator] IS NULL AND del.[DualCreditIndicator] IS NOT NULL) OR (i.[DualCreditIndicator] IS NOT NULL AND del.[DualCreditIndicator] IS NULL)) OR (i.[DualHighSchoolCreditIndicator] <> del.[DualHighSchoolCreditIndicator] OR (i.[DualHighSchoolCreditIndicator] IS NULL AND del.[DualHighSchoolCreditIndicator] IS NOT NULL) OR (i.[DualHighSchoolCreditIndicator] IS NOT NULL AND del.[DualHighSchoolCreditIndicator] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[HomeroomIndicator] <> del.[HomeroomIndicator] OR (i.[HomeroomIndicator] IS NULL AND del.[HomeroomIndicator] IS NOT NULL) OR (i.[HomeroomIndicator] IS NOT NULL AND del.[HomeroomIndicator] IS NULL)) OR (i.[TeacherStudentDataLinkExclusion] <> del.[TeacherStudentDataLinkExclusion] OR (i.[TeacherStudentDataLinkExclusion] IS NULL AND del.[TeacherStudentDataLinkExclusion] IS NOT NULL) OR (i.[TeacherStudentDataLinkExclusion] IS NOT NULL AND del.[TeacherStudentDataLinkExclusion] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -70354,9 +69629,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -70523,11 +69797,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Section_DocumentId] <> del.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND del.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND del.[Section_DocumentId] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] <> del.[EducationalEnvironmentDescriptor_DescriptorId] OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationalEnvironmentDescriptor_DescriptorId] IS NOT NULL AND del.[EducationalEnvironmentDescriptor_DescriptorId] IS NULL)) OR (i.[ArrivalTime] <> del.[ArrivalTime] OR (i.[ArrivalTime] IS NULL AND del.[ArrivalTime] IS NOT NULL) OR (i.[ArrivalTime] IS NOT NULL AND del.[ArrivalTime] IS NULL)) OR (CAST(i.[AttendanceEventReason] AS varbinary(max)) <> CAST(del.[AttendanceEventReason] AS varbinary(max)) OR (i.[AttendanceEventReason] IS NULL AND del.[AttendanceEventReason] IS NOT NULL) OR (i.[AttendanceEventReason] IS NOT NULL AND del.[AttendanceEventReason] IS NULL)) OR (i.[DepartureTime] <> del.[DepartureTime] OR (i.[DepartureTime] IS NULL AND del.[DepartureTime] IS NOT NULL) OR (i.[DepartureTime] IS NOT NULL AND del.[DepartureTime] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[EventDuration] <> del.[EventDuration] OR (i.[EventDuration] IS NULL AND del.[EventDuration] IS NOT NULL) OR (i.[EventDuration] IS NOT NULL AND del.[EventDuration] IS NULL)) OR (i.[SectionAttendanceDuration] <> del.[SectionAttendanceDuration] OR (i.[SectionAttendanceDuration] IS NULL AND del.[SectionAttendanceDuration] IS NOT NULL) OR (i.[SectionAttendanceDuration] IS NOT NULL AND del.[SectionAttendanceDuration] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -70574,9 +69843,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -70804,11 +70072,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[SpecialEducationExitReasonDescriptor_DescriptorId] <> del.[SpecialEducationExitReasonDescriptor_DescriptorId] OR (i.[SpecialEducationExitReasonDescriptor_DescriptorId] IS NULL AND del.[SpecialEducationExitReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[SpecialEducationExitReasonDescriptor_DescriptorId] IS NOT NULL AND del.[SpecialEducationExitReasonDescriptor_DescriptorId] IS NULL)) OR (i.[SpecialEducationSettingDescriptor_DescriptorId] <> del.[SpecialEducationSettingDescriptor_DescriptorId] OR (i.[SpecialEducationSettingDescriptor_DescriptorId] IS NULL AND del.[SpecialEducationSettingDescriptor_DescriptorId] IS NOT NULL) OR (i.[SpecialEducationSettingDescriptor_DescriptorId] IS NOT NULL AND del.[SpecialEducationSettingDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[IdeaEligibility] <> del.[IdeaEligibility] OR (i.[IdeaEligibility] IS NULL AND del.[IdeaEligibility] IS NOT NULL) OR (i.[IdeaEligibility] IS NOT NULL AND del.[IdeaEligibility] IS NULL)) OR (i.[IepBeginDate] <> del.[IepBeginDate] OR (i.[IepBeginDate] IS NULL AND del.[IepBeginDate] IS NOT NULL) OR (i.[IepBeginDate] IS NOT NULL AND del.[IepBeginDate] IS NULL)) OR (i.[IepEndDate] <> del.[IepEndDate] OR (i.[IepEndDate] IS NULL AND del.[IepEndDate] IS NOT NULL) OR (i.[IepEndDate] IS NOT NULL AND del.[IepEndDate] IS NULL)) OR (i.[IepReviewDate] <> del.[IepReviewDate] OR (i.[IepReviewDate] IS NULL AND del.[IepReviewDate] IS NOT NULL) OR (i.[IepReviewDate] IS NOT NULL AND del.[IepReviewDate] IS NULL)) OR (i.[LastEvaluationDate] <> del.[LastEvaluationDate] OR (i.[LastEvaluationDate] IS NULL AND del.[LastEvaluationDate] IS NOT NULL) OR (i.[LastEvaluationDate] IS NOT NULL AND del.[LastEvaluationDate] IS NULL)) OR (i.[MedicallyFragile] <> del.[MedicallyFragile] OR (i.[MedicallyFragile] IS NULL AND del.[MedicallyFragile] IS NOT NULL) OR (i.[MedicallyFragile] IS NOT NULL AND del.[MedicallyFragile] IS NULL)) OR (i.[MultiplyDisabled] <> del.[MultiplyDisabled] OR (i.[MultiplyDisabled] IS NULL AND del.[MultiplyDisabled] IS NOT NULL) OR (i.[MultiplyDisabled] IS NOT NULL AND del.[MultiplyDisabled] IS NULL)) OR (i.[ReductionInHoursPerWeekComparedToPeers] <> del.[ReductionInHoursPerWeekComparedToPeers] OR (i.[ReductionInHoursPerWeekComparedToPeers] IS NULL AND del.[ReductionInHoursPerWeekComparedToPeers] IS NOT NULL) OR (i.[ReductionInHoursPerWeekComparedToPeers] IS NOT NULL AND del.[ReductionInHoursPerWeekComparedToPeers] IS NULL)) OR (i.[SchoolHoursPerWeek] <> del.[SchoolHoursPerWeek] OR (i.[SchoolHoursPerWeek] IS NULL AND del.[SchoolHoursPerWeek] IS NOT NULL) OR (i.[SchoolHoursPerWeek] IS NOT NULL AND del.[SchoolHoursPerWeek] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)) OR (i.[ShortenedSchoolDayIndicator] <> del.[ShortenedSchoolDayIndicator] OR (i.[ShortenedSchoolDayIndicator] IS NULL AND del.[ShortenedSchoolDayIndicator] IS NOT NULL) OR (i.[ShortenedSchoolDayIndicator] IS NOT NULL AND del.[ShortenedSchoolDayIndicator] IS NULL)) OR (i.[SpecialEducationExitDate] <> del.[SpecialEducationExitDate] OR (i.[SpecialEducationExitDate] IS NULL AND del.[SpecialEducationExitDate] IS NOT NULL) OR (i.[SpecialEducationExitDate] IS NOT NULL AND del.[SpecialEducationExitDate] IS NULL)) OR (CAST(i.[SpecialEducationExitExplained] AS varbinary(max)) <> CAST(del.[SpecialEducationExitExplained] AS varbinary(max)) OR (i.[SpecialEducationExitExplained] IS NULL AND del.[SpecialEducationExitExplained] IS NOT NULL) OR (i.[SpecialEducationExitExplained] IS NOT NULL AND del.[SpecialEducationExitExplained] IS NULL)) OR (i.[SpecialEducationHoursPerWeek] <> del.[SpecialEducationHoursPerWeek] OR (i.[SpecialEducationHoursPerWeek] IS NULL AND del.[SpecialEducationHoursPerWeek] IS NOT NULL) OR (i.[SpecialEducationHoursPerWeek] IS NOT NULL AND del.[SpecialEducationHoursPerWeek] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -70851,9 +70114,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -71167,11 +70429,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[EligibilityDelayReasonDescriptor_DescriptorId] <> del.[EligibilityDelayReasonDescriptor_DescriptorId] OR (i.[EligibilityDelayReasonDescriptor_DescriptorId] IS NULL AND del.[EligibilityDelayReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[EligibilityDelayReasonDescriptor_DescriptorId] IS NOT NULL AND del.[EligibilityDelayReasonDescriptor_DescriptorId] IS NULL)) OR (i.[EligibilityEvaluationTypeDescriptor_DescriptorId] <> del.[EligibilityEvaluationTypeDescriptor_DescriptorId] OR (i.[EligibilityEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[EligibilityEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EligibilityEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[EligibilityEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EvaluationDelayReasonDescriptor_DescriptorId] <> del.[EvaluationDelayReasonDescriptor_DescriptorId] OR (i.[EvaluationDelayReasonDescriptor_DescriptorId] IS NULL AND del.[EvaluationDelayReasonDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationDelayReasonDescriptor_DescriptorId] IS NOT NULL AND del.[EvaluationDelayReasonDescriptor_DescriptorId] IS NULL)) OR (i.[IdeaPartDescriptor_DescriptorId] <> del.[IdeaPartDescriptor_DescriptorId] OR (i.[IdeaPartDescriptor_DescriptorId] IS NULL AND del.[IdeaPartDescriptor_DescriptorId] IS NOT NULL) OR (i.[IdeaPartDescriptor_DescriptorId] IS NOT NULL AND del.[IdeaPartDescriptor_DescriptorId] IS NULL)) OR (i.[ConsentToEvaluationDate] <> del.[ConsentToEvaluationDate] OR (i.[ConsentToEvaluationDate] IS NULL AND del.[ConsentToEvaluationDate] IS NOT NULL) OR (i.[ConsentToEvaluationDate] IS NOT NULL AND del.[ConsentToEvaluationDate] IS NULL)) OR (i.[ConsentToEvaluationReceivedDate] <> del.[ConsentToEvaluationReceivedDate] OR (i.[ConsentToEvaluationReceivedDate] IS NULL AND del.[ConsentToEvaluationReceivedDate] IS NOT NULL) OR (i.[ConsentToEvaluationReceivedDate] IS NOT NULL AND del.[ConsentToEvaluationReceivedDate] IS NULL)) OR (i.[EligibilityConferenceDate] <> del.[EligibilityConferenceDate] OR (i.[EligibilityConferenceDate] IS NULL AND del.[EligibilityConferenceDate] IS NOT NULL) OR (i.[EligibilityConferenceDate] IS NOT NULL AND del.[EligibilityConferenceDate] IS NULL)) OR (i.[EligibilityDeterminationDate] <> del.[EligibilityDeterminationDate] OR (i.[EligibilityDeterminationDate] IS NULL AND del.[EligibilityDeterminationDate] IS NOT NULL) OR (i.[EligibilityDeterminationDate] IS NOT NULL AND del.[EligibilityDeterminationDate] IS NULL)) OR (i.[EligibilityEvaluationDate] <> del.[EligibilityEvaluationDate] OR (i.[EligibilityEvaluationDate] IS NULL AND del.[EligibilityEvaluationDate] IS NOT NULL) OR (i.[EligibilityEvaluationDate] IS NOT NULL AND del.[EligibilityEvaluationDate] IS NULL)) OR (i.[EvaluationCompleteIndicator] <> del.[EvaluationCompleteIndicator] OR (i.[EvaluationCompleteIndicator] IS NULL AND del.[EvaluationCompleteIndicator] IS NOT NULL) OR (i.[EvaluationCompleteIndicator] IS NOT NULL AND del.[EvaluationCompleteIndicator] IS NULL)) OR (i.[EvaluationDelayDays] <> del.[EvaluationDelayDays] OR (i.[EvaluationDelayDays] IS NULL AND del.[EvaluationDelayDays] IS NOT NULL) OR (i.[EvaluationDelayDays] IS NOT NULL AND del.[EvaluationDelayDays] IS NULL)) OR (CAST(i.[EvaluationLateReason] AS varbinary(max)) <> CAST(del.[EvaluationLateReason] AS varbinary(max)) OR (i.[EvaluationLateReason] IS NULL AND del.[EvaluationLateReason] IS NOT NULL) OR (i.[EvaluationLateReason] IS NOT NULL AND del.[EvaluationLateReason] IS NULL)) OR (i.[IdeaIndicator] <> del.[IdeaIndicator] OR (i.[IdeaIndicator] IS NULL AND del.[IdeaIndicator] IS NOT NULL) OR (i.[IdeaIndicator] IS NOT NULL AND del.[IdeaIndicator] IS NULL)) OR (i.[OriginalECIServicesDate] <> del.[OriginalECIServicesDate] OR (i.[OriginalECIServicesDate] IS NULL AND del.[OriginalECIServicesDate] IS NOT NULL) OR (i.[OriginalECIServicesDate] IS NOT NULL AND del.[OriginalECIServicesDate] IS NULL)) OR (i.[TransitionConferenceDate] <> del.[TransitionConferenceDate] OR (i.[TransitionConferenceDate] IS NULL AND del.[TransitionConferenceDate] IS NOT NULL) OR (i.[TransitionConferenceDate] IS NOT NULL AND del.[TransitionConferenceDate] IS NULL)) OR (i.[TransitionNotificationDate] <> del.[TransitionNotificationDate] OR (i.[TransitionNotificationDate] IS NULL AND del.[TransitionNotificationDate] IS NOT NULL) OR (i.[TransitionNotificationDate] IS NOT NULL AND del.[TransitionNotificationDate] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -71214,9 +70471,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -71397,11 +70653,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_DocumentId] <> del.[ProgramProgram_DocumentId] OR (i.[ProgramProgram_DocumentId] IS NULL AND del.[ProgramProgram_DocumentId] IS NOT NULL) OR (i.[ProgramProgram_DocumentId] IS NOT NULL AND del.[ProgramProgram_DocumentId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[ReasonExitedDescriptor_DescriptorId] <> del.[ReasonExitedDescriptor_DescriptorId] OR (i.[ReasonExitedDescriptor_DescriptorId] IS NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL) OR (i.[ReasonExitedDescriptor_DescriptorId] IS NOT NULL AND del.[ReasonExitedDescriptor_DescriptorId] IS NULL)) OR (i.[TitleIPartAParticipantDescriptor_DescriptorId] <> del.[TitleIPartAParticipantDescriptor_DescriptorId] OR (i.[TitleIPartAParticipantDescriptor_DescriptorId] IS NULL AND del.[TitleIPartAParticipantDescriptor_DescriptorId] IS NOT NULL) OR (i.[TitleIPartAParticipantDescriptor_DescriptorId] IS NOT NULL AND del.[TitleIPartAParticipantDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EndDate] <> del.[EndDate] OR (i.[EndDate] IS NULL AND del.[EndDate] IS NOT NULL) OR (i.[EndDate] IS NOT NULL AND del.[EndDate] IS NULL)) OR (i.[ServedOutsideOfRegularSession] <> del.[ServedOutsideOfRegularSession] OR (i.[ServedOutsideOfRegularSession] IS NULL AND del.[ServedOutsideOfRegularSession] IS NOT NULL) OR (i.[ServedOutsideOfRegularSession] IS NOT NULL AND del.[ServedOutsideOfRegularSession] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -71444,9 +70695,8 @@ BEGIN
             del.[Student_StudentUniqueId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
@@ -71604,11 +70854,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Student_DocumentId] <> del.[Student_DocumentId] OR (i.[Student_DocumentId] IS NULL AND del.[Student_DocumentId] IS NOT NULL) OR (i.[Student_DocumentId] IS NOT NULL AND del.[Student_DocumentId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[TransportationEducationOrganization_DocumentId] <> del.[TransportationEducationOrganization_DocumentId] OR (i.[TransportationEducationOrganization_DocumentId] IS NULL AND del.[TransportationEducationOrganization_DocumentId] IS NOT NULL) OR (i.[TransportationEducationOrganization_DocumentId] IS NOT NULL AND del.[TransportationEducationOrganization_DocumentId] IS NULL)) OR (i.[TransportationEducationOrganization_EducationOrganizationId] <> del.[TransportationEducationOrganization_EducationOrganizationId] OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NULL AND del.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[TransportationEducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[StudentBusDetailsBusRouteDescriptor_DescriptorId] <> del.[StudentBusDetailsBusRouteDescriptor_DescriptorId] OR (i.[StudentBusDetailsBusRouteDescriptor_DescriptorId] IS NULL AND del.[StudentBusDetailsBusRouteDescriptor_DescriptorId] IS NOT NULL) OR (i.[StudentBusDetailsBusRouteDescriptor_DescriptorId] IS NOT NULL AND del.[StudentBusDetailsBusRouteDescriptor_DescriptorId] IS NULL)) OR (i.[TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] <> del.[TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] OR (i.[TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] IS NULL AND del.[TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] IS NOT NULL AND del.[TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] IS NULL)) OR (i.[TransportationTypeDescriptor_DescriptorId] <> del.[TransportationTypeDescriptor_DescriptorId] OR (i.[TransportationTypeDescriptor_DescriptorId] IS NULL AND del.[TransportationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[TransportationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[TransportationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[SpecialAccomodationRequirements] AS varbinary(max)) <> CAST(del.[SpecialAccomodationRequirements] AS varbinary(max)) OR (i.[SpecialAccomodationRequirements] IS NULL AND del.[SpecialAccomodationRequirements] IS NOT NULL) OR (i.[SpecialAccomodationRequirements] IS NOT NULL AND del.[SpecialAccomodationRequirements] IS NULL)) OR (CAST(i.[StudentBusDetailsBusNumber] AS varbinary(max)) <> CAST(del.[StudentBusDetailsBusNumber] AS varbinary(max)) OR (i.[StudentBusDetailsBusNumber] IS NULL AND del.[StudentBusDetailsBusNumber] IS NOT NULL) OR (i.[StudentBusDetailsBusNumber] IS NOT NULL AND del.[StudentBusDetailsBusNumber] IS NULL)) OR (i.[StudentBusDetailsMileage] <> del.[StudentBusDetailsMileage] OR (i.[StudentBusDetailsMileage] IS NULL AND del.[StudentBusDetailsMileage] IS NOT NULL) OR (i.[StudentBusDetailsMileage] IS NOT NULL AND del.[StudentBusDetailsMileage] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -71641,9 +70886,8 @@ BEGIN
             del.[TransportationEducationOrganization_EducationOrganizationId],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -71868,11 +71112,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_DocumentId] <> del.[SchoolYear_DocumentId] OR (i.[SchoolYear_DocumentId] IS NULL AND del.[SchoolYear_DocumentId] IS NOT NULL) OR (i.[SchoolYear_DocumentId] IS NOT NULL AND del.[SchoolYear_DocumentId] IS NULL)) OR (i.[Session_DocumentId] <> del.[Session_DocumentId] OR (i.[Session_DocumentId] IS NULL AND del.[Session_DocumentId] IS NOT NULL) OR (i.[Session_DocumentId] IS NOT NULL AND del.[Session_DocumentId] IS NULL)) OR (i.[Session_SchoolId] <> del.[Session_SchoolId] OR (i.[Session_SchoolId] IS NULL AND del.[Session_SchoolId] IS NOT NULL) OR (i.[Session_SchoolId] IS NOT NULL AND del.[Session_SchoolId] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(del.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND del.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND del.[Session_SessionName] IS NULL)) OR (i.[SurveyCategoryDescriptor_DescriptorId] <> del.[SurveyCategoryDescriptor_DescriptorId] OR (i.[SurveyCategoryDescriptor_DescriptorId] IS NULL AND del.[SurveyCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[SurveyCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[SurveyCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (i.[NumberAdministered] <> del.[NumberAdministered] OR (i.[NumberAdministered] IS NULL AND del.[NumberAdministered] IS NOT NULL) OR (i.[NumberAdministered] IS NOT NULL AND del.[NumberAdministered] IS NULL)) OR (CAST(i.[SurveyIdentifier] AS varbinary(max)) <> CAST(del.[SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyIdentifier] IS NULL AND del.[SurveyIdentifier] IS NOT NULL) OR (i.[SurveyIdentifier] IS NOT NULL AND del.[SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyTitle] AS varbinary(max)) <> CAST(del.[SurveyTitle] AS varbinary(max)) OR (i.[SurveyTitle] IS NULL AND del.[SurveyTitle] IS NOT NULL) OR (i.[SurveyTitle] IS NOT NULL AND del.[SurveyTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -71903,9 +71142,8 @@ BEGIN
             del.[Namespace],
             del.[SurveyIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72006,11 +71244,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Course_DocumentId] <> del.[Course_DocumentId] OR (i.[Course_DocumentId] IS NULL AND del.[Course_DocumentId] IS NOT NULL) OR (i.[Course_DocumentId] IS NOT NULL AND del.[Course_DocumentId] IS NULL)) OR (CAST(i.[Course_CourseCode] AS varbinary(max)) <> CAST(del.[Course_CourseCode] AS varbinary(max)) OR (i.[Course_CourseCode] IS NULL AND del.[Course_CourseCode] IS NOT NULL) OR (i.[Course_CourseCode] IS NOT NULL AND del.[Course_CourseCode] IS NULL)) OR (i.[Course_EducationOrganizationId] <> del.[Course_EducationOrganizationId] OR (i.[Course_EducationOrganizationId] IS NULL AND del.[Course_EducationOrganizationId] IS NOT NULL) OR (i.[Course_EducationOrganizationId] IS NOT NULL AND del.[Course_EducationOrganizationId] IS NULL)) OR (i.[Survey_DocumentId] <> del.[Survey_DocumentId] OR (i.[Survey_DocumentId] IS NULL AND del.[Survey_DocumentId] IS NOT NULL) OR (i.[Survey_DocumentId] IS NOT NULL AND del.[Survey_DocumentId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -72045,9 +71278,8 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72156,11 +71388,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Program_DocumentId] <> del.[Program_DocumentId] OR (i.[Program_DocumentId] IS NULL AND del.[Program_DocumentId] IS NOT NULL) OR (i.[Program_DocumentId] IS NOT NULL AND del.[Program_DocumentId] IS NULL)) OR (i.[Program_EducationOrganizationId] <> del.[Program_EducationOrganizationId] OR (i.[Program_EducationOrganizationId] IS NULL AND del.[Program_EducationOrganizationId] IS NOT NULL) OR (i.[Program_EducationOrganizationId] IS NOT NULL AND del.[Program_EducationOrganizationId] IS NULL)) OR (CAST(i.[Program_ProgramName] AS varbinary(max)) <> CAST(del.[Program_ProgramName] AS varbinary(max)) OR (i.[Program_ProgramName] IS NULL AND del.[Program_ProgramName] IS NOT NULL) OR (i.[Program_ProgramName] IS NOT NULL AND del.[Program_ProgramName] IS NULL)) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] <> del.[Program_ProgramTypeDescriptor_DescriptorId] OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Survey_DocumentId] <> del.[Survey_DocumentId] OR (i.[Survey_DocumentId] IS NULL AND del.[Survey_DocumentId] IS NOT NULL) OR (i.[Survey_DocumentId] IS NOT NULL AND del.[Survey_DocumentId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -72199,9 +71426,8 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[Program_ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -72321,11 +71547,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (i.[SurveySection_DocumentId] <> del.[SurveySection_DocumentId] OR (i.[SurveySection_DocumentId] IS NULL AND del.[SurveySection_DocumentId] IS NOT NULL) OR (i.[SurveySection_DocumentId] IS NOT NULL AND del.[SurveySection_DocumentId] IS NULL)) OR (CAST(i.[SurveySection_SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySection_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySection_SurveySectionTitle] IS NULL AND del.[SurveySection_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySection_SurveySectionTitle] IS NOT NULL AND del.[SurveySection_SurveySectionTitle] IS NULL)) OR (i.[Survey_DocumentId] <> del.[Survey_DocumentId] OR (i.[Survey_DocumentId] IS NULL AND del.[Survey_DocumentId] IS NOT NULL) OR (i.[Survey_DocumentId] IS NOT NULL AND del.[Survey_DocumentId] IS NULL)) OR (i.[QuestionFormDescriptor_DescriptorId] <> del.[QuestionFormDescriptor_DescriptorId] OR (i.[QuestionFormDescriptor_DescriptorId] IS NULL AND del.[QuestionFormDescriptor_DescriptorId] IS NOT NULL) OR (i.[QuestionFormDescriptor_DescriptorId] IS NOT NULL AND del.[QuestionFormDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[QuestionCode] AS varbinary(max)) <> CAST(del.[QuestionCode] AS varbinary(max)) OR (i.[QuestionCode] IS NULL AND del.[QuestionCode] IS NOT NULL) OR (i.[QuestionCode] IS NOT NULL AND del.[QuestionCode] IS NULL)) OR (CAST(i.[QuestionText] AS varbinary(max)) <> CAST(del.[QuestionText] AS varbinary(max)) OR (i.[QuestionText] IS NULL AND del.[QuestionText] IS NOT NULL) OR (i.[QuestionText] IS NOT NULL AND del.[QuestionText] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -72358,9 +71579,8 @@ BEGIN
             del.[Namespace_Unified],
             del.[SurveyIdentifier_Unified],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72504,11 +71724,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (i.[SurveyQuestion_DocumentId] <> del.[SurveyQuestion_DocumentId] OR (i.[SurveyQuestion_DocumentId] IS NULL AND del.[SurveyQuestion_DocumentId] IS NOT NULL) OR (i.[SurveyQuestion_DocumentId] IS NOT NULL AND del.[SurveyQuestion_DocumentId] IS NULL)) OR (CAST(i.[SurveyQuestion_QuestionCode] AS varbinary(max)) <> CAST(del.[SurveyQuestion_QuestionCode] AS varbinary(max)) OR (i.[SurveyQuestion_QuestionCode] IS NULL AND del.[SurveyQuestion_QuestionCode] IS NOT NULL) OR (i.[SurveyQuestion_QuestionCode] IS NOT NULL AND del.[SurveyQuestion_QuestionCode] IS NULL)) OR (i.[SurveyResponse_DocumentId] <> del.[SurveyResponse_DocumentId] OR (i.[SurveyResponse_DocumentId] IS NULL AND del.[SurveyResponse_DocumentId] IS NOT NULL) OR (i.[SurveyResponse_DocumentId] IS NOT NULL AND del.[SurveyResponse_DocumentId] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[Comment] AS varbinary(max)) <> CAST(del.[Comment] AS varbinary(max)) OR (i.[Comment] IS NULL AND del.[Comment] IS NOT NULL) OR (i.[Comment] IS NOT NULL AND del.[Comment] IS NULL)) OR (i.[NoResponse] <> del.[NoResponse] OR (i.[NoResponse] IS NULL AND del.[NoResponse] IS NOT NULL) OR (i.[NoResponse] IS NOT NULL AND del.[NoResponse] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -72543,9 +71758,8 @@ BEGIN
             del.[SurveyIdentifier_Unified],
             del.[SurveyResponse_SurveyResponseIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72771,11 +71985,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SurveyResponderChoiceContact_DocumentId] <> del.[SurveyResponderChoiceContact_DocumentId] OR (i.[SurveyResponderChoiceContact_DocumentId] IS NULL AND del.[SurveyResponderChoiceContact_DocumentId] IS NOT NULL) OR (i.[SurveyResponderChoiceContact_DocumentId] IS NOT NULL AND del.[SurveyResponderChoiceContact_DocumentId] IS NULL)) OR (CAST(i.[SurveyResponderChoiceContact_ContactUniqueId] AS varbinary(max)) <> CAST(del.[SurveyResponderChoiceContact_ContactUniqueId] AS varbinary(max)) OR (i.[SurveyResponderChoiceContact_ContactUniqueId] IS NULL AND del.[SurveyResponderChoiceContact_ContactUniqueId] IS NOT NULL) OR (i.[SurveyResponderChoiceContact_ContactUniqueId] IS NOT NULL AND del.[SurveyResponderChoiceContact_ContactUniqueId] IS NULL)) OR (i.[SurveyResponderChoiceStaff_DocumentId] <> del.[SurveyResponderChoiceStaff_DocumentId] OR (i.[SurveyResponderChoiceStaff_DocumentId] IS NULL AND del.[SurveyResponderChoiceStaff_DocumentId] IS NOT NULL) OR (i.[SurveyResponderChoiceStaff_DocumentId] IS NOT NULL AND del.[SurveyResponderChoiceStaff_DocumentId] IS NULL)) OR (CAST(i.[SurveyResponderChoiceStaff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[SurveyResponderChoiceStaff_StaffUniqueId] AS varbinary(max)) OR (i.[SurveyResponderChoiceStaff_StaffUniqueId] IS NULL AND del.[SurveyResponderChoiceStaff_StaffUniqueId] IS NOT NULL) OR (i.[SurveyResponderChoiceStaff_StaffUniqueId] IS NOT NULL AND del.[SurveyResponderChoiceStaff_StaffUniqueId] IS NULL)) OR (i.[SurveyResponderChoiceStudent_DocumentId] <> del.[SurveyResponderChoiceStudent_DocumentId] OR (i.[SurveyResponderChoiceStudent_DocumentId] IS NULL AND del.[SurveyResponderChoiceStudent_DocumentId] IS NOT NULL) OR (i.[SurveyResponderChoiceStudent_DocumentId] IS NOT NULL AND del.[SurveyResponderChoiceStudent_DocumentId] IS NULL)) OR (CAST(i.[SurveyResponderChoiceStudent_StudentUniqueId] AS varbinary(max)) <> CAST(del.[SurveyResponderChoiceStudent_StudentUniqueId] AS varbinary(max)) OR (i.[SurveyResponderChoiceStudent_StudentUniqueId] IS NULL AND del.[SurveyResponderChoiceStudent_StudentUniqueId] IS NOT NULL) OR (i.[SurveyResponderChoiceStudent_StudentUniqueId] IS NOT NULL AND del.[SurveyResponderChoiceStudent_StudentUniqueId] IS NULL)) OR (i.[Survey_DocumentId] <> del.[Survey_DocumentId] OR (i.[Survey_DocumentId] IS NULL AND del.[Survey_DocumentId] IS NOT NULL) OR (i.[Survey_DocumentId] IS NOT NULL AND del.[Survey_DocumentId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[ElectronicMailAddress] AS varbinary(max)) <> CAST(del.[ElectronicMailAddress] AS varbinary(max)) OR (i.[ElectronicMailAddress] IS NULL AND del.[ElectronicMailAddress] IS NOT NULL) OR (i.[ElectronicMailAddress] IS NOT NULL AND del.[ElectronicMailAddress] IS NULL)) OR (CAST(i.[FullName] AS varbinary(max)) <> CAST(del.[FullName] AS varbinary(max)) OR (i.[FullName] IS NULL AND del.[FullName] IS NOT NULL) OR (i.[FullName] IS NOT NULL AND del.[FullName] IS NULL)) OR (CAST(i.[Location] AS varbinary(max)) <> CAST(del.[Location] AS varbinary(max)) OR (i.[Location] IS NULL AND del.[Location] IS NOT NULL) OR (i.[Location] IS NOT NULL AND del.[Location] IS NULL)) OR (i.[ResponseDate] <> del.[ResponseDate] OR (i.[ResponseDate] IS NULL AND del.[ResponseDate] IS NOT NULL) OR (i.[ResponseDate] IS NOT NULL AND del.[ResponseDate] IS NULL)) OR (i.[ResponseTime] <> del.[ResponseTime] OR (i.[ResponseTime] IS NULL AND del.[ResponseTime] IS NOT NULL) OR (i.[ResponseTime] IS NOT NULL AND del.[ResponseTime] IS NULL)) OR (CAST(i.[SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponseIdentifier] IS NULL AND del.[SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponseIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -72808,9 +72017,8 @@ BEGIN
             del.[Survey_SurveyIdentifier],
             del.[SurveyResponseIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72915,11 +72123,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SurveyResponse_DocumentId] <> del.[SurveyResponse_DocumentId] OR (i.[SurveyResponse_DocumentId] IS NULL AND del.[SurveyResponse_DocumentId] IS NOT NULL) OR (i.[SurveyResponse_DocumentId] IS NOT NULL AND del.[SurveyResponse_DocumentId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(del.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND del.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND del.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND del.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -72954,9 +72157,8 @@ BEGIN
             del.[SurveyResponse_SurveyIdentifier],
             del.[SurveyResponse_SurveyResponseIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73065,11 +72267,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[SurveyResponse_DocumentId] <> del.[SurveyResponse_DocumentId] OR (i.[SurveyResponse_DocumentId] IS NULL AND del.[SurveyResponse_DocumentId] IS NOT NULL) OR (i.[SurveyResponse_DocumentId] IS NOT NULL AND del.[SurveyResponse_DocumentId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(del.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND del.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND del.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND del.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -73106,9 +72303,8 @@ BEGIN
             del.[SurveyResponse_SurveyResponseIdentifier],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -73263,11 +72459,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Survey_DocumentId] <> del.[Survey_DocumentId] OR (i.[Survey_DocumentId] IS NULL AND del.[Survey_DocumentId] IS NOT NULL) OR (i.[Survey_DocumentId] IS NOT NULL AND del.[Survey_DocumentId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionTitle] IS NULL AND del.[SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionTitle] IS NOT NULL AND del.[SurveySectionTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -73300,9 +72491,8 @@ BEGIN
             del.[Survey_SurveyIdentifier],
             del.[SurveySectionTitle],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73407,11 +72597,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[Section_DocumentId] <> del.[Section_DocumentId] OR (i.[Section_DocumentId] IS NULL AND del.[Section_DocumentId] IS NOT NULL) OR (i.[Section_DocumentId] IS NOT NULL AND del.[Section_DocumentId] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (i.[Survey_DocumentId] <> del.[Survey_DocumentId] OR (i.[Survey_DocumentId] IS NULL AND del.[Survey_DocumentId] IS NOT NULL) OR (i.[Survey_DocumentId] IS NOT NULL AND del.[Survey_DocumentId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -73452,9 +72637,8 @@ BEGIN
             del.[Survey_Namespace],
             del.[Survey_SurveyIdentifier],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73575,11 +72759,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (i.[SurveyResponse_DocumentId] <> del.[SurveyResponse_DocumentId] OR (i.[SurveyResponse_DocumentId] IS NULL AND del.[SurveyResponse_DocumentId] IS NOT NULL) OR (i.[SurveyResponse_DocumentId] IS NOT NULL AND del.[SurveyResponse_DocumentId] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL)) OR (i.[SurveySection_DocumentId] <> del.[SurveySection_DocumentId] OR (i.[SurveySection_DocumentId] IS NULL AND del.[SurveySection_DocumentId] IS NOT NULL) OR (i.[SurveySection_DocumentId] IS NOT NULL AND del.[SurveySection_DocumentId] IS NULL)) OR (CAST(i.[SurveySection_SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySection_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySection_SurveySectionTitle] IS NULL AND del.[SurveySection_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySection_SurveySectionTitle] IS NOT NULL AND del.[SurveySection_SurveySectionTitle] IS NULL)) OR (i.[SectionRating] <> del.[SectionRating] OR (i.[SectionRating] IS NULL AND del.[SectionRating] IS NOT NULL) OR (i.[SectionRating] IS NOT NULL AND del.[SectionRating] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -73614,9 +72793,8 @@ BEGIN
             del.[SurveyResponse_SurveyResponseIdentifier],
             del.[SurveySection_SurveySectionTitle],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73725,11 +72903,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SurveySectionResponse_DocumentId] <> del.[SurveySectionResponse_DocumentId] OR (i.[SurveySectionResponse_DocumentId] IS NULL AND del.[SurveySectionResponse_DocumentId] IS NOT NULL) OR (i.[SurveySectionResponse_DocumentId] IS NOT NULL AND del.[SurveySectionResponse_DocumentId] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -73766,9 +72939,8 @@ BEGIN
             del.[SurveySectionResponse_SurveyResponseIdentifier],
             del.[SurveySectionResponse_SurveySectionTitle],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73881,11 +73053,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (i.[Staff_DocumentId] <> del.[Staff_DocumentId] OR (i.[Staff_DocumentId] IS NULL AND del.[Staff_DocumentId] IS NOT NULL) OR (i.[Staff_DocumentId] IS NOT NULL AND del.[Staff_DocumentId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (i.[SurveySectionResponse_DocumentId] <> del.[SurveySectionResponse_DocumentId] OR (i.[SurveySectionResponse_DocumentId] IS NULL AND del.[SurveySectionResponse_DocumentId] IS NOT NULL) OR (i.[SurveySectionResponse_DocumentId] IS NOT NULL AND del.[SurveySectionResponse_DocumentId] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -73924,9 +73091,8 @@ BEGIN
             del.[SurveySectionResponse_SurveySectionTitle],
             oldPj0s0.[DocumentId],
             del.[DocumentUuid],
-            s.[ContentVersion]
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
         FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)

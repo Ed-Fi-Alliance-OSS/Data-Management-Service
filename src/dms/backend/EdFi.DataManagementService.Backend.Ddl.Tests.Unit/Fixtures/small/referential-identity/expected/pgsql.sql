@@ -1264,10 +1264,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."DateTimeKeyResource" (
             "OldEventTimestamp",
             "Id",
@@ -1360,10 +1357,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."DecimalKeyResource" (
             "OldDecimalKey",
             "Id",
@@ -1456,10 +1450,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."DecimalRefResource" (
             "OldRefResourceId",
             "OldDecimalKeyReference_DecimalKey",
@@ -1558,10 +1549,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."EdOrgDependentChildResource" (
             "OldEdOrgDependentChildResourceId",
             "OldEdOrgDependentResourceReference_EdOrgDependentResourceId",
@@ -1666,10 +1654,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."EdOrgDependentResource" (
             "OldEdOrgDependentResourceId",
             "OldEducationOrganization_EducationOrganizationId",
@@ -1768,10 +1753,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."KeyUnifiedResource" (
             "OldKeyUnifiedResourceId",
             "OldResourceAReference_ResourceAId",
@@ -1882,10 +1864,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."ResourceA" (
             "OldResourceAId",
             "OldStudentReference_StudentUniqueId",
@@ -1984,10 +1963,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."ResourceB" (
             "OldResourceBId",
             "OldStudentReference_StudentUniqueId",
@@ -2139,10 +2115,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "Id",
@@ -2224,10 +2197,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."Student" (
             "OldStudentUniqueId",
             "Id",
@@ -2320,10 +2290,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation" (
             "OldStudentUniqueId",
             "OldSchoolReference_SchoolId",

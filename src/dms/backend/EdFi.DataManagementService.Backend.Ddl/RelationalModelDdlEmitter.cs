@@ -755,9 +755,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
-            // The DELETE branch bumps ContentVersion via OLD and, for triggers with a
-            // ChangeTracking attachment, inserts the tracked-change tombstone (DMS-1179).
-            // On DELETE there is no NEW row, so it returns OLD and skips the normal body.
+            // For triggers with a ChangeTracking attachment the DELETE branch takes a change
+            // version off the sequence and then inserts the tracked-change tombstone (DMS-1179).
+            // Without one it falls back to stamping ContentVersion via OLD. On DELETE there is
+            // no NEW row, so it returns OLD and skips the normal body.
             TrackedChangeInsertPlan? trackedChangePlan = null;
             if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
             {
@@ -783,25 +784,49 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine("IF TG_OP = 'DELETE' THEN");
                 using (writer.Indent())
                 {
-                    EmitPgsqlDocumentContentStampUpdate(
-                        writer,
-                        Quote(DmsTableNames.Document),
-                        FormatSequenceName(),
-                        deleteKeyColumn,
-                        mirrorStampTargetTable,
-                        "OLD",
-                        assignToNewMirrorColumns: false,
-                        updateMirrorTable: !isRootDocumentStampingTrigger,
-                        // The tombstone's ChangeVersion must be the post-bump value; the OLD row
-                        // image carries the pre-bump one, so only this statement can supply it.
-                        captureStampedContentVersion: trackedChangePlan is not null
-                    );
                     if (trackedChangePlan is not null)
                     {
+                        // The tombstone reads _stampedContentVersion, and only the root stamping path
+                        // declares that local (see the DECLARE block above). A non-root stamping
+                        // trigger carrying a tracked-change attachment would therefore render a
+                        // function body that does not compile, so fail at emit time instead of
+                        // shipping it.
+                        if (!isRootDocumentStampingTrigger)
+                        {
+                            throw new InvalidOperationException(
+                                $"DocumentStamping trigger '{trigger.Name.Value}' on table "
+                                    + $"'{trigger.Table.Schema.Value}.{trigger.Table.Name}' carries a "
+                                    + "tracked-change attachment but does not stamp a root table. Only "
+                                    + "root stamping triggers declare the _stampedContentVersion local "
+                                    + "the tombstone reads."
+                            );
+                        }
+
+                        // The tombstone's ChangeVersion is a fresh sequence value taken right here.
+                        // The OLD image carries the pre-delete ContentVersion, and no row survives a
+                        // delete to be stamped into one — reading it back out of dms.Document is what
+                        // used to make the delete statement order (root row before the dms.Document
+                        // row) load-bearing. The change version stays post-delete and monotonic
+                        // because dms.ChangeVersionSequence is the same source every stamp uses and
+                        // is what GetMaxChangeVersion reports.
+                        EmitPgsqlStampedContentVersionFromSequence(writer, FormatSequenceName());
                         TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
                             writer,
                             _dialect,
                             trackedChangePlan
+                        );
+                    }
+                    else
+                    {
+                        EmitPgsqlDocumentContentStampUpdate(
+                            writer,
+                            Quote(DmsTableNames.Document),
+                            FormatSequenceName(),
+                            deleteKeyColumn,
+                            mirrorStampTargetTable,
+                            "OLD",
+                            assignToNewMirrorColumns: false,
+                            updateMirrorTable: !isRootDocumentStampingTrigger
                         );
                     }
                     writer.AppendLine("RETURN OLD;");
@@ -829,8 +854,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("CREATE TRIGGER ");
         writer.AppendLine(Quote(trigger.Name));
 
-        // DELETE is part of the trigger event list because the DELETE branch stamps
-        // ContentVersion and emits tracked-change tombstones (DMS-1179).
+        // DELETE is part of the trigger event list because the DELETE branch emits
+        // tracked-change tombstones (DMS-1179).
         var pgsqlTriggerEvent = trigger.Parameters switch
         {
             TriggerKindParameters.DocumentStamping => "BEFORE INSERT OR UPDATE OR DELETE ON ",
@@ -1435,12 +1460,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(" := _stampedCreatedAt;");
     }
 
-    /// <param name="captureStampedContentVersion">
-    /// When <see langword="true"/>, the stamp <c>UPDATE</c> hands the bumped <c>ContentVersion</c> back
-    /// through <c>RETURNING … INTO STRICT _stampedContentVersion</c> so a following statement (the
-    /// tracked-change tombstone) can read the post-bump value. Only meaningful on the flat
-    /// (non-CTE) form, which is the only form the DELETE branch of a root trigger emits.
-    /// </param>
+    /// <summary>
+    /// Emits the plpgsql assignment that gives the tracked-change tombstone its change version:
+    /// a fresh value off <c>dms.ChangeVersionSequence</c>. The DELETE branch has no row left to stamp
+    /// and read back, and taking the value here is what keeps the tombstone independent of whether
+    /// the <c>dms.Document</c> row has already been deleted.
+    /// </summary>
+    private static void EmitPgsqlStampedContentVersionFromSequence(SqlWriter writer, string sequenceName)
+    {
+        writer.Append("_stampedContentVersion := nextval('");
+        writer.Append(sequenceName);
+        writer.AppendLine("');");
+    }
+
     private void EmitPgsqlDocumentContentStampUpdate(
         SqlWriter writer,
         string documentTable,
@@ -1449,8 +1481,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         DbTableName mirrorStampTargetTable,
         string sourceRowAlias,
         bool assignToNewMirrorColumns,
-        bool updateMirrorTable,
-        bool captureStampedContentVersion = false
+        bool updateMirrorTable
     )
     {
         if (assignToNewMirrorColumns || !updateMirrorTable)
@@ -1487,15 +1518,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append("NEW.");
                 writer.Append(Quote(ContentLastModifiedAtColumn));
                 writer.AppendLine(" := _stampedContentLastModifiedAt;");
-            }
-            else if (captureStampedContentVersion)
-            {
-                writer.AppendLine();
-                writer.Append("RETURNING ");
-                writer.Append(Quote(ContentVersionColumn));
-                // STRICT: the stamp requires the dms.Document row, so a missing row must fail
-                // loudly here rather than silently produce a NULL tombstone ChangeVersion.
-                writer.AppendLine(" INTO STRICT _stampedContentVersion;");
             }
             else
             {
@@ -1585,6 +1607,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             mirrorStampTargetTable
         );
 
+        // Built unconditionally so attachment inconsistencies (unknown tracked table, empty identity
+        // workset on a Resource-kind attachment) throw even when neither tracked-change block below
+        // is emitted. Read before the affectedDocs CTE because a tombstone-bearing root trigger
+        // leaves pure deletes out of the dms.Document stamp workset entirely.
+        var trackedChangePlan = TryBuildTrackedChangePlan(trigger, tableModel, trackedChangeTablesByName);
+
+        // A pure delete no longer stamps dms.Document: its tombstone allocates a change version
+        // straight from the sequence, so there is nothing left for the stamp to hand back and no
+        // reason to write a row that the delete batch removes moments later.
+        var stampDeletedDocuments = !(isRootDocumentStampingTrigger && trackedChangePlan is not null);
+
         writer.AppendLine("DECLARE @stamped TABLE (");
         using (writer.Indent())
         {
@@ -1666,28 +1699,31 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
             }
             writer.AppendLine();
-            // Root branches are disjoint (inserted-side takes changed updates, deleted-side
-            // pure deletes), so UNION ALL skips the dedup sort and the diff disjunction runs
-            // once per row. Child rows map many-to-one onto the root document, so the child
-            // shape keeps UNION's dedup and the deleted-side diff for changed updates.
-            writer.AppendLine(isRootDocumentStampingTrigger ? "UNION ALL" : "UNION");
-            writer.Append("SELECT del.");
-            writer.AppendLine(quotedKeyColumn);
-            writer.AppendLine("FROM deleted del");
-            writer.Append("LEFT JOIN inserted i ON ");
-            EmitMssqlJoinConjunction(writer, "i", "del", tableKeyColumns);
-            writer.AppendLine();
-            writer.Append("WHERE i.");
-            writer.Append(quotedProbeKeyColumn);
-            if (isRootDocumentStampingTrigger)
+            if (stampDeletedDocuments)
             {
-                writer.AppendLine(" IS NULL");
-            }
-            else
-            {
-                writer.Append(" IS NULL OR ");
-                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                // Root branches are disjoint (inserted-side takes changed updates, deleted-side
+                // pure deletes), so UNION ALL skips the dedup sort and the diff disjunction runs
+                // once per row. Child rows map many-to-one onto the root document, so the child
+                // shape keeps UNION's dedup and the deleted-side diff for changed updates.
+                writer.AppendLine(isRootDocumentStampingTrigger ? "UNION ALL" : "UNION");
+                writer.Append("SELECT del.");
+                writer.AppendLine(quotedKeyColumn);
+                writer.AppendLine("FROM deleted del");
+                writer.Append("LEFT JOIN inserted i ON ");
+                EmitMssqlJoinConjunction(writer, "i", "del", tableKeyColumns);
                 writer.AppendLine();
+                writer.Append("WHERE i.");
+                writer.Append(quotedProbeKeyColumn);
+                if (isRootDocumentStampingTrigger)
+                {
+                    writer.AppendLine(" IS NULL");
+                }
+                else
+                {
+                    writer.Append(" IS NULL OR ");
+                    EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                    writer.AppendLine();
+                }
             }
         }
         writer.AppendLine(")");
@@ -1779,10 +1815,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine("END");
 
-        // Built unconditionally so attachment inconsistencies (unknown tracked table, empty identity
-        // workset on a Resource-kind attachment) throw even when neither tracked-change block below
-        // is emitted.
-        var trackedChangePlan = TryBuildTrackedChangePlan(trigger, tableModel, trackedChangeTablesByName);
         if (trackedChangePlan is not null)
         {
             writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)");
@@ -1793,7 +1825,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     writer,
                     _dialect,
                     trackedChangePlan,
-                    keyColumn
+                    sequenceName
                 );
             }
             writer.AppendLine("END");

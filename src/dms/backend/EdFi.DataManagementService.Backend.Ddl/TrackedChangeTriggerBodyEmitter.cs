@@ -340,10 +340,11 @@ internal static class TrackedChangeTriggerBodyEmitter
     private static readonly ImageBinding MssqlNewImage = new("i", "new");
 
     /// <summary>
-    /// The plpgsql local the stamping trigger captures the bumped <c>ContentVersion</c> into. Both the
-    /// DELETE branch (tombstone) and the identity-diff branch (key change) fill it from their own
-    /// stamp <c>UPDATE … RETURNING … INTO STRICT</c>, so every PostgreSQL tracked-change row reads the
-    /// post-bump value without touching <c>dms.Document</c>.
+    /// The plpgsql local the stamping trigger puts the tracked-change row's change version in. The
+    /// identity-diff branch (key change) fills it from its stamp
+    /// <c>UPDATE … RETURNING … INTO STRICT</c>, because a key change bumps a row that survives; the
+    /// DELETE branch (tombstone) fills it with a fresh <c>nextval</c> off the change-version
+    /// sequence, because nothing survives a delete to be stamped.
     /// </summary>
     private const string PgsqlStampedContentVersionLocal = "_stampedContentVersion";
 
@@ -354,8 +355,8 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// tracked-change table when a document is deleted. Values come from the <c>OLD</c> row image —
     /// including the tracked <c>Id</c>, which reads the root row's own <c>DocumentUuid</c> mirror;
     /// the change version comes from the plpgsql local <c>_stampedContentVersion</c> the DELETE
-    /// branch captured, because the <c>OLD</c> image carries the pre-bump <c>ContentVersion</c>.
-    /// <c>New*</c> columns are omitted (they default to NULL).
+    /// branch assigned from the change-version sequence, because the <c>OLD</c> image carries the
+    /// pre-delete <c>ContentVersion</c>. <c>New*</c> columns are omitted (they default to NULL).
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
@@ -388,18 +389,19 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// tracked-change table when a document is deleted. Old values come from the <c>deleted</c>
     /// pseudo-table (alias <c>del</c>) — including the tracked <c>Id</c>, which reads the root row's
     /// own <c>DocumentUuid</c> mirror; <c>New*</c> columns are omitted (they default to NULL);
-    /// <c>ContentVersion</c> is read from the trigger's own <c>@stamped</c> capture table, which the
-    /// earlier content-stamp statement filled with the post-bump value for this delete workset.
+    /// <c>ChangeVersion</c> is a fresh <c>NEXT VALUE FOR</c> off the change-version sequence,
+    /// allocated once per deleted row. Nothing survives the delete to carry a post-delete stamp, and
+    /// sourcing one from <c>dms.Document</c> would make the delete statement order load-bearing.
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
     /// <param name="plan">The resolved insert plan produced by <see cref="BuildPlan"/>.</param>
-    /// <param name="keyColumn">The physical column on the source table carrying the document key.</param>
+    /// <param name="sequenceName">The qualified change-version sequence to allocate from.</param>
     internal static void EmitMssqlTombstoneInsert(
         SqlWriter writer,
         ISqlDialect dialect,
         TrackedChangeInsertPlan plan,
-        DbColumnName keyColumn
+        string sequenceName
     )
     {
         // INSERT INTO <qualified tracked table> (
@@ -411,16 +413,12 @@ internal static class TrackedChangeTriggerBodyEmitter
             plan,
             oldImage: MssqlOldImage,
             newImage: null,
-            changeVersionSql: $"s.{dialect.QuoteIdentifier("ContentVersion")}"
+            changeVersionSql: $"NEXT VALUE FOR {sequenceName}"
         );
 
-        // FROM deleted del … INNER JOIN @stamped s … optional old-image joins
+        // FROM deleted del … optional old-image joins
         // The terminating `;` is appended to the last line of the block, not on its own line.
-        var fixedLines = new[]
-        {
-            "FROM deleted del",
-            $"INNER JOIN @stamped s ON s.{dialect.QuoteIdentifier("DocumentId")} = del.{dialect.QuoteIdentifier(keyColumn.Value)}",
-        };
+        var fixedLines = new[] { "FROM deleted del" };
         EmitMssqlFromJoinBlock(writer, dialect, plan, fixedLines, MssqlOldImage);
     }
 
@@ -785,8 +783,12 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <param name="fromDeletedSet">
     /// <c>false</c> (PostgreSQL): there is no FROM clause — every value is an <c>OLD</c> field or the
     /// plpgsql <c>_stampedContentVersion</c> local.
-    /// <c>true</c> (SQL Server): the FROM clause is
-    /// <c>deleted del INNER JOIN @stamped s ON s.DocumentId = del.DocumentId</c>.
+    /// <c>true</c> (SQL Server): the FROM clause is <c>deleted del</c>, and the change version is a
+    /// <c>NEXT VALUE FOR</c> allocated per deleted row.
+    /// </param>
+    /// <param name="sequenceName">
+    /// The qualified change-version sequence the SQL Server rendering allocates from. Unused by the
+    /// PostgreSQL rendering, which reads the local the DELETE branch already assigned.
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// Thrown when the <see cref="TrackedChangeSystemColumnRole.Id"/>,
@@ -801,7 +803,8 @@ internal static class TrackedChangeTriggerBodyEmitter
         ISqlDialect dialect,
         TrackedChangeTableInfo tableInfo,
         string imageRef,
-        bool fromDeletedSet
+        bool fromDeletedSet,
+        string sequenceName
     )
     {
         var discriminatorColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.Discriminator);
@@ -867,23 +870,20 @@ internal static class TrackedChangeTriggerBodyEmitter
             // Id — the deleted descriptor row's own DocumentUuid mirror
             writer.AppendLine($"{imageRef}.{dialect.QuoteIdentifier("DocumentUuid")},");
 
-            // ChangeVersion — the post-bump content stamp, never the deleted row's stale copy.
+            // ChangeVersion — a fresh sequence value, never the deleted row's stale copy.
             // No trailing comma; on PostgreSQL this line also carries the statement terminator,
             // because no FROM clause follows it.
             writer.AppendLine(
-                fromDeletedSet
-                    ? $"s.{dialect.QuoteIdentifier("ContentVersion")}"
-                    : $"{PgsqlStampedContentVersionLocal};"
+                fromDeletedSet ? $"NEXT VALUE FOR {sequenceName}" : $"{PgsqlStampedContentVersionLocal};"
             );
         }
 
         if (fromDeletedSet)
         {
-            // SQL Server statement trigger: join the deleted pseudo-table to the trigger's own
-            // @stamped capture table, which holds the post-bump stamp for this delete workset.
-            var documentIdColumn = dialect.QuoteIdentifier("DocumentId");
-            writer.AppendLine("FROM deleted del");
-            writer.AppendLine($"INNER JOIN @stamped s ON s.{documentIdColumn} = del.{documentIdColumn};");
+            // SQL Server statement trigger: the deleted pseudo-table is the whole FROM clause, so it
+            // carries the terminator. The change version above comes from the sequence, so the
+            // tombstone needs neither the @stamped capture table nor a surviving dms.Document row.
+            writer.AppendLine("FROM deleted del;");
         }
     }
 

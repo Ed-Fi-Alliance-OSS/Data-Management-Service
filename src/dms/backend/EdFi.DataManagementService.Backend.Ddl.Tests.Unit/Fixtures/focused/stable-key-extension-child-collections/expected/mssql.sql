@@ -834,11 +834,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(del.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND del.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND del.[ProgramName] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -867,9 +862,8 @@ BEGIN
         SELECT
             del.[ProgramName],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -966,11 +960,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -999,9 +988,8 @@ BEGIN
         SELECT
             del.[SchoolId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN

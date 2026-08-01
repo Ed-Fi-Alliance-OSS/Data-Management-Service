@@ -584,11 +584,6 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[NamingStressItemId] <> del.[NamingStressItemId] OR (i.[NamingStressItemId] IS NULL AND del.[NamingStressItemId] IS NOT NULL) OR (i.[NamingStressItemId] IS NOT NULL AND del.[NamingStressItemId] IS NULL)) OR (i.[Order] <> del.[Order] OR (i.[Order] IS NULL AND del.[Order] IS NOT NULL) OR (i.[Order] IS NOT NULL AND del.[Order] IS NULL)) OR (CAST(i.[ShortName] AS varbinary(max)) <> CAST(del.[ShortName] AS varbinary(max)) OR (i.[ShortName] IS NULL AND del.[ShortName] IS NOT NULL) OR (i.[ShortName] IS NOT NULL AND del.[ShortName] IS NULL)) OR (CAST(i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] AS varbinary(max)) <> CAST(del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] AS varbinary(max)) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NOT NULL) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NOT NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NULL)) OR (CAST(i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] AS varbinary(max)) <> CAST(del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] AS varbinary(max)) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NOT NULL) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NOT NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NULL)) OR (CAST(i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] AS varbinary(max)) <> CAST(del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] AS varbinary(max)) OR (i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NULL AND del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NOT NULL) OR (i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NOT NULL AND del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -617,9 +612,8 @@ BEGIN
         SELECT
             del.[NamingStressItemId],
             del.[DocumentUuid],
-            s.[ContentVersion]
-        FROM deleted del
-        INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];
+            NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        FROM deleted del;
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN

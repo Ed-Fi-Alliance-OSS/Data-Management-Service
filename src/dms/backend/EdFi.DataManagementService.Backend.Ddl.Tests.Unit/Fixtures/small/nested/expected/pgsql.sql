@@ -471,10 +471,7 @@ BEGIN
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."Descriptor" (
             "Discriminator",
             "OldNamespace",
@@ -651,10 +648,7 @@ DECLARE
     _stampedCreatedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
+        _stampedContentVersion := nextval('"dms"."ChangeVersionSequence"');
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
             "Id",

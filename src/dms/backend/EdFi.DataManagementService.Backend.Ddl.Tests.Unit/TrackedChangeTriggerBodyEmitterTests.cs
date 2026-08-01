@@ -172,19 +172,11 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         );
 
         var tombstoneWriter = new SqlWriter(dialect);
-        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
-            tombstoneWriter,
-            dialect,
-            plan
-        );
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(tombstoneWriter, dialect, plan);
         _tombstone = tombstoneWriter.ToString();
 
         var keyChangeWriter = new SqlWriter(dialect);
-        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
-            keyChangeWriter,
-            dialect,
-            plan
-        );
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(keyChangeWriter, dialect, plan);
         _keyChange = keyChangeWriter.ToString();
     }
 
@@ -296,6 +288,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
 [TestFixture]
 public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
 {
+    private const string ChangeVersionSequence = TrackedChangeEmitterFixture.MssqlChangeVersionSequence;
     private string _tombstone = default!;
     private string _keyChange = default!;
 
@@ -313,7 +306,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
             tombstoneWriter,
             dialect,
             plan,
-            new DbColumnName("DocumentId")
+            ChangeVersionSequence
         );
         _tombstone = tombstoneWriter.ToString();
 
@@ -334,9 +327,10 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _tombstone.Should().Contain("[OldBeginDate]");
         _tombstone.Should().NotContain("[NewBeginDate]");
         _tombstone.Should().Contain("FROM deleted del");
-        // ChangeVersion comes from the trigger's own capture table, which the content stamp filled
-        // with the post-bump value for exactly this pure-delete workset.
-        _tombstone.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId]");
+        // ChangeVersion is a fresh sequence value allocated per deleted row: nothing that survives
+        // the delete can supply a post-delete stamp, and reading one back out of dms.Document would
+        // make the delete order load-bearing.
+        _tombstone.Should().NotContain("@stamped");
         _tombstone.Should().NotContain("[dms].[Document]");
         _tombstone
             .Should()
@@ -355,7 +349,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
             );
         _tombstone.Should().Contain("oldDj0.[Namespace]");
         _tombstone.Should().Contain("del.[DocumentUuid],");
-        _tombstone.Should().Contain("s.[ContentVersion]");
+        _tombstone.Should().Contain("NEXT VALUE FOR [dms].[ChangeVersionSequence]");
         _tombstone.Should().Contain("oldPj0s1.[DocumentId]");
         // The statement terminator must be attached to the last content line, never on its own line.
         _tombstone.Split('\n').Should().NotContain(l => l.Trim() == ";");
@@ -510,11 +504,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
     private static string RenderPgsqlKeyChange(ISqlDialect dialect, TrackedChangeInsertPlan plan)
     {
         var writer = new SqlWriter(dialect);
-        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
-            writer,
-            dialect,
-            plan
-        );
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(writer, dialect, plan);
         return writer.ToString();
     }
 
@@ -538,6 +528,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
 [TestFixture]
 public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
 {
+    private const string ChangeVersionSequence = TrackedChangeEmitterFixture.MssqlChangeVersionSequence;
     private string _pgsqlTombstone = default!;
     private string _mssqlTombstone = default!;
 
@@ -553,11 +544,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
         );
 
         var pgWriter = new SqlWriter(pgsqlDialect);
-        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
-            pgWriter,
-            pgsqlDialect,
-            plan
-        );
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(pgWriter, pgsqlDialect, plan);
         _pgsqlTombstone = pgWriter.ToString();
 
         var msWriter = new SqlWriter(mssqlDialect);
@@ -565,7 +552,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
             msWriter,
             mssqlDialect,
             plan,
-            new DbColumnName("DocumentId")
+            ChangeVersionSequence
         );
         _mssqlTombstone = msWriter.ToString();
     }
@@ -599,13 +586,14 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
     }
 
     [Test]
-    public void It_should_still_source_mssql_change_version_from_the_stamp_table_without_joins()
+    public void It_should_still_source_mssql_change_version_from_the_sequence_without_joins()
     {
         _mssqlTombstone.Should().Contain("del.[DocumentUuid],");
-        _mssqlTombstone.Should().Contain("s.[ContentVersion]");
-        _mssqlTombstone
-            .Should()
-            .EndWith("INNER JOIN @stamped s ON s.[DocumentId] = del.[DocumentId];\n");
+        _mssqlTombstone.Should().Contain("NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        // With the stamp-table join gone, the deleted pseudo-table is the whole FROM clause and
+        // therefore carries the terminator.
+        _mssqlTombstone.Should().EndWith("FROM deleted del;\n");
+        _mssqlTombstone.Should().NotContain("@stamped");
         _mssqlTombstone.Should().NotContain("[dms].[Document]");
     }
 }
@@ -617,6 +605,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
 [TestFixture]
 public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
 {
+    private const string ChangeVersionSequence = TrackedChangeEmitterFixture.MssqlChangeVersionSequence;
     private TrackedChangeInsertPlan _plan = default!;
     private string _pgsqlTombstone = default!;
     private string _pgsqlKeyChange = default!;
@@ -633,19 +622,11 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
 
         var pgsqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
         var pgsqlTombstoneWriter = new SqlWriter(pgsqlDialect);
-        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
-            pgsqlTombstoneWriter,
-            pgsqlDialect,
-            _plan
-        );
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(pgsqlTombstoneWriter, pgsqlDialect, _plan);
         _pgsqlTombstone = pgsqlTombstoneWriter.ToString();
 
         var pgsqlKeyChangeWriter = new SqlWriter(pgsqlDialect);
-        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
-            pgsqlKeyChangeWriter,
-            pgsqlDialect,
-            _plan
-        );
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(pgsqlKeyChangeWriter, pgsqlDialect, _plan);
         _pgsqlKeyChange = pgsqlKeyChangeWriter.ToString();
 
         var mssqlDialect = SqlDialectFactory.Create(SqlDialect.Mssql);
@@ -654,7 +635,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
             mssqlTombstoneWriter,
             mssqlDialect,
             _plan,
-            new DbColumnName("DocumentId")
+            ChangeVersionSequence
         );
         _mssqlTombstone = mssqlTombstoneWriter.ToString();
 
@@ -707,6 +688,12 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
 
 internal static class TrackedChangeEmitterFixture
 {
+    /// <summary>
+    /// The qualified change-version sequence the SQL Server tombstone renderer allocates from —
+    /// the same text <c>RelationalModelDdlEmitter.FormatSequenceName</c> produces for this dialect.
+    /// </summary>
+    internal const string MssqlChangeVersionSequence = "[dms].[ChangeVersionSequence]";
+
     internal static readonly DbSchemaName EdfiSchema = new("edfi");
     internal static readonly DbTableName SourceTable = new(EdfiSchema, "Grade");
     internal static readonly DbTableName TrackedTable = new(

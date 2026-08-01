@@ -1868,7 +1868,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -1890,7 +1889,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        // The delete branch takes the tombstone's ChangeVersion straight from
+        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
+        // tombstone stays post-delete and monotonic without depending on the dms.Document row
+        // still being there: it is the last change version this delete allocated, and the
+        // dms.Document stamp the second statement removes never overtakes it.
+        tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
+        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
@@ -1962,7 +1968,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -1978,7 +1983,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        // The delete branch takes the tombstone's ChangeVersion straight from
+        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
+        // tombstone stays post-delete and monotonic without depending on the dms.Document row
+        // still being there: it is the last change version this delete allocated, and the
+        // dms.Document stamp the second statement removes never overtakes it.
+        tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
+        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
         trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
@@ -2029,7 +2041,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2045,7 +2056,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        // The delete branch takes the tombstone's ChangeVersion straight from
+        // dms.ChangeVersionSequence instead of stamping dms.Document and reading it back, so the
+        // tombstone stays post-delete and monotonic without depending on the dms.Document row
+        // still being there: it is the last change version this delete allocated, and the
+        // dms.Document stamp the second statement removes never overtakes it.
+        tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
+        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2258,7 +2276,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             .Should()
             .Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "StudentEducationOrganizationAssociation",
@@ -2404,7 +2423,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             .Should()
             .Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
+        tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
