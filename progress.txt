@@ -152,3 +152,8 @@ Completed verification task for reference/design/backend-redesign/epics/18-docum
 Key decisions: kept production DI split; added unused test/integration stubs for frontend-owned DocumentCache supervisor/registry seams so provider-neutral ValidateOnBuild tests can validate shared backend registrations. Final verification passed; MSSQL default env unset fell back to unreachable endpoint, reran same filter with SQL Server 2025 container on localhost,14333.
 Files changed: ReferenceResolverServiceCollectionExtensionsTests.cs; DocumentCacheWriterFaultInjectionTests.cs; PostgresqlBackendIntegrationTestServiceCollectionExtensions.cs; MssqlBackendIntegrationTestServiceCollectionExtensions.cs; tasks.json; progress.txt.
 Blockers/notes: none. All tasks in 18-04 story now complete.
+
+Completed runtime follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: split current target contexts from retained command-owned noncurrent contexts; active command tracking starts after mutex acquisition but before drain ownership; noncurrent health updates stay out of current health until true end/dispose; post-mutex recheck preserves targetReplacedBeforeExecution before command execution.
+Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheProjectionObservation.cs; focused supervisor/observation tests; tasks.json; progress.txt.
+Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.

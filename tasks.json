@@ -535,5 +535,118 @@
       "dotnet build src/dms/backend/EdFi.DataManagementService.Backend/EdFi.DataManagementService.Backend.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "runtime",
+    "description": "High - Preserve command-owned target generations across CMS refresh removal or replacement instead of cancelling and disposing the pinned command context.",
+    "acceptance-criteria": [
+      "Supervisor reconciliation does not cancel, dispose, or end a target context solely because CMS refresh proves removal or replacement while that context has an active administrative command or command-owned drain.",
+      "The old command-owned generation is removed from current ordinary scheduling and current target health, but its active administrative command snapshot remains visible with isCurrentGeneration false and the replacement/current generation when known.",
+      "A replacement generation for the same normalized target key can become the current target context while the old command-owned generation remains pinned until the command completes or aborts.",
+      "A pinned command that reaches its durable success condition after target replacement still returns completed/succeeded and includes bounded noncurrent-generation result diagnostics, not targetReplacedBeforeExecution.",
+      "The old generation is ended and disposed only after the active command completes or aborts, or during process shutdown/caller cancellation handling."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheAdministrativeCommandRunner|FullyQualifiedName~DocumentCacheProjectionObservation\"",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeContracts\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "scheduling",
+    "description": "Medium - Keep ordinary projection draining ready backlog without waiting Projector:PollInterval after every processed page.",
+    "acceptance-criteria": [
+      "After any ordinary dispatch returns PageProcessed, the supervisor or scheduler immediately considers ready targets again while still enforcing one page per target per global-gate acquisition and stable round-robin ordering.",
+      "Projector:PollInterval sleep is used only when every current target is blocked by no eligible work after cursor wrap, suppressed retry, backoff, command ownership, target pause, unresolved state, ineligibility, or cancellation.",
+      "A long durable-work backlog can drain multiple pages within one poll interval without scanning dms.Document to rediscover work.",
+      "The loop does not busy-spin when there are no configured targets or all targets are sleeping or blocked, and cancellation/shutdown remains responsive."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor|FullyQualifiedName~DocumentCacheProjectionScheduler|FullyQualifiedName~DocumentProjectionWorkPaging\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "contracts",
+    "description": "Medium - Return shared administrative command classifications for invalid offlineWriterAdmission requests instead of failing in request construction or JSON deserialization.",
+    "acceptance-criteria": [
+      "Offline activation, offline deactivation, and internal-only cache-ahead recovery request DTOs can represent missing, unconfirmed, unknown, and command-mismatched offlineWriterAdmission values without throwing before command classification.",
+      "Invalid offlineWriterAdmission requests fail closed before mutex acquisition and before any lifecycle, latch, cache, or work mutation.",
+      "Invalid offlineWriterAdmission results use the shared envelope with the appropriate missingOfflineWriterAdmission, unconfirmedOfflineWriterAdmission, or mismatchedOfflineWriterAdmission classification and matching phase diagnostic category.",
+      "Accepted command-specific admission tokens are still echoed in command results and process-local diagnostics.",
+      "Contract and preflight tests no longer assert constructor/deserialization exceptions as the only enforcement for invalid offline writer admission."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeContracts|FullyQualifiedName~DocumentCachePreflightClassifier\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "session-bound-writer",
+    "description": "Medium - Classify command-owned DeleteRaceRetryExhausted as writerRetryBudgetExhausted instead of letting it become poison traversal.",
+    "acceptance-criteria": [
+      "DocumentCacheSessionBoundWriterResult maps both RetryBudgetExhausted and DeleteRaceRetryExhausted writer outcomes to writerRetryBudgetExhausted with diagnosticCategory writerRetryBudgetExhausted.",
+      "The status and mutated fields for command-owned delete-race retry exhaustion follow the current command execution mutation flag: failedNoMutation before mutation and incompleteRetryable after mutation.",
+      "Ordinary projection continues to treat retry exhaustion outcomes as document-scoped failure/backoff so later durable work is not starved.",
+      "Administrative drain returns the writerRetryBudgetExhausted command failure immediately for command-owned DeleteRaceRetryExhausted and does not wait for persistentPoison proof."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheSessionBoundWriter|FullyQualifiedName~DocumentCacheProjectionItemProcessor|FullyQualifiedName~DocumentCacheAdministrativeDrain\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-writer",
+    "description": "Medium - Roll back started DocumentCache writer transactions with provider-timeout-bounded cleanup instead of caller or workflow cancellation tokens.",
+    "acceptance-criteria": [
+      "PostgreSQL and SQL Server writer rollback paths after a transaction starts do not pass a potentially canceled caller or workflow token into RollbackAsync.",
+      "Rollback cleanup is uncancelled or bounded only by provider command/session-loss handling, so ordinary and session-bound writer paths attempt rollback before the connection or session is reused or classified.",
+      "Session-bound administrative writer cleanup on the mutex-owned physical session preserves transaction state before command classification, including workflow timeout and caller cancellation after mutation.",
+      "Focused tests cover cancellation after cache DML and before acknowledgement or commit for both providers, including the session-bound writer path."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheSessionBoundWriter|FullyQualifiedName~DocumentCacheProjectionItemProcessor\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheWriter\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "diagnostics",
+    "description": "Medium - Stop reporting baseline high-water backpressure waits as persistent poison diagnostics.",
+    "acceptance-criteria": [
+      "Baseline high-water waits no longer add phase diagnostics with diagnosticCategory persistentPoison.",
+      "If Administration:WorkflowTimeout expires while baseline seeding is waiting on high-water backpressure, the final command result remains workflowTimeout and phaseDiagnostics identify the seedBaseline phase with bounded backpressure context.",
+      "PersistentPoison remains reserved for command-owned drain-to-empty proof after a full retry-due pass with durable work still visible and no acknowledgements or removals.",
+      "Unit and provider integration tests that cover high-water waits assert the corrected diagnostic category and do not conflate backlog pressure with poison rows."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheBaselineSeeding|FullyQualifiedName~DocumentCacheAdministrativeCommandRunner\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministration\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministration\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "simplification",
+    "description": "Low - Consolidate repeated administrative command cancellation and transaction helper code to reduce command workflow divergence.",
+    "acceptance-criteria": [
+      "Shared helper code owns effective workflow cancellation token selection and linked-token creation for administrative command workflows.",
+      "Shared helper code owns begin-transaction, commit-or-rollback, and rollback-on-exception behavior for mutex-owned short transactions where the workflow does not need custom transaction handling.",
+      "Guarded activation, offline activation, online rebuild, offline deactivation, internal-only recovery, explicit scrub, baseline seeding, and administrative drain preserve their current classifications, phase transitions, mutation tracking, and mutex-session guarantees after the cleanup.",
+      "No new abstraction hides the command-specific lifecycle rules or destructive mutation gates."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrative\""
+    ],
+    "completed": false
   }
 ]

@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Data;
+using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -216,6 +218,129 @@ public class Given_DocumentCacheProjectionSupervisor
             );
         targetContextFactory.CreateCalls.Should().HaveCount(2);
         supervisor.CurrentTargetContexts.Should().ContainSingle().Which.Generation.Value.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_preserves_an_active_administrative_command_generation_when_execution_metadata_changes()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(targetKey, generation: 1);
+        DocumentCacheTargetExecutionContext replacementGeneration = ExecutionContext(
+            targetKey,
+            generation: 2,
+            connectionInput: "connection-b"
+        );
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        RecordingTargetContextFactory targetContextFactory = new(observationStore);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(firstGeneration)]),
+            RuntimeSnapshot([firstGeneration])
+        );
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(replacementGeneration)]),
+            RuntimeSnapshot([replacementGeneration])
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationStore,
+            OptionsFor([targetKey])
+        );
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        DocumentCacheProjectionTargetRuntimeContext oldContext =
+            targetContextFactory.CreatedContexts.Single();
+        DocumentCacheAdministrativeCommandExecutionContext commandContext = CommandContext(
+            oldContext,
+            observationStore
+        );
+        IDisposable activeCommandTracking = oldContext.TrackActiveAdministrativeCommand(commandContext);
+        commandContext.Observe();
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered);
+
+        oldContext.CancellationRequested.Should().BeFalse();
+        supervisor.CurrentTargetContexts.Should().ContainSingle().Which.Generation.Value.Should().Be(2);
+        DocumentCacheProjectionObservationSnapshot snapshot = observationStore.CurrentSnapshot;
+        snapshot.GetCurrentTarget(oldContext.ContextKey).Should().BeNull();
+        snapshot.GetCurrentTarget(targetKey)!.Generation.Value.Should().Be(2);
+        DocumentCacheAdministrativeCommandObservationSnapshot activeCommand = snapshot.GetActiveCommand(
+            commandContext.ExecutionId
+        )!;
+        activeCommand.Should().NotBeNull();
+        activeCommand.IsCurrentGeneration.Should().BeFalse();
+        activeCommand.CurrentTargetGeneration!.Value.Should().Be(2);
+        snapshot.LastEndedTargetDiagnostics.Should().BeEmpty();
+
+        activeCommandTracking.Dispose();
+        observationStore.EndAdministrativeCommand(commandContext.ExecutionId);
+        await (
+            (IDocumentCacheProjectionRetainedTargetContextReleaser)supervisor
+        ).ReleaseRetainedCommandOwnedTargetContextAsync(oldContext);
+
+        oldContext.CancellationRequested.Should().BeTrue();
+        observationStore
+            .CurrentSnapshot.LastEndedTargetDiagnostics.Values.Should()
+            .ContainSingle()
+            .Which.EndReason.Should()
+            .Be(DocumentCacheProjectionTargetEndReason.Replaced);
+        observationStore.CurrentSnapshot.GetCurrentTarget(targetKey)!.Generation.Value.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_preserves_a_command_owned_drain_generation_when_the_target_is_removed()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+        DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(targetKey, generation: 1);
+        DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+        RecordingTargetContextFactory targetContextFactory = new(observationStore);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(firstGeneration)]),
+            RuntimeSnapshot([firstGeneration])
+        );
+        registry.QueueRefresh(Snapshot([]), RuntimeSnapshot([]));
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationStore,
+            OptionsFor([targetKey])
+        );
+        TaskCompletionSource drainStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseDrain = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        DocumentCacheProjectionTargetRuntimeContext oldContext =
+            targetContextFactory.CreatedContexts.Single();
+        Task<DocumentCacheProjectionDrainPageResult> drainTask =
+            oldContext.DrainExecutor.RunAdministrativeCommandAsync(async cancellationToken =>
+            {
+                drainStarted.SetResult();
+                await releaseDrain.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return DocumentCacheProjectionDrainPageResult.NoEligibleWork;
+            });
+        await drainStarted.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered);
+
+        oldContext.CancellationRequested.Should().BeFalse();
+        supervisor.CurrentTargetContexts.Should().BeEmpty();
+        observationStore.CurrentSnapshot.GetCurrentTarget(targetKey).Should().BeNull();
+        observationStore.CurrentSnapshot.LastEndedTargetDiagnostics.Should().BeEmpty();
+
+        releaseDrain.SetResult();
+        await drainTask.ConfigureAwait(false);
+        await (
+            (IDocumentCacheProjectionRetainedTargetContextReleaser)supervisor
+        ).ReleaseRetainedCommandOwnedTargetContextAsync(oldContext);
+
+        oldContext.CancellationRequested.Should().BeTrue();
+        observationStore
+            .CurrentSnapshot.LastEndedTargetDiagnostics.Values.Should()
+            .ContainSingle()
+            .Which.EndReason.Should()
+            .Be(DocumentCacheProjectionTargetEndReason.Removed);
     }
 
     [Test]
@@ -445,8 +570,29 @@ public class Given_DocumentCacheProjectionSupervisor
         }
     }
 
-    private sealed class RecordingTargetContextFactory(RecordingObservationSink observationSink)
-        : IDocumentCacheProjectionTargetRuntimeContextFactory
+    private static DocumentCacheAdministrativeCommandExecutionContext CommandContext(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        IDocumentCacheProjectionObservationSink observationSink
+    ) =>
+        new(
+            DocumentCacheAdministrativeCommandExecutionId.New(),
+            new DocumentCacheAdministrativeCommandRunnerRequest(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                DocumentCacheAdministrativeTargetKey.FromTargetKey(targetContext.TargetKey),
+                Fingerprint
+            ),
+            targetContext,
+            new StubMutexLease(),
+            new StubAdministrativePrimitives(),
+            observationSink,
+            new FixedTimeProvider(ObservedAt),
+            ObservedAt,
+            CancellationToken.None
+        );
+
+    private sealed class RecordingTargetContextFactory(
+        IDocumentCacheProjectionObservationSink observationSink
+    ) : IDocumentCacheProjectionTargetRuntimeContextFactory
     {
         public StubDocumentCacheMaterializer Materializer { get; } = new();
 
@@ -585,6 +731,102 @@ public class Given_DocumentCacheProjectionSupervisor
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(DocumentCacheLifecycleReadResult.Success(TrackingLifecycle));
         }
+    }
+
+    private sealed class StubMutexLease : IDocumentCacheAdministrativeMutexLease
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public DbConnection Connection => throw new NotSupportedException();
+
+        public bool IsSessionOpen => true;
+
+        public Task<IRelationalWriteSession> BeginTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class StubAdministrativePrimitives : IDocumentCacheAdministrativePrimitives
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeStateLockMode lockMode =
+                DocumentCacheAdministrativeStateLockMode.Shared,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task LockCanonicalDocumentsForGuardedActivationAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheGuardedNewEmptyActivationState> ReadGuardedNewEmptyActivationStateAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheProviderPrerequisiteValidationResult> ValidateActivationPrerequisitesAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeLifecycleTransitionResult> TryTransitionLifecycleAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeLifecycleTransitionRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeActivationTransitionResult> TryTransitionLifecycleAfterActivationPrerequisitesAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeLifecycleTransitionRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeClearBatchRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeClearBatchRequest request,
+            DocumentCacheAdministrativeWorkClearance clearance,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeBaselineSeedPageRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeScrubPageRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private sealed class NoOpDocumentCacheProjectionScheduler : IDocumentCacheProjectionScheduler

@@ -525,6 +525,13 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             )
         )
         {
+            DocumentCacheAdministrativeCommandResult? pinnedTargetRejection =
+                TryCreatePinnedTargetRejectionAfterMutexAcquisition(request, targetContext);
+            if (pinnedTargetRejection is not null)
+            {
+                return RecordAdministrativeCommandResult(pinnedTargetRejection, targetContext);
+            }
+
             DateTimeOffset startedAt = timeProvider.GetUtcNow();
             workflowTimeout.CancelAfter(
                 targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
@@ -543,6 +550,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 _telemetry
             );
 
+            IDisposable activeCommandTracking = targetContext.TrackActiveAdministrativeCommand(
+                commandContext
+            );
             commandContext.Observe();
 
             try
@@ -626,7 +636,17 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             }
             finally
             {
+                activeCommandTracking.Dispose();
                 observationSink.EndAdministrativeCommand(executionId);
+                if (
+                    projectionSupervisor
+                    is IDocumentCacheProjectionRetainedTargetContextReleaser retainedTargetContextReleaser
+                )
+                {
+                    await retainedTargetContextReleaser
+                        .ReleaseRetainedCommandOwnedTargetContextAsync(targetContext, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
             }
         }
     }
@@ -814,6 +834,47 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         }
 
         return PinnedTargetResolution.Pinned(targetContext);
+    }
+
+    private DocumentCacheAdministrativeCommandResult? TryCreatePinnedTargetRejectionAfterMutexAcquisition(
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        DocumentCacheProjectionTargetRuntimeContext targetContext
+    )
+    {
+        DocumentCacheTargetKey targetKey = request.TargetKey.TargetKey;
+        DocumentCacheTargetObservation? targetObservation = targetRegistry.CurrentSnapshot.GetTarget(
+            targetKey
+        );
+
+        if (
+            targetObservation is not null
+            && targetObservation.EligibilityState != DocumentCacheTargetEligibilityState.Eligible
+        )
+        {
+            return CreateTargetObservationRejection(request, targetObservation);
+        }
+
+        DocumentCacheTargetExecutionContext? currentExecutionContext =
+            targetRegistry.CurrentRuntimeSnapshot.GetExecutionContext(targetKey);
+        if (
+            currentExecutionContext is null
+            || currentExecutionContext.Generation != targetContext.Generation
+            || targetContext.CancellationRequested
+        )
+        {
+            return CreateTargetReplacedResult(request, targetObservation, targetContext);
+        }
+
+        if (
+            request.ExpectedPhysicalSourceFingerprint is not null
+            && targetContext.TargetExecutionContext.PhysicalSourceFingerprint
+                != request.ExpectedPhysicalSourceFingerprint
+        )
+        {
+            return CreateExpectedSourceMismatchResult(request, targetObservation, targetContext);
+        }
+
+        return null;
     }
 
     private DocumentCacheAdministrativeCommandResult AddRuntimeResultFields(

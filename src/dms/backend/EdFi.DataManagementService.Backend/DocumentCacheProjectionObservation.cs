@@ -19,6 +19,10 @@ using DocumentCacheLastEndedTargetDiagnosticSnapshots = System.Collections.Immut
     EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey,
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetEndedDiagnosticSnapshot
 >;
+using DocumentCacheNoncurrentTargetHealthSnapshots = System.Collections.Immutable.ImmutableDictionary<
+    EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
+    EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetHealthSnapshot
+>;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -772,9 +776,18 @@ public interface IDocumentCacheProjectionObservationSink
     void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId);
 }
 
+internal interface IDocumentCacheProjectionCurrentTargetHealthSink
+{
+    void MarkTargetContextNoncurrent(
+        DocumentCacheProjectionTargetContextKey contextKey,
+        DateTimeOffset? observedAt = null
+    );
+}
+
 public sealed class DocumentCacheProjectionObservationStore
     : IDocumentCacheProjectionObservationProvider,
-        IDocumentCacheProjectionObservationSink
+        IDocumentCacheProjectionObservationSink,
+        IDocumentCacheProjectionCurrentTargetHealthSink
 {
     private readonly object _sync = new();
     private readonly TimeProvider _timeProvider;
@@ -795,6 +808,9 @@ public sealed class DocumentCacheProjectionObservationStore
         DocumentCacheTargetKey,
         DocumentCacheProjectionTargetEndedDiagnosticSnapshot
     >.Empty;
+
+    private DocumentCacheNoncurrentTargetHealthSnapshots _noncurrentTargets =
+        DocumentCacheNoncurrentTargetHealthSnapshots.Empty;
 
     private DocumentCacheActiveAdministrativeCommandSnapshots _activeCommands =
         DocumentCacheActiveAdministrativeCommandSnapshots.Empty;
@@ -837,6 +853,12 @@ public sealed class DocumentCacheProjectionObservationStore
 
         lock (_sync)
         {
+            if (_noncurrentTargets.ContainsKey(snapshot.ContextKey))
+            {
+                _noncurrentTargets = _noncurrentTargets.SetItem(snapshot.ContextKey, snapshot);
+                return;
+            }
+
             if (
                 _currentTargets.TryGetValue(
                     snapshot.TargetKey,
@@ -861,10 +883,9 @@ public sealed class DocumentCacheProjectionObservationStore
         _telemetry.RecordTargetObservation(snapshot);
     }
 
-    public void EndTargetContext(
+    public void MarkTargetContextNoncurrent(
         DocumentCacheProjectionTargetContextKey contextKey,
-        DocumentCacheProjectionTargetEndReason endReason,
-        DateTimeOffset? endedAt = null
+        DateTimeOffset? observedAt = null
     )
     {
         ArgumentNullException.ThrowIfNull(contextKey);
@@ -883,6 +904,46 @@ public sealed class DocumentCacheProjectionObservationStore
             }
 
             _currentTargets = _currentTargets.Remove(contextKey.TargetKey);
+            _noncurrentTargets = _noncurrentTargets.SetItem(contextKey, currentSnapshot);
+        }
+    }
+
+    public void EndTargetContext(
+        DocumentCacheProjectionTargetContextKey contextKey,
+        DocumentCacheProjectionTargetEndReason endReason,
+        DateTimeOffset? endedAt = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contextKey);
+
+        lock (_sync)
+        {
+            if (
+                _currentTargets.TryGetValue(
+                    contextKey.TargetKey,
+                    out DocumentCacheProjectionTargetHealthSnapshot? currentSnapshot
+                )
+                && currentSnapshot.Generation == contextKey.Generation
+            )
+            {
+                _currentTargets = _currentTargets.Remove(contextKey.TargetKey);
+                _lastEndedTargets = _lastEndedTargets.SetItem(
+                    contextKey.TargetKey,
+                    new DocumentCacheProjectionTargetEndedDiagnosticSnapshot(
+                        currentSnapshot,
+                        endReason,
+                        endedAt ?? _timeProvider.GetUtcNow()
+                    )
+                );
+                return;
+            }
+
+            if (!_noncurrentTargets.TryGetValue(contextKey, out currentSnapshot))
+            {
+                return;
+            }
+
+            _noncurrentTargets = _noncurrentTargets.Remove(contextKey);
             _lastEndedTargets = _lastEndedTargets.SetItem(
                 contextKey.TargetKey,
                 new DocumentCacheProjectionTargetEndedDiagnosticSnapshot(

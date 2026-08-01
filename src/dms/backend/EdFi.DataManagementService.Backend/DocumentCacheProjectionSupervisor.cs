@@ -25,6 +25,14 @@ public interface IDocumentCacheProjectionSupervisor
     );
 }
 
+internal interface IDocumentCacheProjectionRetainedTargetContextReleaser
+{
+    Task ReleaseRetainedCommandOwnedTargetContextAsync(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        CancellationToken cancellationToken = default
+    );
+}
+
 public interface IDocumentCacheProjectionTargetRuntimeContextFactory
 {
     Task<DocumentCacheProjectionTargetRuntimeContext> CreateAsync(
@@ -314,6 +322,7 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     private readonly Func<ValueTask>? _disposeScopeAsync;
     private readonly IDocumentCacheSessionBoundWriter? _sessionBoundWriter;
     private int _cancelled;
+    private DocumentCacheAdministrativeCommandExecutionContext? _activeAdministrativeCommandContext;
     private DocumentCacheAdministrativeCommandExecutionContext? _administrativeCommandContext;
 
     public DocumentCacheProjectionTargetRuntimeContext(
@@ -386,6 +395,9 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     internal DocumentCacheAdministrativeCommandExecutionContext? AdministrativeCommandContext =>
         Volatile.Read(ref _administrativeCommandContext);
 
+    internal bool HasActiveAdministrativeCommand =>
+        Volatile.Read(ref _activeAdministrativeCommandContext) is not null;
+
     public DocumentCacheMaterializationTargetContext MaterializationTargetContext =>
         ProviderAdapters.MaterializationTargetContext;
 
@@ -409,6 +421,32 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         {
             _cancellationTokenSource.Cancel();
         }
+    }
+
+    internal IDisposable TrackActiveAdministrativeCommand(
+        DocumentCacheAdministrativeCommandExecutionContext commandContext
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandContext);
+        if (!ReferenceEquals(commandContext.TargetContext, this))
+        {
+            throw new ArgumentException(
+                "Administrative command context must be pinned to this target context.",
+                nameof(commandContext)
+            );
+        }
+
+        if (
+            Interlocked.CompareExchange(ref _activeAdministrativeCommandContext, commandContext, null)
+            is not null
+        )
+        {
+            throw new InvalidOperationException(
+                "DocumentCache target context already has an active administrative command."
+            );
+        }
+
+        return new ActiveAdministrativeCommandTracking(this, commandContext);
     }
 
     internal IDisposable BindAdministrativeCommand(
@@ -454,6 +492,21 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         {
             Interlocked.CompareExchange(
                 ref targetContext._administrativeCommandContext,
+                null,
+                commandContext
+            );
+        }
+    }
+
+    private sealed class ActiveAdministrativeCommandTracking(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentCacheAdministrativeCommandExecutionContext commandContext
+    ) : IDisposable
+    {
+        public void Dispose()
+        {
+            Interlocked.CompareExchange(
+                ref targetContext._activeAdministrativeCommandContext,
                 null,
                 commandContext
             );
@@ -573,7 +626,10 @@ public sealed class DocumentCacheProjectionSupervisor(
     IDocumentCacheLifecycleReader lifecycleReader,
     TimeProvider timeProvider,
     ILogger<DocumentCacheProjectionSupervisor> logger
-) : BackgroundService, IDocumentCacheProjectionSupervisor
+)
+    : BackgroundService,
+        IDocumentCacheProjectionSupervisor,
+        IDocumentCacheProjectionRetainedTargetContextReleaser
 {
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private ImmutableDictionary<
@@ -582,6 +638,13 @@ public sealed class DocumentCacheProjectionSupervisor(
     > _targetContexts = ImmutableDictionary<
         DocumentCacheTargetKey,
         DocumentCacheProjectionTargetRuntimeContext
+    >.Empty;
+    private ImmutableDictionary<
+        DocumentCacheProjectionTargetContextKey,
+        RetainedCommandOwnedTargetContext
+    > _retainedCommandOwnedTargetContexts = ImmutableDictionary<
+        DocumentCacheProjectionTargetContextKey,
+        RetainedCommandOwnedTargetContext
     >.Empty;
 
     public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts =>
@@ -637,6 +700,41 @@ public sealed class DocumentCacheProjectionSupervisor(
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
         await EndAllTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
             .ConfigureAwait(false);
+        await EndAllRetainedTargetContextsAsync(DocumentCacheProjectionTargetEndReason.Shutdown)
+            .ConfigureAwait(false);
+    }
+
+    public async Task ReleaseRetainedCommandOwnedTargetContextAsync(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetContext);
+
+        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (
+                !_retainedCommandOwnedTargetContexts.TryGetValue(
+                    targetContext.ContextKey,
+                    out RetainedCommandOwnedTargetContext? retainedContext
+                )
+                || !ReferenceEquals(retainedContext.TargetContext, targetContext)
+                || IsCommandOwned(targetContext)
+            )
+            {
+                return;
+            }
+
+            _retainedCommandOwnedTargetContexts = _retainedCommandOwnedTargetContexts.Remove(
+                targetContext.ContextKey
+            );
+            await EndTargetContextAsync(targetContext, retainedContext.EndReason).ConfigureAwait(false);
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
 
     private async Task ReconcileTargetContextsAsync(
@@ -671,7 +769,15 @@ public sealed class DocumentCacheProjectionSupervisor(
                 desiredContext,
                 snapshot
             );
-            await EndTargetContextAsync(currentContext, endReason).ConfigureAwait(false);
+            if (IsCommandOwned(currentContext))
+            {
+                RetainCommandOwnedTargetContext(currentContext, endReason);
+            }
+            else
+            {
+                await EndTargetContextAsync(currentContext, endReason).ConfigureAwait(false);
+            }
+
             currentContexts = currentContexts.Remove(currentContext.TargetKey);
         }
 
@@ -720,6 +826,7 @@ public sealed class DocumentCacheProjectionSupervisor(
         }
 
         _targetContexts = nextContexts.ToImmutable();
+        await EndCompletedRetainedTargetContextsAsync().ConfigureAwait(false);
     }
 
     private async Task EndAllTargetContextsAsync(DocumentCacheProjectionTargetEndReason endReason)
@@ -737,6 +844,23 @@ public sealed class DocumentCacheProjectionSupervisor(
         }
     }
 
+    private async Task EndAllRetainedTargetContextsAsync(DocumentCacheProjectionTargetEndReason endReason)
+    {
+        ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> contexts =
+            _retainedCommandOwnedTargetContexts
+                .Values.Select(context => context.TargetContext)
+                .ToImmutableArray();
+        _retainedCommandOwnedTargetContexts = ImmutableDictionary<
+            DocumentCacheProjectionTargetContextKey,
+            RetainedCommandOwnedTargetContext
+        >.Empty;
+
+        foreach (DocumentCacheProjectionTargetRuntimeContext context in contexts)
+        {
+            await EndTargetContextAsync(context, endReason).ConfigureAwait(false);
+        }
+    }
+
     private async Task EndTargetContextAsync(
         DocumentCacheProjectionTargetRuntimeContext context,
         DocumentCacheProjectionTargetEndReason endReason
@@ -746,6 +870,42 @@ public sealed class DocumentCacheProjectionSupervisor(
         observationSink.EndTargetContext(context.ContextKey, endReason, timeProvider.GetUtcNow());
         await context.DisposeAsync().ConfigureAwait(false);
     }
+
+    private void RetainCommandOwnedTargetContext(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionTargetEndReason endReason
+    )
+    {
+        _retainedCommandOwnedTargetContexts = _retainedCommandOwnedTargetContexts.SetItem(
+            context.ContextKey,
+            new RetainedCommandOwnedTargetContext(context, endReason)
+        );
+
+        if (observationSink is IDocumentCacheProjectionCurrentTargetHealthSink currentTargetHealthSink)
+        {
+            currentTargetHealthSink.MarkTargetContextNoncurrent(context.ContextKey, timeProvider.GetUtcNow());
+        }
+    }
+
+    private async Task EndCompletedRetainedTargetContextsAsync()
+    {
+        ImmutableArray<RetainedCommandOwnedTargetContext> completedRetainedContexts =
+            _retainedCommandOwnedTargetContexts
+                .Values.Where(retainedContext => !IsCommandOwned(retainedContext.TargetContext))
+                .ToImmutableArray();
+
+        foreach (RetainedCommandOwnedTargetContext retainedContext in completedRetainedContexts)
+        {
+            _retainedCommandOwnedTargetContexts = _retainedCommandOwnedTargetContexts.Remove(
+                retainedContext.TargetContext.ContextKey
+            );
+            await EndTargetContextAsync(retainedContext.TargetContext, retainedContext.EndReason)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsCommandOwned(DocumentCacheProjectionTargetRuntimeContext context) =>
+        context.HasActiveAdministrativeCommand || context.DrainExecutor.IsCommandOwned;
 
     private static DocumentCacheProjectionTargetEndReason DetermineEndReason(
         DocumentCacheProjectionTargetRuntimeContext currentContext,
@@ -841,4 +1001,9 @@ public sealed class DocumentCacheProjectionSupervisor(
             )
         );
     }
+
+    private sealed record RetainedCommandOwnedTargetContext(
+        DocumentCacheProjectionTargetRuntimeContext TargetContext,
+        DocumentCacheProjectionTargetEndReason EndReason
+    );
 }

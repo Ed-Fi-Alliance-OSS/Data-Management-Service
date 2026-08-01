@@ -172,6 +172,38 @@ public class Given_DocumentCacheProjectionObservationProvider
             .Be(1);
     }
 
+    [Test]
+    public void It_keeps_noncurrent_target_health_updates_out_of_current_health()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheProjectionTargetContextKey contextKey = ContextKey(generation: 1);
+
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt));
+        store.MarkTargetContextNoncurrent(contextKey, ObservedAt.AddSeconds(1));
+        store.ObserveTarget(
+            TargetHealth(generation: 1, failureDocumentIds: [401], observedAt: ObservedAt.AddSeconds(2))
+        );
+
+        DocumentCacheProjectionObservationSnapshot retainedSnapshot = store.CurrentSnapshot;
+
+        retainedSnapshot.GetCurrentTarget(TargetKey).Should().BeNull();
+        retainedSnapshot.LastEndedTargetDiagnostics.Should().BeEmpty();
+
+        store.EndTargetContext(
+            contextKey,
+            DocumentCacheProjectionTargetEndReason.Removed,
+            ObservedAt.AddSeconds(3)
+        );
+
+        DocumentCacheProjectionTargetEndedDiagnosticSnapshot ended = store
+            .CurrentSnapshot.LastEndedTargetDiagnostics.Values.Should()
+            .ContainSingle()
+            .Subject;
+        ended.Generation.Value.Should().Be(1);
+        ended.EndReason.Should().Be(DocumentCacheProjectionTargetEndReason.Removed);
+        ended.FinalSnapshot.FailureDiagnostics.DocumentIds.Should().Equal(401);
+    }
+
     private static DocumentCacheProjectionTargetContextKey ContextKey(long generation) =>
         new(TargetKey, new DocumentCacheTargetContextGeneration(generation));
 
