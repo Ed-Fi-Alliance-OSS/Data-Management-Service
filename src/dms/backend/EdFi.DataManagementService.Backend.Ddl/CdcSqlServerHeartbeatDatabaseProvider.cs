@@ -937,6 +937,27 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             {expectedCaptureInstances}
                 ) AS expected(capture_instance)
             ),
+            expected_capture_cdc_objects AS (
+                SELECT capture_info.object_id
+                FROM cdc.change_tables capture_info
+                INNER JOIN expected_capture_instances expected
+                    ON expected.capture_instance = capture_info.capture_instance
+                WHERE capture_info.role_name = @gating_role_name
+                UNION
+                SELECT object_info.object_id
+                FROM cdc.change_tables capture_info
+                INNER JOIN expected_capture_instances expected
+                    ON expected.capture_instance = capture_info.capture_instance
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.name = N'cdc'
+                INNER JOIN sys.objects object_info
+                    ON object_info.schema_id = schema_info.schema_id
+                    AND object_info.name IN (
+                        N'fn_cdc_get_all_changes_' + capture_info.capture_instance,
+                        N'fn_cdc_get_net_changes_' + capture_info.capture_instance
+                    )
+                WHERE capture_info.role_name = @gating_role_name
+            ),
             connector AS (
                 SELECT TOP (1)
                     principal_info.principal_id,
@@ -1209,21 +1230,52 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ) ownership
                 ), N'') AS gating_role_owned_objects,
                 COALESCE((
-                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
-                    FROM gating_role
-                    INNER JOIN sys.database_permissions permission_info
-                        ON permission_info.grantee_principal_id = gating_role.principal_id
-                        AND permission_info.state IN (N'G', N'W')
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM sys.objects object_info
-                        INNER JOIN sys.schemas schema_info
-                            ON schema_info.schema_id = object_info.schema_id
-                        WHERE object_info.object_id = permission_info.major_id
-                        AND permission_info.class = 1
-                        AND permission_info.permission_name = N'SELECT'
-                        AND schema_info.name = N'cdc'
-                    )
+                    SELECT STRING_AGG(permission_info.permission_token, N',') WITHIN GROUP (ORDER BY permission_info.permission_token)
+                    FROM (
+                        SELECT DISTINCT
+                            CONVERT(
+                                nvarchar(512),
+                                CASE
+                                    WHEN permission_info.class = 1 AND object_schema_info.schema_id IS NOT NULL
+                                        THEN object_schema_info.name COLLATE DATABASE_DEFAULT
+                                            + N'.'
+                                            + object_info.name COLLATE DATABASE_DEFAULT
+                                            + N'.'
+                                            + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                    WHEN permission_info.class = 3 AND schema_info.schema_id IS NOT NULL
+                                        THEN N'schema.'
+                                            + schema_info.name COLLATE DATABASE_DEFAULT
+                                            + N'.'
+                                            + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                    WHEN permission_info.class = 0
+                                        THEN N'database.'
+                                            + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                    ELSE permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                END
+                            ) AS permission_token
+                        FROM gating_role
+                        INNER JOIN sys.database_permissions permission_info
+                            ON permission_info.grantee_principal_id = gating_role.principal_id
+                            AND permission_info.state IN (N'G', N'W')
+                        LEFT JOIN sys.objects object_info
+                            ON permission_info.class = 1
+                            AND object_info.object_id = permission_info.major_id
+                        LEFT JOIN sys.schemas object_schema_info
+                            ON object_schema_info.schema_id = object_info.schema_id
+                        LEFT JOIN sys.schemas schema_info
+                            ON permission_info.class = 3
+                            AND schema_info.schema_id = permission_info.major_id
+                        WHERE NOT (
+                            permission_info.class = 1
+                            AND permission_info.permission_name = N'SELECT'
+                            AND object_schema_info.name = N'cdc'
+                            AND EXISTS (
+                                SELECT 1
+                                FROM expected_capture_cdc_objects expected_cdc_object
+                                WHERE expected_cdc_object.object_id = permission_info.major_id
+                            )
+                        )
+                    ) permission_info
                 ), N'') AS gating_role_explicit_permissions,
                 COALESCE((
                     SELECT CONVERT(nvarchar(20), COUNT_BIG(*))
@@ -1537,12 +1589,34 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             DECLARE @unexpected_capture_instances_using_role nvarchar(max) = N'';
 
             DECLARE @expected_capture_instances TABLE (capture_instance sysname NOT NULL PRIMARY KEY);
+            DECLARE @expected_capture_cdc_objects TABLE (object_id int NOT NULL PRIMARY KEY);
             INSERT INTO @expected_capture_instances (capture_instance)
             VALUES
             {expectedCaptureInstances};
 
             IF OBJECT_ID(N'cdc.change_tables', N'U') IS NOT NULL
             BEGIN
+                INSERT INTO @expected_capture_cdc_objects (object_id)
+                SELECT capture_info.object_id
+                FROM cdc.change_tables capture_info
+                INNER JOIN @expected_capture_instances expected
+                    ON expected.capture_instance = capture_info.capture_instance
+                WHERE capture_info.role_name = @gating_role_name
+                UNION
+                SELECT object_info.object_id
+                FROM cdc.change_tables capture_info
+                INNER JOIN @expected_capture_instances expected
+                    ON expected.capture_instance = capture_info.capture_instance
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.name = N'cdc'
+                INNER JOIN sys.objects object_info
+                    ON object_info.schema_id = schema_info.schema_id
+                    AND object_info.name IN (
+                        N'fn_cdc_get_all_changes_' + capture_info.capture_instance,
+                        N'fn_cdc_get_net_changes_' + capture_info.capture_instance
+                    )
+                WHERE capture_info.role_name = @gating_role_name;
+
                 SELECT @expected_capture_instances_using_role = COUNT_BIG(*)
                 FROM cdc.change_tables capture_info
                 INNER JOIN @expected_capture_instances expected
@@ -1605,21 +1679,52 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ) ownership
                 ), N'') AS gating_role_owned_objects,
                 COALESCE((
-                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
-                    FROM gating_role
-                    INNER JOIN sys.database_permissions permission_info
-                        ON permission_info.grantee_principal_id = gating_role.principal_id
-                        AND permission_info.state IN (N'G', N'W')
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM sys.objects object_info
-                        INNER JOIN sys.schemas schema_info
-                            ON schema_info.schema_id = object_info.schema_id
-                        WHERE object_info.object_id = permission_info.major_id
-                        AND permission_info.class = 1
-                        AND permission_info.permission_name = N'SELECT'
-                        AND schema_info.name = N'cdc'
-                    )
+                    SELECT STRING_AGG(permission_info.permission_token, N',') WITHIN GROUP (ORDER BY permission_info.permission_token)
+                    FROM (
+                        SELECT DISTINCT
+                            CONVERT(
+                                nvarchar(512),
+                                CASE
+                                    WHEN permission_info.class = 1 AND object_schema_info.schema_id IS NOT NULL
+                                        THEN object_schema_info.name COLLATE DATABASE_DEFAULT
+                                            + N'.'
+                                            + object_info.name COLLATE DATABASE_DEFAULT
+                                            + N'.'
+                                            + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                    WHEN permission_info.class = 3 AND schema_info.schema_id IS NOT NULL
+                                        THEN N'schema.'
+                                            + schema_info.name COLLATE DATABASE_DEFAULT
+                                            + N'.'
+                                            + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                    WHEN permission_info.class = 0
+                                        THEN N'database.'
+                                            + permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                    ELSE permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                END
+                            ) AS permission_token
+                        FROM gating_role
+                        INNER JOIN sys.database_permissions permission_info
+                            ON permission_info.grantee_principal_id = gating_role.principal_id
+                            AND permission_info.state IN (N'G', N'W')
+                        LEFT JOIN sys.objects object_info
+                            ON permission_info.class = 1
+                            AND object_info.object_id = permission_info.major_id
+                        LEFT JOIN sys.schemas object_schema_info
+                            ON object_schema_info.schema_id = object_info.schema_id
+                        LEFT JOIN sys.schemas schema_info
+                            ON permission_info.class = 3
+                            AND schema_info.schema_id = permission_info.major_id
+                        WHERE NOT (
+                            permission_info.class = 1
+                            AND permission_info.permission_name = N'SELECT'
+                            AND object_schema_info.name = N'cdc'
+                            AND EXISTS (
+                                SELECT 1
+                                FROM @expected_capture_cdc_objects expected_cdc_object
+                                WHERE expected_cdc_object.object_id = permission_info.major_id
+                            )
+                        )
+                    ) permission_info
                 ), N'') AS gating_role_explicit_permissions,
                 CONVERT(nvarchar(20), @expected_capture_instances_using_role) AS expected_capture_instances_using_role,
                 @unexpected_capture_instances_using_role AS unexpected_capture_instances_using_role;

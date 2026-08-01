@@ -623,7 +623,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             {
                 GatingRoleExists = true,
                 GatingRoleDirectMembers = ["connector_principal", "extra_reader"],
-                GatingRoleExplicitPermissions = ["SELECT"],
+                GatingRoleExplicitPermissions = ["cdc.unexpected_CT.SELECT"],
                 GatingRoleOwnedObjects = ["schema:dms"],
             }
         );
@@ -641,7 +641,7 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
                 && diagnostic.SafeName.Value == "dms_binding_gate"
                 && diagnostic.ObservedValue!.Contains("members:connector_principal,extra_reader")
-                && diagnostic.ObservedValue.Contains("permissions:SELECT")
+                && diagnostic.ObservedValue.Contains("permissions:cdc.unexpected_CT.SELECT")
                 && diagnostic.ObservedValue.Contains("ownership:schema_dms")
             );
         result
@@ -652,7 +652,8 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && observation.State == CdcProviderArtifactState.Mismatched
                 && observation.SafeObservedValues["gating_role_direct_members"]
                     == "connector_principal,extra_reader"
-                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "SELECT"
+                && observation.SafeObservedValues["gating_role_explicit_permissions"]
+                    == "cdc.unexpected_CT.SELECT"
                 && observation.SafeObservedValues["gating_role_owned_objects"] == "schema_dms"
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:create-gating-role"));
@@ -1117,7 +1118,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
             {
                 GatingRoleExists = true,
                 GatingRoleDirectMembers = ["connector_principal", "extra_reader"],
-                GatingRoleExplicitPermissions = ["SELECT"],
+                GatingRoleExplicitPermissions = ["dms.Document.SELECT"],
                 GatingRoleOwnedObjects = ["schema:dms"],
             }
         );
@@ -1144,7 +1145,51 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 && observation.SafeObservedValues["gating_role_direct_members"]
                     == "connector_principal,extra_reader"
                 && observation.SafeObservedValues["gating_role_owned_objects"] == "schema_dms"
-                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "SELECT"
+                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "dms.Document.SELECT"
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task It_should_reject_gating_role_select_on_unexpected_cdc_schema_object()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                GatingRoleExplicitPermissions = ["cdc.unexpected_CT.SELECT"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == "dms_binding_gate"
+                && diagnostic.ObservedValue!.Contains("permissions:cdc.unexpected_CT.SELECT")
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == "dms_binding_gate"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["gating_role_explicit_permissions"]
+                    == "cdc.unexpected_CT.SELECT"
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
     }

@@ -608,12 +608,69 @@ public class Given_MssqlCdcProviderAccessRetry
                 && observation
                     .SafeObservedValues["gating_role_direct_members"]
                     .Contains(extraMember, StringComparison.Ordinal)
-                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "SELECT"
+                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "dms.Document.SELECT"
             );
         (await ReadGatingRoleMembersAsync(connection)).Should().Contain(extraMember);
         (await HasRoleObjectPermissionAsync(connection, GatingRoleName, "Document", "SELECT"))
             .Should()
             .BeTrue("validation reports the mismatched role shape without destructive cleanup");
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_on_gating_role_select_for_unexpected_cdc_object_without_removing_it()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        var unexpectedCdcObjectName = $"UnexpectedCdcRead_{Guid.NewGuid():N}";
+        var expectedPermissionToken = $"cdc.{unexpectedCdcObjectName}.SELECT";
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            CREATE TABLE [cdc].{QuoteIdentifier(unexpectedCdcObjectName)} ([Id] int NOT NULL);
+            GRANT SELECT ON OBJECT::[cdc].{QuoteIdentifier(unexpectedCdcObjectName)} TO {QuoteIdentifier(
+                GatingRoleName
+            )};
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == GatingRoleName
+                && diagnostic.ObservedValue!.Contains(expectedPermissionToken, StringComparison.Ordinal)
+            );
+        validateResult
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == GatingRoleName
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["gating_role_explicit_permissions"]
+                    == expectedPermissionToken
+            );
+        (
+            await HasRoleObjectPermissionAsync(
+                connection,
+                GatingRoleName,
+                unexpectedCdcObjectName,
+                "SELECT",
+                schemaName: "cdc"
+            )
+        )
+            .Should()
+            .BeTrue("validation reports the mismatched CDC role permission without destructive cleanup");
     }
 
     [Test]
@@ -1243,7 +1300,8 @@ public class Given_MssqlCdcProviderAccessRetry
         SqlConnection connection,
         string roleName,
         string objectName,
-        string permissionName
+        string permissionName,
+        string schemaName = "dms"
     )
     {
         await using var command = connection.CreateCommand();
@@ -1255,12 +1313,13 @@ public class Given_MssqlCdcProviderAccessRetry
             INNER JOIN sys.schemas schema_info
                 ON schema_info.schema_id = object_info.schema_id
             WHERE permission_info.grantee_principal_id = DATABASE_PRINCIPAL_ID(@role_name)
-            AND schema_info.name = N'dms'
+            AND schema_info.name = @schema_name
             AND object_info.name = @object_name
             AND permission_info.permission_name = @permission_name
             AND permission_info.state IN (N'G', N'W');
             """;
         command.Parameters.AddWithValue("role_name", roleName);
+        command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("object_name", objectName);
         command.Parameters.AddWithValue("permission_name", permissionName);
         return Convert.ToInt64(await command.ExecuteScalarAsync()) > 0;
