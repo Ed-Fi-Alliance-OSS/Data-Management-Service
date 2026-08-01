@@ -150,7 +150,7 @@
     "acceptance-criteria": [
       "Provider setup creates or exact-matches exactly one capture instance each for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat, and no capture instance for dms.DocumentProjectionWork.",
       "sp_cdc_enable_table is called with the binding-derived capture instance, binding-derived role name, supports_net_changes=0, all emitted columns in emitted order, index_name=NULL, filegroup_name=NULL, and allow_partition_switch=0.",
-      "Existing capture instances exact-match source schema/object, capture-instance name, gating role, all captured columns in expected order, no net changes, no named source index, no CDC filegroup override, and partition switching disabled.",
+      "Existing capture instances exact-match source schema/object, capture-instance name, gating role, all captured columns in expected order, no net changes, no CDC filegroup override, and provider-normal source-index and partition-switch metadata for the DMS create options: source index may be blank or the SQL Server-selected source primary key for index_name=NULL, and partition_switch is accepted only when the source is not partitioned.",
       "The setup result includes provider metadata for source object mapping, captured columns, supports_net_changes, source index, filegroup, partition switching, captured source inventory, heartbeat capture visibility, and expected message-key columns.",
       "Expected message-key metadata identifies DocumentUuid for dms.Document and dms.DocumentCache and does not create connector JSON.",
       "Mismatched, missing, recreated, or unprovable capture instances fail closed with diagnostics and are not dropped, recreated, or renamed as same-binding repair."
@@ -331,7 +331,7 @@
     "acceptance-criteria": [
       "SQL Server DB-apply tests prove ordinary provisioning omits CdcHeartbeat, CDC capture instances, CDC reader grants, connector metadata, and CDC-provider manifests before opt-in setup.",
       "Opt-in provider setup creates or exact-matches the heartbeat table and singleton, database CDC state, three capture instances, source inventory, heartbeat action query, expected message-key columns, provider metadata, diagnostics, and standalone manifest.",
-      "Tests cover database/table CDC enablement, exactly three capture instances, full captured-column inventories in emitted order, supports_net_changes=0, index_name=NULL, filegroup_name=NULL, allow_partition_switch=0, heartbeat action-query execution, job/retention metadata, and separation from ordinary DDL fingerprints.",
+      "Tests cover database/table CDC enablement, exactly three capture instances, full captured-column inventories in emitted order, supports_net_changes=0, the DMS create options index_name=NULL, filegroup_name=NULL, allow_partition_switch=0, provider-normal observed source-index and partition-switch metadata, heartbeat action-query execution, job/retention metadata, and separation from ordinary DDL fingerprints.",
       "Provider object inventory tests prove dms.DocumentProjectionWork has no capture instance and is absent from provider metadata and provider manifests.",
       "Manifest snapshots are produced only after live setup or validation inspection and exclude credentials, connection strings, document payloads, tenant display names, and unsanitized physical identifiers."
     ],
@@ -458,16 +458,16 @@
   },
   {
     "category": "sqlserver-capture-instances",
-    "description": "Medium: Tighten SQL Server capture-instance exact-match validation to require no named source index and partition switching disabled. This should remove the current exact-match exceptions only; do not add capture repair, job tuning, or connector behavior.",
+    "description": "Superseded by the later provider-normal exact-match task: the attempted strict SQL Server capture-instance validation for source index and partition switching is historical only. Final behavior keeps the DMS create options fixed and accepts only SQL Server provider-normal observable metadata for those options.",
     "acceptance-criteria": [
-      "Existing SQL Server capture-instance inspection treats any non-empty cdc.change_tables.index_name as a mismatch for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat.",
-      "Existing SQL Server capture-instance inspection treats cdc.change_tables.allow_partition_switch enabled as a mismatch for every expected capture instance, regardless of whether the source table is currently partitioned.",
-      "Observed values and diagnostics report expected_source_index as none and expected_partition_switch as disabled, without the current none-or-PK and ignored-for-nonpartitioned-source exceptions.",
-      "The create path continues to call sp_cdc_enable_table with @index_name = NULL, @filegroup_name = NULL, and @allow_partition_switch = 0; this task only tightens exact-match validation of existing capture instances.",
-      "Unit and integration fixtures no longer seed or expect PK source indexes or enabled partition switching for exact-match capture instances."
+      "Historical note only: this completed task was superseded because SQL Server can report the source primary key for a capture created with @index_name = NULL and can report partition_switch enabled for nonpartitioned sources even when DMS passes @allow_partition_switch = 0.",
+      "Final exact-match behavior is defined by the later sqlserver-capture-instances provider-normal exact-match task and by the DMS-1320 story Answers 2 item 4.",
+      "The create path still calls sp_cdc_enable_table with @index_name = NULL, @filegroup_name = NULL, and @allow_partition_switch = 0; validation accepts only SQL Server provider-normal observable metadata for that call.",
+      "Manually named or wrong non-PK source indexes, CDC filegroup overrides, enabled net changes, wrong source objects, wrong columns, and partition_switch enabled on a partitioned source remain fail-closed mismatches.",
+      "Do not reintroduce strict rejection of a SQL Server-selected source primary key or nonpartitioned-source partition_switch metadata for DMS-created captures."
     ],
     "steps-to-verify": [
-      "Review CaptureInstancesSql, ReadExpectedCaptureInstance, and capture-instance observed values for strict index_name and allow_partition_switch checks.",
+      "Historical verification superseded: review the later provider-normal exact-match task, story Answers 2 item 4, SourceIndexMatches, PartitionSwitchMatches, and capture-instance observed values for final behavior.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
       "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
     ],
@@ -730,7 +730,7 @@
       "Review 01-cdc-ddl-support.md Answers 2 item 4 and the SQL Server capture-instance entries in tasks.json for consistent provider-normal wording.",
       "Review SourceIndexMatches, PartitionSwitchMatches, and capture-instance observed values in CdcSqlServerHeartbeatDatabaseProvider to confirm the documentation matches current behavior."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sqlserver-security",
