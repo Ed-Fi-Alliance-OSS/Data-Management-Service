@@ -9,7 +9,7 @@
 # expands to or from a digraph). A future reviewer example becomes one added candidate row here;
 # the invariant does the arguing.
 #
-# OPT-IN AND READ-ONLY BY CONSTRUCTION. The suite runs only when
+# OPT-IN AND READ-ONLY BY CONSTRUCTION. The live probes run only when
 # DMS_MSSQL_COLLATION_FIXTURE_CONTAINER names a running SQL Server container (the sqlcmd inside
 # the container is the one dependency-free client this repo's tooling can rely on - pwsh ships no
 # SqlClient). DMS_MSSQL_COLLATION_FIXTURE_SA_PASSWORD overrides the documented local fixture
