@@ -253,7 +253,7 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_rerun_and_validate_only_when_created_capture_metadata_is_not_strict()
+    public async Task It_should_exact_match_on_rerun_and_validate_only_after_initial_setup()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -266,14 +266,20 @@ public class Given_MssqlCdcProviderAccessRetry
 
         var rerunResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
 
-        AssertStrictCaptureMetadataMismatch(rerunResult);
+        rerunResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(rerunResult.Diagnostics));
+        AssertMatchedCaptureArtifacts(rerunResult);
         (await ReadStableMetadataSnapshotAsync(connection))
             .Should()
             .BeEquivalentTo(snapshot, options => options.WithStrictOrdering());
 
         var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
-        AssertStrictCaptureMetadataMismatch(validateResult);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(validateResult.Diagnostics));
+        AssertMatchedCaptureArtifacts(validateResult);
         (await ReadStableMetadataSnapshotAsync(connection))
             .Should()
             .BeEquivalentTo(snapshot, options => options.WithStrictOrdering());
@@ -301,7 +307,7 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_partial_retry_when_created_capture_metadata_is_not_strict()
+    public async Task It_should_exact_match_created_capture_metadata_on_partial_retry()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -335,15 +341,21 @@ public class Given_MssqlCdcProviderAccessRetry
 
         var retryResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
 
-        AssertStrictCaptureMetadataMismatch(retryResult);
+        retryResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched, DescribeDiagnostics(retryResult.Diagnostics));
+        retryResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        AssertMatchedCaptureArtifacts(retryResult);
         (await ReadCaptureColumnsAsync(connection))
             .Should()
             .BeEquivalentTo(createdCaptures, options => options.WithStrictOrdering());
-        (await HasConnectorObjectPermissionAsync(connection, "Document", "SELECT")).Should().BeFalse();
+        (await HasConnectorObjectPermissionAsync(connection, "Document", "SELECT")).Should().BeTrue();
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_strict_capture_mismatch_without_removing_mismatched_grants()
+    public async Task It_should_fail_closed_on_mismatched_grants_without_removing_them()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -368,7 +380,27 @@ public class Given_MssqlCdcProviderAccessRetry
 
         var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
-        AssertStrictCaptureMetadataMismatch(validateResult);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("Document=UPDATE", StringComparison.Ordinal)
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == "UPDATE.via.direct"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == "ResourceKey.via.direct"
+            );
         (await HasConnectorObjectPermissionAsync(connection, "DocumentProjectionWork", "SELECT"))
             .Should()
             .BeTrue("validation reports the mismatch without destructive cleanup");
@@ -379,7 +411,7 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_strict_capture_mismatch_without_removing_custom_role_access()
+    public async Task It_should_fail_closed_on_custom_role_access_without_removing_it()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -413,7 +445,19 @@ public class Given_MssqlCdcProviderAccessRetry
 
         var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
-        AssertStrictCaptureMetadataMismatch(validateResult);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_ELEVATED_MEMBERSHIP_MISMATCH"
+                && diagnostic.ObservedValue!.Contains(customRole, StringComparison.Ordinal)
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document", StringComparison.Ordinal)
+            );
         (await IsConnectorDatabaseRoleMemberAsync(connection, customRole)).Should().BeTrue();
         (await HasConnectorObjectPermissionAsync(connection, "Document", "SELECT"))
             .Should()
@@ -421,7 +465,7 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_strict_capture_mismatch_without_removing_public_forbidden_permissions()
+    public async Task It_should_fail_closed_on_public_forbidden_permissions_without_removing_them()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -441,11 +485,27 @@ public class Given_MssqlCdcProviderAccessRetry
 
         var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
-        AssertStrictCaptureMetadataMismatch(validateResult);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == "SELECT.via.public"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("Document=UPDATE.via.public", StringComparison.Ordinal)
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == "ResourceKey.via.public"
+            );
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_strict_capture_mismatch_without_removing_public_grant_with_connector_deny()
+    public async Task It_should_exact_match_when_public_work_table_grant_is_denied_to_connector()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -466,7 +526,13 @@ public class Given_MssqlCdcProviderAccessRetry
 
         var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
-        AssertStrictCaptureMetadataMismatch(validateResult);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        AssertMatchedCaptureArtifacts(validateResult);
         (await HasConnectorObjectPermissionAsync(connection, "DocumentProjectionWork", "SELECT"))
             .Should()
             .BeFalse("the connector deny still removes effective work-table access");
@@ -495,7 +561,7 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_strict_capture_mismatch_without_removing_gating_role_mismatch()
+    public async Task It_should_fail_closed_on_gating_role_mismatch_without_removing_it()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -516,7 +582,16 @@ public class Given_MssqlCdcProviderAccessRetry
 
         var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
-        AssertStrictCaptureMetadataMismatch(validateResult);
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == GatingRoleName
+            );
         (await ReadGatingRoleMembersAsync(connection)).Should().Contain(extraMember);
         (await HasRoleObjectPermissionAsync(connection, GatingRoleName, "Document", "SELECT"))
             .Should()
@@ -694,16 +769,8 @@ public class Given_MssqlCdcProviderAccessRetry
             .NotContain(grant => grant.SafeObjectName.Value == "dms.DocumentProjectionWork");
     }
 
-    private static void AssertStrictCaptureMetadataMismatch(CdcProviderSetupResult result)
+    private static void AssertMatchedCaptureArtifacts(CdcProviderSetupResult result)
     {
-        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(result.Diagnostics));
-        result
-            .Diagnostics.Where(diagnostic =>
-                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
-                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
-            )
-            .Should()
-            .HaveCount(3);
         result
             .ArtifactInventory.Where(observation =>
                 observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
@@ -711,9 +778,13 @@ public class Given_MssqlCdcProviderAccessRetry
             .Should()
             .HaveCount(3)
             .And.OnlyContain(observation =>
-                observation.State == CdcProviderArtifactState.Mismatched
-                && observation.SafeObservedValues["expected_source_index"] == "none"
-                && observation.SafeObservedValues["expected_partition_switch"] == "disabled"
+                observation.State == CdcProviderArtifactState.Matched
+                && observation
+                    .SafeObservedValues["expected_source_index"]
+                    .StartsWith("none_or_source_primary_key.", StringComparison.Ordinal)
+                && observation.SafeObservedValues["expected_partition_switch"]
+                    == "disabled_when_source_partitioned"
+                && observation.SafeObservedValues["source_is_partitioned"] == "False"
             );
     }
 

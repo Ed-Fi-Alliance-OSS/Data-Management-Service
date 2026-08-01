@@ -1809,6 +1809,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     CAST(NULL AS nvarchar(5)) AS supports_net_changes,
                     CAST(NULL AS nvarchar(5)) AS has_drop_pending,
                     CAST(NULL AS nvarchar(128)) AS index_name,
+                    CAST(NULL AS nvarchar(128)) AS source_primary_key_name,
                     CAST(NULL AS nvarchar(128)) AS filegroup_name,
                     CAST(NULL AS nvarchar(5)) AS partition_switch,
                     CAST(NULL AS nvarchar(5)) AS source_is_partitioned,
@@ -1846,6 +1847,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     CONVERT(nvarchar(5), capture_info.supports_net_changes) AS supports_net_changes,
                     N'False' AS has_drop_pending,
                     COALESCE(capture_info.index_name, N'') AS index_name,
+                    COALESCE(primary_key_info.name, N'') AS source_primary_key_name,
                     COALESCE(capture_info.filegroup_name, N'') AS filegroup_name,
                     CONVERT(nvarchar(5), capture_info.partition_switch) AS partition_switch,
                     CONVERT(nvarchar(5), CASE WHEN EXISTS (
@@ -1864,6 +1866,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ON source_table.object_id = capture_info.source_object_id
                 INNER JOIN sys.schemas source_schema
                     ON source_schema.schema_id = source_table.schema_id
+                LEFT JOIN sys.key_constraints primary_key_info
+                    ON primary_key_info.parent_object_id = source_table.object_id
+                    AND primary_key_info.type = N'PK'
                 LEFT JOIN cdc.captured_columns captured_column
                     ON captured_column.object_id = capture_info.object_id
                 LEFT JOIN expected_capture_instances expected_by_instance
@@ -1925,6 +1930,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var supportsNetChanges = ReadBool(first, "supports_net_changes");
         var hasDropPending = ReadBool(first, "has_drop_pending");
         var sourceIndex = ReadOptional(first, "index_name");
+        var sourcePrimaryKeyName = ReadOptional(first, "source_primary_key_name");
         var filegroupName = ReadOptional(first, "filegroup_name");
         var partitionSwitch = ReadBool(first, "partition_switch");
         var sourceIsPartitioned = ReadBool(first, "source_is_partitioned");
@@ -1950,8 +1956,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             StringComparison.Ordinal
         );
         var roleMatches = string.Equals(roleName, definition.GatingRoleName.Value, StringComparison.Ordinal);
-        var sourceIndexMatches = string.IsNullOrWhiteSpace(sourceIndex);
-        var partitionSwitchMatches = !partitionSwitch;
+        var sourceIndexMatches = SourceIndexMatches(sourceIndex, sourcePrimaryKeyName);
+        var partitionSwitchMatches = PartitionSwitchMatches(partitionSwitch, sourceIsPartitioned);
         var capturedColumnsMatch = capturedColumns.SequenceEqual(expectedColumns, StringComparer.Ordinal);
 
         return new SqlServerCaptureInstanceInspection(
@@ -1976,6 +1982,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 supportsNetChanges,
                 hasDropPending,
                 sourceIndex,
+                sourcePrimaryKeyName,
                 filegroupName,
                 partitionSwitch,
                 sourceIsPartitioned,
@@ -2145,6 +2152,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool supportsNetChanges,
         bool hasDropPending,
         string sourceIndex,
+        string sourcePrimaryKeyName,
         string filegroupName,
         bool partitionSwitch,
         bool sourceIsPartitioned,
@@ -2165,11 +2173,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["expected_supports_net_changes"] = "False",
             ["has_drop_pending"] = hasDropPending.ToString(),
             ["source_index"] = EmptyAsNone(sourceIndex),
-            ["expected_source_index"] = "none",
+            ["source_primary_key"] = EmptyAsNone(sourcePrimaryKeyName),
+            ["expected_source_index"] = ExpectedSourceIndex(sourcePrimaryKeyName),
             ["filegroup_name"] = EmptyAsNone(filegroupName),
             ["expected_filegroup_name"] = "none",
             ["partition_switch"] = partitionSwitch.ToString(),
-            ["expected_partition_switch"] = "disabled",
+            ["expected_partition_switch"] = "disabled_when_source_partitioned",
             ["source_is_partitioned"] = sourceIsPartitioned.ToString(),
             ["change_table"] = SafeText(changeTable),
             ["captured_columns"] = CsvOrNone(capturedColumns),
@@ -2179,6 +2188,25 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 definition.TableKind == CdcSourceTableKind.CdcHeartbeat
             ).ToString(),
         };
+
+    private static bool SourceIndexMatches(string sourceIndex, string sourcePrimaryKeyName)
+    {
+        if (string.IsNullOrWhiteSpace(sourceIndex))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(sourcePrimaryKeyName)
+            && string.Equals(sourceIndex, sourcePrimaryKeyName, StringComparison.Ordinal);
+    }
+
+    private static bool PartitionSwitchMatches(bool partitionSwitch, bool sourceIsPartitioned) =>
+        !partitionSwitch || !sourceIsPartitioned;
+
+    private static string ExpectedSourceIndex(string sourcePrimaryKeyName) =>
+        string.IsNullOrWhiteSpace(sourcePrimaryKeyName)
+            ? "none"
+            : $"none_or_source_primary_key.{SafeText(sourcePrimaryKeyName)}";
 
     private static string CaptureTableKindToken(CdcSourceTableKind tableKind) =>
         tableKind switch
