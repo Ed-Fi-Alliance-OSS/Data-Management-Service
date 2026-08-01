@@ -42,6 +42,11 @@ public class DocumentCachePreflightClassifierTests
         DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
     );
 
+    private static readonly DocumentCacheOfflineWriterAdmission _cacheAheadRecoveryAdmission = new(
+        confirmed: true,
+        DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+    );
+
     private static readonly DocumentCacheTargetEffectiveSettings _settings = new(
         readAccelerationEnabled: true,
         directFillTimeout: TimeSpan.FromMilliseconds(250),
@@ -625,6 +630,105 @@ public class DocumentCachePreflightClassifierTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Internal_Only_Cache_Ahead_Recovery : DocumentCachePreflightClassifierTests
+    {
+        [TestCase(DocumentCacheLifecycleState.Tracking)]
+        [TestCase(DocumentCacheLifecycleState.Resetting)]
+        [TestCase(DocumentCacheLifecycleState.Rebuilding)]
+        public void It_should_classify_set_latch_recovery_states_as_eligible(
+            DocumentCacheLifecycleState lifecycleState
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyInternalOnlyCacheAheadRecovery(
+                    InternalOnlyCacheAheadRecoveryRequest(),
+                    EligibleObservation(lifecycleState, cacheAheadRecoveryRequired: true),
+                    InternalOnlyCacheAheadRecoveryFacts(
+                        DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
+                    )
+                );
+
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+            result.Command.Should().Be(DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery);
+            result.ObservedLifecycle.Should().Be(lifecycleState);
+            result.CacheAheadRecoveryRequired.Should().BeTrue();
+            result
+                .DownstreamPublicationStatus.Should()
+                .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+            result.NoMutationGuarantee.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_classify_rebuilding_clear_latch_as_the_supported_resume_state()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyInternalOnlyCacheAheadRecovery(
+                    InternalOnlyCacheAheadRecoveryRequest(),
+                    EligibleObservation(DocumentCacheLifecycleState.Rebuilding),
+                    InternalOnlyCacheAheadRecoveryFacts(
+                        DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
+                    )
+                );
+
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+            result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
+            result.CacheAheadRecoveryRequired.Should().BeFalse();
+        }
+
+        [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+        [TestCase(DocumentCacheLifecycleState.Tracking, false)]
+        [TestCase(DocumentCacheLifecycleState.Resetting, false)]
+        [TestCase(DocumentCacheLifecycleState.Disabled, true)]
+        public void It_should_reject_unsupported_lifecycle_or_latch_combinations(
+            DocumentCacheLifecycleState lifecycleState,
+            bool cacheAheadRecoveryRequired
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyInternalOnlyCacheAheadRecovery(
+                    InternalOnlyCacheAheadRecoveryRequest(),
+                    EligibleObservation(lifecycleState, cacheAheadRecoveryRequired),
+                    InternalOnlyCacheAheadRecoveryFacts(
+                        DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
+                    )
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
+                lifecycleState
+            );
+            result.CacheAheadRecoveryRequired.Should().Be(cacheAheadRecoveryRequired);
+        }
+
+        [Test]
+        public void It_should_reject_non_internal_downstream_history()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyInternalOnlyCacheAheadRecovery(
+                    InternalOnlyCacheAheadRecoveryRequest(),
+                    EligibleObservation(
+                        DocumentCacheLifecycleState.Tracking,
+                        cacheAheadRecoveryRequired: true
+                    ),
+                    InternalOnlyCacheAheadRecoveryFacts(
+                        DownstreamObservation(DocumentCacheDownstreamPublicationStatus.Possible)
+                    )
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown,
+                DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown,
+                DocumentCacheLifecycleState.Tracking
+            );
+            result.CacheAheadRecoveryRequired.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Common_Target_Observation_Failures : DocumentCachePreflightClassifierTests
     {
         [Test]
@@ -835,6 +939,15 @@ public class DocumentCachePreflightClassifierTests
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
     ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
 
+    protected static DocumentCacheInternalOnlyCacheAheadRecoveryRequest InternalOnlyCacheAheadRecoveryRequest(
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+    ) =>
+        new(
+            _administrativeTargetKey,
+            _cacheAheadRecoveryAdmission,
+            expectedPhysicalSourceFingerprint ?? _fingerprint
+        );
+
     protected static DocumentCacheGuardedNewEmptyActivationPreflightFacts GuardedFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
         DocumentCacheProviderPrerequisiteValidationResult? activationProviderPrerequisites = null,
@@ -876,6 +989,17 @@ public class DocumentCachePreflightClassifierTests
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
         string? unexpectedProviderFailureMessage = null
     ) => new(expectedTargetContextGeneration ?? _generation, unexpectedProviderFailureMessage);
+
+    protected static DocumentCacheInternalOnlyCacheAheadRecoveryPreflightFacts InternalOnlyCacheAheadRecoveryFacts(
+        DocumentCacheDownstreamPublicationHistoryObservation downstreamPublicationHistory,
+        DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
+        string? unexpectedProviderFailureMessage = null
+    ) =>
+        new(
+            expectedTargetContextGeneration ?? _generation,
+            downstreamPublicationHistory,
+            unexpectedProviderFailureMessage
+        );
 
     protected static DocumentCacheGuardedNewEmptyActivationState EmptyGuardedNewEmptyState() =>
         new(canonicalDocumentsEmpty: true, documentCacheEmpty: true, documentProjectionWorkEmpty: true);

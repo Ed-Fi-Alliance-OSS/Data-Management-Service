@@ -165,6 +165,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheInternalOnlyCacheAheadRecoveryCommand,
+                DocumentCacheInternalOnlyCacheAheadRecoveryCommand
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheBaselineSeedDelay, DocumentCacheBaselineSeedDelay>()
         );
         services.TryAdd(

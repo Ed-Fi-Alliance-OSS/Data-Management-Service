@@ -125,6 +125,28 @@ public sealed record DocumentCacheOnlineCacheRebuildPreflightFacts
     public string? UnexpectedProviderFailureMessage { get; }
 }
 
+public sealed record DocumentCacheInternalOnlyCacheAheadRecoveryPreflightFacts
+{
+    public DocumentCacheInternalOnlyCacheAheadRecoveryPreflightFacts(
+        DocumentCacheTargetContextGeneration? expectedTargetContextGeneration,
+        DocumentCacheDownstreamPublicationHistoryObservation? downstreamPublicationHistory,
+        string? unexpectedProviderFailureMessage = null
+    )
+    {
+        ExpectedTargetContextGeneration = expectedTargetContextGeneration;
+        DownstreamPublicationHistory = downstreamPublicationHistory;
+        UnexpectedProviderFailureMessage = DocumentCachePreflightDiagnosticText.SanitizeNullable(
+            unexpectedProviderFailureMessage
+        );
+    }
+
+    public DocumentCacheTargetContextGeneration? ExpectedTargetContextGeneration { get; }
+
+    public DocumentCacheDownstreamPublicationHistoryObservation? DownstreamPublicationHistory { get; }
+
+    public string? UnexpectedProviderFailureMessage { get; }
+}
+
 public static class DocumentCachePreflightClassifier
 {
     private const string NoMutationMessage =
@@ -404,6 +426,70 @@ public static class DocumentCachePreflightClassifier
             DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
             request.TargetKey,
             targetObservation!
+        );
+    }
+
+    public static DocumentCacheAdministrativeCommandResult ClassifyInternalOnlyCacheAheadRecovery(
+        DocumentCacheInternalOnlyCacheAheadRecoveryRequest request,
+        DocumentCacheTargetObservation? targetObservation,
+        DocumentCacheInternalOnlyCacheAheadRecoveryPreflightFacts facts
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(facts);
+
+        DocumentCacheAdministrativeCommandResult? commonRejection = ClassifyCommonTargetState(
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            request.TargetKey,
+            targetObservation,
+            facts.ExpectedTargetContextGeneration,
+            facts.UnexpectedProviderFailureMessage
+        );
+        if (commonRejection is not null)
+        {
+            return commonRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? lifecycleRejection =
+            ClassifyInternalOnlyCacheAheadRecoveryLifecycle(request.TargetKey, targetObservation!);
+        if (lifecycleRejection is not null)
+        {
+            return lifecycleRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? expectedSourceRejection = ClassifyExpectedSource(
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            request.TargetKey,
+            targetObservation!,
+            request.ExpectedPhysicalSourceFingerprint
+        );
+        if (expectedSourceRejection is not null)
+        {
+            return expectedSourceRejection;
+        }
+
+        DocumentCacheDownstreamPublicationHistoryProofResult? downstreamProof =
+            ClassifyDownstreamPublicationHistory(
+                request.TargetKey,
+                targetObservation!,
+                facts.DownstreamPublicationHistory,
+                request.ExpectedPhysicalSourceFingerprint
+            );
+        if (downstreamProof is { IsAccepted: false })
+        {
+            return RejectedFromDownstreamProof(
+                DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+                request.TargetKey,
+                targetObservation!,
+                downstreamProof
+            );
+        }
+
+        return Eligible(
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            request.TargetKey,
+            targetObservation!,
+            downstreamProof!.DownstreamPublicationStatus
         );
     }
 
@@ -832,6 +918,38 @@ public static class DocumentCachePreflightClassifier
             DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
             DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
             "DocumentCache lifecycle does not match the command preflight requirement."
+        );
+    }
+
+    private static DocumentCacheAdministrativeCommandResult? ClassifyInternalOnlyCacheAheadRecoveryLifecycle(
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheTargetObservation targetObservation
+    )
+    {
+        DocumentCacheLifecycleObservation lifecycle = targetObservation.Lifecycle!;
+        if (
+            lifecycle.CacheAheadRecoveryRequired
+            && lifecycle.State
+                is DocumentCacheLifecycleState.Tracking
+                    or DocumentCacheLifecycleState.Resetting
+                    or DocumentCacheLifecycleState.Rebuilding
+        )
+        {
+            return null;
+        }
+
+        if (lifecycle is { State: DocumentCacheLifecycleState.Rebuilding, CacheAheadRecoveryRequired: false })
+        {
+            return null;
+        }
+
+        return Rejected(
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            targetKey,
+            targetObservation,
+            DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+            DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
+            "Internal-only cache-ahead recovery requires Tracking, Resetting, or Rebuilding with a set cache-ahead latch, or Rebuilding with a clear latch as the supported resume state."
         );
     }
 
