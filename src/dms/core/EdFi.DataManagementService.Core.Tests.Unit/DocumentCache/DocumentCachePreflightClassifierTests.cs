@@ -532,6 +532,89 @@ public class DocumentCachePreflightClassifierTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Online_Cache_Rebuild : DocumentCachePreflightClassifierTests
+    {
+        [TestCase(DocumentCacheLifecycleState.Tracking)]
+        [TestCase(DocumentCacheLifecycleState.Resetting)]
+        [TestCase(DocumentCacheLifecycleState.Rebuilding)]
+        public void It_should_classify_tracking_resetting_or_rebuilding_clear_latch_targets_as_eligible(
+            DocumentCacheLifecycleState lifecycleState
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyOnlineCacheRebuild(
+                    OnlineCacheRebuildRequest(),
+                    EligibleObservation(lifecycleState),
+                    OnlineCacheRebuildFacts()
+                );
+
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+            result.Command.Should().Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
+            result.ObservedLifecycle.Should().Be(lifecycleState);
+            result.CacheAheadRecoveryRequired.Should().BeFalse();
+            result.NoMutationGuarantee.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_reject_disabled_lifecycle()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyOnlineCacheRebuild(
+                    OnlineCacheRebuildRequest(),
+                    EligibleObservation(DocumentCacheLifecycleState.Disabled),
+                    OnlineCacheRebuildFacts()
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                DocumentCacheTargetDiagnosticCategory.LifecycleMismatch
+            );
+        }
+
+        [TestCase(DocumentCacheLifecycleState.Tracking)]
+        [TestCase(DocumentCacheLifecycleState.Resetting)]
+        [TestCase(DocumentCacheLifecycleState.Rebuilding)]
+        public void It_should_reject_a_set_cache_ahead_latch_before_lifecycle_resume(
+            DocumentCacheLifecycleState lifecycleState
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyOnlineCacheRebuild(
+                    OnlineCacheRebuildRequest(),
+                    EligibleObservation(lifecycleState, cacheAheadRecoveryRequired: true),
+                    OnlineCacheRebuildFacts()
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+                DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
+                lifecycleState
+            );
+        }
+
+        [Test]
+        public void It_should_reject_expected_source_mismatch()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyOnlineCacheRebuild(
+                    OnlineCacheRebuildRequest(expectedPhysicalSourceFingerprint: _otherFingerprint),
+                    EligibleObservation(DocumentCacheLifecycleState.Tracking),
+                    OnlineCacheRebuildFacts()
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch,
+                DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch,
+                DocumentCacheLifecycleState.Tracking
+            );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Common_Target_Observation_Failures : DocumentCachePreflightClassifierTests
     {
         [Test]
@@ -738,6 +821,10 @@ public class DocumentCachePreflightClassifierTests
             expectedPhysicalSourceFingerprint ?? _fingerprint
         );
 
+    protected static DocumentCacheOnlineCacheRebuildRequest OnlineCacheRebuildRequest(
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+    ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
+
     protected static DocumentCacheGuardedNewEmptyActivationPreflightFacts GuardedFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
         DocumentCacheProviderPrerequisiteValidationResult? activationProviderPrerequisites = null,
@@ -774,6 +861,11 @@ public class DocumentCachePreflightClassifierTests
             downstreamPublicationHistory,
             unexpectedProviderFailureMessage
         );
+
+    protected static DocumentCacheOnlineCacheRebuildPreflightFacts OnlineCacheRebuildFacts(
+        DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
+        string? unexpectedProviderFailureMessage = null
+    ) => new(expectedTargetContextGeneration ?? _generation, unexpectedProviderFailureMessage);
 
     protected static DocumentCacheGuardedNewEmptyActivationState EmptyGuardedNewEmptyState() =>
         new(canonicalDocumentsEmpty: true, documentCacheEmpty: true, documentProjectionWorkEmpty: true);

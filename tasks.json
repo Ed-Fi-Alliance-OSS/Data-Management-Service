@@ -343,7 +343,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OnlineCacheRebuild\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~OnlineCacheRebuild\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "offline-deactivation",

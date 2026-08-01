@@ -69,6 +69,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativePrimitives>();
         var documentCacheBaselineSeeder =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheBaselineSeeder>();
+        var documentCacheOnlineCacheRebuildCommand =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheOnlineCacheRebuildCommand>();
         var documentCacheProjectionDrainPageProcessor =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
@@ -108,6 +110,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheAdministrativeMutex.Should().BeOfType<MssqlDocumentCacheAdministrativeMutex>();
         documentCacheAdministrativePrimitives.Should().BeOfType<MssqlDocumentCacheAdministrativePrimitives>();
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
+        documentCacheOnlineCacheRebuildCommand.Should().BeOfType<DocumentCacheOnlineCacheRebuildCommand>();
         documentCacheProjectionDrainPageProcessor
             .Should()
             .BeOfType<DocumentCacheProjectionDrainPageProcessor>();

@@ -87,3 +87,8 @@ Completed guarded-activation task for reference/design/backend-redesign/epics/18
 Key decisions: added first concrete admin command service/workflow over shared runner; early live preflight rejects obvious no-mutation cases, then one mutex-owned transaction takes provider document lock, exclusive state observation, empty-state/prereq checks, and guarded Disabled->Tracking transition. Guarded activation carries no offline admission.
 Files changed: DocumentCacheGuardedNewEmptyActivation.cs; ReferenceResolverServiceCollectionExtensions.cs; PG/MSSQL GuardedNewEmptyActivation integration tests; tasks.json; progress.txt.
 Blockers/notes: default MSSQL admin env unset/stale; initial MSSQL run failed before tests on unreachable configured SQL Server, verified by rerun with ConnectionStrings__MssqlAdmin pointing to SQL Server 2025 container on localhost,14333. Next likely online-rebuild or offline-activation workflows.
+
+Completed online-rebuild task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added OnlineCacheRebuild preflight admitted only Tracking/Resetting/Rebuilding with clear latch; workflow composes runner, bounded cache-only clearing, baseline seeding, command-owned drain, and guarded Rebuilding->Tracking. Rebuilding resume skips cache clearing.
+Files changed: DocumentCachePreflightClassifier.cs/tests; DocumentCacheOnlineCacheRebuild.cs; ReferenceResolverServiceCollectionExtensions.cs; PG/MSSQL OnlineCacheRebuild integration tests; provider registration tests; tasks.json; progress.txt.
+Blockers/notes: none. Next likely offline-activation or offline-deactivation with downstream proof/offline admission.

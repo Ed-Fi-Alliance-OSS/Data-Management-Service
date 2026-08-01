@@ -140,6 +140,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheOnlineCacheRebuildCommand,
+                DocumentCacheOnlineCacheRebuildCommand
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheBaselineSeedDelay, DocumentCacheBaselineSeedDelay>()
         );
         services.TryAdd(

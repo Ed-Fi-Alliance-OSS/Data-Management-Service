@@ -107,6 +107,24 @@ public sealed record DocumentCacheOfflineDeactivationPreflightFacts
     public string? UnexpectedProviderFailureMessage { get; }
 }
 
+public sealed record DocumentCacheOnlineCacheRebuildPreflightFacts
+{
+    public DocumentCacheOnlineCacheRebuildPreflightFacts(
+        DocumentCacheTargetContextGeneration? expectedTargetContextGeneration,
+        string? unexpectedProviderFailureMessage = null
+    )
+    {
+        ExpectedTargetContextGeneration = expectedTargetContextGeneration;
+        UnexpectedProviderFailureMessage = DocumentCachePreflightDiagnosticText.SanitizeNullable(
+            unexpectedProviderFailureMessage
+        );
+    }
+
+    public DocumentCacheTargetContextGeneration? ExpectedTargetContextGeneration { get; }
+
+    public string? UnexpectedProviderFailureMessage { get; }
+}
+
 public static class DocumentCachePreflightClassifier
 {
     private const string NoMutationMessage =
@@ -341,6 +359,54 @@ public static class DocumentCachePreflightClassifier
             request.TargetKey,
             targetObservation!,
             downstreamProof!.DownstreamPublicationStatus
+        );
+    }
+
+    public static DocumentCacheAdministrativeCommandResult ClassifyOnlineCacheRebuild(
+        DocumentCacheOnlineCacheRebuildRequest request,
+        DocumentCacheTargetObservation? targetObservation,
+        DocumentCacheOnlineCacheRebuildPreflightFacts facts
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(facts);
+
+        DocumentCacheAdministrativeCommandResult? commonRejection = ClassifyCommonTargetState(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            request.TargetKey,
+            targetObservation,
+            facts.ExpectedTargetContextGeneration,
+            facts.UnexpectedProviderFailureMessage
+        );
+        if (commonRejection is not null)
+        {
+            return commonRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? lifecycleRejection = ClassifyOnlineRebuildLifecycle(
+            request.TargetKey,
+            targetObservation!
+        );
+        if (lifecycleRejection is not null)
+        {
+            return lifecycleRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? expectedSourceRejection = ClassifyExpectedSource(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            request.TargetKey,
+            targetObservation!,
+            request.ExpectedPhysicalSourceFingerprint
+        );
+        if (expectedSourceRejection is not null)
+        {
+            return expectedSourceRejection;
+        }
+
+        return Eligible(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            request.TargetKey,
+            targetObservation!
         );
     }
 
@@ -676,6 +742,44 @@ public static class DocumentCachePreflightClassifier
 
         return Rejected(
             DocumentCacheAdministrativeCommand.OfflineDeactivation,
+            targetKey,
+            targetObservation,
+            DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+            DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
+            "DocumentCache lifecycle does not match the command preflight requirement."
+        );
+    }
+
+    private static DocumentCacheAdministrativeCommandResult? ClassifyOnlineRebuildLifecycle(
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheTargetObservation targetObservation
+    )
+    {
+        DocumentCacheLifecycleObservation lifecycle = targetObservation.Lifecycle!;
+        if (lifecycle.CacheAheadRecoveryRequired)
+        {
+            return Rejected(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+                DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
+                "DocumentCache cache-ahead recovery latch is set."
+            );
+        }
+
+        if (
+            lifecycle.State
+            is DocumentCacheLifecycleState.Tracking
+                or DocumentCacheLifecycleState.Resetting
+                or DocumentCacheLifecycleState.Rebuilding
+        )
+        {
+            return null;
+        }
+
+        return Rejected(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
             targetKey,
             targetObservation,
             DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
