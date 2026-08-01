@@ -1075,6 +1075,25 @@ internal sealed class DescriptorWriteHandler(
     /// </summary>
     private static string DescriptorProbeUri(ExtractedDescriptorBody body) => body.Uri.ToLowerInvariant();
 
+    /// <summary>
+    /// The body a POST-as-update actually writes: every descriptive field from the request, but
+    /// <c>Namespace</c>, <c>CodeValue</c> and <c>Uri</c> from the persisted row.
+    /// </summary>
+    /// <remarks>
+    /// The target was matched <b>by</b> identity — through a case-insensitive seek of
+    /// <c>UX_Descriptor_UriLowered_Discriminator</c> — so the request's identity and the persisted
+    /// identity can differ only in casing. Taking the persisted values makes stored descriptor casing
+    /// immutable through POST, which is what the pre-Phase-3 referential-id probe enforced implicitly:
+    /// a case-variant POST resolved to no target, inserted, and lost to the URI unique constraint, so
+    /// stored casing could never be rewritten. It also matches the Ed-Fi rule that a resource echoes the
+    /// first-created canonical form (<c>DescriptorCaseInsensitiveValidation.feature</c>). PUT is
+    /// unaffected: its Ordinal <c>Uri</c> comparison still rejects a case-only identity edit outright.
+    /// </remarks>
+    private static ExtractedDescriptorBody PreserveStoredDescriptorIdentity(
+        ExtractedDescriptorBody body,
+        PersistedDescriptorState persisted
+    ) => body with { Namespace = persisted.Namespace, CodeValue = persisted.CodeValue, Uri = persisted.Uri };
+
     private static RelationalWriteTargetContext TranslateDescriptorTargetContext(
         RelationalWriteTargetLookupResult targetLookupResult,
         string operationLabel
@@ -1493,11 +1512,14 @@ internal sealed class DescriptorWriteHandler(
     /// <summary>
     /// Applies a POST-as-update through the same single-table UPDATE the PUT path issues. The two
     /// diverged only in the <c>ReferentialIdentity</c> upsert that used to trail the descriptor UPDATE;
-    /// with that statement gone the two batches are identical, so there is one pair of builders.
+    /// with that statement gone the two batches are identical, so there is one pair of builders. The
+    /// only remaining difference is which values bind the identity columns — see
+    /// <see cref="PreserveStoredDescriptorIdentity"/>.
     /// </summary>
     private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
+        PersistedDescriptorState persisted,
         long documentId,
         DocumentUuid existingDocumentUuid,
         IRelationalCommandExecutor commandExecutor,
@@ -1511,10 +1533,12 @@ internal sealed class DescriptorWriteHandler(
             request.TraceId.Value
         );
 
+        var writtenBody = PreserveStoredDescriptorIdentity(body, persisted);
+
         var command = request.MappingSet.Key.Dialect switch
         {
-            SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(body, documentId),
-            SqlDialect.Mssql => BuildMssqlUpdateCommand(body, documentId),
+            SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(writtenBody, documentId),
+            SqlDialect.Mssql => BuildMssqlUpdateCommand(writtenBody, documentId),
             _ => throw new NotSupportedException(
                 $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
             ),
@@ -1568,6 +1592,7 @@ internal sealed class DescriptorWriteHandler(
         var upsertResult = await UpdateDescriptorForUpsertAsync(
                 request,
                 body,
+                persisted,
                 documentId,
                 documentUuid,
                 writeSession.CreateCommandExecutor(),

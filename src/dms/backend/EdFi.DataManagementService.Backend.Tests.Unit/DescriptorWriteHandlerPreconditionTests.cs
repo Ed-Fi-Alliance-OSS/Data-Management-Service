@@ -113,6 +113,97 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_no_ops_a_descriptor_post_whose_identity_differs_only_in_casing()
+    {
+        // The probe matches case-insensitively, so a case-variant POST resolves to the persisted row.
+        // Stored casing is immutable through POST and the content is identical, so there is nothing to
+        // write: no UPDATE command is issued and the current etag comes back.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePostRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            @namespace: "URI://ED-FI.ORG/SchoolTypeDescriptor",
+            codeValue: "CHARTER"
+        );
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(44L))
+            );
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        // Exactly the persisted-state read: the probe plus the read, and no UPDATE.
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.Executor.Commands[0].CommandText.Should().Contain("FROM dms.\"Descriptor\"");
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_preserves_the_stored_identity_casing_when_a_case_variant_descriptor_post_changes_content()
+    {
+        // A case-variant identity with genuinely changed content DOES update — but the identity columns
+        // bind the persisted casing, not the request's, so the stored canonical form never moves.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Current Charter"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePostRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Charter",
+            @namespace: "URI://ED-FI.ORG/SchoolTypeDescriptor",
+            codeValue: "CHARTER"
+        );
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+
+        var updateCommand = sessionFactory.Session.Executor.Commands[1];
+        updateCommand.CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+
+        // Identity columns take the PERSISTED casing...
+        ParameterValue(updateCommand, "@namespace").Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
+        ParameterValue(updateCommand, "@codeValue").Should().Be("Charter");
+        ParameterValue(updateCommand, "@uri").Should().Be("uri://ed-fi.org/SchoolTypeDescriptor#Charter");
+
+        // ...while the descriptive columns take the REQUEST's values.
+        ParameterValue(updateCommand, "@shortDescription").Should().Be("Charter");
+        ParameterValue(updateCommand, "@description").Should().Be("Updated Charter");
+    }
+
+    private static object? ParameterValue(RelationalCommand command, string parameterName) =>
+        command.Parameters.Single(parameter => parameter.Name == parameterName).Value;
+
+    [Test]
     public async Task It_locks_the_descriptor_row_with_the_dialect_lock_hint()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
@@ -1510,13 +1601,15 @@ public class Given_Descriptor_Write_Preconditions
     private static DescriptorWriteRequest CreatePostRequest(
         MappingSet mappingSet,
         DocumentUuid documentUuid,
-        string description = "Charter"
+        string description = "Charter",
+        string @namespace = "uri://ed-fi.org/SchoolTypeDescriptor",
+        string codeValue = "Charter"
     )
     {
         return new DescriptorWriteRequest(
             mappingSet,
             _descriptorResource,
-            CreateRequestBody(description),
+            CreateRequestBody(description, @namespace, codeValue),
             documentUuid,
             new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-precondition")
@@ -1552,13 +1645,17 @@ public class Given_Descriptor_Write_Preconditions
         );
     }
 
-    private static JsonNode CreateRequestBody(string description)
+    private static JsonNode CreateRequestBody(
+        string description,
+        string @namespace = "uri://ed-fi.org/SchoolTypeDescriptor",
+        string codeValue = "Charter"
+    )
     {
         return JsonNode.Parse(
             $$"""
             {
-              "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-              "codeValue": "Charter",
+              "namespace": "{{@namespace}}",
+              "codeValue": "{{codeValue}}",
               "shortDescription": "Charter",
               "description": "{{description}}",
               "effectiveBeginDate": "2024-01-01"

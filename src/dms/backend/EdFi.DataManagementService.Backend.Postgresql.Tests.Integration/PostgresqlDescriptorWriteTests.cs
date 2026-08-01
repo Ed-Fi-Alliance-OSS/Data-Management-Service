@@ -221,6 +221,61 @@ public class Given_PostgresqlDescriptorWriteHandler
     }
 
     [Test]
+    public async Task It_preserves_the_originally_created_casing_when_a_case_variant_post_upserts()
+    {
+        using var scope = CreateConfiguredScope();
+        var writeHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
+        var readHandler = scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>();
+
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "CasePreserved",
+                "shortDescription": "Case Preserved"
+            }
+            """
+        );
+        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
+
+        // The upsert probe seeks UriLowered, so this resolves to the row just created even though the
+        // identity casing differs. The descriptive field changes, so an UPDATE really is issued.
+        var caseVariantUpsert = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "URI://ED-FI.ORG/SCHOOLTYPEDESCRIPTOR",
+                "codeValue": "CASEPRESERVED",
+                "shortDescription": "Case Preserved Again"
+            }
+            """
+        );
+        var upsertResult = await writeHandler.HandlePostAsync(caseVariantUpsert);
+
+        upsertResult
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Which.ExistingDocumentUuid.Should()
+            .Be(documentUuid);
+
+        // A follow-up GET echoes the FIRST-created canonical casing, not the case-variant request's:
+        // descriptor identity casing is immutable through POST.
+        var getResult = await GetDescriptorByIdAsync(
+            readHandler,
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid
+        );
+
+        var body = getResult.Should().BeOfType<GetResult.GetSuccess>().Which.EdfiDoc;
+        body["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
+        body["codeValue"]!.GetValue<string>().Should().Be("CasePreserved");
+        // The descriptive field DID move.
+        body["shortDescription"]!.GetValue<string>().Should().Be("Case Preserved Again");
+    }
+
+    [Test]
     public async Task It_updates_non_identity_fields_via_put()
     {
         var handler = ResolveHandler();

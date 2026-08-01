@@ -151,4 +151,64 @@ public class Given_Descriptor_No_Op_Comparison
 
         DescriptorNoOpComparer.IsUnchanged(original, changed).Should().BeFalse();
     }
+
+    [Test]
+    public void It_treats_an_identity_that_differs_only_in_casing_as_unchanged()
+    {
+        // UX_Descriptor_UriLowered_Discriminator treats case variants as one identity and POST-as-update
+        // keeps the stored casing, so a case-only identity difference has nothing to write.
+        var persisted = new ExtractedDescriptorBody(
+            "uri://ed-fi.org/AcademicSubjectDescriptor",
+            "English",
+            "English",
+            "English Language Arts",
+            new DateOnly(2024, 1, 1),
+            null,
+            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
+            "AcademicSubjectDescriptor"
+        );
+
+        var caseVariant = new ExtractedDescriptorBody(
+            "URI://ED-FI.ORG/AcademicSubjectDescriptor",
+            "ENGLISH",
+            "English",
+            "English Language Arts",
+            new DateOnly(2024, 1, 1),
+            null,
+            "URI://ED-FI.ORG/AcademicSubjectDescriptor#ENGLISH",
+            "AcademicSubjectDescriptor"
+        );
+
+        DescriptorNoOpComparer.IsUnchanged(caseVariant, persisted).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_keeps_descriptive_fields_case_sensitive_when_the_identity_matches_case_insensitively()
+    {
+        // Only the identity fields relax to OrdinalIgnoreCase; a case-only ShortDescription edit is a
+        // real content change that must still be written.
+        var persisted = new ExtractedDescriptorBody(
+            "uri://ed-fi.org/AcademicSubjectDescriptor",
+            "English",
+            "English",
+            null,
+            null,
+            null,
+            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
+            "AcademicSubjectDescriptor"
+        );
+
+        var caseVariant = new ExtractedDescriptorBody(
+            "URI://ED-FI.ORG/AcademicSubjectDescriptor",
+            "ENGLISH",
+            "ENGLISH",
+            null,
+            null,
+            null,
+            "URI://ED-FI.ORG/AcademicSubjectDescriptor#ENGLISH",
+            "AcademicSubjectDescriptor"
+        );
+
+        DescriptorNoOpComparer.IsUnchanged(caseVariant, persisted).Should().BeFalse();
+    }
 }

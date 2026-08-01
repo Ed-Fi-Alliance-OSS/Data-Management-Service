@@ -5,6 +5,18 @@
 
 namespace EdFi.DataManagementService.Backend;
 
+/// <summary>
+/// Decides whether a descriptor write would change the stored row.
+/// </summary>
+/// <remarks>
+/// The identity fields compare case-insensitively and the descriptive fields case-sensitively. That
+/// split follows from what identity means for a descriptor: <c>UX_Descriptor_UriLowered_Discriminator</c>
+/// treats case variants as one identity, and POST-as-update deliberately keeps the stored casing
+/// (<c>DescriptorWriteHandler.PreserveStoredDescriptorIdentity</c>), so a POST that differs from the
+/// persisted row only in identity casing has nothing to write and must report a no-op rather than issue
+/// an UPDATE that would be a no-op anyway. <c>Uri</c> is not compared separately: it is derived as
+/// <c>{Namespace}#{CodeValue}</c>, so comparing those two covers it.
+/// </remarks>
 internal static class DescriptorNoOpComparer
 {
     public static bool IsUnchanged(ExtractedDescriptorBody body, ExtractedDescriptorBody persisted)
@@ -34,8 +46,8 @@ internal static class DescriptorNoOpComparer
     {
         ArgumentNullException.ThrowIfNull(body);
 
-        return string.Equals(body.Namespace, persistedNamespace, StringComparison.Ordinal)
-            && string.Equals(body.CodeValue, persistedCodeValue, StringComparison.Ordinal)
+        return string.Equals(body.Namespace, persistedNamespace, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(body.CodeValue, persistedCodeValue, StringComparison.OrdinalIgnoreCase)
             && string.Equals(body.ShortDescription, persistedShortDescription, StringComparison.Ordinal)
             && string.Equals(body.Description, persistedDescription, StringComparison.Ordinal)
             && body.EffectiveBeginDate == persistedEffectiveBeginDate
