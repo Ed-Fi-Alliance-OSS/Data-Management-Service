@@ -135,6 +135,123 @@ public class Given_MssqlCdcProviderAccessRetry
         await AssertConnectorPrincipalAccessAsync(connection);
     }
 
+    [TestCase("GRANT SELECT ON SCHEMA::[dms] TO public;")]
+    [TestCase("GRANT SELECT TO public;")]
+    public async Task It_should_fail_closed_when_public_broad_select_reaches_forbidden_dms_tables(
+        string grantSql
+    )
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await ExecuteNonQueryAsync(connection, grantSql);
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(result.Diagnostics));
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.WorkTableGrantViolation
+                && diagnostic.ObservedValue == "SELECT.via.public"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains(".via.public", StringComparison.Ordinal)
+            );
+        result
+            .GrantInventory.Should()
+            .Contain(grant =>
+                grant.SafeObjectName.Value == "dms.DocumentProjectionWork"
+                && grant.Privileges.SequenceEqual(new[] { "SELECT" })
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant =>
+                grant.SafeObjectName.Value == "dms.Document"
+                && grant.Privileges.SequenceEqual(new[] { "SELECT" })
+            );
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_public_schema_update_reaches_cdc_sources()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await ExecuteNonQueryAsync(connection, "GRANT UPDATE ON SCHEMA::[dms] TO public;");
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(result.Diagnostics));
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("Document=UPDATE.via.public", StringComparison.Ordinal)
+                && diagnostic.ObservedValue.Contains(
+                    "DocumentCache=UPDATE.via.public",
+                    StringComparison.Ordinal
+                )
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue == "UPDATE.via.public"
+            );
+    }
+
+    [Test]
+    public async Task It_should_honor_connector_deny_before_public_schema_select_grant()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            GRANT SELECT ON SCHEMA::[dms] TO public;
+            DENY SELECT ON OBJECT::[dms].[DocumentProjectionWork] TO {QuoteIdentifier(
+                _connectorPrincipalName
+            )};
+            """
+        );
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(result.Diagnostics));
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_WORK_TABLE_GRANT_MISMATCH")
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_EXTRA_DMS_SELECT_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains(".via.public", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_should_honor_public_schema_deny_before_direct_required_grants()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await ExecuteNonQueryAsync(connection, "DENY SELECT ON SCHEMA::[dms] TO public;");
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(result.Diagnostics));
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document", StringComparison.Ordinal)
+                && diagnostic.ObservedValue.Contains("SELECT_dms.DocumentCache", StringComparison.Ordinal)
+                && diagnostic.ObservedValue.Contains("SELECT_dms.CdcHeartbeat", StringComparison.Ordinal)
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant =>
+                grant.SafeObjectName.Value == "dms.Document"
+                || grant.SafeObjectName.Value == "dms.DocumentCache"
+            );
+    }
+
     [Test]
     public async Task It_should_fail_closed_on_rerun_and_validate_only_when_created_capture_metadata_is_not_strict()
     {
@@ -451,7 +568,7 @@ public class Given_MssqlCdcProviderAccessRetry
                 && diagnostic.SafeName.Value == DocumentCaptureInstanceName
             )
             .And.Contain(diagnostic =>
-                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                diagnostic.Code == "CDC_SQLSERVER_UNEXPECTED_DMS_CAPTURE_INSTANCE"
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
                 && diagnostic.SafeName.Value == WrongDocumentCaptureInstanceName
             );

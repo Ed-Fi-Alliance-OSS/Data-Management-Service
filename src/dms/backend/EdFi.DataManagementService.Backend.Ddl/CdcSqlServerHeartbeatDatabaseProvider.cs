@@ -574,6 +574,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var hasHeartbeatIdUpdate = ReadBool(row, "heartbeat_id_update");
         var documentWritePrivileges = ReadCsv(row, "document_write_privileges");
         var documentCacheWritePrivileges = ReadCsv(row, "document_cache_write_privileges");
+        var heartbeatWritePrivileges = ReadCsv(row, "heartbeat_write_privileges");
         var workTablePrivileges = ReadCsv(row, "work_table_privileges");
         var extraDmsSelectTables = ReadCsv(row, "extra_dms_select_tables");
 
@@ -613,6 +614,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             hasHeartbeatIdUpdate
             || documentWritePrivileges.Count > 0
             || documentCacheWritePrivileges.Count > 0
+            || heartbeatWritePrivileges.Count > 0
             || workTablePrivileges.Count > 0
             || extraDmsSelectTables.Count > 0;
         var isGrantableMissingPrivilege =
@@ -653,6 +655,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["missing_required_privileges"] = CsvOrNone(missingRequiredPrivileges),
             ["document_write_privileges"] = CsvOrNone(documentWritePrivileges),
             ["document_cache_write_privileges"] = CsvOrNone(documentCacheWritePrivileges),
+            ["heartbeat_write_privileges"] = CsvOrNone(heartbeatWritePrivileges),
             ["heartbeat_id_update"] = hasHeartbeatIdUpdate.ToString(),
             ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
             ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
@@ -678,6 +681,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             hasHeartbeatIdUpdate,
             documentWritePrivileges,
             documentCacheWritePrivileges,
+            heartbeatWritePrivileges,
             workTablePrivileges,
             extraDmsSelectTables
         );
@@ -698,6 +702,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 hasHeartbeatIdUpdate,
                 documentWritePrivileges,
                 documentCacheWritePrivileges,
+                heartbeatWritePrivileges,
                 workTablePrivileges
             ),
             diagnostics
@@ -837,29 +842,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ON permission_info.grantee_principal_id = connector_permission_principals.principal_id
                     AND permission_info.state IN (N'G', N'W', N'D')
             ),
-            effective_connector_permissions AS (
-                SELECT DISTINCT
-                    grant_info.permission_name,
-                    grant_info.class,
-                    grant_info.major_id,
-                    grant_info.minor_id,
-                    grant_info.source_name
-                FROM connector_permissions grant_info
-                WHERE grant_info.state IN (N'G', N'W')
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM connector_permissions deny_info
-                    WHERE deny_info.state = N'D'
-                    AND deny_info.permission_name = grant_info.permission_name
-                    AND deny_info.class = grant_info.class
-                    AND deny_info.major_id = grant_info.major_id
-                    AND (
-                        deny_info.minor_id = 0
-                        OR grant_info.minor_id = 0
-                        OR deny_info.minor_id = grant_info.minor_id
-                    )
-                )
-            ),
             direct_connector_permissions AS (
                 SELECT
                     permission_info.permission_name,
@@ -871,6 +853,123 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 INNER JOIN sys.database_permissions permission_info
                     ON permission_info.grantee_principal_id = connector.principal_id
                     AND permission_info.state IN (N'G', N'W')
+            ),
+            dms_base_tables AS (
+                SELECT
+                    object_info.object_id,
+                    object_info.name COLLATE DATABASE_DEFAULT AS object_name,
+                    object_info.schema_id
+                FROM sys.objects object_info
+                INNER JOIN sys.schemas schema_info
+                    ON schema_info.schema_id = object_info.schema_id
+                WHERE schema_info.name = N'dms'
+                AND object_info.type = N'U'
+            ),
+            dms_table_columns AS (
+                SELECT
+                    table_info.object_id,
+                    table_info.object_name,
+                    table_info.schema_id,
+                    column_info.column_id,
+                    column_info.name COLLATE DATABASE_DEFAULT AS column_name
+                FROM dms_base_tables table_info
+                INNER JOIN sys.columns column_info
+                    ON column_info.object_id = table_info.object_id
+            ),
+            dms_object_effective_permissions AS (
+                SELECT DISTINCT
+                    grant_info.permission_name,
+                    table_info.object_id,
+                    table_info.object_name,
+                    grant_info.source_name
+                FROM connector_permissions grant_info
+                INNER JOIN dms_base_tables table_info
+                    ON (
+                        grant_info.class = 0
+                        AND grant_info.major_id = 0
+                    )
+                    OR (
+                        grant_info.class = 3
+                        AND grant_info.major_id = table_info.schema_id
+                    )
+                    OR (
+                        grant_info.class = 1
+                        AND grant_info.major_id = table_info.object_id
+                        AND grant_info.minor_id = 0
+                    )
+                WHERE grant_info.state IN (N'G', N'W')
+                AND grant_info.permission_name IN (
+                    N'SELECT',
+                    N'INSERT',
+                    N'UPDATE',
+                    N'DELETE',
+                    N'ALTER',
+                    N'CONTROL',
+                    N'TAKE OWNERSHIP',
+                    N'REFERENCES'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM connector_permissions deny_info
+                    WHERE deny_info.state = N'D'
+                    AND deny_info.permission_name = grant_info.permission_name
+                    AND (
+                        (
+                            deny_info.class = 0
+                            AND deny_info.major_id = 0
+                        )
+                        OR (
+                            deny_info.class = 3
+                            AND deny_info.major_id = table_info.schema_id
+                        )
+                        OR (
+                            deny_info.class = 1
+                            AND deny_info.major_id = table_info.object_id
+                            AND deny_info.minor_id = 0
+                        )
+                    )
+                )
+            ),
+            dms_column_specific_effective_permissions AS (
+                SELECT DISTINCT
+                    grant_info.permission_name,
+                    column_info.object_id,
+                    column_info.object_name,
+                    column_info.column_id,
+                    column_info.column_name,
+                    grant_info.source_name
+                FROM connector_permissions grant_info
+                INNER JOIN dms_table_columns column_info
+                    ON grant_info.class = 1
+                    AND grant_info.major_id = column_info.object_id
+                    AND grant_info.minor_id = column_info.column_id
+                WHERE grant_info.state IN (N'G', N'W')
+                AND grant_info.permission_name IN (
+                    N'SELECT',
+                    N'UPDATE',
+                    N'REFERENCES'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM connector_permissions deny_info
+                    WHERE deny_info.state = N'D'
+                    AND deny_info.permission_name = grant_info.permission_name
+                    AND (
+                        (
+                            deny_info.class = 0
+                            AND deny_info.major_id = 0
+                        )
+                        OR (
+                            deny_info.class = 3
+                            AND deny_info.major_id = column_info.schema_id
+                        )
+                        OR (
+                            deny_info.class = 1
+                            AND deny_info.major_id = column_info.object_id
+                            AND deny_info.minor_id IN (0, column_info.column_id)
+                        )
+                    )
+                )
             )
             SELECT
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector) THEN 1 ELSE 0 END) AS connector_exists,
@@ -987,10 +1086,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ), N'') AS ownership,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM effective_connector_permissions permission_info
-                    WHERE permission_info.permission_name = N'CONNECT'
-                    AND permission_info.class = 0
-                    AND permission_info.major_id = 0
+                    FROM connector
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM connector_permissions deny_info
+                        WHERE deny_info.state = N'D'
+                        AND deny_info.permission_name = N'CONNECT'
+                        AND deny_info.class = 0
+                        AND deny_info.major_id = 0
+                    )
                 ) THEN 1 ELSE 0 END) AS database_connect,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
@@ -1001,11 +1105,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     AND permission_info.minor_id = 0
                     AND EXISTS (
                         SELECT 1
-                        FROM effective_connector_permissions effective_permission
+                        FROM dms_object_effective_permissions effective_permission
                         WHERE effective_permission.permission_name = N'SELECT'
-                        AND effective_permission.class = 1
-                        AND effective_permission.major_id = @document_object_id
-                        AND effective_permission.minor_id = 0
+                        AND effective_permission.object_id = @document_object_id
                     )
                 ) THEN 1 ELSE 0 END) AS document_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
@@ -1017,11 +1119,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     AND permission_info.minor_id = 0
                     AND EXISTS (
                         SELECT 1
-                        FROM effective_connector_permissions effective_permission
+                        FROM dms_object_effective_permissions effective_permission
                         WHERE effective_permission.permission_name = N'SELECT'
-                        AND effective_permission.class = 1
-                        AND effective_permission.major_id = @document_cache_object_id
-                        AND effective_permission.minor_id = 0
+                        AND effective_permission.object_id = @document_cache_object_id
                     )
                 ) THEN 1 ELSE 0 END) AS document_cache_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
@@ -1033,11 +1133,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     AND permission_info.minor_id = 0
                     AND EXISTS (
                         SELECT 1
-                        FROM effective_connector_permissions effective_permission
+                        FROM dms_object_effective_permissions effective_permission
                         WHERE effective_permission.permission_name = N'SELECT'
-                        AND effective_permission.class = 1
-                        AND effective_permission.major_id = @heartbeat_object_id
-                        AND effective_permission.minor_id = 0
+                        AND effective_permission.object_id = @heartbeat_object_id
                     )
                 ) THEN 1 ELSE 0 END) AS heartbeat_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
@@ -1049,11 +1147,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     AND permission_info.minor_id = @heartbeat_sequence_column_id
                     AND EXISTS (
                         SELECT 1
-                        FROM effective_connector_permissions effective_permission
+                        FROM dms_column_specific_effective_permissions effective_permission
                         WHERE effective_permission.permission_name = N'UPDATE'
-                        AND effective_permission.class = 1
-                        AND effective_permission.major_id = @heartbeat_object_id
-                        AND effective_permission.minor_id = @heartbeat_sequence_column_id
+                        AND effective_permission.object_id = @heartbeat_object_id
+                        AND effective_permission.column_id = @heartbeat_sequence_column_id
                     )
                 ) THEN 1 ELSE 0 END) AS heartbeat_sequence_update,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
@@ -1065,20 +1162,23 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     AND permission_info.minor_id = @heartbeat_at_column_id
                     AND EXISTS (
                         SELECT 1
-                        FROM effective_connector_permissions effective_permission
+                        FROM dms_column_specific_effective_permissions effective_permission
                         WHERE effective_permission.permission_name = N'UPDATE'
-                        AND effective_permission.class = 1
-                        AND effective_permission.major_id = @heartbeat_object_id
-                        AND effective_permission.minor_id = @heartbeat_at_column_id
+                        AND effective_permission.object_id = @heartbeat_object_id
+                        AND effective_permission.column_id = @heartbeat_at_column_id
                     )
                 ) THEN 1 ELSE 0 END) AS heartbeat_at_update,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
-                    FROM effective_connector_permissions permission_info
+                    FROM dms_column_specific_effective_permissions permission_info
                     WHERE permission_info.permission_name = N'UPDATE'
-                    AND permission_info.class = 1
-                    AND permission_info.major_id = @heartbeat_object_id
-                    AND permission_info.minor_id IN (0, @heartbeat_id_column_id)
+                    AND permission_info.object_id = @heartbeat_object_id
+                    AND permission_info.column_id = @heartbeat_id_column_id
+                ) OR EXISTS (
+                    SELECT 1
+                    FROM dms_object_effective_permissions permission_info
+                    WHERE permission_info.permission_name = N'UPDATE'
+                    AND permission_info.object_id = @heartbeat_object_id
                 ) THEN 1 ELSE 0 END) AS heartbeat_id_update,
                 COALESCE((
                     SELECT STRING_AGG(permission_info.privilege_source, N',') WITHIN GROUP (ORDER BY permission_info.privilege_source)
@@ -1087,9 +1187,16 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                             permission_info.permission_name COLLATE DATABASE_DEFAULT
                                 + N'.via.'
                                 + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
-                        FROM effective_connector_permissions permission_info
-                        WHERE permission_info.class = 1
-                        AND permission_info.major_id = @document_object_id
+                        FROM dms_object_effective_permissions permission_info
+                        WHERE permission_info.object_id = @document_object_id
+                        AND permission_info.permission_name <> N'SELECT'
+                        UNION
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM dms_column_specific_effective_permissions permission_info
+                        WHERE permission_info.object_id = @document_object_id
                         AND permission_info.permission_name <> N'SELECT'
                     ) permission_info
                 ), N'') AS document_write_privileges,
@@ -1100,9 +1207,16 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                             permission_info.permission_name COLLATE DATABASE_DEFAULT
                                 + N'.via.'
                                 + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
-                        FROM effective_connector_permissions permission_info
-                        WHERE permission_info.class = 1
-                        AND permission_info.major_id = @document_cache_object_id
+                        FROM dms_object_effective_permissions permission_info
+                        WHERE permission_info.object_id = @document_cache_object_id
+                        AND permission_info.permission_name <> N'SELECT'
+                        UNION
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM dms_column_specific_effective_permissions permission_info
+                        WHERE permission_info.object_id = @document_cache_object_id
                         AND permission_info.permission_name <> N'SELECT'
                     ) permission_info
                 ), N'') AS document_cache_write_privileges,
@@ -1113,28 +1227,57 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                             permission_info.permission_name COLLATE DATABASE_DEFAULT
                                 + N'.via.'
                                 + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
-                        FROM effective_connector_permissions permission_info
-                        WHERE permission_info.class = 1
-                        AND permission_info.major_id = @work_table_object_id
+                        FROM dms_object_effective_permissions permission_info
+                        WHERE permission_info.object_id = @heartbeat_object_id
+                        AND permission_info.permission_name <> N'SELECT'
+                        UNION
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM dms_column_specific_effective_permissions permission_info
+                        WHERE permission_info.object_id = @heartbeat_object_id
+                        AND permission_info.permission_name <> N'SELECT'
+                        AND NOT (
+                            permission_info.permission_name = N'UPDATE'
+                            AND permission_info.column_id IN (
+                                @heartbeat_sequence_column_id,
+                                @heartbeat_at_column_id
+                            )
+                        )
+                    ) permission_info
+                ), N'') AS heartbeat_write_privileges,
+                COALESCE((
+                    SELECT STRING_AGG(permission_info.privilege_source, N',') WITHIN GROUP (ORDER BY permission_info.privilege_source)
+                    FROM (
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM dms_object_effective_permissions permission_info
+                        WHERE permission_info.object_id = @work_table_object_id
+                        UNION
+                        SELECT DISTINCT
+                            permission_info.permission_name COLLATE DATABASE_DEFAULT
+                                + N'.via.'
+                                + permission_info.source_name COLLATE DATABASE_DEFAULT AS privilege_source
+                        FROM dms_column_specific_effective_permissions permission_info
+                        WHERE permission_info.object_id = @work_table_object_id
                     ) permission_info
                 ), N'') AS work_table_privileges,
                 COALESCE((
                     SELECT STRING_AGG(permission_info.object_source, N',') WITHIN GROUP (ORDER BY permission_info.object_source)
                     FROM (
                         SELECT DISTINCT
-                            object_info.name COLLATE DATABASE_DEFAULT
+                            object_info.object_name COLLATE DATABASE_DEFAULT
                                 + N'.via.'
                                 + permission_info.source_name COLLATE DATABASE_DEFAULT AS object_source
-                        FROM effective_connector_permissions permission_info
-                    INNER JOIN sys.objects object_info
-                        ON object_info.object_id = permission_info.major_id
-                    INNER JOIN sys.schemas schema_info
-                        ON schema_info.schema_id = object_info.schema_id
-                        WHERE permission_info.class = 1
+                        FROM dms_object_effective_permissions permission_info
+                    INNER JOIN dms_base_tables object_info
+                        ON object_info.object_id = permission_info.object_id
+                        WHERE 1 = 1
                         AND permission_info.permission_name = N'SELECT'
-                        AND permission_info.minor_id = 0
-                        AND schema_info.name = N'dms'
-                        AND object_info.name NOT IN (N'Document', N'DocumentCache', N'CdcHeartbeat', N'DocumentProjectionWork')
+                        AND object_info.object_name NOT IN (N'Document', N'DocumentCache', N'CdcHeartbeat', N'DocumentProjectionWork')
                     ) permission_info
                 ), N'') AS extra_dms_select_tables;
             """;
@@ -2282,6 +2425,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool hasHeartbeatIdUpdate,
         IReadOnlyList<string> documentWritePrivileges,
         IReadOnlyList<string> documentCacheWritePrivileges,
+        IReadOnlyList<string> heartbeatWritePrivileges,
         IReadOnlyList<string> workTablePrivileges,
         IReadOnlyList<string> extraDmsSelectTables
     )
@@ -2405,14 +2549,16 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             );
         }
 
-        if (hasHeartbeatIdUpdate)
+        if (hasHeartbeatIdUpdate || heartbeatWritePrivileges.Count > 0)
         {
             diagnostics.Add(
                 ConnectorPrincipalPrivilegeFailure(
                     connectorPrincipal,
                     "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH",
                     expectedValue: "UPDATE-only-HeartbeatSequence-and-HeartbeatAt",
-                    observedValue: "HeartbeatId"
+                    observedValue: heartbeatWritePrivileges.Count == 0
+                        ? "HeartbeatId"
+                        : CsvOrNone(heartbeatWritePrivileges)
                 )
             );
         }
@@ -2481,6 +2627,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool hasHeartbeatIdUpdate,
         IReadOnlyList<string> documentWritePrivileges,
         IReadOnlyList<string> documentCacheWritePrivileges,
+        IReadOnlyList<string> heartbeatWritePrivileges,
         IReadOnlyList<string> workTablePrivileges
     )
     {
@@ -2527,11 +2674,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             );
         }
 
-        if (hasHeartbeatSelect)
-        {
-            grants.Add(GrantObservation(connector, SafeName(DmsTableNames.CdcHeartbeat), ["SELECT"]));
-        }
-
         List<DbColumnName> heartbeatUpdateColumns = [];
         if (hasHeartbeatSequenceUpdate)
         {
@@ -2546,6 +2688,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         if (hasHeartbeatIdUpdate)
         {
             heartbeatUpdateColumns.Add(new DbColumnName("HeartbeatId"));
+        }
+
+        var heartbeatPrivileges = Privileges(hasHeartbeatSelect, heartbeatWritePrivileges);
+        if (heartbeatPrivileges.Count > 0)
+        {
+            grants.Add(
+                GrantObservation(connector, SafeName(DmsTableNames.CdcHeartbeat), heartbeatPrivileges)
+            );
         }
 
         if (heartbeatUpdateColumns.Count > 0)

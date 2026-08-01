@@ -794,6 +794,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 DisallowedDatabaseRoles = ["custom_writer"],
                 DocumentWritePrivileges = ["UPDATE.via.role.custom_writer"],
                 DocumentCacheWritePrivileges = ["DELETE.via.public"],
+                HeartbeatWritePrivileges = ["INSERT.via.public", "DELETE.via.public"],
                 WorkTablePrivileges = ["SELECT.via.public"],
                 ExtraDmsSelectTables = ["ResourceKey.via.role.custom_writer"],
             }
@@ -810,6 +811,11 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
             .Contain(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_SOURCE_WRITE_GRANT_MISMATCH"
                 && diagnostic.ObservedValue!.Contains("UPDATE.via.role.custom_writer")
+                && diagnostic.ObservedValue.Contains("DELETE.via.public")
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_HEARTBEAT_UPDATE_GRANT_MISMATCH"
+                && diagnostic.ObservedValue!.Contains("INSERT.via.public")
                 && diagnostic.ObservedValue.Contains("DELETE.via.public")
             )
             .And.Contain(diagnostic =>
@@ -1015,6 +1021,8 @@ internal sealed class RecordingSqlServerConnectorAccess
     public bool HeartbeatAtUpdate { get; set; }
 
     public bool HeartbeatIdUpdate { get; init; }
+
+    public IReadOnlyList<string> HeartbeatWritePrivileges { get; init; } = [];
 
     public IReadOnlyList<string> DocumentWritePrivileges { get; init; } = [];
 
@@ -1314,6 +1322,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             ("heartbeat_id_update", _connectorAccess.HeartbeatIdUpdate.ToString()),
             ("document_write_privileges", Csv(_connectorAccess.DocumentWritePrivileges)),
             ("document_cache_write_privileges", Csv(_connectorAccess.DocumentCacheWritePrivileges)),
+            ("heartbeat_write_privileges", Csv(_connectorAccess.HeartbeatWritePrivileges)),
             ("work_table_privileges", Csv(_connectorAccess.WorkTablePrivileges)),
             ("extra_dms_select_tables", Csv(_connectorAccess.ExtraDmsSelectTables))
         );

@@ -490,5 +490,115 @@
       "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
     ],
     "completed": true
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "High: Apply database-level and SCHEMA::dms SQL Server permissions only inside the existing CDC connector access inspection. Keep the fix limited to the CDC source/work-table allow/deny decisions; do not build a general SQL Server permission auditor.",
+    "acceptance-criteria": [
+      "SQL Server connector access inspection folds class 0 database, class 3 SCHEMA::dms, class 1 object-level, and class 1 column-level GRANT and DENY rows from the connector principal, public, and reachable database roles only into the CDC-required and CDC-forbidden decisions for DMS tables.",
+      "The only tables requiring object-effective decisions are dms.Document, dms.DocumentCache, dms.CdcHeartbeat, dms.DocumentProjectionWork, and other dms-schema base tables needed to detect unexpected CDC connector SELECT access.",
+      "Connector validation fails closed when public, the connector principal, or another inspected principal grants SELECT at database scope or SCHEMA::dms scope and that grant reaches dms.DocumentProjectionWork or any unexpected DMS table.",
+      "Connector validation fails closed when public, the connector principal, or another inspected principal grants INSERT, UPDATE, DELETE, ALTER, CONTROL, TAKE OWNERSHIP, or other write/elevated access at database, schema, object, or column scope to dms.Document, dms.DocumentCache, or dms.CdcHeartbeat beyond the two allowed heartbeat column UPDATE grants.",
+      "Required snapshot SELECT and heartbeat column UPDATE privileges still must be present through the direct object/column grant path produced by provider setup; broad inherited grants do not satisfy the required-grant check.",
+      "DENY at database, schema, object, or column scope is honored before GRANT when computing both required and forbidden effective permissions.",
+      "Observed values, diagnostics, grant inventory, and manifests identify only safe DMS object names, permission names, and safe sources such as direct, public, or role names, without credentials, connection strings, raw server/catalog identifiers, or unrelated securables.",
+      "SQL Server unit and integration fixtures cover public SCHEMA::dms SELECT, public database-level SELECT, public SCHEMA::dms UPDATE or INSERT, heartbeat INSERT or DELETE overgrants, and DENY-over-GRANT cases."
+    ],
+    "steps-to-verify": [
+      "Review ConnectorPrincipalAccessSql and ConnectorPrincipalAccessInspection to confirm class 0 database, class 3 schema, class 1 object, and column-level permissions are folded into object-effective decisions for DMS CDC objects.",
+      "Review hasForbiddenPrivileges and observed grant inventory to confirm inherited DMS work-table SELECT, unexpected DMS SELECT, Document/DocumentCache writes, and forbidden CdcHeartbeat writes all fail closed with safe diagnostics.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": true
+  },
+  {
+    "category": "sqlserver-capture-instances",
+    "description": "Medium: Observe SQL Server CDC pending-drop state from cdc.change_tables for expected capture instances. Keep this scoped to exact-match validation; do not add repair, teardown, or capture lifecycle management.",
+    "acceptance-criteria": [
+      "CaptureInstancesSql reads cdc.change_tables.has_drop_pending for live CDC metadata instead of returning a constant false value.",
+      "Existing capture-instance validation treats has_drop_pending = 1 as a mismatch for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat.",
+      "Observed values and diagnostics report has_drop_pending and the expected non-pending state using safe capture-instance names.",
+      "InitialCreateOrExactMatch and ValidateOnly both fail closed on a pending-drop expected capture instance and do not call sp_cdc_disable_table, sp_cdc_enable_table, or any destructive repair path for that instance.",
+      "Unit coverage includes an expected SQL Server capture instance with has_drop_pending true; integration coverage or review evidence only needs to confirm the live query selects the provider metadata column."
+    ],
+    "steps-to-verify": [
+      "Review CaptureInstancesSql and ReadExpectedCaptureInstance to confirm has_drop_pending comes from cdc.change_tables and participates in IsExactMatch.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "Medium: Return the binding-derived SQL Server CDC gating role as a first-class provider artifact using the existing connector-access inspection. Keep grant membership in grant inventory; do not add a separate role-auditing subsystem.",
+    "acceptance-criteria": [
+      "SQL Server provider setup emits a CdcProviderArtifactObservation with artifact kind SqlServerGatingRole and the binding-derived role name.",
+      "The gating-role artifact observation reuses existing safe inspection values for role existence, normal-role status, direct members, parent roles, owned objects, explicit permissions, expected capture-instance usage count, and unexpected capture-instance usage.",
+      "The gating-role artifact state is Created only when the provider setup creates the role during the current InitialCreateOrExactMatch call, Matched when the final inspected role exact-matches the binding contract, and Mismatched or Missing when validation fails.",
+      "CdcProviderSetupService expected binding-artifact validation includes the binding-derived SQL Server gating-role name in addition to the three capture-instance names.",
+      "The CDC provider manifest contains a provider_artifacts entry with artifact_kind sqlserver_gating_role separate from the grant_inventory role membership entry.",
+      "Unit and integration fixtures assert the gating-role artifact is present after initial create and validate-only exact-match, and that a missing or wrong binding-derived role name fails closed with safe diagnostics without creating or modifying connector logins/users."
+    ],
+    "steps-to-verify": [
+      "Review ExecuteConnectorPrincipalAccessAsync, ConnectorPrincipalAccessResult, ExpectedBindingArtifactNames, and manifest output for a distinct SqlServerGatingRole artifact observation.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-history",
+    "description": "Low: Keep the SQL Server ProviderHistory artifact inventory synchronized with the existing final post-capture metadata inspection. Do not add new provider-history workflows; prevent stale pre-capture artifact metadata in setup results and manifests.",
+    "acceptance-criteria": [
+      "After SQL Server InitialCreateOrExactMatch creates capture instances, the final CdcProviderSetupResult contains ProviderHistory artifact metadata from the final metadata inspection, including the final capture_instance_count and CDC job observations.",
+      "The final result and manifest do not contain duplicate ProviderHistory artifact entries for the same sqlserver_database_cdc safe artifact name.",
+      "provider_artifacts and provider_history_observations agree on database_cdc_enabled, capture_instance_count, CDC job presence, and retained LSN fields for SQL Server results.",
+      "The fix reuses the existing SQL Server final metadata refresh step and aggregate merge behavior rather than adding additional database probes or changing provider setup step ordering.",
+      "ValidateOnly exact-match behavior remains unchanged and still reports the observed provider history without mutation.",
+      "Unit or integration coverage asserts that an initial SQL Server setup which creates three capture instances reports capture_instance_count = 3 in the ProviderHistory artifact inventory and manifest provider_artifacts entry."
+    ],
+    "steps-to-verify": [
+      "Review CdcProviderSetupAggregate and SQL Server metadata refresh handling to confirm ProviderHistory artifact observations are upserted or emitted only from the final inspection.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-capture-instances",
+    "description": "High: Make SQL Server capture-instance exact-match validation accept the provider-normal metadata produced by DMS setup itself. Same-binding rerun and ValidateOnly must succeed after initial setup, without supporting arbitrary manually altered capture shapes.",
+    "acceptance-criteria": [
+      "An InitialCreateOrExactMatch run that creates dms.DocumentCache, dms.Document, and dms.CdcHeartbeat capture instances can be rerun in InitialCreateOrExactMatch mode and returns matched capture-instance artifact inventory without calling sp_cdc_enable_table again.",
+      "ValidateOnly succeeds against the same capture instances created by initial setup and performs no database writes.",
+      "Exact-match validation accounts only for SQL Server's observable metadata produced by the DMS sp_cdc_enable_table call with @index_name = NULL, @filegroup_name = NULL, @supports_net_changes = 0, and @allow_partition_switch = 0, so provider-normal source index and partition metadata do not make DMS-created captures fail their own validation.",
+      "Validation still fails closed for a manually named or wrong source index, enabled net changes, wrong gating role, wrong source table, wrong captured-column inventory or order, CDC filegroup override, pending-drop state, and partition-switching state that proves @allow_partition_switch is not disabled for a partitioned source.",
+      "The SQL Server access/retry integration fixture no longer expects rerun or ValidateOnly failure immediately after a successful initial setup; it asserts matched capture instances and stable metadata instead."
+    ],
+    "steps-to-verify": [
+      "Review EnableTableSql, CaptureInstancesSql, ReadExpectedCaptureInstance, and SqlServerCaptureInstanceInspection exact-match logic for provider-normal handling of source index and partition-switch metadata.",
+      "Review SQL Server integration tests that create capture instances through DMS setup to confirm same-binding InitialCreateOrExactMatch rerun and ValidateOnly exact-match those artifacts.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "artifact-output",
+    "description": "Low: Convert expected manifest artifact-output path failures from the existing writer into CDC setup diagnostics instead of letting them mask provider setup results. Do not add retry, fallback output locations, or provider-error handling here.",
+    "acceptance-criteria": [
+      "Manifest output catches expected filesystem and path-shape failures thrown by Directory.CreateDirectory, Path.Combine, or File.WriteAllText, such as invalid paths, unsupported path formats, path-too-long errors, IO failures, and unauthorized access, and converts them to CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED diagnostics.",
+      "Artifact-output diagnostics keep the safe manifest file name and sanitized exception type, and do not include raw artifact directory paths, credentials, connection strings, server names, or catalog identifiers.",
+      "Provider setup returns a failed CdcProviderSetupResult containing both any provider setup diagnostics and the artifact-output diagnostic when manifest write fails after manifest payload generation.",
+      "The implementation does not catch unrelated programmer errors, provider setup exceptions, manifest serialization errors, or database errors as artifact-output diagnostics.",
+      "Unit coverage includes an invalid or unsupported output path case in addition to the existing not-a-directory IO case."
+    ],
+    "steps-to-verify": [
+      "Review CdcProviderArtifactOutputWriter exception handling and CdcProviderSetupService manifest-output aggregation.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderArtifactOutput"
+    ],
+    "completed": false
   }
 ]
