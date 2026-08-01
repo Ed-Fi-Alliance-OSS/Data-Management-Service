@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -308,6 +309,7 @@ public class Given_DocumentCacheProjectionSupervisor
             targetContextFactory,
             observationSink,
             options,
+            new NoOpDocumentCacheProjectionScheduler(),
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheProjectionSupervisor>.Instance
         );
@@ -518,6 +520,19 @@ public class Given_DocumentCacheProjectionSupervisor
     {
         public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request) =>
             throw new NotImplementedException();
+    }
+
+    private sealed class NoOpDocumentCacheProjectionScheduler : IDocumentCacheProjectionScheduler
+    {
+        public Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> RunReadyTargetsOnceAsync(
+            IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult(ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>.Empty);
+
+        public Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            CancellationToken cancellationToken = default
+        ) => throw new NotImplementedException();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

@@ -113,6 +113,15 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionDrainPageProcessor,
+                NoOpDocumentCacheProjectionDrainPageProcessor
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionScheduler, DocumentCacheProjectionScheduler>()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>()
         );
         services.TryAdd(

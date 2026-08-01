@@ -1,0 +1,1002 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Immutable;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace EdFi.DataManagementService.Backend;
+
+public interface IDocumentCacheProjectionScheduler
+{
+    Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> RunReadyTargetsOnceAsync(
+        IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        CancellationToken cancellationToken = default
+    );
+}
+
+public interface IDocumentCacheProjectionDrainPageProcessor
+{
+    Task<DocumentCacheProjectionDrainPageResult> ProcessPageAsync(
+        DocumentCacheProjectionDrainPageRequest request,
+        CancellationToken cancellationToken = default
+    );
+}
+
+public enum DocumentCacheProjectionDrainInvocationKind
+{
+    Ordinary = 1,
+    Administrative = 2,
+}
+
+public sealed record DocumentCacheProjectionDrainPageRequest
+{
+    public DocumentCacheProjectionDrainPageRequest(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentCacheProjectionDrainInvocationKind invocationKind
+    )
+    {
+        TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
+        InvocationKind = DocumentCacheProjectionSchedulingGuard.RequireDefined(
+            invocationKind,
+            nameof(invocationKind),
+            "Unsupported DocumentCache projection drain invocation kind."
+        );
+    }
+
+    public DocumentCacheProjectionTargetRuntimeContext TargetContext { get; }
+
+    public DocumentCacheProjectionDrainInvocationKind InvocationKind { get; }
+}
+
+public enum DocumentCacheProjectionDrainPageOutcome
+{
+    PageProcessed = 1,
+    NoEligibleWork = 2,
+    TargetBackoff = 3,
+    LifecycleFenced = 4,
+}
+
+public sealed record DocumentCacheProjectionDrainPageResult
+{
+    private DocumentCacheProjectionDrainPageResult(
+        DocumentCacheProjectionDrainPageOutcome outcome,
+        int processedItemCount,
+        DateTimeOffset? backoffUntil
+    )
+    {
+        Outcome = DocumentCacheProjectionSchedulingGuard.RequireDefined(
+            outcome,
+            nameof(outcome),
+            "Unsupported DocumentCache projection drain page outcome."
+        );
+        ProcessedItemCount = DocumentCacheProjectionSchedulingGuard.RequireNonNegative(
+            processedItemCount,
+            nameof(processedItemCount)
+        );
+        if (outcome == DocumentCacheProjectionDrainPageOutcome.TargetBackoff && backoffUntil is null)
+        {
+            throw new ArgumentException("Target backoff drain results require a backoff boundary.");
+        }
+
+        if (outcome != DocumentCacheProjectionDrainPageOutcome.TargetBackoff && backoffUntil is not null)
+        {
+            throw new ArgumentException("Only target backoff drain results may carry a backoff boundary.");
+        }
+
+        BackoffUntil = backoffUntil;
+    }
+
+    public DocumentCacheProjectionDrainPageOutcome Outcome { get; }
+
+    public int ProcessedItemCount { get; }
+
+    public DateTimeOffset? BackoffUntil { get; }
+
+    public static DocumentCacheProjectionDrainPageResult PageProcessed(int processedItemCount) =>
+        new(DocumentCacheProjectionDrainPageOutcome.PageProcessed, processedItemCount, backoffUntil: null);
+
+    public static DocumentCacheProjectionDrainPageResult NoEligibleWork { get; } =
+        new(
+            DocumentCacheProjectionDrainPageOutcome.NoEligibleWork,
+            processedItemCount: 0,
+            backoffUntil: null
+        );
+
+    public static DocumentCacheProjectionDrainPageResult LifecycleFenced { get; } =
+        new(
+            DocumentCacheProjectionDrainPageOutcome.LifecycleFenced,
+            processedItemCount: 0,
+            backoffUntil: null
+        );
+
+    public static DocumentCacheProjectionDrainPageResult TargetBackoff(DateTimeOffset backoffUntil) =>
+        new(DocumentCacheProjectionDrainPageOutcome.TargetBackoff, processedItemCount: 0, backoffUntil);
+}
+
+public enum DocumentCacheProjectionSchedulerDispatchStatus
+{
+    Dispatched = 1,
+    Skipped = 2,
+    Faulted = 3,
+}
+
+public enum DocumentCacheProjectionTargetReadinessBlockReason
+{
+    CancellationPending = 1,
+    TargetBackoff = 2,
+    PollSleep = 3,
+    CommandOwned = 4,
+    LocalDrainActive = 5,
+}
+
+public sealed record DocumentCacheProjectionSchedulerDispatchResult
+{
+    private DocumentCacheProjectionSchedulerDispatchResult(
+        DocumentCacheProjectionTargetContextKey contextKey,
+        DocumentCacheProjectionSchedulerDispatchStatus status,
+        DocumentCacheProjectionTargetReadinessBlockReason? blockReason,
+        DocumentCacheProjectionDrainPageResult? drainResult,
+        DateTimeOffset observedAt,
+        DateTimeOffset? completedAt
+    )
+    {
+        ContextKey = contextKey ?? throw new ArgumentNullException(nameof(contextKey));
+        Status = DocumentCacheProjectionSchedulingGuard.RequireDefined(
+            status,
+            nameof(status),
+            "Unsupported DocumentCache projection scheduler dispatch status."
+        );
+        if (status == DocumentCacheProjectionSchedulerDispatchStatus.Skipped && blockReason is null)
+        {
+            throw new ArgumentException("Skipped dispatch results require a block reason.");
+        }
+
+        if (status != DocumentCacheProjectionSchedulerDispatchStatus.Skipped && blockReason is not null)
+        {
+            throw new ArgumentException("Only skipped dispatch results may carry a block reason.");
+        }
+
+        if (status == DocumentCacheProjectionSchedulerDispatchStatus.Dispatched && drainResult is null)
+        {
+            throw new ArgumentException("Dispatched results require a drain result.");
+        }
+
+        ContextKey = contextKey;
+        BlockReason = blockReason;
+        DrainResult = drainResult;
+        ObservedAt = observedAt;
+        CompletedAt = completedAt;
+    }
+
+    public DocumentCacheProjectionTargetContextKey ContextKey { get; }
+
+    public DocumentCacheTargetKey TargetKey => ContextKey.TargetKey;
+
+    public DocumentCacheTargetContextGeneration Generation => ContextKey.Generation;
+
+    public DocumentCacheProjectionSchedulerDispatchStatus Status { get; }
+
+    public DocumentCacheProjectionTargetReadinessBlockReason? BlockReason { get; }
+
+    public DocumentCacheProjectionDrainPageResult? DrainResult { get; }
+
+    public DateTimeOffset ObservedAt { get; }
+
+    public DateTimeOffset? CompletedAt { get; }
+
+    public static DocumentCacheProjectionSchedulerDispatchResult Dispatched(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionDrainPageResult drainResult,
+        DateTimeOffset startedAt,
+        DateTimeOffset completedAt
+    ) =>
+        new(
+            context.ContextKey,
+            DocumentCacheProjectionSchedulerDispatchStatus.Dispatched,
+            blockReason: null,
+            drainResult,
+            startedAt,
+            completedAt
+        );
+
+    public static DocumentCacheProjectionSchedulerDispatchResult Skipped(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionTargetReadinessBlockReason blockReason,
+        DateTimeOffset observedAt
+    ) =>
+        new(
+            context.ContextKey,
+            DocumentCacheProjectionSchedulerDispatchStatus.Skipped,
+            blockReason,
+            drainResult: null,
+            observedAt,
+            completedAt: null
+        );
+
+    public static DocumentCacheProjectionSchedulerDispatchResult Faulted(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionDrainPageResult drainResult,
+        DateTimeOffset startedAt,
+        DateTimeOffset completedAt
+    ) =>
+        new(
+            context.ContextKey,
+            DocumentCacheProjectionSchedulerDispatchStatus.Faulted,
+            blockReason: null,
+            drainResult,
+            startedAt,
+            completedAt
+        );
+}
+
+public sealed class DocumentCacheProjectionTargetDrainExecutor
+{
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private int _owner;
+
+    public DocumentCacheProjectionDrainInvocationKind? CurrentOwner =>
+        Volatile.Read(ref _owner) switch
+        {
+            (int)DocumentCacheProjectionDrainInvocationKind.Ordinary =>
+                DocumentCacheProjectionDrainInvocationKind.Ordinary,
+            (int)DocumentCacheProjectionDrainInvocationKind.Administrative =>
+                DocumentCacheProjectionDrainInvocationKind.Administrative,
+            _ => null,
+        };
+
+    public bool IsOwned => Volatile.Read(ref _owner) != 0;
+
+    public bool IsCommandOwned =>
+        Volatile.Read(ref _owner) == (int)DocumentCacheProjectionDrainInvocationKind.Administrative;
+
+    public async Task<DocumentCacheProjectionDrainPageResult?> TryRunOrdinaryDrainSliceAsync(
+        Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> drainSlice,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(drainSlice);
+        if (!await _gate.WaitAsync(TimeSpan.Zero, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        Volatile.Write(ref _owner, (int)DocumentCacheProjectionDrainInvocationKind.Ordinary);
+        try
+        {
+            return await drainSlice(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _owner, 0);
+            _gate.Release();
+        }
+    }
+
+    public async Task<DocumentCacheProjectionDrainPageResult> RunAdministrativeDrainSliceAsync(
+        Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> drainSlice,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(drainSlice);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        Volatile.Write(ref _owner, (int)DocumentCacheProjectionDrainInvocationKind.Administrative);
+        try
+        {
+            return await drainSlice(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _owner, 0);
+            _gate.Release();
+        }
+    }
+}
+
+public sealed class DocumentCacheProjectionTargetSchedulingState
+{
+    private readonly object _sync = new();
+    private ProjectionThroughputCounter _ordinaryPageThroughput;
+    private ProjectionThroughputCounter _administrativeDrainThroughput;
+
+    public DateTimeOffset? TargetBackoffUntil { get; private set; }
+
+    public DateTimeOffset? PollSleepUntil { get; private set; }
+
+    public void SetTargetBackoffUntil(DateTimeOffset backoffUntil)
+    {
+        lock (_sync)
+        {
+            TargetBackoffUntil = backoffUntil;
+            PollSleepUntil = null;
+        }
+    }
+
+    public void SetPollSleepUntil(DateTimeOffset pollSleepUntil)
+    {
+        lock (_sync)
+        {
+            PollSleepUntil = pollSleepUntil;
+        }
+    }
+
+    public DocumentCacheProjectionTargetReadinessBlockReason? GetReadinessBlock(
+        DateTimeOffset now,
+        bool cancellationRequested,
+        DocumentCacheProjectionTargetDrainExecutor drainExecutor
+    )
+    {
+        ArgumentNullException.ThrowIfNull(drainExecutor);
+
+        if (cancellationRequested)
+        {
+            return DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending;
+        }
+
+        if (drainExecutor.IsCommandOwned)
+        {
+            return DocumentCacheProjectionTargetReadinessBlockReason.CommandOwned;
+        }
+
+        if (drainExecutor.IsOwned)
+        {
+            return DocumentCacheProjectionTargetReadinessBlockReason.LocalDrainActive;
+        }
+
+        lock (_sync)
+        {
+            if (TargetBackoffUntil is not null && TargetBackoffUntil > now)
+            {
+                return DocumentCacheProjectionTargetReadinessBlockReason.TargetBackoff;
+            }
+
+            if (TargetBackoffUntil is not null && TargetBackoffUntil <= now)
+            {
+                TargetBackoffUntil = null;
+            }
+
+            if (PollSleepUntil is not null && PollSleepUntil > now)
+            {
+                return DocumentCacheProjectionTargetReadinessBlockReason.PollSleep;
+            }
+
+            if (PollSleepUntil is not null && PollSleepUntil <= now)
+            {
+                PollSleepUntil = null;
+            }
+
+            return null;
+        }
+    }
+
+    public void RecordOrdinaryDrainStarted(DateTimeOffset startedAt)
+    {
+        lock (_sync)
+        {
+            _ordinaryPageThroughput = _ordinaryPageThroughput.Started(startedAt);
+        }
+    }
+
+    public void RecordOrdinaryDrainCompleted(
+        DocumentCacheProjectionDrainPageResult result,
+        DateTimeOffset startedAt,
+        DateTimeOffset completedAt,
+        TimeSpan pollInterval
+    )
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        lock (_sync)
+        {
+            _ordinaryPageThroughput = _ordinaryPageThroughput.Completed(result, startedAt, completedAt);
+
+            switch (result.Outcome)
+            {
+                case DocumentCacheProjectionDrainPageOutcome.PageProcessed:
+                    PollSleepUntil = null;
+                    TargetBackoffUntil = null;
+                    break;
+
+                case DocumentCacheProjectionDrainPageOutcome.NoEligibleWork:
+                case DocumentCacheProjectionDrainPageOutcome.LifecycleFenced:
+                    PollSleepUntil = completedAt + pollInterval;
+                    break;
+
+                case DocumentCacheProjectionDrainPageOutcome.TargetBackoff:
+                    TargetBackoffUntil = result.BackoffUntil;
+                    PollSleepUntil = null;
+                    break;
+            }
+        }
+    }
+
+    public void RecordAdministrativeDrainStarted(DateTimeOffset startedAt)
+    {
+        lock (_sync)
+        {
+            _administrativeDrainThroughput = _administrativeDrainThroughput.Started(startedAt);
+        }
+    }
+
+    public void RecordAdministrativeDrainCompleted(
+        DocumentCacheProjectionDrainPageResult result,
+        DateTimeOffset startedAt,
+        DateTimeOffset completedAt
+    )
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        lock (_sync)
+        {
+            _administrativeDrainThroughput = _administrativeDrainThroughput.Completed(
+                result,
+                startedAt,
+                completedAt
+            );
+        }
+    }
+
+    public DocumentCacheProjectionThroughputSnapshot OrdinaryPageThroughputSnapshot
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _ordinaryPageThroughput.ToSnapshot();
+            }
+        }
+    }
+
+    public DocumentCacheProjectionThroughputSnapshot AdministrativeDrainThroughputSnapshot
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _administrativeDrainThroughput.ToSnapshot();
+            }
+        }
+    }
+
+    private readonly record struct ProjectionThroughputCounter(
+        long StartedCount,
+        long CompletedCount,
+        long ItemCount,
+        long FailureCount,
+        DateTimeOffset? LastStartedAt,
+        DateTimeOffset? LastCompletedAt,
+        TimeSpan? LastDuration
+    )
+    {
+        public ProjectionThroughputCounter Started(DateTimeOffset startedAt) =>
+            this with
+            {
+                StartedCount = StartedCount + 1,
+                LastStartedAt = startedAt,
+            };
+
+        public ProjectionThroughputCounter Completed(
+            DocumentCacheProjectionDrainPageResult result,
+            DateTimeOffset startedAt,
+            DateTimeOffset completedAt
+        ) =>
+            this with
+            {
+                CompletedCount = CompletedCount + 1,
+                ItemCount = ItemCount + result.ProcessedItemCount,
+                FailureCount =
+                    result.Outcome == DocumentCacheProjectionDrainPageOutcome.TargetBackoff
+                        ? FailureCount + 1
+                        : FailureCount,
+                LastCompletedAt = completedAt,
+                LastDuration = completedAt - startedAt,
+            };
+
+        public DocumentCacheProjectionThroughputSnapshot ToSnapshot() =>
+            new(
+                StartedCount,
+                CompletedCount,
+                ItemCount,
+                FailureCount,
+                LastStartedAt,
+                LastCompletedAt,
+                LastDuration
+            );
+    }
+}
+
+public sealed class NoOpDocumentCacheProjectionDrainPageProcessor : IDocumentCacheProjectionDrainPageProcessor
+{
+    public Task<DocumentCacheProjectionDrainPageResult> ProcessPageAsync(
+        DocumentCacheProjectionDrainPageRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(DocumentCacheProjectionDrainPageResult.NoEligibleWork);
+    }
+}
+
+public sealed class DocumentCacheProjectionScheduler(
+    IOptions<DocumentCacheOptions> options,
+    IDocumentCacheProjectionDrainPageProcessor drainPageProcessor,
+    IDocumentCacheProjectionObservationSink observationSink,
+    TimeProvider timeProvider,
+    ILogger<DocumentCacheProjectionScheduler> logger
+) : IDocumentCacheProjectionScheduler
+{
+    private readonly object _rotationSync = new();
+    private readonly SemaphoreSlim _workerGate = new(options.Value.Projector.MaxConcurrentTargets);
+    private ImmutableArray<DocumentCacheProjectionTargetContextKey> _rotation = [];
+
+    public async Task<
+        ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>
+    > RunReadyTargetsOnceAsync(
+        IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetContexts);
+
+        ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> plannedContexts =
+            PlanReadyOrdinaryTargets(targetContexts, timeProvider.GetUtcNow());
+        if (plannedContexts.IsEmpty)
+        {
+            return [];
+        }
+
+        Task<DocumentCacheProjectionSchedulerDispatchResult>[] dispatchTasks = plannedContexts
+            .Select(context => DispatchOrdinaryTargetAsync(context, cancellationToken))
+            .ToArray();
+
+        return (await Task.WhenAll(dispatchTasks).ConfigureAwait(false)).ToImmutableArray();
+    }
+
+    public async Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetContext);
+
+        DateTimeOffset startedAt = timeProvider.GetUtcNow();
+        targetContext.SchedulingState.RecordAdministrativeDrainStarted(startedAt);
+        ObserveTarget(
+            targetContext,
+            new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: true,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: targetContext.CancellationRequested,
+                cancellationObservedAt: targetContext.CancellationRequested ? startedAt : null
+            )
+        );
+
+        DocumentCacheProjectionDrainPageResult drainResult = await targetContext
+            .DrainExecutor.RunAdministrativeDrainSliceAsync(
+                async drainCancellationToken =>
+                {
+                    await _workerGate.WaitAsync(drainCancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        ObserveTarget(
+                            targetContext,
+                            new DocumentCacheProjectionExecutionStateSnapshot(
+                                isRunning: true,
+                                isActivelyProcessing: true,
+                                isWaitingForWorkerGate: false,
+                                isInBackoff: false,
+                                backoffUntil: null,
+                                cancellationRequested: targetContext.CancellationRequested,
+                                cancellationObservedAt: targetContext.CancellationRequested
+                                    ? timeProvider.GetUtcNow()
+                                    : null
+                            )
+                        );
+
+                        return await drainPageProcessor
+                            .ProcessPageAsync(
+                                new DocumentCacheProjectionDrainPageRequest(
+                                    targetContext,
+                                    DocumentCacheProjectionDrainInvocationKind.Administrative
+                                ),
+                                drainCancellationToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _workerGate.Release();
+                    }
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        DateTimeOffset completedAt = timeProvider.GetUtcNow();
+        targetContext.SchedulingState.RecordAdministrativeDrainCompleted(drainResult, startedAt, completedAt);
+        ObserveIdleOrBackoff(targetContext, completedAt);
+
+        return DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+            targetContext,
+            drainResult,
+            startedAt,
+            completedAt
+        );
+    }
+
+    private ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> PlanReadyOrdinaryTargets(
+        IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+        DateTimeOffset now
+    )
+    {
+        ImmutableDictionary<
+            DocumentCacheProjectionTargetContextKey,
+            DocumentCacheProjectionTargetRuntimeContext
+        > contextsByKey = targetContexts
+            .GroupBy(context => context.ContextKey)
+            .ToImmutableDictionary(group => group.Key, group => group.First());
+
+        lock (_rotationSync)
+        {
+            HashSet<DocumentCacheProjectionTargetContextKey> existingKeys = contextsByKey.Keys.ToHashSet();
+            _rotation = _rotation.Where(existingKeys.Contains).ToImmutableArray();
+
+            ImmutableArray<DocumentCacheProjectionTargetContextKey> keysToAdd = contextsByKey
+                .Keys.Where(key => !_rotation.Contains(key))
+                .Order(DocumentCacheProjectionTargetContextKeyComparer.Instance)
+                .ToImmutableArray();
+            _rotation = _rotation.AddRange(keysToAdd);
+
+            ImmutableArray<DocumentCacheProjectionTargetRuntimeContext>.Builder plannedContexts =
+                ImmutableArray.CreateBuilder<DocumentCacheProjectionTargetRuntimeContext>();
+            ImmutableArray<DocumentCacheProjectionTargetContextKey>.Builder skippedKeys =
+                ImmutableArray.CreateBuilder<DocumentCacheProjectionTargetContextKey>();
+            ImmutableArray<DocumentCacheProjectionTargetContextKey>.Builder selectedKeys =
+                ImmutableArray.CreateBuilder<DocumentCacheProjectionTargetContextKey>();
+            int rotationCount = _rotation.Length;
+
+            for (int index = 0; index < rotationCount; index++)
+            {
+                DocumentCacheProjectionTargetContextKey contextKey = _rotation[index];
+                if (
+                    !contextsByKey.TryGetValue(
+                        contextKey,
+                        out DocumentCacheProjectionTargetRuntimeContext? context
+                    )
+                )
+                {
+                    continue;
+                }
+
+                DocumentCacheProjectionTargetReadinessBlockReason? blockReason =
+                    context.SchedulingState.GetReadinessBlock(
+                        now,
+                        context.CancellationRequested,
+                        context.DrainExecutor
+                    );
+                if (blockReason is null)
+                {
+                    plannedContexts.Add(context);
+                    selectedKeys.Add(contextKey);
+                    continue;
+                }
+
+                skippedKeys.Add(contextKey);
+            }
+
+            _rotation = skippedKeys.ToImmutable().AddRange(selectedKeys);
+            return plannedContexts.ToImmutable();
+        }
+    }
+
+    private async Task<DocumentCacheProjectionSchedulerDispatchResult> DispatchOrdinaryTargetAsync(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        DateTimeOffset waitStartedAt = timeProvider.GetUtcNow();
+        DateTimeOffset? startedAt = null;
+        bool drainStarted = false;
+        ObserveTarget(
+            context,
+            new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: true,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: context.CancellationRequested,
+                cancellationObservedAt: context.CancellationRequested ? waitStartedAt : null
+            )
+        );
+
+        await _workerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DateTimeOffset dispatchStartedAt = timeProvider.GetUtcNow();
+            startedAt = dispatchStartedAt;
+            DocumentCacheProjectionTargetReadinessBlockReason? blockReason =
+                context.SchedulingState.GetReadinessBlock(
+                    dispatchStartedAt,
+                    context.CancellationRequested,
+                    context.DrainExecutor
+                );
+            if (blockReason is not null)
+            {
+                return DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                    context,
+                    blockReason.Value,
+                    dispatchStartedAt
+                );
+            }
+
+            DocumentCacheProjectionDrainPageResult? drainResult = await context
+                .DrainExecutor.TryRunOrdinaryDrainSliceAsync(
+                    drainCancellationToken =>
+                    {
+                        DateTimeOffset drainStartedAt = timeProvider.GetUtcNow();
+                        startedAt = drainStartedAt;
+                        context.SchedulingState.RecordOrdinaryDrainStarted(drainStartedAt);
+                        drainStarted = true;
+                        ObserveTarget(
+                            context,
+                            new DocumentCacheProjectionExecutionStateSnapshot(
+                                isRunning: true,
+                                isActivelyProcessing: true,
+                                isWaitingForWorkerGate: false,
+                                isInBackoff: false,
+                                backoffUntil: null,
+                                cancellationRequested: context.CancellationRequested,
+                                cancellationObservedAt: context.CancellationRequested ? drainStartedAt : null
+                            )
+                        );
+
+                        return drainPageProcessor.ProcessPageAsync(
+                            new DocumentCacheProjectionDrainPageRequest(
+                                context,
+                                DocumentCacheProjectionDrainInvocationKind.Ordinary
+                            ),
+                            drainCancellationToken
+                        );
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            DateTimeOffset completedAt = timeProvider.GetUtcNow();
+            if (drainResult is null)
+            {
+                DocumentCacheProjectionTargetReadinessBlockReason reason = context
+                    .DrainExecutor
+                    .IsCommandOwned
+                    ? DocumentCacheProjectionTargetReadinessBlockReason.CommandOwned
+                    : DocumentCacheProjectionTargetReadinessBlockReason.LocalDrainActive;
+                return DocumentCacheProjectionSchedulerDispatchResult.Skipped(context, reason, completedAt);
+            }
+
+            context.SchedulingState.RecordOrdinaryDrainCompleted(
+                drainResult,
+                startedAt!.Value,
+                completedAt,
+                context.TargetExecutionContext.EffectiveSettings.ProjectorPollInterval
+            );
+            ObserveIdleOrBackoff(context, completedAt);
+
+            return DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+                context,
+                drainResult,
+                startedAt.Value,
+                completedAt
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            DateTimeOffset completedAt = timeProvider.GetUtcNow();
+            DateTimeOffset faultStartedAt = startedAt ?? waitStartedAt;
+            DateTimeOffset backoffUntil =
+                completedAt + context.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff;
+            DocumentCacheProjectionDrainPageResult faultResult =
+                DocumentCacheProjectionDrainPageResult.TargetBackoff(backoffUntil);
+            if (!drainStarted)
+            {
+                context.SchedulingState.RecordOrdinaryDrainStarted(faultStartedAt);
+            }
+
+            context.SchedulingState.RecordOrdinaryDrainCompleted(
+                faultResult,
+                faultStartedAt,
+                completedAt,
+                context.TargetExecutionContext.EffectiveSettings.ProjectorPollInterval
+            );
+
+            logger.LogError(
+                exception,
+                "DocumentCache projection scheduler page dispatch failed for target {TargetKey}; peer targets continue.",
+                context.TargetKey
+            );
+            ObserveIdleOrBackoff(context, completedAt);
+            return DocumentCacheProjectionSchedulerDispatchResult.Faulted(
+                context,
+                faultResult,
+                faultStartedAt,
+                completedAt
+            );
+        }
+        finally
+        {
+            _workerGate.Release();
+        }
+    }
+
+    private void ObserveIdleOrBackoff(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DateTimeOffset observedAt
+    )
+    {
+        DateTimeOffset? backoffUntil = context.SchedulingState.TargetBackoffUntil;
+        bool isInBackoff = backoffUntil is not null && backoffUntil > observedAt;
+        ObserveTarget(
+            context,
+            new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: false,
+                isInBackoff: isInBackoff,
+                backoffUntil: isInBackoff ? backoffUntil : null,
+                cancellationRequested: context.CancellationRequested,
+                cancellationObservedAt: context.CancellationRequested ? observedAt : null
+            )
+        );
+    }
+
+    private void ObserveTarget(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionExecutionStateSnapshot executionState
+    ) =>
+        observationSink.ObserveTarget(
+            DocumentCacheProjectionTargetHealthSnapshotFactory.Create(
+                context,
+                timeProvider.GetUtcNow(),
+                executionState
+            )
+        );
+}
+
+internal static class DocumentCacheProjectionTargetHealthSnapshotFactory
+{
+    public static DocumentCacheProjectionTargetHealthSnapshot Create(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DateTimeOffset observedAt,
+        DocumentCacheProjectionExecutionStateSnapshot? executionState = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        DocumentCacheTargetExecutionContext executionContext = context.TargetExecutionContext;
+        return new DocumentCacheProjectionTargetHealthSnapshot(
+            executionContext.TargetKey,
+            executionContext.Generation,
+            executionContext.EffectiveSettings.ProjectorPageSize,
+            observedAt,
+            providerToken: executionContext.ProviderToken,
+            physicalSourceFingerprint: executionContext.PhysicalSourceFingerprint,
+            executionState: executionState,
+            pageThroughput: context.SchedulingState.OrdinaryPageThroughputSnapshot,
+            drainThroughput: context.SchedulingState.AdministrativeDrainThroughputSnapshot,
+            lifecycleFence: CreateLifecycleFenceSnapshot(executionContext.Lifecycle, observedAt)
+        );
+    }
+
+    private static DocumentCacheProjectionLifecycleFenceSnapshot CreateLifecycleFenceSnapshot(
+        DocumentCacheLifecycleObservation lifecycle,
+        DateTimeOffset observedAt
+    )
+    {
+        bool eligible =
+            lifecycle.State is DocumentCacheLifecycleState.Tracking or DocumentCacheLifecycleState.Rebuilding
+            && !lifecycle.CacheAheadRecoveryRequired;
+
+        DocumentCacheProjectionLifecycleFenceState fenceState = eligible
+            ? DocumentCacheProjectionLifecycleFenceState.Eligible
+            : DocumentCacheProjectionLifecycleFenceState.Fenced;
+        DocumentCacheTargetDiagnosticCategory? diagnosticCategory = null;
+        if (!eligible)
+        {
+            diagnosticCategory = lifecycle.CacheAheadRecoveryRequired
+                ? DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet
+                : DocumentCacheTargetDiagnosticCategory.LifecycleMismatch;
+        }
+
+        return new DocumentCacheProjectionLifecycleFenceSnapshot(
+            fenceState,
+            lifecycle,
+            observedAt,
+            diagnosticCategory,
+            eligible
+                ? "Target lifecycle permits ordinary projection processing."
+                : "Target lifecycle or cache-ahead latch fences ordinary projection processing."
+        );
+    }
+}
+
+internal sealed class DocumentCacheProjectionTargetContextKeyComparer
+    : IComparer<DocumentCacheProjectionTargetContextKey>
+{
+    public static DocumentCacheProjectionTargetContextKeyComparer Instance { get; } = new();
+
+    private DocumentCacheProjectionTargetContextKeyComparer() { }
+
+    public int Compare(DocumentCacheProjectionTargetContextKey? x, DocumentCacheProjectionTargetContextKey? y)
+    {
+        if (ReferenceEquals(x, y))
+        {
+            return 0;
+        }
+
+        if (x is null)
+        {
+            return -1;
+        }
+
+        if (y is null)
+        {
+            return 1;
+        }
+
+        int tenantComparison = StringComparer.OrdinalIgnoreCase.Compare(
+            x.TargetKey.TenantKey,
+            y.TargetKey.TenantKey
+        );
+        if (tenantComparison != 0)
+        {
+            return tenantComparison;
+        }
+
+        int dataStoreComparison = x.TargetKey.DataStoreId.CompareTo(y.TargetKey.DataStoreId);
+        return dataStoreComparison != 0
+            ? dataStoreComparison
+            : x.Generation.Value.CompareTo(y.Generation.Value);
+    }
+}
+
+file static class DocumentCacheProjectionSchedulingGuard
+{
+    public static int RequireNonNegative(int value, string parameterName)
+    {
+        if (value < 0)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Value must not be negative.");
+        }
+
+        return value;
+    }
+
+    public static TEnum RequireDefined<TEnum>(TEnum value, string parameterName, string message)
+        where TEnum : struct, Enum
+    {
+        if (!Enum.IsDefined(value))
+        {
+            throw new ArgumentOutOfRangeException(parameterName, value, message);
+        }
+
+        return value;
+    }
+}

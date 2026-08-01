@@ -17,3 +17,8 @@ Completed runtime task for reference/design/backend-redesign/epics/18-document-c
 Key decisions: added hosted projection supervisor over existing target registry; runtime contexts wrap 18-01 execution context plus scoped provider adapters/materializer/writer, local cursor/failure state, cancellation, and observation sink; refresh reconciliation preserves same generation, cancels removed/replaced/ineligible generations, and observes active health.
 Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionSupervisorTests.cs; ReferenceResolverServiceCollectionExtensions.cs; WebApplicationBuilderExtensions.cs; Backend csproj/package locks; tasks.json.
 Blockers/notes: none. Scheduling, paging, item processing, and lifecycle fence refresh remain separate tasks.
+
+Completed scheduling task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added scheduler with deterministic target-key/generation rotation, process-wide MaxConcurrentTargets semaphore, per-target drain executor with administrative ownership, and no-op drain-page processor until paging/item processing tasks fill it. Scheduler records page/drain throughput and wait/active/backoff observations; skipped sleeping/command/cancelled contexts are filtered before worker dispatch.
+Files changed: DocumentCacheProjectionScheduler.cs; DocumentCacheProjectionSupervisor.cs; ReferenceResolverServiceCollectionExtensions.cs; DocumentCacheProjectionSchedulerTests.cs; DocumentCacheProjectionSupervisorTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely provider-paging, then poison/item processing can replace no-op drain-page processor.

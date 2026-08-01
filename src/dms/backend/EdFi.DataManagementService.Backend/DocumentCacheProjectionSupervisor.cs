@@ -106,6 +106,8 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         FailureBackoffState = new DocumentCacheProjectionFailureBackoffState(
             TargetExecutionContext.EffectiveSettings.ProjectorPageSize
         );
+        SchedulingState = new DocumentCacheProjectionTargetSchedulingState();
+        DrainExecutor = new DocumentCacheProjectionTargetDrainExecutor();
         ContextKey = new DocumentCacheProjectionTargetContextKey(
             TargetExecutionContext.TargetKey,
             TargetExecutionContext.Generation
@@ -132,6 +134,10 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     public DocumentCacheProjectionCursorState Cursor { get; }
 
     public DocumentCacheProjectionFailureBackoffState FailureBackoffState { get; }
+
+    public DocumentCacheProjectionTargetSchedulingState SchedulingState { get; }
+
+    public DocumentCacheProjectionTargetDrainExecutor DrainExecutor { get; }
 
     public CancellationToken CancellationToken => _cancellationTokenSource.Token;
 
@@ -206,6 +212,7 @@ public sealed class DocumentCacheProjectionSupervisor(
     IDocumentCacheProjectionTargetRuntimeContextFactory targetContextFactory,
     IDocumentCacheProjectionObservationSink observationSink,
     IOptions<DocumentCacheOptions> options,
+    IDocumentCacheProjectionScheduler scheduler,
     TimeProvider timeProvider,
     ILogger<DocumentCacheProjectionSupervisor> logger
 ) : BackgroundService, IDocumentCacheProjectionSupervisor
@@ -254,11 +261,15 @@ public sealed class DocumentCacheProjectionSupervisor(
         }
 
         await RefreshAsync(DocumentCacheTargetRefreshReason.Startup, stoppingToken).ConfigureAwait(false);
+        await scheduler.RunReadyTargetsOnceAsync(CurrentTargetContexts, stoppingToken).ConfigureAwait(false);
 
         using PeriodicTimer timer = new(options.Value.Projector.PollInterval, timeProvider);
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
         {
             await RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, stoppingToken)
+                .ConfigureAwait(false);
+            await scheduler
+                .RunReadyTargetsOnceAsync(CurrentTargetContexts, stoppingToken)
                 .ConfigureAwait(false);
         }
     }
@@ -396,16 +407,11 @@ public sealed class DocumentCacheProjectionSupervisor(
     private void ObserveTarget(DocumentCacheProjectionTargetRuntimeContext context)
     {
         DateTimeOffset observedAt = timeProvider.GetUtcNow();
-        DocumentCacheTargetExecutionContext executionContext = context.TargetExecutionContext;
 
         observationSink.ObserveTarget(
-            new DocumentCacheProjectionTargetHealthSnapshot(
-                executionContext.TargetKey,
-                executionContext.Generation,
-                executionContext.EffectiveSettings.ProjectorPageSize,
+            DocumentCacheProjectionTargetHealthSnapshotFactory.Create(
+                context,
                 observedAt,
-                providerToken: executionContext.ProviderToken,
-                physicalSourceFingerprint: executionContext.PhysicalSourceFingerprint,
                 executionState: new DocumentCacheProjectionExecutionStateSnapshot(
                     isRunning: true,
                     isActivelyProcessing: false,
@@ -414,40 +420,8 @@ public sealed class DocumentCacheProjectionSupervisor(
                     backoffUntil: null,
                     cancellationRequested: context.CancellationRequested,
                     cancellationObservedAt: context.CancellationRequested ? observedAt : null
-                ),
-                lifecycleFence: CreateLifecycleFenceSnapshot(executionContext.Lifecycle, observedAt)
+                )
             )
-        );
-    }
-
-    private static DocumentCacheProjectionLifecycleFenceSnapshot CreateLifecycleFenceSnapshot(
-        DocumentCacheLifecycleObservation lifecycle,
-        DateTimeOffset observedAt
-    )
-    {
-        bool eligible =
-            lifecycle.State is DocumentCacheLifecycleState.Tracking or DocumentCacheLifecycleState.Rebuilding
-            && !lifecycle.CacheAheadRecoveryRequired;
-
-        DocumentCacheProjectionLifecycleFenceState fenceState = eligible
-            ? DocumentCacheProjectionLifecycleFenceState.Eligible
-            : DocumentCacheProjectionLifecycleFenceState.Fenced;
-        DocumentCacheTargetDiagnosticCategory? diagnosticCategory = null;
-        if (!eligible)
-        {
-            diagnosticCategory = lifecycle.CacheAheadRecoveryRequired
-                ? DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet
-                : DocumentCacheTargetDiagnosticCategory.LifecycleMismatch;
-        }
-
-        return new DocumentCacheProjectionLifecycleFenceSnapshot(
-            fenceState,
-            lifecycle,
-            observedAt,
-            diagnosticCategory,
-            eligible
-                ? "Target lifecycle permits ordinary projection processing."
-                : "Target lifecycle or cache-ahead latch fences ordinary projection processing."
         );
     }
 }
