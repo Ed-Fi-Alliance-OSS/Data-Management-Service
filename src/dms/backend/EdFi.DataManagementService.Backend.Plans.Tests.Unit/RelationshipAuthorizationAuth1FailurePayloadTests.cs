@@ -3479,7 +3479,6 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             )
         );
 
-        var documentTable = new DbTableName(new DbSchemaName("dms"), "Document");
         var schoolTable = new DbTableName(new DbSchemaName("edfi"), "School");
         var documentId = QuoteIdentifier(dialect, "DocumentId");
         var strategyOrdinal = QuoteIdentifier(dialect, "StrategyOrdinal");
@@ -3505,12 +3504,10 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             '\n',
             "WITH target AS (",
             "    SELECT",
-            $"        d.{contentVersion},",
+            $"        r.{contentVersion},",
             $"        r.{QuoteIdentifier(dialect, "LocalEducationAgencyId")},",
             $"        r.{QuoteIdentifier(dialect, "SchoolId")}",
             $"    FROM {QuoteRelation(dialect, schoolTable)} r",
-            $"    INNER JOIN {QuoteRelation(dialect, documentTable)} d",
-            $"        ON d.{documentId} = r.{documentId}",
             $"    WHERE r.{documentId} = @DocumentId",
             "),",
             $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS ("

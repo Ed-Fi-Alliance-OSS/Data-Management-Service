@@ -18,7 +18,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 {
     private const int MaxCachedSqlPlans = 4096;
     private const string RootAlias = "r";
-    private const string DocumentAlias = "d";
     private const string TargetCte = "target";
     private const string SubjectFailuresCte = "subject_failures";
     private const string FailedSubjectsCte = "failed_subjects";
@@ -32,8 +31,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     private const string AuthorizationResultColumn = "AuthorizationResult";
     private const string ContentVersionColumn = "ContentVersion";
     private const string ProposedValueParameterPrefix = "relationshipAuthorization";
-    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
-    private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly string[] _defaultReservedParameterNames = ["documentUuid", "resourceKeyId"];
     private static readonly string _pgsqlEdOrgSubjectValueSqlType = ResolvePgsqlEdOrgSubjectValueSqlType();
     private static readonly ConditionalWeakTable<MappingSet, SqlPlanCache> _sqlPlanCachesByMappingSet = new();
@@ -846,7 +843,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
             using (writer.Indent())
             {
-                writer.Append($"{DocumentAlias}.");
+                writer.Append($"{RootAlias}.");
                 writer.AppendQuoted(ContentVersionColumn);
                 writer.AppendLine(",");
 
@@ -861,14 +858,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append("FROM ");
             writer.AppendRelation(new SqlRelationRef.PhysicalTable(storedTarget.RootTable));
             writer.AppendLine($" {RootAlias}");
-            writer.Append("INNER JOIN ");
-            writer.AppendRelation(new SqlRelationRef.PhysicalTable(_documentTable));
-            writer.AppendLine($" {DocumentAlias}");
-            writer.Append($"    ON {DocumentAlias}.");
-            writer.AppendQuoted(_documentIdColumn.Value);
-            writer.Append($" = {RootAlias}.");
-            writer.AppendQuoted(storedTarget.DocumentIdColumn.Value);
-            writer.AppendLine();
             writer.Append("WHERE ");
             writer.Append($"{RootAlias}.");
             writer.AppendQuoted(storedTarget.DocumentIdColumn.Value);

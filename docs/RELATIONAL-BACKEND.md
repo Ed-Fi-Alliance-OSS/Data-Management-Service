@@ -287,6 +287,11 @@ not at `dms.Document`.
   discriminator
   ([`DocumentReferenceLookupPlanCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReferenceLookupPlanCompiler.cs),
   [`DocumentLinkSlugResolver.cs`](../src/dms/core/EdFi.DataManagementService.Core/DocumentLinkSlugResolver.cs)).
+- **The relationship-authorization boundary check** — the stored-target CTE selects the root row's
+  mirrored `ContentVersion` alongside the securable columns it authorizes, so the check is single-table
+  on the root and carries no `dms.Document` join. The same compiler serves GET-by-id, DELETE, and the
+  POST/PUT stored boundary; only GET-by-id consumes the version, the write callers discard it
+  ([`SingleRecordRelationshipAuthorizationSqlCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs)).
 - **Tracked-change trigger bodies** — take old/new values from the root row image (`OLD` / `NEW` in
   PostgreSQL, the `deleted` / `inserted` pseudo-tables in SQL Server) and the `ContentVersion` the
   stamping step just captured, so writing a tracked-change row reads `dms.Document` zero times. A body
@@ -294,16 +299,15 @@ not at `dms.Document`.
   `Old<Ref>_Namespace` / `Old<Ref>_CodeValue` values — that join is unrelated to the metadata mirrors
   ([`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs)).
 
-One reader has **not** moved. On GET-by-id, the relationship-authorization stored-target CTE still
-joins `dms.Document`, solely for its `ContentVersion`
-([`SingleRecordRelationshipAuthorizationSqlCompiler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs)) —
-that compiler is shared with the DELETE and write callers, which discard the value, so re-pointing it
-belongs to the phase that moves the write path. A relationship-authorized GET therefore compares the
-two sides: the authorization boundary's version comes from `dms.Document` while the representation it
-authorizes comes from the root mirror, and a disagreement makes the read re-resolve its target instead
-of serving the row. That comparison **fails closed** — on PostgreSQL, where a root mirror gets no
-tamper repair (below), a tampered mirror disagrees on every attempt, exhausts the two read attempts,
-and the request fails rather than serving a stale representation.
+No plan-layer reader touches `dms.Document` anymore. On a relationship-authorized GET-by-id, the
+authorization boundary's version and the representation it authorizes now **both** come from the root
+row — still read by two separate statements, so the two-attempt comparison keeps doing its original
+job: a concurrent mutation between the two reads makes them disagree and the read re-resolves its
+target instead of serving a torn view. What the comparison no longer does is cross-check the mirror
+against `dms.Document`. A root mirror tampered with out of band now agrees with itself on both
+attempts, so the tampered `ContentVersion` is **served** rather than failing the request closed. That
+tripwire only ever existed for relationship-authorized GETs on PostgreSQL — the one dialect where a
+root mirror gets no tamper repair (below); every other read already trusted the mirror.
 
 Caveats when debugging a mismatch — all of them concern rows written **out of band**, since the
 generated triggers are the only legitimate writers of these columns:

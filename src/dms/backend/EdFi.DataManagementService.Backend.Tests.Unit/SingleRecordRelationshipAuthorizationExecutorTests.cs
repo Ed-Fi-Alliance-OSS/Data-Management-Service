@@ -56,7 +56,8 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             .Should()
             .BeEquivalentTo(new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(91L));
         commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain("\"dms\".\"Document\"");
+        commandExecutor.Commands[0].CommandText.Should().Contain("\"edfi\".\"School\"");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("\"dms\".\"Document\"");
         commandExecutor
             .Commands[0]
             .Parameters.Select(static parameter => parameter.Name)
