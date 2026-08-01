@@ -154,6 +154,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<
+                IDocumentCacheOfflineDeactivationCommand,
+                DocumentCacheOfflineDeactivationCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
                 IDocumentCacheOnlineCacheRebuildCommand,
                 DocumentCacheOnlineCacheRebuildCommand
             >()

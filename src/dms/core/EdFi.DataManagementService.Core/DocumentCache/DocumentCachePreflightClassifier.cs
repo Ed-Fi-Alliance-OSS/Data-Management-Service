@@ -720,19 +720,24 @@ public static class DocumentCachePreflightClassifier
     )
     {
         DocumentCacheLifecycleObservation lifecycle = targetObservation.Lifecycle!;
-        if (lifecycle.State == DocumentCacheLifecycleState.Resetting)
+        if (lifecycle.CacheAheadRecoveryRequired)
         {
             return Rejected(
                 DocumentCacheAdministrativeCommand.OfflineDeactivation,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
-                DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
-                "DocumentCache target is already Resetting and requires explicit operator recovery."
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+                DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
+                "DocumentCache cache-ahead recovery latch is set."
             );
         }
 
-        if (lifecycle.State is DocumentCacheLifecycleState.Tracking or DocumentCacheLifecycleState.Rebuilding)
+        if (
+            lifecycle.State
+            is DocumentCacheLifecycleState.Tracking
+                or DocumentCacheLifecycleState.Resetting
+                or DocumentCacheLifecycleState.Rebuilding
+        )
         {
             return null;
         }

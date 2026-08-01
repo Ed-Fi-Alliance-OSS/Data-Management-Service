@@ -71,6 +71,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheBaselineSeeder>();
         var documentCacheOfflineActivationCommand =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheOfflineActivationCommand>();
+        var documentCacheOfflineDeactivationCommand =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheOfflineDeactivationCommand>();
         var documentCacheOnlineCacheRebuildCommand =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheOnlineCacheRebuildCommand>();
         var documentCacheProjectionDrainPageProcessor =
@@ -113,6 +115,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheAdministrativePrimitives.Should().BeOfType<MssqlDocumentCacheAdministrativePrimitives>();
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
+        documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();
         documentCacheOnlineCacheRebuildCommand.Should().BeOfType<DocumentCacheOnlineCacheRebuildCommand>();
         documentCacheProjectionDrainPageProcessor
             .Should()

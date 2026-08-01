@@ -452,8 +452,9 @@ public class DocumentCachePreflightClassifierTests
     public class Given_Offline_Deactivation : DocumentCachePreflightClassifierTests
     {
         [TestCase(DocumentCacheLifecycleState.Tracking)]
+        [TestCase(DocumentCacheLifecycleState.Resetting)]
         [TestCase(DocumentCacheLifecycleState.Rebuilding)]
-        public void It_should_classify_tracking_or_rebuilding_internal_only_targets_as_eligible(
+        public void It_should_classify_tracking_resetting_or_rebuilding_clear_latch_internal_only_targets_as_eligible(
             DocumentCacheLifecycleState lifecycleState
         )
         {
@@ -494,12 +495,17 @@ public class DocumentCachePreflightClassifierTests
         }
 
         [Test]
-        public void It_should_reject_resetting_lifecycle_for_deactivation()
+        [TestCase(DocumentCacheLifecycleState.Tracking)]
+        [TestCase(DocumentCacheLifecycleState.Resetting)]
+        [TestCase(DocumentCacheLifecycleState.Rebuilding)]
+        public void It_should_reject_a_set_cache_ahead_latch_before_deactivation(
+            DocumentCacheLifecycleState lifecycleState
+        )
         {
             DocumentCacheAdministrativeCommandResult result =
                 DocumentCachePreflightClassifier.ClassifyOfflineDeactivation(
                     OfflineDeactivationRequest(),
-                    EligibleObservation(DocumentCacheLifecycleState.Resetting),
+                    EligibleObservation(lifecycleState, cacheAheadRecoveryRequired: true),
                     OfflineDeactivationFacts(
                         DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
                     )
@@ -507,9 +513,9 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
-                DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
-                DocumentCacheLifecycleState.Resetting
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+                DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
+                lifecycleState
             );
         }
 

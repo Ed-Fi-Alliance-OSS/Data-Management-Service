@@ -75,6 +75,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheBaselineSeeder>();
         var documentCacheOfflineActivationCommand =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheOfflineActivationCommand>();
+        var documentCacheOfflineDeactivationCommand =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheOfflineDeactivationCommand>();
         var documentCacheOnlineCacheRebuildCommand =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheOnlineCacheRebuildCommand>();
         var documentCacheProjectionDrainPageProcessor =
@@ -119,6 +121,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             .BeOfType<PostgresqlDocumentCacheAdministrativePrimitives>();
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
+        documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();
         documentCacheOnlineCacheRebuildCommand.Should().BeOfType<DocumentCacheOnlineCacheRebuildCommand>();
         documentCacheAdministrativeMutex.Should().BeOfType<PostgresqlDocumentCacheAdministrativeMutex>();
         documentCacheProjectionDrainPageProcessor
