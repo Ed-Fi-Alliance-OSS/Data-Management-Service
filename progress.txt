@@ -117,3 +117,8 @@ Completed sql-server-prerequisites task for reference/design/backend-redesign/ep
 Key decisions: registry retries same-generation initialization only for recoverable ProviderPrerequisiteFailed and freezes UnsupportedPrerequisiteIncident until process restart or replacement metadata; Disabled diagnostic now says refresh/tick retry, non-Disabled says restart/replacement. Command preflight rejects prerequisite target observations before mutex.
 Files changed: DocumentCacheTargetRegistry.cs; DocumentCacheTargetContracts.cs; core registry/prerequisite tests; DocumentCacheAdministrativeCommandRunnerTests.cs; MssqlDocumentCacheProviderPrerequisiteValidatorTests.cs; tasks.json; progress.txt.
 Blockers/notes: default MSSQL appsettings targets unreachable localhost,1433; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Next likely telemetry or dependency-injection.
+
+Completed dependency-injection task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: removed eager Program startup target refresh so hosted supervisor owns target initialization; backend registration tests assert shared runner/scheduler/observation/workflow services and PG/MSSQL pager/mutex/primitives/session-writer adapters; frontend tests assert single DocumentCache hosted supervisor, observation store aliasing, and provider adapter resolution.
+Files changed: Program.cs; ConfigurationTests.cs; WebApplicationBuilderExtensionsTests.cs; DocumentCacheServiceRegistrationTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely telemetry, then provider/admin/query-plan tests.

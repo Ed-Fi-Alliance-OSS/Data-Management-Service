@@ -17,6 +17,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -194,6 +195,47 @@ public class WebApplicationBuilderExtensionsTests
             snapshot.BaselineHighWaterMark.Should().Be(1000);
             snapshot.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
         }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_registers_the_DocumentCache_projection_supervisor_as_the_only_hosted_service()
+        {
+            using ServiceProvider serviceProvider = CreateServices("postgresql");
+
+            DocumentCacheProjectionSupervisor supervisor =
+                serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>();
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionSupervisor>()
+                .Should()
+                .BeSameAs(supervisor);
+            serviceProvider
+                .GetServices<IHostedService>()
+                .OfType<DocumentCacheProjectionSupervisor>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeSameAs(supervisor);
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_registers_the_DocumentCache_projection_observation_provider_and_sink()
+        {
+            using ServiceProvider serviceProvider = CreateServices("postgresql");
+
+            DocumentCacheProjectionObservationStore store =
+                serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>();
+
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionObservationProvider>()
+                .Should()
+                .BeSameAs(store);
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionObservationSink>()
+                .Should()
+                .BeSameAs(store);
+        }
     }
 
     [TestFixture]
@@ -292,6 +334,35 @@ public class WebApplicationBuilderExtensionsTests
                 .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
                 .Should()
                 .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_resolves_the_postgresql_DocumentCache_projection_and_administrative_adapters()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+            using var scope = serviceProvider.CreateScope();
+
+            serviceProvider
+                .GetRequiredService<IDocumentProjectionWorkPager>()
+                .Should()
+                .BeOfType<PostgresqlDocumentProjectionWorkPager>();
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativeMutex>()
+                .Should()
+                .BeOfType<PostgresqlDocumentCacheAdministrativeMutex>();
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativePrimitives>()
+                .Should()
+                .BeOfType<PostgresqlDocumentCacheAdministrativePrimitives>();
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>()
+                .Should()
+                .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
+            scope
+                .ServiceProvider.GetRequiredService<IDocumentCacheSessionBoundWriter>()
+                .Should()
+                .BeOfType<PostgresqlDocumentCacheWriter>();
         }
 
         [Test]
@@ -525,6 +596,43 @@ public class WebApplicationBuilderExtensionsTests
                 .GetRequiredService<IDocumentCacheDownstreamPublicationHistoryProvider>()
                 .Should()
                 .BeOfType<DocumentCacheUnknownDownstreamPublicationHistoryProvider>();
+        }
+
+        [Test]
+        [Category("DocumentCacheServiceRegistration")]
+        public void It_resolves_the_mssql_DocumentCache_projection_and_administrative_adapters()
+        {
+            using var serviceProvider = CreateServices("mssql");
+            using var scope = serviceProvider.CreateScope();
+
+            serviceProvider
+                .GetRequiredService<IDocumentProjectionWorkPager>()
+                .Should()
+                .Match<IDocumentProjectionWorkPager>(pager =>
+                    pager.GetType().Name == "MssqlDocumentProjectionWorkPager"
+                );
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativeMutex>()
+                .Should()
+                .Match<IDocumentCacheAdministrativeMutex>(mutex =>
+                    mutex.GetType().Name == "MssqlDocumentCacheAdministrativeMutex"
+                );
+            serviceProvider
+                .GetRequiredService<IDocumentCacheAdministrativePrimitives>()
+                .Should()
+                .Match<IDocumentCacheAdministrativePrimitives>(primitives =>
+                    primitives.GetType().Name == "MssqlDocumentCacheAdministrativePrimitives"
+                );
+            serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>()
+                .Should()
+                .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
+            scope
+                .ServiceProvider.GetRequiredService<IDocumentCacheSessionBoundWriter>()
+                .Should()
+                .Match<IDocumentCacheSessionBoundWriter>(writer =>
+                    writer.GetType().Name == "MssqlDocumentCacheWriter"
+                );
         }
 
         [Test]
