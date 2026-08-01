@@ -1521,6 +1521,59 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
             }
         }
 
+        It "pins the authority's load-bearing tokens: explicit TrimEnd set, OrdinalIgnoreCase, anchored universe pattern" {
+            # Structural pins for mutants the boolean surface cannot distinguish. After the universe
+            # check, the space is the only .NET whitespace a name can still contain, so TrimEnd() with
+            # no argument is behaviorally equivalent - the explicit set is pinned here instead of
+            # pretending a behavioral test could catch it. A culture-based comparison likewise only
+            # diverges outside the universe, where the check has already refused, so the
+            # OrdinalIgnoreCase literal is pinned the same way. The anchors have a behavioral tripwire
+            # too (the dedicated trailing-line-feed test); this pin exists because "\A...\z to ^...$"
+            # is a plausible-looking simplification someone might make without running that test.
+            $modulePath = Join-Path $script:dockerComposeRoot "env-utility.psm1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$null, [ref]$null)
+
+            $authority = $ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase'
+            }, $true) | Select-Object -First 1
+            $authority | Should -Not -BeNullOrEmpty
+
+            $trimEndCalls = @($authority.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                $node.Member -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+                $node.Member.Value -eq 'TrimEnd'
+            }, $true))
+            $trimEndCalls.Count | Should -Be 1
+            @($trimEndCalls[0].Arguments).Count | Should -Be 1 -Because "a parameterless TrimEnd would hold only by the coincidence that the universe admits no other whitespace"
+            $trimEndCalls[0].Arguments[0].Extent.Text | Should -Be '$script:MssqlTrailingNameTrimCharacter'
+
+            $ordinalUses = @($authority.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.MemberExpressionAst] -and
+                $node.Static -and $node.Member.Extent.Text -eq 'OrdinalIgnoreCase'
+            }, $true))
+            $ordinalUses.Count | Should -Be 1 -Because "the inside-the-universe comparison must be the ordinal case fold, not a culture compare"
+
+            $authority.Extent.Text | Should -BeLike '*-notmatch $script:MssqlPrintableAsciiNamePattern*' -Because "the universe check must consult the one shared pattern"
+
+            $patternAssignment = $ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -eq '$script:MssqlPrintableAsciiNamePattern'
+            }, $true) | Select-Object -First 1
+            $patternAssignment | Should -Not -BeNullOrEmpty
+            $patternLiteral = $patternAssignment.Right.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+            }, $true)
+            # \A and \z bind to the true string ends; ^, $ and \Z all match before a FINAL line feed
+            # in .NET and would readmit the trailing-line-feed class the contract fails closed.
+            $patternLiteral.Value | Should -BeExactly '\A[\x20-\x7E]*\z'
+        }
+
         It "keeps the SQL Server authority out of the PostgreSQL branches" {
             # The counterpart guard: the shared rule is shared between the two MSSQL paths and nowhere
             # else. If a PostgreSQL branch ever reached it, the trailing-space rule measured for SQL Server
@@ -1596,26 +1649,27 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
 
         It "mssql does NOT treat <Label> as the reserved CMS database" -ForEach @(
             @{ Label = 'a LEADING space, which is significant on this engine'; Name = ' edfi_configurationservice' }
-            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
-            @{ Label = 'a trailing line feed'; Name = "edfi_configurationservice`n" }
-            @{ Label = 'a trailing carriage return'; Name = "edfi_configurationservice`r" }
-            @{ Label = 'a trailing vertical tab'; Name = "edfi_configurationservice$([char]0x0B)" }
-            @{ Label = 'a trailing form feed'; Name = "edfi_configurationservice$([char]0x0C)" }
-            @{ Label = 'a trailing no-break space'; Name = "edfi_configurationservice$([char]0x00A0)" }
             @{ Label = 'an unrelated datastore name'; Name = 'edfi_datamanagementservice' }
+            @{ Label = 'a suffixed name'; Name = 'edfi_configurationservice_v2' }
+            @{ Label = 'an embedded space'; Name = 'edfi _configurationservice' }
+            @{ Label = 'an embedded hyphen'; Name = 'edfi-_configurationservice' }
+            @{ Label = 'an embedded apostrophe'; Name = "edfi'_configurationservice" }
+            @{ Label = 'an embedded period'; Name = 'edfi._configurationservice' }
         ) {
-            # Each of the six trailing characters CREATED a distinct database on the real server and
-            # DB_ID() did not match; a leading space did not match either and CREATE failed with 1802.
-            # This is why the rule is TrimEnd with an explicit set: TrimEnd() with no argument would strip
-            # all six and turn one fixed false negative into six false positives.
+            # The admissible boundary: names inside the printable-ASCII universe, where the collation
+            # was measured EXHAUSTIVELY - the only equal pairs are case pairs, no character is
+            # ignorable or folds onto a space, and nothing expands. The leading space and the embedded
+            # punctuation were each measured DISTINCT on the pinned image; the suffixed name is here so
+            # a comparison loosened toward prefix matching fails a test instead of shipping.
             Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
                 Should -BeFalse
         }
 
         It "mssql treats a trailing ideographic space as the reserved CMS database" {
-            # Measured SAME on the pinned image: this collation's code page folds U+3000 onto a space, so
-            # DB_ID() resolves it to the baseline and CREATE reports 1801. Encoded because erring toward
-            # refusing a name is the safe direction for a switch whose promise is two distinct databases.
+            # Measured the SAME physical database on the pinned image: this collation folds U+3000 onto
+            # a space, DB_ID() resolves it to the baseline and CREATE reports 1801. Under the
+            # fail-closed contract the name is refused by the universe rule - the verdict is unchanged,
+            # and the measurement makes this row a real collision, not merely a conservative refusal.
             Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName "edfi_configurationservice$([char]0x3000)" |
                 Should -BeTrue
         }
@@ -1665,26 +1719,32 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
 
         It "mssql does NOT treat <Label> as a collision" -ForEach @(
             @{ Label = 'a leading space'; Name = ' edfi_configurationservice' }
-            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
-            @{ Label = 'a trailing no-break space'; Name = "edfi_configurationservice$([char]0x00A0)" }
+            @{ Label = 'a suffixed name'; Name = 'edfi_configurationservice_v2' }
             @{ Label = 'an unrelated name'; Name = 'edfi_datamanagementservice' }
         ) {
+            # The registered transport preserves each of these (see the transport Describe), and inside
+            # the printable-ASCII universe the measured rule is exact, so they are admissible here too.
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
                 Should -BeFalse
         }
 
-        It "mssql and the initialized path agree for every shape except one the TRANSPORT changes" {
-            # The shared authority is the server lookup, applied to each path's OWN input - so the two
-            # MSSQL paths agree wherever the transport is faithful, and are allowed to differ where it is
-            # not. Exactly one measured shape differs: a trailing line feed is dropped by
-            # connection-string serialization/parsing, so the registered path hands the server the bare
-            # reserved name while the initialization path hands it a genuinely distinct one.
+        It "mssql: BOTH paths refuse a trailing line feed, for different measured reasons" {
+            # The transport still differs - serialization and parsing drop a bare trailing line feed on
+            # the registered path, so the provider is handed the bare reserved name there (a measured
+            # collision), while the initialized path hands the server the LF-bearing name, which was
+            # measured DISTINCT and is refused conservatively as outside the provable universe. One
+            # authority, applied to each path's OWN input; under the fail-closed contract the verdicts
+            # now agree even though the reasons do not.
             $lineFeedName = "edfi_configurationservice`n"
 
             Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $lineFeedName |
-                Should -BeFalse -Because "the server created a distinct database for this name"
+                Should -BeTrue -Because "the LF-bearing name is outside the printable-ASCII universe, so it cannot be proven distinct offline"
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $lineFeedName |
-                Should -BeTrue -Because "the transport drops the trailing line feed before the server sees the name"
+                Should -BeTrue -Because "the transport drops the trailing line feed before the provider sees the name"
+            # The parsed value really is the bare reserved name - the reason the registered verdict is a
+            # measured collision rather than a conservative refusal.
+            Get-RegisteredDatastoreDatabaseValue -DatastoreDatabaseName $lineFeedName |
+                Should -BeExactly 'edfi_configurationservice'
         }
     }
 
@@ -1703,6 +1763,99 @@ Describe "reserved-CMS-database collision authorities (one per physical creation
                 Should -BeTrue
             Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName 'EDFI_ConfigurationService' |
                 Should -BeTrue
+        }
+    }
+
+    Context "the MSSQL fail-closed universe rule, through both paths" {
+        # The rule these rows pin: a name is admissible only if it is entirely printable ASCII
+        # (0x20..0x7E) and, after trimming trailing spaces, differs from the reserved name under
+        # OrdinalIgnoreCase. Everything else is refused - some because the pinned server MEASURED it
+        # as the same physical database, the rest because distinctness cannot be proven offline. Both
+        # MSSQL paths share the verdict; the transport-changed line-feed shape has its own test above.
+        # Every non-ASCII character is built from a code point so this file stays ASCII-only.
+
+        It "refuses <Label>, MEASURED as the same physical database on the pinned image" -ForEach @(
+            @{ Label = 'a full-width first letter (U+FF45)'; Name = "$([char]0xFF45)dfi_configurationservice" }
+            @{ Label = 'an upper-case full-width first letter (U+FF25)'; Name = "$([char]0xFF25)DFI_CONFIGURATIONSERVICE" }
+            @{ Label = 'a fully full-width spelling'; Name = (-join ([char[]]@(0xFF45, 0xFF44, 0xFF46, 0xFF49, 0xFF3F, 0xFF43, 0xFF4F, 0xFF4E, 0xFF46, 0xFF49, 0xFF47, 0xFF55, 0xFF52, 0xFF41, 0xFF54, 0xFF49, 0xFF4F, 0xFF4E, 0xFF53, 0xFF45, 0xFF52, 0xFF56, 0xFF49, 0xFF43, 0xFF45))) }
+            @{ Label = 'a full-width underscore only (U+FF3F)'; Name = "edfi$([char]0xFF3F)configurationservice" }
+            @{ Label = 'a full-width first letter with a trailing space'; Name = "$([char]0xFF45)dfi_configurationservice " }
+            @{ Label = 'a full-width first letter with a trailing ideographic space'; Name = "$([char]0xFF45)dfi_configurationservice$([char]0x3000)" }
+            @{ Label = 'a full-width capital with mixed case and a trailing space'; Name = "$([char]0xFF25)dfi_ConfigurationService " }
+            @{ Label = 'the fi ligature (U+FB01) expanding to "fi"'; Name = "ed$([char]0xFB01)_configurationservice" }
+            @{ Label = 'an embedded zero width joiner (U+200D)'; Name = "edfi$([char]0x200D)_configurationservice" }
+            @{ Label = 'an embedded word joiner (U+2060)'; Name = "edfi$([char]0x2060)_configurationservice" }
+            @{ Label = 'an embedded zero width no-break space (U+FEFF)'; Name = "edfi$([char]0xFEFF)_configurationservice" }
+            @{ Label = 'a trailing emoji (U+1F600, a surrogate pair)'; Name = "edfi_configurationservice$([char]0xD83D)$([char]0xDE00)" }
+        ) {
+            # Each row was measured EQUAL on the pinned SQL Server 2025 image three agreeing ways:
+            # explicit COLLATE equality, DB_ID() resolving to the reserved database, and CREATE
+            # DATABASE reporting error 1801 (duplicate). Under OrdinalIgnoreCase every one of these
+            # passed the guard - the false-negative class the universe rule closes. Refusal happens at
+            # the universe step, and for these rows it is also the measured physical truth.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
+                Should -BeTrue
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
+                Should -BeTrue
+        }
+
+        It "refuses <Label> conservatively: measured DISTINCT, but not provably so offline" -ForEach @(
+            @{ Label = 'a trailing tab'; Name = "edfi_configurationservice`t" }
+            @{ Label = 'a trailing carriage return'; Name = "edfi_configurationservice`r" }
+            @{ Label = 'a trailing vertical tab'; Name = "edfi_configurationservice$([char]0x0B)" }
+            @{ Label = 'a trailing form feed'; Name = "edfi_configurationservice$([char]0x0C)" }
+            @{ Label = 'a trailing no-break space'; Name = "edfi_configurationservice$([char]0x00A0)" }
+            @{ Label = 'a trailing zero width space (U+200B)'; Name = "edfi_configurationservice$([char]0x200B)" }
+            @{ Label = 'an embedded zero width space'; Name = "edfi$([char]0x200B)_configurationservice" }
+            @{ Label = 'an embedded zero width non-joiner (U+200C)'; Name = "edfi$([char]0x200C)_configurationservice" }
+            @{ Label = 'an embedded soft hyphen (U+00AD)'; Name = "edfi$([char]0x00AD)_configurationservice" }
+            @{ Label = 'a trailing control character (U+0001)'; Name = "edfi_configurationservice$([char]0x01)" }
+            @{ Label = 'a trailing delete (U+007F)'; Name = "edfi_configurationservice$([char]0x7F)" }
+            @{ Label = 'a trailing private-use character (U+E000)'; Name = "edfi_configurationservice$([char]0xE000)" }
+            @{ Label = 'an accented first letter (U+00E9)'; Name = "$([char]0xE9)dfi_configurationservice" }
+            @{ Label = 'a combining acute on the first letter (U+0301)'; Name = "e$([char]0x0301)dfi_configurationservice" }
+            @{ Label = 'a circled first letter (U+24D4)'; Name = "$([char]0x24D4)dfi_configurationservice" }
+            @{ Label = 'a superscript first letter (U+1D49)'; Name = "$([char]0x1D49)dfi_configurationservice" }
+            @{ Label = 'a leading ideographic space'; Name = "$([char]0x3000)edfi_configurationservice" }
+        ) {
+            # This is the documented false-positive boundary the contract ACCEPTS. Every row was
+            # measured DISTINCT on the pinned image (created its own database, or failed creation
+            # without ever resolving to the reserved one) - and every row is refused anyway, because
+            # it lies outside the printable-ASCII universe where the offline rule can prove
+            # distinctness. Zero-weight look-alikes sit one code point away from several of these
+            # (U+200B is distinct while U+200D is the same database; no Unicode property separates
+            # them), which is exactly why the boundary is the universe and not a character list. A
+            # refusal costs a rename; the accent rows double as the collation's accent-sensitivity
+            # controls in the live parity suite.
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
+                Should -BeTrue
+            Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName $Name |
+                Should -BeTrue
+        }
+
+        It "refuses a trailing line feed through the helper and the initialized path - the anchor tripwire" {
+            # THE dedicated tripwire for a specific implementation mistake, deliberately NOT folded
+            # into a -ForEach table: in .NET, '$' and '\Z' match immediately BEFORE a final line feed,
+            # so a universe check anchored '^...$' admits exactly this name while '\A...\z' refuses
+            # it. If this test fails and the others pass, someone has "simplified" the anchors.
+            Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName "edfi_configurationservice`n" |
+                Should -BeTrue
+            Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine mssql -DatastoreDatabaseName "edfi_configurationservice`n" |
+                Should -BeTrue
+        }
+
+        It "reports a whitespace-only name as absence at the AUTHORITY, not as a refusal" {
+            # Pins the absence contract at the helper itself, not only at the adopters (which carry
+            # their own blank guards and would mask this). The ideographic-space-only name is the
+            # discriminating input: without the authority's own blank guard it would fall through to
+            # the universe check and flip to a refusal, but a whitespace-only value means "no name
+            # was supplied" and absence is reported by callers, never by the collision authority.
+            Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName ([string][char]0x3000) |
+                Should -BeFalse
+            Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName '   ' |
+                Should -BeFalse
+            Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase -DatabaseName '' |
+                Should -BeFalse
         }
     }
 }
@@ -2279,6 +2432,27 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 Should -Throw "*physically distinct*" -PassThru
 
             $thrown.Exception.Message | Should -Not -BeLikeExactly "*EDFI_ConfigurationService*" -Because "an ambient value is caller-authored too"
+        }
+
+        It "rejects a file-authored MSSQL_DB_NAME with a full-width first letter, naming the policy and never the value" {
+            # The pinned image resolves this width variant onto the reserved database (DB_ID matches,
+            # CREATE reports 1801) while OrdinalIgnoreCase cannot see it - the exact false-negative
+            # class the fail-closed universe rule closes. The diagnostic names the key and the policy;
+            # the caller-authored value stays withheld.
+            $path = Join-Path $script:work ".env"
+            Set-Content -LiteralPath $path -Value (@(
+                "MSSQL_DB_NAME=$([char]0xFF45)dfi_configurationservice",
+                'MSSQL_SA_PASSWORD=abcdefgh1!',
+                'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            ) -join "`n") -NoNewline
+
+            $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
+                Should -Throw "*physically distinct*" -PassThru
+
+            $thrown.Exception.Message | Should -BeLike "*MSSQL_DB_NAME*"
+            $thrown.Exception.Message | Should -Not -BeLike "*$([char]0xFF45)*" -Because "the diagnostic names the key, never the caller-authored value"
+            $thrown.Exception.Message | Should -BeLike "*printable ASCII*" -Because "the reason has to describe the policy that fired, not claim collation emulation"
         }
 
         It "still accepts an MSSQL datastore name whose difference SQL Server treats as significant" {
@@ -3924,7 +4098,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice'*"
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
@@ -3940,7 +4114,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*" -Because "SQL Server matches database names case-insensitively"
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice'*" -Because "SQL Server matches database names case-insensitively"
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
@@ -3949,7 +4123,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice'*"
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
@@ -3960,8 +4134,23 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice  ' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName cannot be 'edfi_configurationservice'*"
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice'*"
             $run.ErrorMessage | Should -BeLike "*trailing spaces*"
+            $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
+        }
+
+        It "rejects a full-width -DataStoreDatabaseName on MSSQL, which the server resolves to the reserved database" {
+            # Measured on the pinned image: the full-width first letter resolves to the reserved
+            # database (DB_ID matches and CREATE reports 1801) while OrdinalIgnoreCase cannot see it.
+            # The fail-closed universe rule refuses it at the same parameter boundary, before any
+            # docker activity, and the diagnostic never echoes the caller's value.
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName "$([char]0xFF45)dfi_configurationservice" -EnvironmentFile (New-WiringEnvFile) *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice'*"
+            $run.ErrorMessage | Should -Not -BeLike "*$([char]0xFF45)*" -Because "the diagnostic names the parameter and the reserved literal, never the caller's value"
+            $run.ErrorMessage | Should -BeLike "*printable ASCII*" -Because "the reason has to describe the policy that fired"
             $run.Invocations | Should -BeNullOrEmpty -Because "the rejection must precede any docker invocation"
         }
 
@@ -3971,7 +4160,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine mssql -SeparateConfigDatabase -DataStoreDatabaseName ' edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
 
-            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName must be provably distinct*"
         }
 
         It "accepts -DataStoreDatabaseName EDFI_ConfigurationService on PostgreSQL and proceeds to the docker boundary" {
@@ -3988,7 +4177,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -DataStoreDatabaseName 'EDFI_ConfigurationService' -EnvironmentFile $envFile *>$null
             }
 
-            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName must be provably distinct*"
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the compose invocation instead of stopping at the guard"
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "this is a real separate-mode run, so the guard was on the executed path"
 
@@ -4023,7 +4212,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                     & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) @shapeArgs *>$null
                 }
 
-                $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*" -Because "$($inertShape.Label) never consumes -DataStoreDatabaseName"
+                $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName must be provably distinct*" -Because "$($inertShape.Label) never consumes -DataStoreDatabaseName"
             }
         }
 
@@ -4038,7 +4227,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -SeparateConfigDatabase -NoDataStore -SchoolYearRange '2024' -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
             }
             $withSwitch.ErrorMessage | Should -BeLike "*-NoDataStore and -SchoolYearRange are mutually exclusive*"
-            $withSwitch.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*" -Because "the collision check must not preempt the established parameter-shape diagnostic"
+            $withSwitch.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName must be provably distinct*" -Because "the collision check must not preempt the established parameter-shape diagnostic"
 
             $withoutSwitch = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -NoDataStore -SchoolYearRange '2024' -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) *>$null
@@ -4054,7 +4243,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
 
             $run.ErrorMessage | Should -BeLike "*cannot be used with -DbOnly*"
-            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName must be provably distinct*"
         }
 
         It "accepts -DataStoreDatabaseName edfi_configurationservice when the switch is not requested" {
@@ -4064,7 +4253,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DataStoreDatabaseName 'edfi_configurationservice' -EnvironmentFile (New-WiringEnvFile) -InfraOnly *>$null
             }
 
-            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName cannot be*"
+            $run.ErrorMessage | Should -Not -BeLike "*-DataStoreDatabaseName must be provably distinct*"
         }
     }
 

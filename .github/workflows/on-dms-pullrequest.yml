@@ -187,6 +187,10 @@ jobs:
           # BootstrapDockerSmoke.Tests.ps1) are deliberately excluded from this unit lane. The E2E
           # engine/env-forwarding, teardown-safety, artifact-sanitizer, and MSSQL workflow-structure
           # specs are listed explicitly so their coverage runs on every PR.
+          # MssqlCollationParity.Tests.ps1 is the one live suite registered here ON PURPOSE: its
+          # probes gate themselves off deterministically when no fixture container is configured
+          # (recording intentional skips, touching no docker), so listing it makes a syntax error
+          # or a discovery-time regression a PR failure instead of a silent gap.
           $paths = @(
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
@@ -203,6 +207,7 @@ jobs:
             "eng/docker-compose/tests/ComposeResolutionAndProviderBuilder.Tests.ps1",
             "eng/docker-compose/tests/OpenIddictCrypto.Tests.ps1",
             "eng/docker-compose/tests/CmsDatabaseTopology.Tests.ps1",
+            "eng/docker-compose/tests/MssqlCollationParity.Tests.ps1",
             "eng/docker-compose/tests/EffectiveSchemaHashParser.Tests.ps1",
             "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
             "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
