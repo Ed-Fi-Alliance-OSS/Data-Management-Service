@@ -116,6 +116,9 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         var lockedContentVersion = await RelationalWriteTargetLocking
             .TryLockExistingTargetAsync(
                 request.MappingSet.Key.Dialect,
+                // No write plan reaches this checker; the read plan carries the same derived resource
+                // model, so its root table is the row the current-state load below also reads.
+                request.ReadPlan.Model.Root.Table,
                 request.TargetContext.DocumentId,
                 writeSession,
                 cancellationToken

@@ -414,8 +414,12 @@ public sealed class RelationalDocumentStoreRepository(
 
             try
             {
+                // One root table serves the whole delete: it is probed for the target, locked, and then
+                // deleted from ahead of the dms.Document row.
+                var rootTable = ResolveRegularDeleteRootTableOrThrow(mappingSet, resource);
+
                 var resolved = await RelationalDocumentUuidLookupSupport
-                    .TryResolveDeleteTargetAsync(sessionCommandExecutor, mappingSet, resource, documentUuid)
+                    .TryResolveDeleteTargetByRootTableAsync(sessionCommandExecutor, rootTable, documentUuid)
                     .ConfigureAwait(false);
 
                 if (resolved is null)
@@ -433,6 +437,7 @@ public sealed class RelationalDocumentStoreRepository(
                     var lockedContentVersion = await TryLockDeleteTargetAsync(
                             sessionCommandExecutor,
                             mappingSet.Key.Dialect,
+                            rootTable,
                             resolved.DocumentId
                         )
                         .ConfigureAwait(false);
@@ -473,7 +478,7 @@ public sealed class RelationalDocumentStoreRepository(
                         {
                             outcome = await ExecuteAuthorizedDeleteAsync(
                                     mappingSet,
-                                    resource,
+                                    rootTable,
                                     documentUuid,
                                     traceId,
                                     writePrecondition,
@@ -558,7 +563,7 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<DeleteResult> ExecuteAuthorizedDeleteAsync(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
+        DbTableName rootTable,
         DocumentUuid documentUuid,
         TraceId traceId,
         WritePrecondition writePrecondition,
@@ -586,7 +591,7 @@ public sealed class RelationalDocumentStoreRepository(
 
             return await ExecuteDeleteByDocumentIdAsync(
                     mappingSet,
-                    resource,
+                    rootTable,
                     preconditionCheckResult.TargetContext.DocumentId,
                     documentUuid,
                     traceId,
@@ -597,7 +602,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         return await ExecuteDeleteByDocumentIdAsync(
                 mappingSet,
-                resource,
+                rootTable,
                 lockedTargetContext.DocumentId,
                 documentUuid,
                 traceId,
@@ -606,13 +611,14 @@ public sealed class RelationalDocumentStoreRepository(
             .ConfigureAwait(false);
     }
 
-    private async Task<DeleteResult> ExecuteDeleteByDocumentIdAsync(
+    /// <summary>
+    /// Resolves the root table the regular (non-descriptor) DELETE probes, locks, and deletes from.
+    /// Descriptor deletes never reach this path — <see cref="DeleteDocumentById"/> routes them to the
+    /// descriptor handler — so a non-relational storage kind here is a compiled-metadata defect.
+    /// </summary>
+    private static DbTableName ResolveRegularDeleteRootTableOrThrow(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
-        long documentId,
-        DocumentUuid documentUuid,
-        TraceId traceId,
-        IRelationalCommandExecutor sessionCommandExecutor
+        QualifiedResourceName resource
     )
     {
         var concreteResource = mappingSet.GetConcreteResourceModelOrThrow(resource);
@@ -624,9 +630,21 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        return concreteResource.RelationalModel.Root.Table;
+    }
+
+    private async Task<DeleteResult> ExecuteDeleteByDocumentIdAsync(
+        MappingSet mappingSet,
+        DbTableName rootTable,
+        long documentId,
+        DocumentUuid documentUuid,
+        TraceId traceId,
+        IRelationalCommandExecutor sessionCommandExecutor
+    )
+    {
         var deleteCommand = OrderedDeleteCommandBuilder.BuildResourceDeleteByDocumentIdCommand(
             mappingSet.Key.Dialect,
-            concreteResource.RelationalModel.Root.Table,
+            rootTable,
             documentId
         );
 
@@ -648,12 +666,13 @@ public sealed class RelationalDocumentStoreRepository(
     private static Task<long?> TryLockDeleteTargetAsync(
         IRelationalCommandExecutor commandExecutor,
         SqlDialect dialect,
+        DbTableName rootTable,
         long documentId,
         CancellationToken cancellationToken = default
     )
     {
         return commandExecutor.ExecuteReaderAsync<long?>(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, documentId),
+            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, rootTable, documentId),
             async (reader, ct) =>
             {
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -1192,8 +1211,8 @@ public sealed class RelationalDocumentStoreRepository(
             .HydrateAsync(
                 readPlan,
                 plannedQuery,
-                // Read paths source document metadata from the root table's mirror columns; only the
-                // write path's current-state load stays on the dms.Document row it locked.
+                // Document metadata comes from the root table's mirror columns, the same source the
+                // write path's current-state load reads.
                 new HydrationExecutionOptions { DocumentMetadataSource = DocumentMetadataSource.RootTable },
                 default
             )
@@ -2146,8 +2165,7 @@ public sealed class RelationalDocumentStoreRepository(
         for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
         {
             var targetResolution = await ResolveTargetContextAsync(
-                    mappingSet,
-                    resource,
+                    writePlan.Model.Root.Table,
                     operationKind,
                     targetRequest,
                     writePrecondition
@@ -2220,8 +2238,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private async Task<TargetContextResolution> ResolveTargetContextAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
+        DbTableName rootTable,
         RelationalWriteOperationKind operationKind,
         RelationalWriteTargetRequest targetRequest,
         WritePrecondition writePrecondition
@@ -2237,8 +2254,11 @@ public sealed class RelationalDocumentStoreRepository(
             RelationalWriteTargetRequest.Post post => new RelationalWriteTargetLookupResult.CreateNew(
                 post.CandidateDocumentUuid
             ),
+            // The addressed uuid is sought on the root table's UX_<Root>_DocumentUuid index: the route
+            // already names the resource, so resource scoping is structural, and the resolved row is the
+            // same root row the write session then locks and reads its metadata from.
             RelationalWriteTargetRequest.Put(var documentUuid) => await _targetLookupService
-                .ResolveForPutAsync(mappingSet, resource, documentUuid)
+                .ResolveForPutByRootTableAsync(rootTable, documentUuid)
                 .ConfigureAwait(false),
             _ => throw new InvalidOperationException(
                 $"Relational repository target lookup does not support target request type '{targetRequest.GetType().Name}'."
@@ -2458,8 +2478,8 @@ public sealed class RelationalDocumentStoreRepository(
                 UseSingleDocumentFastPath: true
             )
             {
-                // Read paths source document metadata from the root table's mirror columns; only the
-                // write path's current-state load stays on the dms.Document row it locked.
+                // Document metadata comes from the root table's mirror columns, the same source the
+                // write path's current-state load reads.
                 DocumentMetadataSource = DocumentMetadataSource.RootTable,
             };
             var hydratedPage = await _documentHydrator

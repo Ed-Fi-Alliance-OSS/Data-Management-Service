@@ -611,6 +611,17 @@ public class Given_A_Host_Using_The_Relational_Backend
             QualifiedResourceName resource,
             DocumentUuid documentUuid,
             CancellationToken cancellationToken = default
+        ) => ResolveExistingPutTarget(documentUuid, cancellationToken);
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
+            DbTableName rootTable,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => ResolveExistingPutTarget(documentUuid, cancellationToken);
+
+        private static Task<RelationalWriteTargetLookupResult> ResolveExistingPutTarget(
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken
         )
         {
             cancellationToken.ThrowIfCancellationRequested();

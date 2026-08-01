@@ -140,6 +140,7 @@ internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnes
         await using var command = writeSession.CreateCommand(
             RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(
                 request.MappingSet.Key.Dialect,
+                request.WritePlan.Model.Root.Table,
                 targetContext.DocumentId
             )
         );

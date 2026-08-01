@@ -21,9 +21,27 @@ public interface IRelationalWriteTargetLookupService
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// PUT target lookup through <c>dms.Document</c>. Only the descriptor write path still uses this;
+    /// the regular resource PUT resolves its target from the root table
+    /// (<see cref="ResolveForPutByRootTableAsync"/>).
+    /// </summary>
     Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// PUT target lookup by a single-row seek of the resource root table's
+    /// <c>UX_&lt;Root&gt;_DocumentUuid</c> unique index. The route names the resource, so resource
+    /// scoping is structural — a uuid persisted for a different resource is simply absent from this
+    /// root table — and the returned <c>DocumentUuid</c>/<c>ContentVersion</c> come from the same root
+    /// row the write session then locks and loads current state from.
+    /// </summary>
+    Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
+        DbTableName rootTable,
         DocumentUuid documentUuid,
         CancellationToken cancellationToken = default
     );
@@ -99,6 +117,20 @@ internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecu
             _commandExecutor,
             mappingSet,
             resource,
+            documentUuid,
+            cancellationToken
+        );
+    }
+
+    public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
+        DbTableName rootTable,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return RelationalWriteTargetLookupSupport.ResolveForPutByRootTableAsync(
+            _commandExecutor,
+            rootTable,
             documentUuid,
             cancellationToken
         );
@@ -297,6 +329,33 @@ internal static class RelationalWriteTargetLookupSupport
                 existingDocument.DocumentId,
                 existingDocument.DocumentUuid,
                 existingDocument.ObservedContentVersion
+            );
+    }
+
+    public static async Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
+        IRelationalCommandExecutor commandExecutor,
+        DbTableName rootTable,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+
+        var resolvedTarget = await RelationalDocumentUuidLookupSupport
+            .TryResolveWriteTargetByRootTableAsync(
+                commandExecutor,
+                rootTable,
+                documentUuid,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return resolvedTarget is null
+            ? new RelationalWriteTargetLookupResult.NotFound()
+            : new RelationalWriteTargetLookupResult.ExistingDocument(
+                resolvedTarget.DocumentId,
+                new DocumentUuid(resolvedTarget.DocumentUuid),
+                resolvedTarget.ContentVersion
             );
     }
 

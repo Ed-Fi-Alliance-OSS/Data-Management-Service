@@ -331,6 +331,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         var lockedContentVersion = await RelationalWriteTargetLocking
             .TryLockExistingTargetAsync(
                 request.MappingSet.Key.Dialect,
+                request.WritePlan.Model.Root.Table,
                 existingTarget.DocumentId,
                 writeSession,
                 cancellationToken
@@ -397,6 +398,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                     var lockedContentVersion = await RelationalWriteTargetLocking
                         .TryLockExistingTargetAsync(
                             request.MappingSet.Key.Dialect,
+                            request.WritePlan.Model.Root.Table,
                             existingTarget.DocumentId,
                             writeSession,
                             cancellationToken

@@ -187,8 +187,8 @@ public class Given_Relational_Write_Current_State_Loader
         recordingHydrator
             .CapturedExecutionOptions.DocumentMetadataSource.Should()
             .Be(
-                DocumentMetadataSource.DocumentTable,
-                "the current-state loader must read the dms.Document row it locked"
+                DocumentMetadataSource.RootTable,
+                "the current-state loader must read the same root row the write session locked"
             );
     }
 
@@ -228,8 +228,8 @@ public class Given_Relational_Write_Current_State_Loader
         recordingHydrator
             .CapturedExecutionOptions.DocumentMetadataSource.Should()
             .Be(
-                DocumentMetadataSource.DocumentTable,
-                "the current-state loader must read the dms.Document row it locked"
+                DocumentMetadataSource.RootTable,
+                "the current-state loader must read the same root row the write session locked"
             );
     }
 

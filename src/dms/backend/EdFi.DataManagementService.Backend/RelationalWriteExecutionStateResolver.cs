@@ -303,6 +303,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
             var lockedContentVersion = await RelationalWriteTargetLocking
                 .TryLockExistingTargetAsync(
                     request.MappingSet.Key.Dialect,
+                    request.WritePlan.Model.Root.Table,
                     targetContext.DocumentId,
                     writeSession,
                     cancellationToken

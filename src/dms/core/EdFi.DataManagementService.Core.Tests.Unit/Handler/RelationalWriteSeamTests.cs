@@ -867,6 +867,17 @@ actual: {requestInfo.FrontendResponse.Body}
             QualifiedResourceName resource,
             DocumentUuid documentUuid,
             CancellationToken cancellationToken = default
+        ) => ResolvePutTarget(documentUuid, cancellationToken);
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
+            DbTableName rootTable,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => ResolvePutTarget(documentUuid, cancellationToken);
+
+        private Task<RelationalWriteTargetLookupResult> ResolvePutTarget(
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken
         )
         {
             cancellationToken.ThrowIfCancellationRequested();

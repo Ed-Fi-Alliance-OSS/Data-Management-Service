@@ -261,25 +261,24 @@ public class MssqlChildBindingIdentityPropagationTests
         // The DS 5.2 School insert triggers attempt to maintain the
         // EducationOrganizationIdentity alias row. The BellSchedule/ClassPeriod
         // FKs only need [edfi].[School] populated with matching ([DocumentId], [SchoolId]),
-        // so we disable triggers temporarily to bypass the alias side-effects.
-        await _database.ExecuteNonQueryAsync("DISABLE TRIGGER ALL ON [edfi].[School];");
-
-        try
-        {
-            await _database.ExecuteNonQueryAsync(
-                """
-                INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-                VALUES (@documentId, @nameOfInstitution, @schoolId);
-                """,
-                new SqlParameter("@documentId", schoolDocumentId),
-                new SqlParameter("@nameOfInstitution", "Test School"),
-                new SqlParameter("@schoolId", schoolId)
-            );
-        }
-        finally
-        {
-            await _database.ExecuteNonQueryAsync("ENABLE TRIGGER ALL ON [edfi].[School];");
-        }
+        // so we disable triggers temporarily to bypass the alias side-effects. The shared helper
+        // re-asserts the dms.Document metadata mirror on the seeded root row before re-enabling the
+        // triggers, because the stamping trigger that normally writes those mirrors was suppressed.
+        await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
+            "edfi",
+            "School",
+            () =>
+                _database.ExecuteNonQueryAsync(
+                    """
+                    INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
+                    VALUES (@documentId, @nameOfInstitution, @schoolId);
+                    """,
+                    new SqlParameter("@documentId", schoolDocumentId),
+                    new SqlParameter("@nameOfInstitution", "Test School"),
+                    new SqlParameter("@schoolId", schoolId)
+                ),
+            mirrorMetadataForDocumentId: schoolDocumentId
+        );
 
         return schoolDocumentId;
     }
@@ -462,48 +461,54 @@ public class MssqlChildBindingIdentityPropagationTests
         // so we temporarily disable FK_Section_CourseOffering and Section's own triggers
         // to insert a synthetic Section. The propagation behaviour under test fires from
         // ClassPeriod's trigger and stamps Section via SectionClassPeriod — none of that
-        // depends on real CourseOffering rows being present.
+        // depends on real CourseOffering rows being present. The shared trigger-suppression helper
+        // re-asserts the dms.Document metadata mirror on the seeded root row, which the suppressed
+        // stamping trigger would otherwise have written.
         await _database.ExecuteNonQueryAsync(
             "ALTER TABLE [edfi].[Section] NOCHECK CONSTRAINT [FK_Section_CourseOffering];"
         );
-        await _database.ExecuteNonQueryAsync("DISABLE TRIGGER ALL ON [edfi].[Section];");
 
         try
         {
-            await _database.ExecuteNonQueryAsync(
-                """
-                INSERT INTO [edfi].[Section] (
-                    [DocumentId],
-                    [SchoolId_Unified],
-                    [CourseOffering_DocumentId],
-                    [CourseOffering_LocalCourseCode],
-                    [CourseOffering_SchoolYear],
-                    [CourseOffering_SessionName],
-                    [SectionIdentifier]
-                )
-                VALUES (
-                    @documentId,
-                    @schoolId,
-                    @courseOfferingDocumentId,
-                    @localCourseCode,
-                    @schoolYear,
-                    @sessionName,
-                    @sectionIdentifier
-                );
-                """,
-                new SqlParameter("@documentId", sectionDocumentId),
-                new SqlParameter("@schoolId", (long)schoolId),
-                // Synthetic CourseOffering anchor — FK check is disabled for this insert.
-                new SqlParameter("@courseOfferingDocumentId", -1L),
-                new SqlParameter("@localCourseCode", "CRS-1"),
-                new SqlParameter("@schoolYear", 2025),
-                new SqlParameter("@sessionName", "Fall"),
-                new SqlParameter("@sectionIdentifier", "Section-1")
+            await _database.ExecuteWithTriggersTemporarilyDisabledAsync(
+                "edfi",
+                "Section",
+                () =>
+                    _database.ExecuteNonQueryAsync(
+                        """
+                        INSERT INTO [edfi].[Section] (
+                            [DocumentId],
+                            [SchoolId_Unified],
+                            [CourseOffering_DocumentId],
+                            [CourseOffering_LocalCourseCode],
+                            [CourseOffering_SchoolYear],
+                            [CourseOffering_SessionName],
+                            [SectionIdentifier]
+                        )
+                        VALUES (
+                            @documentId,
+                            @schoolId,
+                            @courseOfferingDocumentId,
+                            @localCourseCode,
+                            @schoolYear,
+                            @sessionName,
+                            @sectionIdentifier
+                        );
+                        """,
+                        new SqlParameter("@documentId", sectionDocumentId),
+                        new SqlParameter("@schoolId", (long)schoolId),
+                        // Synthetic CourseOffering anchor — FK check is disabled for this insert.
+                        new SqlParameter("@courseOfferingDocumentId", -1L),
+                        new SqlParameter("@localCourseCode", "CRS-1"),
+                        new SqlParameter("@schoolYear", 2025),
+                        new SqlParameter("@sessionName", "Fall"),
+                        new SqlParameter("@sectionIdentifier", "Section-1")
+                    ),
+                mirrorMetadataForDocumentId: sectionDocumentId
             );
         }
         finally
         {
-            await _database.ExecuteNonQueryAsync("ENABLE TRIGGER ALL ON [edfi].[Section];");
             await _database.ExecuteNonQueryAsync(
                 "ALTER TABLE [edfi].[Section] CHECK CONSTRAINT [FK_Section_CourseOffering];"
             );

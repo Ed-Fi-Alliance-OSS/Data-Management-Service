@@ -8510,6 +8510,71 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedDeleteCommand.Parameters[0].Value.Should().Be(123L);
     }
 
+    [TestCase(
+        SqlDialect.Pgsql,
+        "FROM \"edfi\".\"School\" root",
+        "root.\"DocumentUuid\" = @documentUuid",
+        "FROM \"edfi\".\"School\" document",
+        "dms.\"Document\""
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "FROM [edfi].[School] root",
+        "root.[DocumentUuid] = @documentUuid",
+        "FROM [edfi].[School] document WITH (UPDLOCK, HOLDLOCK, ROWLOCK)",
+        "[dms].[Document]"
+    )]
+    public async Task It_resolves_and_locks_the_delete_target_on_the_resource_root_table(
+        SqlDialect dialect,
+        string expectedLookupTableFragment,
+        string expectedLookupPredicate,
+        string expectedLockTableFragment,
+        string forbiddenTableFragment
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        RelationalCommand capturedLookupCommand = null!;
+        RelationalCommand capturedLockCommand = null!;
+        // The root-table uuid probe renders through the session executor's dialect (the same seam the
+        // Phase-2 GET probe uses); the lock renders through the mapping set's.
+        A.CallTo(() => _commandExecutor.Dialect).Returns(dialect);
+        ConfigureResolvedDocument(
+            documentId: 123L,
+            documentUuid,
+            onTargetLookup: command => capturedLookupCommand = command,
+            onTargetLock: command => capturedLockCommand = command
+        );
+        ConfigureDeleteOutcome(deleted: true);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            documentUuid: documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+
+        // The uuid is sought on UX_<Root>_DocumentUuid — resource scoping is structural, so no
+        // ResourceKeyId parameter is bound.
+        capturedLookupCommand.Should().NotBeNull();
+        capturedLookupCommand.CommandText.Should().Contain(expectedLookupTableFragment);
+        capturedLookupCommand.CommandText.Should().Contain(expectedLookupPredicate);
+        capturedLookupCommand.CommandText.Should().NotContain(forbiddenTableFragment);
+        capturedLookupCommand.Parameters.Should().ContainSingle();
+        capturedLookupCommand.Parameters[0].Name.Should().Be("@documentUuid");
+        capturedLookupCommand.Parameters[0].Value.Should().Be(documentUuid.Value);
+
+        // The lock then pins that same root row, so the If-Match compare reads the stamp the DELETE is
+        // about to invalidate.
+        capturedLockCommand.Should().NotBeNull();
+        capturedLockCommand.CommandText.Should().Contain(expectedLockTableFragment);
+        capturedLockCommand.CommandText.Should().NotContain(forbiddenTableFragment);
+        capturedLockCommand.Parameters.Should().ContainSingle();
+        capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
+        capturedLockCommand.Parameters[0].Value.Should().Be(123L);
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public async Task It_returns_delete_failure_not_exists_when_the_delete_returns_no_rows(SqlDialect dialect)
@@ -9287,6 +9352,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             );
         }
 
+        public DbTableName? CapturedPutRootTable { get; private set; }
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
@@ -9295,6 +9362,24 @@ public class Given_RelationalDocumentStoreRepositoryTests
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            return NextPutResult(documentUuid);
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
+            DbTableName rootTable,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CapturedPutRootTable = rootTable;
+
+            return NextPutResult(documentUuid);
+        }
+
+        private Task<RelationalWriteTargetLookupResult> NextPutResult(DocumentUuid documentUuid)
+        {
             ResolveForPutCallCount++;
 
             return Task.FromResult(
@@ -9337,21 +9422,41 @@ public class Given_RelationalDocumentStoreRepositoryTests
         return new RelationalDeleteEtagPreconditionCheckResult(targetContext, isMatch);
     }
 
-    private void ConfigureResolvedDocument(long documentId, DocumentUuid documentUuid)
+    // The regular DELETE resolves its target from the resource root table's UX_<Root>_DocumentUuid
+    // index, so the session executor returns a ResolvedRootTarget rather than a dms.Document row.
+    private void ConfigureResolvedDocument(
+        long documentId,
+        DocumentUuid documentUuid,
+        Action<RelationalCommand>? onTargetLookup = null,
+        Action<RelationalCommand>? onTargetLock = null
+    )
     {
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>>()
-            .Returns(
-                Task.FromResult<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>(
-                    new RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid(
-                        DocumentId: documentId,
-                        DocumentUuid: documentUuid,
-                        ResourceKeyId: 1,
-                        ContentVersion: 42L
-                    )
+        var lookupCall = A.CallTo(_commandExecutor)
+            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedRootTarget?>>();
+
+        if (onTargetLookup is not null)
+        {
+            lookupCall.Invokes(fakeCall => onTargetLookup(fakeCall.GetArgument<RelationalCommand>(0)!));
+        }
+
+        lookupCall.Returns(
+            Task.FromResult<RelationalDocumentUuidLookupSupport.ResolvedRootTarget?>(
+                new RelationalDocumentUuidLookupSupport.ResolvedRootTarget(
+                    DocumentId: documentId,
+                    DocumentUuid: documentUuid.Value,
+                    ContentVersion: 42L
                 )
-            );
-        A.CallTo(_commandExecutor).WithReturnType<Task<long?>>().Returns(Task.FromResult<long?>(42L));
+            )
+        );
+
+        var lockCall = A.CallTo(_commandExecutor).WithReturnType<Task<long?>>();
+
+        if (onTargetLock is not null)
+        {
+            lockCall.Invokes(fakeCall => onTargetLock(fakeCall.GetArgument<RelationalCommand>(0)!));
+        }
+
+        lockCall.Returns(Task.FromResult<long?>(42L));
     }
 
     private void ConfigureDeleteOutcome(bool deleted, Action<RelationalCommand>? callback = null)
@@ -9379,7 +9484,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private void ConfigureLookupThrows(DbException exception)
     {
         A.CallTo(_commandExecutor)
-            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>>()
+            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedRootTarget?>>()
             .Throws(exception);
     }
 

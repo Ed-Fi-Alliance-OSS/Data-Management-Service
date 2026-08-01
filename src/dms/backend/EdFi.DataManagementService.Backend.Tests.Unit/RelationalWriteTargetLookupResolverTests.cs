@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalWrite_Target_Lookup_Surfaces
 {
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
+    private static readonly DbTableName _requestRootTable = new(new DbSchemaName("edfi"), "Student");
 
     [Test]
     public async Task It_returns_create_new_for_post_re_evaluation_when_request_referential_id_does_not_match_an_existing_document()
@@ -80,44 +81,49 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
             );
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    [TestCase(SqlDialect.Pgsql, "FROM \"edfi\".\"Student\" root", "dms.\"Document\"")]
+    [TestCase(SqlDialect.Mssql, "FROM [edfi].[Student] root", "[dms].[Document]")]
     public async Task It_returns_not_found_for_repository_put_lookup_when_requested_document_uuid_does_not_match_a_persisted_document(
         SqlDialect dialect,
-        string expectedTableFragment
+        string expectedTableFragment,
+        string forbiddenTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var commandExecutor = new RecordingRelationalCommandExecutor(CreateLookupReader());
+        var commandExecutor = new RecordingRelationalCommandExecutor(CreateLookupReader(), dialect);
         var sut = new RelationalWriteTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+        var result = await sut.ResolveForPutByRootTableAsync(_requestRootTable, documentUuid);
 
         result.Should().BeOfType<RelationalWriteTargetLookupResult.NotFound>();
         commandExecutor.ExecuteReaderAsyncCallCount.Should().Be(1);
         commandExecutor.CapturedCommand.Should().NotBeNull();
         commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.CapturedCommand.CommandText.Should().NotContain(forbiddenTableFragment);
+        // Resource scoping is structural on the root table, so no ResourceKeyId parameter is bound.
         commandExecutor
             .CapturedCommand.Parameters.Select(parameter => parameter.Value)
             .Should()
-            .Equal(documentUuid.Value, (short)1);
+            .Equal(documentUuid.Value);
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    [TestCase(SqlDialect.Pgsql, "FROM \"edfi\".\"Student\" root", "dms.\"Document\"")]
+    [TestCase(SqlDialect.Mssql, "FROM [edfi].[Student] root", "[dms].[Document]")]
     public async Task It_returns_existing_document_for_repository_put_lookup_when_requested_document_uuid_matches_a_persisted_document(
         SqlDialect dialect,
-        string expectedTableFragment
+        string expectedTableFragment,
+        string forbiddenTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         const long observedContentVersion = 907L;
         var commandExecutor = new RecordingRelationalCommandExecutor(
-            CreateLookupReader((404L, documentUuid.Value, observedContentVersion))
+            CreateLookupReader((404L, documentUuid.Value, observedContentVersion)),
+            dialect
         );
         var sut = new RelationalWriteTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+        var result = await sut.ResolveForPutByRootTableAsync(_requestRootTable, documentUuid);
 
         result
             .Should()
@@ -129,6 +135,29 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
                 )
             );
         commandExecutor.ExecuteReaderAsyncCallCount.Should().Be(1);
+        commandExecutor.CapturedCommand.Should().NotBeNull();
+        commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.CapturedCommand.CommandText.Should().NotContain(forbiddenTableFragment);
+        commandExecutor
+            .CapturedCommand.Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(documentUuid.Value);
+    }
+
+    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    public async Task It_keeps_the_descriptor_put_lookup_on_the_document_table(
+        SqlDialect dialect,
+        string expectedTableFragment
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new RecordingRelationalCommandExecutor(CreateLookupReader(), dialect);
+        var sut = new RelationalWriteTargetLookupService(commandExecutor);
+
+        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+
+        result.Should().BeOfType<RelationalWriteTargetLookupResult.NotFound>();
         commandExecutor.CapturedCommand.Should().NotBeNull();
         commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
         commandExecutor
@@ -542,12 +571,14 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         return new TestRelationalWriteSession(connection, transaction);
     }
 
-    private sealed class RecordingRelationalCommandExecutor(DataTableReader reader)
-        : IRelationalCommandExecutor
+    private sealed class RecordingRelationalCommandExecutor(
+        DataTableReader reader,
+        SqlDialect dialect = SqlDialect.Pgsql
+    ) : IRelationalCommandExecutor
     {
         private readonly DataTableReader _reader = reader;
 
-        public SqlDialect Dialect => SqlDialect.Pgsql;
+        public SqlDialect Dialect { get; } = dialect;
 
         public int ExecuteReaderAsyncCallCount { get; private set; }
 

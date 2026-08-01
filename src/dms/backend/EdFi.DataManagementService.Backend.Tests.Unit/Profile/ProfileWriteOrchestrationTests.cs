@@ -164,9 +164,8 @@ public class Given_No_Profile_Relational_Put
         var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
         A.CallTo(() =>
-                _targetLookupService.ResolveForPutAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                _targetLookupService.ResolveForPutByRootTableAsync(
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -223,9 +222,8 @@ public class Given_No_Profile_Relational_Put
     {
         _result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(_documentUuid, "\"52\""));
         A.CallTo(() =>
-                _targetLookupService.ResolveForPutAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                _targetLookupService.ResolveForPutByRootTableAsync(
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )
@@ -393,9 +391,8 @@ public class Given_A_Profiled_Relational_Put
         var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
         A.CallTo(() =>
-                _targetLookupService.ResolveForPutAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
+                _targetLookupService.ResolveForPutByRootTableAsync(
+                    A<DbTableName>._,
                     A<DocumentUuid>._,
                     A<CancellationToken>._
                 )

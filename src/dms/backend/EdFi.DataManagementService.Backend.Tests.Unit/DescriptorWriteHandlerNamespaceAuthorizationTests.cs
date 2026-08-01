@@ -1270,6 +1270,14 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(PutResult);
         }
+
+        // The descriptor write path still resolves PUT targets through dms.Document; only the regular
+        // resource path seeks the root table. Throwing keeps that split honest.
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
+            DbTableName rootTable,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private static InMemoryRelationalResultSet CreateResolvedExistingDocumentRow() =>

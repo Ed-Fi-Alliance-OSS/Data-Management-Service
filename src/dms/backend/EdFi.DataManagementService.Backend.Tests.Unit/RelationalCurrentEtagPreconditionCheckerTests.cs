@@ -76,6 +76,10 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         result.CurrentState.Should().NotBeNull();
         result.TargetContext.ObservedContentVersion.Should().Be(LockedContentVersion);
         _capturedLockCommand.CommandText.Should().Contain("FOR UPDATE");
+        // The checker locks the resource root row — the same row the current-state load below reads its
+        // refreshed ContentVersion from.
+        _capturedLockCommand.CommandText.Should().Contain("FROM \"edfi\".\"School\" document");
+        _capturedLockCommand.CommandText.Should().NotContain("dms.\"Document\"");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.\"DocumentId\" = @documentId");
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
@@ -95,6 +99,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         result.Should().NotBeNull();
         result!.IsSatisfied.Should().BeFalse();
         _capturedLockCommand.CommandText.Should().Contain("WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
+        _capturedLockCommand.CommandText.Should().Contain("FROM [edfi].[School] document WITH (UPDLOCK");
+        _capturedLockCommand.CommandText.Should().NotContain("[dms].[Document]");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");

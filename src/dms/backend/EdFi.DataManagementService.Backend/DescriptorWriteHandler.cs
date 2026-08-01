@@ -45,6 +45,13 @@ internal sealed class DescriptorWriteHandler(
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
 
+    /// <summary>
+    /// The row the descriptor write path locks. Non-descriptor writes lock the resource root row, but
+    /// the descriptor handler still resolves and reads its target through <c>dms.Document</c>, so it
+    /// keeps locking that row until the descriptor path is re-anchored onto <c>dms.Descriptor</c>.
+    /// </summary>
+    private static readonly DbTableName _descriptorLockTable = new(new DbSchemaName("dms"), "Document");
+
     public async Task<UpsertResult> HandlePostAsync(
         DescriptorWriteRequest request,
         CancellationToken cancellationToken = default
@@ -647,6 +654,7 @@ internal sealed class DescriptorWriteHandler(
                             await RelationalWriteTargetLocking
                                 .TryLockExistingTargetAsync(
                                     request.MappingSet.Key.Dialect,
+                                    _descriptorLockTable,
                                     resolvedDeleteTarget.DocumentId,
                                     writeSession,
                                     cancellationToken
@@ -2412,7 +2420,13 @@ internal sealed class DescriptorWriteHandler(
     )
     {
         var lockedContentVersion = await RelationalWriteTargetLocking
-            .TryLockExistingTargetAsync(dialect, documentId, writeSession, cancellationToken)
+            .TryLockExistingTargetAsync(
+                dialect,
+                _descriptorLockTable,
+                documentId,
+                writeSession,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (lockedContentVersion is null)

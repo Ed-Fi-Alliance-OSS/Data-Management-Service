@@ -32,9 +32,10 @@ public sealed record HydrationExecutionOptions(
 )
 {
     /// <summary>
-    /// Selects the table the document metadata result set reads from.
-    /// <c>DocumentTable</c> is the write-path setting: the current-state loader reads the same
-    /// <c>dms.Document</c> row it locked. Only the GET read path passes <c>RootTable</c>.
+    /// Selects the table the document metadata result set reads from. Every non-descriptor caller —
+    /// the read paths and the write path's current-state load, which reads the same root row the write
+    /// session locked — passes <c>RootTable</c>. <c>DocumentTable</c> remains the default for callers
+    /// that have no resource root row to read from.
     /// </summary>
     public DocumentMetadataSource DocumentMetadataSource { get; init; } =
         DocumentMetadataSource.DocumentTable;

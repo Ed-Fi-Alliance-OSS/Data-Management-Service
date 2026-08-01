@@ -51,6 +51,10 @@ public class Given_Relational_Write_Freshness_Checker
         isCurrent.Should().BeTrue();
         _command.ExecuteScalarCallCount.Should().Be(1);
         _command.CommandText.Should().Contain("FOR UPDATE");
+        // The freshness re-check locks the resource root row, which is the row the current-state load
+        // read the observed stamp from — the two sides of the comparison must not straddle two tables.
+        _command.CommandText.Should().Contain("FROM \"edfi\".\"School\" document");
+        _command.CommandText.Should().NotContain("dms.\"Document\"");
         _command.CommandText.Should().Contain("WHERE document.\"DocumentId\" = @documentId");
         _command.Parameters.Should().ContainSingle();
         _command.Parameters[0].ParameterName.Should().Be("@documentId");
@@ -69,6 +73,8 @@ public class Given_Relational_Write_Freshness_Checker
         isCurrent.Should().BeTrue();
         _command.ExecuteScalarCallCount.Should().Be(1);
         _command.CommandText.Should().Contain("WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
+        _command.CommandText.Should().Contain("FROM [edfi].[School] document WITH (UPDLOCK");
+        _command.CommandText.Should().NotContain("[dms].[Document]");
         _command.CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
         _command.Parameters.Should().ContainSingle();
         _command.Parameters[0].ParameterName.Should().Be("@documentId");

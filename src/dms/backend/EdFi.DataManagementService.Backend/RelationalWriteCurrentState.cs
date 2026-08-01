@@ -101,7 +101,14 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
                     IncludeDescriptorProjection: request.IncludeDescriptorProjection,
                     IncludeDocumentReferenceLookup: false,
                     UseSingleDocumentFastPath: true
-                ),
+                )
+                {
+                    // The write path locks the resource root row, so the current-state metadata must
+                    // come from that same row: the observed ContentVersion this load refreshes is
+                    // compared against the locked stamp by the guarded-no-op freshness check and the
+                    // deferred precondition compare, and those comparisons must not straddle two tables.
+                    DocumentMetadataSource = DocumentMetadataSource.RootTable,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);

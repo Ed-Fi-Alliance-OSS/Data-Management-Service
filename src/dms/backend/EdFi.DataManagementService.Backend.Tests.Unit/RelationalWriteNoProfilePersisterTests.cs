@@ -91,7 +91,11 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[2], "@DocumentId").Should().Be(910L);
         GetParameterValue(writeSession.Commands[2], "@ExtensionCode").Should().Be("BLUE");
 
+        // The committed stamp is read back from the root row the write just stamped, not from
+        // dms."Document" — the same row every other write-path metadata read now targets.
         writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        writeSession.Commands[3].CommandText.Should().Contain("FROM \"edfi\".\"School\" document");
+        writeSession.Commands[3].CommandText.Should().NotContain("dms.\"Document\"");
         GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(910L);
     }
 

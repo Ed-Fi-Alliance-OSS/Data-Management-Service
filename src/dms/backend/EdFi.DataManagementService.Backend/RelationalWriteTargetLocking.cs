@@ -9,15 +9,20 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalWriteTargetLocking
 {
+    /// <summary>
+    /// Locks the addressed document's row in <paramref name="lockTable"/> and returns its
+    /// <c>ContentVersion</c>, or <see langword="null"/> when the row is gone.
+    /// </summary>
     public static async Task<long?> TryLockExistingTargetAsync(
         SqlDialect dialect,
+        DbTableName lockTable,
         long documentId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
         await using var command = writeSession.CreateCommand(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, documentId)
+            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, lockTable, documentId)
         );
 
         var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

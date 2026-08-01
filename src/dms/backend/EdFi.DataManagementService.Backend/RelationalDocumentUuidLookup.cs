@@ -39,13 +39,12 @@ internal static class RelationalDocumentUuidLookupSupport
     }
 
     /// <summary>
-    /// Delete-path entry point for resolving a document by (resource, DocumentUuid). The regular
-    /// non-descriptor DELETE needs only the internal <c>DocumentId</c> to scope the actual DELETE
-    /// statement, so this helper narrows the shared UUID lookup result to a
-    /// <see cref="ResolvedDeleteTarget"/> (DocumentId only) and keeps "resolve delete target" as
-    /// an explicit concept separate from the PUT-oriented
-    /// <see cref="RelationalWriteTargetLookupService.ResolveForPutAsync"/> (which additionally
-    /// requires a non-null <c>ContentVersion</c>).
+    /// Descriptor delete-path entry point for resolving a document by (resource, DocumentUuid) through
+    /// <c>dms.Document</c>. The regular non-descriptor DELETE resolves its target from the resource
+    /// root table instead (<see cref="TryResolveDeleteTargetByRootTableAsync"/>); descriptors keep this
+    /// <c>dms.Document</c> probe until the descriptor write path is re-anchored onto
+    /// <c>dms.Descriptor</c>. Both narrow to <see cref="ResolvedDeleteTarget"/> (DocumentId only),
+    /// which is all the DELETE statement needs.
     /// </summary>
     public static async Task<ResolvedDeleteTarget?> TryResolveDeleteTargetAsync(
         IRelationalCommandExecutor commandExecutor,
@@ -107,16 +106,68 @@ internal static class RelationalDocumentUuidLookupSupport
         DbTableName rootTable,
         DocumentUuid documentUuid,
         CancellationToken cancellationToken = default
+    ) => TryResolveTargetByRootTableAsync(commandExecutor, "GET", rootTable, documentUuid, cancellationToken);
+
+    /// <summary>
+    /// PUT entry point, and the shared uuid probe for the regular DELETE
+    /// (<see cref="TryResolveDeleteTargetByRootTableAsync"/>). Identical reasoning to the GET probe:
+    /// the route names the resource, so seeking <c>UX_&lt;Root&gt;_DocumentUuid</c> scopes the lookup
+    /// structurally and returns the same root row the write path then locks, loads current state from,
+    /// and re-reads the stamp on.
+    /// </summary>
+    public static Task<ResolvedRootTarget?> TryResolveWriteTargetByRootTableAsync(
+        IRelationalCommandExecutor commandExecutor,
+        DbTableName rootTable,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    ) =>
+        TryResolveTargetByRootTableAsync(
+            commandExecutor,
+            "write",
+            rootTable,
+            documentUuid,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Delete-path entry point for the regular (non-descriptor) DELETE. Narrows the root-table uuid
+    /// probe to the internal <c>DocumentId</c>, which is all the DELETE statement needs to scope
+    /// itself; the target's <c>ContentVersion</c> is captured by the subsequent row lock, not here.
+    /// </summary>
+    public static async Task<ResolvedDeleteTarget?> TryResolveDeleteTargetByRootTableAsync(
+        IRelationalCommandExecutor commandExecutor,
+        DbTableName rootTable,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resolved = await TryResolveWriteTargetByRootTableAsync(
+                commandExecutor,
+                rootTable,
+                documentUuid,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return resolved is null ? null : new ResolvedDeleteTarget(resolved.DocumentId);
+    }
+
+    private static Task<ResolvedRootTarget?> TryResolveTargetByRootTableAsync(
+        IRelationalCommandExecutor commandExecutor,
+        string probeKind,
+        DbTableName rootTable,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(commandExecutor);
 
         var command = commandExecutor.Dialect switch
         {
-            SqlDialect.Pgsql => BuildPostgresqlGetTargetByRootTableCommand(rootTable, documentUuid),
-            SqlDialect.Mssql => BuildMssqlGetTargetByRootTableCommand(rootTable, documentUuid),
+            SqlDialect.Pgsql => BuildPostgresqlTargetByRootTableCommand(rootTable, documentUuid),
+            SqlDialect.Mssql => BuildMssqlTargetByRootTableCommand(rootTable, documentUuid),
             _ => throw new NotSupportedException(
-                $"Relational GET target root-table probe does not support SQL dialect '{commandExecutor.Dialect}'."
+                $"Relational {probeKind} target root-table probe does not support SQL dialect '{commandExecutor.Dialect}'."
             ),
         };
 
@@ -140,7 +191,7 @@ internal static class RelationalDocumentUuidLookupSupport
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
                     throw new InvalidOperationException(
-                        $"Relational GET target root-table probe returned multiple rows for root table "
+                        $"Relational {probeKind} target root-table probe returned multiple rows for root table "
                             + $"'{rootTable}' and document uuid '{documentUuid.Value}'."
                     );
                 }
@@ -247,7 +298,7 @@ internal static class RelationalDocumentUuidLookupSupport
         return new RelationalCommand(commandText, parameters);
     }
 
-    private static RelationalCommand BuildPostgresqlGetTargetByRootTableCommand(
+    private static RelationalCommand BuildPostgresqlTargetByRootTableCommand(
         DbTableName rootTable,
         DocumentUuid documentUuid
     )
@@ -267,7 +318,7 @@ internal static class RelationalDocumentUuidLookupSupport
         );
     }
 
-    private static RelationalCommand BuildMssqlGetTargetByRootTableCommand(
+    private static RelationalCommand BuildMssqlTargetByRootTableCommand(
         DbTableName rootTable,
         DocumentUuid documentUuid
     )
@@ -297,9 +348,10 @@ internal static class RelationalDocumentUuidLookupSupport
     internal sealed record ResolvedDeleteTarget(long DocumentId);
 
     /// <summary>
-    /// GET-by-id target resolved from the resource root table's document metadata mirror columns.
-    /// <c>ContentVersion</c> is non-null there (the stamping triggers maintain it), so unlike
-    /// <see cref="ResolvedDocumentByUuid"/> this target needs no nullable content version.
+    /// Target resolved from the resource root table's document metadata mirror columns, by GET-by-id,
+    /// PUT, and the regular DELETE. <c>ContentVersion</c> is non-null there (the stamping triggers
+    /// maintain it), so unlike <see cref="ResolvedDocumentByUuid"/> this target needs no nullable
+    /// content version.
     /// </summary>
     internal sealed record ResolvedRootTarget(long DocumentId, Guid DocumentUuid, long ContentVersion);
 }

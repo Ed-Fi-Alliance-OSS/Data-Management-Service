@@ -106,6 +106,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
         var contentVersion = await ReadCommittedContentVersionAsync(
                 request.MappingSet.Key.Dialect,
+                request.WritePlan.Model.Root.Table,
                 rootDocumentId,
                 writeSession,
                 cancellationToken
@@ -439,15 +440,25 @@ internal sealed class RelationalWriteNoProfilePersister(
         return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// Reads back the committed <c>ContentVersion</c> from the root row the write just stamped, reusing
+    /// the lock statement so the read is the same row-scoped, lock-holding shape the rest of the write
+    /// path uses.
+    /// </summary>
     private static async Task<long> ReadCommittedContentVersionAsync(
         SqlDialect dialect,
+        DbTableName rootTable,
         long rootDocumentId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
         await using var command = writeSession.CreateCommand(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, rootDocumentId)
+            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(
+                dialect,
+                rootTable,
+                rootDocumentId
+            )
         );
 
         var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
