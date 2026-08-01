@@ -37,3 +37,8 @@ Completed item-processing task for reference/design/backend-redesign/epics/18-do
 Key decisions: added item processor over pinned target materialization context; writer fast path runs before materialization; materializer no-candidate and benign writer race outcomes do no projector repair; WorkAnomaly/retry outcomes use document backoff; lifecycle fence stops slice; cache-ahead latch and deterministic invariant outcomes pause same generation; provider/runtime faults target-backoff.
 Files changed: DocumentCacheProjectionItemProcessor.cs; DocumentProjectionWorkPaging.cs; DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionScheduler.cs; DI registration; focused item/paging/backoff/scheduler/supervisor tests; tasks.json; progress.txt.
 Blockers/notes: lifecycle-fence refresh remains next likely task so writer fence pauses can resume from observed Tracking/Rebuilding clear latch.
+
+Completed lifecycle-fence task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: supervisor now performs lightweight provider lifecycle reads on context startup/refresh; scheduling state splits permanent target pause from resumable lifecycle-fence pause; Tracking/Rebuilding with clear latch clears only lifecycle fence pause; missing/unreadable/latch/unsupported lifecycle stays fenced with bounded sanitized snapshot.
+Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionScheduler.cs; DocumentCacheLifecycleFenceTests.cs; DocumentCacheProjectionSupervisorTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely shutdown/cancellation before administrative mutex stack.

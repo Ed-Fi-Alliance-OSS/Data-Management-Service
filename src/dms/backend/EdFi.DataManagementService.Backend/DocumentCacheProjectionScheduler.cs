@@ -350,6 +350,9 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
     private ProjectionThroughputCounter _ordinaryPageThroughput;
     private ProjectionThroughputCounter _administrativeDrainThroughput;
     private bool _targetPaused;
+    private bool _lifecycleFencePaused;
+    private DocumentCacheProjectionLifecycleFenceSnapshot _lifecycleFenceSnapshot =
+        DocumentCacheProjectionLifecycleFenceSnapshot.Unknown;
 
     public DateTimeOffset? TargetBackoffUntil { get; private set; }
 
@@ -361,7 +364,18 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
         {
             lock (_sync)
             {
-                return _targetPaused;
+                return _targetPaused || _lifecycleFencePaused;
+            }
+        }
+    }
+
+    public DocumentCacheProjectionLifecycleFenceSnapshot LifecycleFenceSnapshot
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _lifecycleFenceSnapshot;
             }
         }
     }
@@ -371,6 +385,25 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
         lock (_sync)
         {
             _targetPaused = true;
+            TargetBackoffUntil = null;
+            PollSleepUntil = null;
+        }
+    }
+
+    public void ObserveLifecycleFence(DocumentCacheProjectionLifecycleFenceSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        lock (_sync)
+        {
+            _lifecycleFenceSnapshot = snapshot;
+            if (snapshot.State == DocumentCacheProjectionLifecycleFenceState.Eligible)
+            {
+                _lifecycleFencePaused = false;
+                return;
+            }
+
+            _lifecycleFencePaused = true;
             TargetBackoffUntil = null;
             PollSleepUntil = null;
         }
@@ -418,7 +451,7 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
 
         lock (_sync)
         {
-            if (_targetPaused)
+            if (_targetPaused || _lifecycleFencePaused)
             {
                 return DocumentCacheProjectionTargetReadinessBlockReason.TargetPaused;
             }
@@ -491,6 +524,15 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
                     break;
 
                 case DocumentCacheProjectionDrainPageOutcome.LifecycleFenced:
+                    _lifecycleFencePaused = true;
+                    _lifecycleFenceSnapshot =
+                        DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromWriterFenceObserved(
+                            completedAt
+                        );
+                    TargetBackoffUntil = null;
+                    PollSleepUntil = null;
+                    break;
+
                 case DocumentCacheProjectionDrainPageOutcome.TargetPaused:
                     _targetPaused = true;
                     TargetBackoffUntil = null;
@@ -982,17 +1024,55 @@ internal static class DocumentCacheProjectionTargetHealthSnapshotFactory
             executionState: executionState,
             pageThroughput: context.SchedulingState.OrdinaryPageThroughputSnapshot,
             drainThroughput: context.SchedulingState.AdministrativeDrainThroughputSnapshot,
-            lifecycleFence: CreateLifecycleFenceSnapshot(executionContext.Lifecycle, observedAt),
+            lifecycleFence: SelectLifecycleFenceSnapshot(context, observedAt),
             poisonTraversal: context.FailureBackoffState.CreatePoisonTraversalSnapshot(),
             failureDiagnostics: context.FailureBackoffState.CreateFailureDiagnosticsSnapshot()
         );
     }
 
-    private static DocumentCacheProjectionLifecycleFenceSnapshot CreateLifecycleFenceSnapshot(
+    private static DocumentCacheProjectionLifecycleFenceSnapshot SelectLifecycleFenceSnapshot(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DateTimeOffset observedAt
+    )
+    {
+        DocumentCacheProjectionLifecycleFenceSnapshot lifecycleFence = context
+            .SchedulingState
+            .LifecycleFenceSnapshot;
+
+        return lifecycleFence.State == DocumentCacheProjectionLifecycleFenceState.Unknown
+            ? DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycle(
+                context.TargetExecutionContext.Lifecycle,
+                observedAt
+            )
+            : lifecycleFence;
+    }
+}
+
+internal static class DocumentCacheProjectionLifecycleFenceSnapshotFactory
+{
+    public static DocumentCacheProjectionLifecycleFenceSnapshot FromLifecycleReadResult(
+        DocumentCacheLifecycleReadResult lifecycleReadResult,
+        DateTimeOffset observedAt
+    )
+    {
+        ArgumentNullException.ThrowIfNull(lifecycleReadResult);
+
+        return lifecycleReadResult.Lifecycle is not null
+            ? FromLifecycle(lifecycleReadResult.Lifecycle, observedAt)
+            : FromLifecycleReadFailure(
+                observedAt,
+                DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+                lifecycleReadResult.Message
+            );
+    }
+
+    public static DocumentCacheProjectionLifecycleFenceSnapshot FromLifecycle(
         DocumentCacheLifecycleObservation lifecycle,
         DateTimeOffset observedAt
     )
     {
+        ArgumentNullException.ThrowIfNull(lifecycle);
+
         bool eligible =
             lifecycle.State is DocumentCacheLifecycleState.Tracking or DocumentCacheLifecycleState.Rebuilding
             && !lifecycle.CacheAheadRecoveryRequired;
@@ -1018,6 +1098,30 @@ internal static class DocumentCacheProjectionTargetHealthSnapshotFactory
                 : "Target lifecycle or cache-ahead latch fences ordinary projection processing."
         );
     }
+
+    public static DocumentCacheProjectionLifecycleFenceSnapshot FromLifecycleReadFailure(
+        DateTimeOffset observedAt,
+        DocumentCacheTargetDiagnosticCategory diagnosticCategory,
+        string message
+    ) =>
+        new(
+            DocumentCacheProjectionLifecycleFenceState.Fenced,
+            lifecycle: null,
+            observedAt,
+            diagnosticCategory,
+            message
+        );
+
+    public static DocumentCacheProjectionLifecycleFenceSnapshot FromWriterFenceObserved(
+        DateTimeOffset observedAt
+    ) =>
+        new(
+            DocumentCacheProjectionLifecycleFenceState.Fenced,
+            lifecycle: null,
+            observedAt,
+            DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
+            "Cache writer observed a lifecycle or cache-ahead latch fence; supervisor lifecycle observation is pending."
+        );
 }
 
 internal sealed class DocumentCacheProjectionTargetContextKeyComparer

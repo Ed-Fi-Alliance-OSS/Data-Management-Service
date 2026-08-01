@@ -495,6 +495,7 @@ public sealed class DocumentCacheProjectionSupervisor(
     IDocumentCacheProjectionObservationSink observationSink,
     IOptions<DocumentCacheOptions> options,
     IDocumentCacheProjectionScheduler scheduler,
+    IDocumentCacheLifecycleReader lifecycleReader,
     TimeProvider timeProvider,
     ILogger<DocumentCacheProjectionSupervisor> logger
 ) : BackgroundService, IDocumentCacheProjectionSupervisor
@@ -615,6 +616,7 @@ public sealed class DocumentCacheProjectionSupervisor(
                 )
             )
             {
+                await ObserveLifecycleFenceAsync(existing, cancellationToken).ConfigureAwait(false);
                 ObserveTarget(existing);
                 continue;
             }
@@ -625,6 +627,7 @@ public sealed class DocumentCacheProjectionSupervisor(
                     .CreateAsync(desiredContext, cancellationToken)
                     .ConfigureAwait(false);
                 nextContexts[desiredContext.TargetKey] = createdContext;
+                await ObserveLifecycleFenceAsync(createdContext, cancellationToken).ConfigureAwait(false);
                 ObserveTarget(createdContext);
             }
             catch (OperationCanceledException)
@@ -684,6 +687,63 @@ public sealed class DocumentCacheProjectionSupervisor(
         return targetObservation?.EligibilityState == DocumentCacheTargetEligibilityState.Ineligible
             ? DocumentCacheProjectionTargetEndReason.Ineligible
             : DocumentCacheProjectionTargetEndReason.Removed;
+    }
+
+    private async Task ObserveLifecycleFenceAsync(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        DateTimeOffset observedAt = timeProvider.GetUtcNow();
+        DocumentCacheProjectionLifecycleFenceSnapshot lifecycleFenceSnapshot;
+
+        try
+        {
+            if (lifecycleReader.ProviderToken != context.TargetExecutionContext.ProviderToken)
+            {
+                lifecycleFenceSnapshot =
+                    DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycleReadFailure(
+                        observedAt,
+                        DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
+                        "DocumentCache lifecycle reader provider does not match target provider."
+                    );
+            }
+            else
+            {
+                DocumentCacheLifecycleReadResult lifecycleReadResult = await lifecycleReader
+                    .ReadLifecycleAsync(
+                        context.TargetExecutionContext.ConnectionInput.Value,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                lifecycleFenceSnapshot =
+                    DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycleReadResult(
+                        lifecycleReadResult,
+                        observedAt
+                    );
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(
+                exception,
+                "DocumentCache projection lifecycle observation failed for target {TargetKey}; ordinary processing remains fenced.",
+                context.TargetKey
+            );
+            lifecycleFenceSnapshot =
+                DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycleReadFailure(
+                    observedAt,
+                    DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+                    "DocumentCache lifecycle is unreadable."
+                );
+        }
+
+        context.SchedulingState.ObserveLifecycleFence(lifecycleFenceSnapshot);
     }
 
     private void ObserveTarget(DocumentCacheProjectionTargetRuntimeContext context)

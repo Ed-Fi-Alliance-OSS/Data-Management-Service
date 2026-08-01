@@ -313,6 +313,7 @@ public class Given_DocumentCacheProjectionSupervisor
             observationSink,
             options,
             new NoOpDocumentCacheProjectionScheduler(),
+            new StubDocumentCacheLifecycleReader(),
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheProjectionSupervisor>.Instance
         );
@@ -570,6 +571,20 @@ public class Given_DocumentCacheProjectionSupervisor
     {
         public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request) =>
             throw new NotImplementedException();
+    }
+
+    private sealed class StubDocumentCacheLifecycleReader : IDocumentCacheLifecycleReader
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DocumentCacheLifecycleReadResult.Success(TrackingLifecycle));
+        }
     }
 
     private sealed class NoOpDocumentCacheProjectionScheduler : IDocumentCacheProjectionScheduler
