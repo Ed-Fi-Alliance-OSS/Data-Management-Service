@@ -122,3 +122,8 @@ Completed dependency-injection task for reference/design/backend-redesign/epics/
 Key decisions: removed eager Program startup target refresh so hosted supervisor owns target initialization; backend registration tests assert shared runner/scheduler/observation/workflow services and PG/MSSQL pager/mutex/primitives/session-writer adapters; frontend tests assert single DocumentCache hosted supervisor, observation store aliasing, and provider adapter resolution.
 Files changed: Program.cs; ConfigurationTests.cs; WebApplicationBuilderExtensionsTests.cs; DocumentCacheServiceRegistrationTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Next likely telemetry, then provider/admin/query-plan tests.
+
+Completed telemetry task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added shared projection/admin telemetry over System.Diagnostics.Metrics plus sanitized structured logs; reused observation snapshots for target state/poison/failure counts; command context emits phase/mutation/result and mutex timing without document ids or physical identifiers as labels.
+Files changed: DocumentCacheProjectionTelemetry.cs; DocumentCacheProjectionObservation.cs; DocumentCacheProjectionScheduler.cs; DocumentCacheProjectionItemProcessor.cs; DocumentCacheAdministrativeCommandRunner.cs; ReferenceResolverServiceCollectionExtensions.cs; telemetry/service-registration tests; tasks.json; progress.txt.
+Blockers/notes: none. Next likely provider/admin/query-plan test tasks.

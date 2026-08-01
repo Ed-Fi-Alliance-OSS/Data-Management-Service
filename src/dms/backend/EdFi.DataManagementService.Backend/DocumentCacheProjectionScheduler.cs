@@ -859,11 +859,14 @@ public sealed class DocumentCacheProjectionScheduler(
     IDocumentCacheProjectionDrainPageProcessor drainPageProcessor,
     IDocumentCacheProjectionObservationSink observationSink,
     TimeProvider timeProvider,
-    ILogger<DocumentCacheProjectionScheduler> logger
+    ILogger<DocumentCacheProjectionScheduler> logger,
+    IDocumentCacheProjectionTelemetry? telemetry = null
 ) : IDocumentCacheProjectionScheduler
 {
     private readonly object _rotationSync = new();
     private readonly SemaphoreSlim _workerGate = new(options.Value.Projector.MaxConcurrentTargets);
+    private readonly IDocumentCacheProjectionTelemetry _telemetry =
+        telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
     private ImmutableArray<DocumentCacheProjectionTargetContextKey> _rotation = [];
 
     public async Task<
@@ -956,11 +959,15 @@ public sealed class DocumentCacheProjectionScheduler(
         targetContext.SchedulingState.RecordAdministrativeDrainCompleted(drainResult, startedAt, completedAt);
         ObserveIdleOrBackoff(targetContext, completedAt);
 
-        return DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+        return RecordDispatchResult(
             targetContext,
-            drainResult,
-            startedAt,
-            completedAt
+            DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+                targetContext,
+                drainResult,
+                startedAt,
+                completedAt
+            ),
+            DocumentCacheProjectionDrainInvocationKind.Administrative
         );
     }
 
@@ -1021,6 +1028,11 @@ public sealed class DocumentCacheProjectionScheduler(
                     continue;
                 }
 
+                RecordDispatchResult(
+                    context,
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(context, blockReason.Value, now),
+                    DocumentCacheProjectionDrainInvocationKind.Ordinary
+                );
                 skippedKeys.Add(contextKey);
             }
 
@@ -1068,10 +1080,14 @@ public sealed class DocumentCacheProjectionScheduler(
                 );
             if (blockReason is not null)
             {
-                return DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                return RecordDispatchResult(
                     context,
-                    blockReason.Value,
-                    dispatchStartedAt
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                        context,
+                        blockReason.Value,
+                        dispatchStartedAt
+                    ),
+                    DocumentCacheProjectionDrainInvocationKind.Ordinary
                 );
             }
 
@@ -1116,7 +1132,11 @@ public sealed class DocumentCacheProjectionScheduler(
                     .IsCommandOwned
                     ? DocumentCacheProjectionTargetReadinessBlockReason.CommandOwned
                     : DocumentCacheProjectionTargetReadinessBlockReason.LocalDrainActive;
-                return DocumentCacheProjectionSchedulerDispatchResult.Skipped(context, reason, completedAt);
+                return RecordDispatchResult(
+                    context,
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(context, reason, completedAt),
+                    DocumentCacheProjectionDrainInvocationKind.Ordinary
+                );
             }
 
             context.SchedulingState.RecordOrdinaryDrainCompleted(
@@ -1127,11 +1147,15 @@ public sealed class DocumentCacheProjectionScheduler(
             );
             ObserveIdleOrBackoff(context, completedAt);
 
-            return DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+            return RecordDispatchResult(
                 context,
-                drainResult,
-                startedAt.Value,
-                completedAt
+                DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+                    context,
+                    drainResult,
+                    startedAt.Value,
+                    completedAt
+                ),
+                DocumentCacheProjectionDrainInvocationKind.Ordinary
             );
         }
         catch (OperationCanceledException)
@@ -1152,10 +1176,14 @@ public sealed class DocumentCacheProjectionScheduler(
                     )
                 );
 
-                return DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                return RecordDispatchResult(
                     context,
-                    DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending,
-                    cancelledAt
+                    DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                        context,
+                        DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending,
+                        cancelledAt
+                    ),
+                    DocumentCacheProjectionDrainInvocationKind.Ordinary
                 );
             }
 
@@ -1187,11 +1215,15 @@ public sealed class DocumentCacheProjectionScheduler(
                 context.TargetKey
             );
             ObserveIdleOrBackoff(context, completedAt);
-            return DocumentCacheProjectionSchedulerDispatchResult.Faulted(
+            return RecordDispatchResult(
                 context,
-                faultResult,
-                faultStartedAt,
-                completedAt
+                DocumentCacheProjectionSchedulerDispatchResult.Faulted(
+                    context,
+                    faultResult,
+                    faultStartedAt,
+                    completedAt
+                ),
+                DocumentCacheProjectionDrainInvocationKind.Ordinary
             );
         }
         finally
@@ -1235,6 +1267,16 @@ public sealed class DocumentCacheProjectionScheduler(
                 executionState
             )
         );
+
+    private DocumentCacheProjectionSchedulerDispatchResult RecordDispatchResult(
+        DocumentCacheProjectionTargetRuntimeContext context,
+        DocumentCacheProjectionSchedulerDispatchResult result,
+        DocumentCacheProjectionDrainInvocationKind invocationKind
+    )
+    {
+        _telemetry.RecordSchedulerDispatch(context, result, invocationKind);
+        return result;
+    }
 }
 
 internal static class DocumentCacheProjectionTargetHealthSnapshotFactory

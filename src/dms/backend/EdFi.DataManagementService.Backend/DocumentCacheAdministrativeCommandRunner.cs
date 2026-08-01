@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using Microsoft.Extensions.Logging;
@@ -149,6 +150,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
 internal sealed class DocumentCacheAdministrativeCommandExecutionContext
 {
     private readonly IDocumentCacheProjectionObservationSink _observationSink;
+    private readonly IDocumentCacheProjectionTelemetry _telemetry;
     private readonly TimeProvider _timeProvider;
     private ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> _phaseDiagnostics = [];
 
@@ -161,7 +163,8 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         IDocumentCacheProjectionObservationSink observationSink,
         TimeProvider timeProvider,
         DateTimeOffset startedAt,
-        CancellationToken workflowCancellationToken
+        CancellationToken workflowCancellationToken,
+        IDocumentCacheProjectionTelemetry? telemetry = null
     )
     {
         ExecutionId = executionId ?? throw new ArgumentNullException(nameof(executionId));
@@ -170,6 +173,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         MutexLease = mutexLease ?? throw new ArgumentNullException(nameof(mutexLease));
         Primitives = primitives ?? throw new ArgumentNullException(nameof(primitives));
         _observationSink = observationSink ?? throw new ArgumentNullException(nameof(observationSink));
+        _telemetry = telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         StartedAt = startedAt;
         WorkflowCancellationToken = workflowCancellationToken;
@@ -243,6 +247,10 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         }
 
         Observe();
+        _telemetry.RecordAdministrativeCommandMutation(
+            CreateObservationSnapshot(),
+            TargetContext.TargetExecutionContext.ProviderToken
+        );
     }
 
     public void AddPhaseDiagnostic(
@@ -336,28 +344,34 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
 
     internal void Observe()
     {
-        _observationSink.ObserveAdministrativeCommand(
-            new DocumentCacheAdministrativeCommandObservationSnapshot(
-                ExecutionId,
-                Request.Command,
-                TargetContext.TargetKey,
-                TargetContext.Generation,
-                TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize,
-                TargetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout,
-                StartedAt,
-                _timeProvider.GetUtcNow(),
-                CurrentPhase,
-                LastCompletedPhase,
-                Mutated,
-                TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
-                ObservedLifecycle?.State,
-                ObservedLifecycle?.CacheAheadRecoveryRequired,
-                Request.OfflineWriterAdmission,
-                ElapsedCommandTime,
-                _phaseDiagnostics
-            )
+        DocumentCacheAdministrativeCommandObservationSnapshot snapshot = CreateObservationSnapshot();
+        _observationSink.ObserveAdministrativeCommand(snapshot);
+        _telemetry.RecordAdministrativeCommandObservation(
+            snapshot,
+            TargetContext.TargetExecutionContext.ProviderToken
         );
     }
+
+    private DocumentCacheAdministrativeCommandObservationSnapshot CreateObservationSnapshot() =>
+        new(
+            ExecutionId,
+            Request.Command,
+            TargetContext.TargetKey,
+            TargetContext.Generation,
+            TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize,
+            TargetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout,
+            StartedAt,
+            _timeProvider.GetUtcNow(),
+            CurrentPhase,
+            LastCompletedPhase,
+            Mutated,
+            TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
+            ObservedLifecycle?.State,
+            ObservedLifecycle?.CacheAheadRecoveryRequired,
+            Request.OfflineWriterAdmission,
+            ElapsedCommandTime,
+            _phaseDiagnostics
+        );
 
     private static DocumentCacheAdministrativeCommandPhase RequireDefinedPhase(
         DocumentCacheAdministrativeCommandPhase phase
@@ -379,9 +393,13 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     IDocumentCacheAdministrativePrimitives primitives,
     IDocumentCacheProjectionObservationSink observationSink,
     TimeProvider timeProvider,
-    ILogger<DocumentCacheAdministrativeCommandRunner> logger
+    ILogger<DocumentCacheAdministrativeCommandRunner> logger,
+    IDocumentCacheProjectionTelemetry? telemetry = null
 ) : IDocumentCacheAdministrativeCommandRunner
 {
+    private readonly IDocumentCacheProjectionTelemetry _telemetry =
+        telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
+
     public async Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
         DocumentCacheAdministrativeCommandRunnerRequest request,
         IDocumentCacheAdministrativeCommandWorkflow workflow,
@@ -394,48 +412,83 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         PinnedTargetResolution pinnedTargetResolution = TryResolvePinnedTarget(request);
         if (pinnedTargetResolution.Rejection is not null)
         {
-            return pinnedTargetResolution.Rejection;
+            return RecordAdministrativeCommandResult(pinnedTargetResolution.Rejection);
         }
 
         DocumentCacheProjectionTargetRuntimeContext targetContext = pinnedTargetResolution.TargetContext!;
         if (administrativeMutex.ProviderToken != targetContext.TargetExecutionContext.ProviderToken)
         {
-            return CreateProviderMismatchResult(request, targetContext);
+            return RecordAdministrativeCommandResult(
+                CreateProviderMismatchResult(request, targetContext),
+                targetContext
+            );
         }
 
         if (primitives.ProviderToken != targetContext.TargetExecutionContext.ProviderToken)
         {
-            return CreateProviderMismatchResult(request, targetContext);
+            return RecordAdministrativeCommandResult(
+                CreateProviderMismatchResult(request, targetContext),
+                targetContext
+            );
         }
 
         DocumentCacheAdministrativeCommandExecutionId executionId =
             DocumentCacheAdministrativeCommandExecutionId.New();
 
         IDocumentCacheAdministrativeMutexLease mutexLease;
+        long mutexStartedAt = Stopwatch.GetTimestamp();
         try
         {
             mutexLease = await administrativeMutex
                 .AcquireAsync(targetContext.TargetExecutionContext.ConnectionInput, cancellationToken)
                 .ConfigureAwait(false);
+            RecordAdministrativeMutexOutcome(
+                request,
+                targetContext,
+                DocumentCacheAdministrativeCommandClassification.Succeeded.ToString(),
+                category: null,
+                mutexStartedAt
+            );
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return CreateAcquireMutexFailure(
+            RecordAdministrativeMutexOutcome(
                 request,
                 targetContext,
-                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
                 DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                "DocumentCache administrative mutex acquisition was cancelled."
+                mutexStartedAt
+            );
+            return RecordAdministrativeCommandResult(
+                CreateAcquireMutexFailure(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                    "DocumentCache administrative mutex acquisition was cancelled."
+                ),
+                targetContext
             );
         }
         catch (OperationCanceledException)
         {
-            return CreateAcquireMutexFailure(
+            RecordAdministrativeMutexOutcome(
                 request,
                 targetContext,
-                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
                 DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                "DocumentCache administrative mutex acquisition was cancelled by the provider."
+                mutexStartedAt
+            );
+            return RecordAdministrativeCommandResult(
+                CreateAcquireMutexFailure(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                    "DocumentCache administrative mutex acquisition was cancelled by the provider."
+                ),
+                targetContext,
+                DocumentCacheAdministrativeCommandPhase.AcquireMutex
             );
         }
         catch (Exception exception)
@@ -446,12 +499,22 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 request.Command,
                 request.TargetKey.TargetKey
             );
-            return CreateAcquireMutexFailure(
+            RecordAdministrativeMutexOutcome(
                 request,
                 targetContext,
-                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionFailed,
+                DocumentCacheAdministrativeCommandClassification.MutexAcquisitionFailed.ToString(),
                 DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionFailed,
-                "DocumentCache administrative mutex acquisition failed."
+                mutexStartedAt
+            );
+            return RecordAdministrativeCommandResult(
+                CreateAcquireMutexFailure(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionFailed,
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionFailed,
+                    "DocumentCache administrative mutex acquisition failed."
+                ),
+                targetContext
             );
         }
 
@@ -476,7 +539,8 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 observationSink,
                 timeProvider,
                 startedAt,
-                workflowTimeout.Token
+                workflowTimeout.Token,
+                _telemetry
             );
 
             commandContext.Observe();
@@ -502,15 +566,24 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     )
                     .ConfigureAwait(false);
 
-                return AddRuntimeResultFields(result, commandContext);
+                return RecordAdministrativeCommandResult(
+                    AddRuntimeResultFields(result, commandContext),
+                    commandContext
+                );
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                return CreateCancellationResult(commandContext);
+                return RecordAdministrativeCommandResult(
+                    CreateCancellationResult(commandContext),
+                    commandContext
+                );
             }
             catch (OperationCanceledException) when (workflowTimeout.IsCancellationRequested)
             {
-                return CreateWorkflowTimeoutResult(commandContext);
+                return RecordAdministrativeCommandResult(
+                    CreateWorkflowTimeoutResult(commandContext),
+                    commandContext
+                );
             }
             catch (DocumentCacheAdministrativeMutexSessionLostException exception)
             {
@@ -520,7 +593,10 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     request.Command,
                     request.TargetKey.TargetKey
                 );
-                return CreateSessionLossResult(commandContext);
+                return RecordAdministrativeCommandResult(
+                    CreateSessionLossResult(commandContext),
+                    commandContext
+                );
             }
             catch (TimeoutException exception)
             {
@@ -530,7 +606,10 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     request.Command,
                     request.TargetKey.TargetKey
                 );
-                return CreateProviderTimeoutResult(commandContext);
+                return RecordAdministrativeCommandResult(
+                    CreateProviderTimeoutResult(commandContext),
+                    commandContext
+                );
             }
             catch (Exception exception)
             {
@@ -540,7 +619,10 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     request.Command,
                     request.TargetKey.TargetKey
                 );
-                return CreateUnexpectedFailureResult(commandContext);
+                return RecordAdministrativeCommandResult(
+                    CreateUnexpectedFailureResult(commandContext),
+                    commandContext
+                );
             }
             finally
             {
@@ -548,6 +630,55 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             }
         }
     }
+
+    private DocumentCacheAdministrativeCommandResult RecordAdministrativeCommandResult(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheProjectionTargetRuntimeContext? targetContext = null,
+        DocumentCacheAdministrativeCommandPhase? currentPhase = null
+    )
+    {
+        _telemetry.RecordAdministrativeCommandResult(
+            result,
+            targetContext?.TargetExecutionContext.ProviderToken,
+            targetContext?.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout,
+            currentPhase
+        );
+        return result;
+    }
+
+    private DocumentCacheAdministrativeCommandResult RecordAdministrativeCommandResult(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheAdministrativeCommandExecutionContext commandContext
+    )
+    {
+        _telemetry.RecordAdministrativeCommandResult(
+            result,
+            commandContext.TargetContext.TargetExecutionContext.ProviderToken,
+            commandContext
+                .TargetContext
+                .TargetExecutionContext
+                .EffectiveSettings
+                .AdministrationWorkflowTimeout,
+            commandContext.CurrentPhase
+        );
+        return result;
+    }
+
+    private void RecordAdministrativeMutexOutcome(
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        string outcome,
+        DocumentCacheAdministrativeDiagnosticCategory? category,
+        long mutexStartedAt
+    ) =>
+        _telemetry.RecordAdministrativeMutexOutcome(
+            request.Command,
+            targetContext.TargetKey,
+            targetContext.TargetExecutionContext.ProviderToken,
+            outcome,
+            category,
+            DocumentCacheProjectionTelemetry.GetElapsedTime(mutexStartedAt)
+        );
 
     private async Task<DocumentCacheAdministrativeCommandResult> ExecutePinnedCommandAsync(
         DocumentCacheAdministrativeCommandExecutionContext commandContext,

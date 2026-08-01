@@ -163,13 +163,16 @@ internal sealed record DocumentCacheProjectionItemProcessResult
 
 internal sealed class DocumentCacheProjectionItemProcessor(
     TimeProvider timeProvider,
-    ILogger<DocumentCacheProjectionItemProcessor> logger
+    ILogger<DocumentCacheProjectionItemProcessor> logger,
+    IDocumentCacheProjectionTelemetry? telemetry = null
 ) : IDocumentCacheProjectionItemProcessor
 {
     private readonly TimeProvider _timeProvider =
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     private readonly ILogger<DocumentCacheProjectionItemProcessor> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IDocumentCacheProjectionTelemetry _telemetry =
+        telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
 
     public async Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
         DocumentCacheProjectionItemProcessRequest request,
@@ -198,6 +201,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                 .ConfigureAwait(false);
             if (fastPathResult.AdministrativeFailure is not null)
             {
+                RecordAdministrativeFailureOutcome(request, fastPathResult.AdministrativeFailure);
                 return DocumentCacheProjectionItemProcessResult.FromAdministrativeFailure(
                     fastPathResult.AdministrativeFailure
                 );
@@ -219,15 +223,25 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         }
         catch (DocumentCacheProjectionProcessingException exception)
         {
-            return PauseTargetForDeterministicFailure(targetContext, workItem, exception);
+            return PauseTargetForDeterministicFailure(
+                targetContext,
+                workItem,
+                request.InvocationKind,
+                exception
+            );
         }
         catch (DocumentCacheTargetMappingException exception)
         {
-            return PauseTargetForDeterministicFailure(targetContext, workItem, exception);
+            return PauseTargetForDeterministicFailure(
+                targetContext,
+                workItem,
+                request.InvocationKind,
+                exception
+            );
         }
         catch (Exception exception)
         {
-            return TargetBackoffForProviderFailure(targetContext, exception);
+            return TargetBackoffForProviderFailure(targetContext, request.InvocationKind, exception);
         }
     }
 
@@ -241,6 +255,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
     )
     {
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
+        RecordWriterOutcome(targetContext, invocationKind, writerResult);
         switch (writerResult)
         {
             case DocumentCacheWriterResult.AlreadyCurrentAcknowledged:
@@ -262,6 +277,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     targetContext,
                     workItem,
                     writerResult,
+                    invocationKind,
                     observedAt
                 );
 
@@ -359,6 +375,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     targetContext,
                     workItem,
                     writerResult,
+                    invocationKind,
                     observedAt
                 );
         }
@@ -388,6 +405,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
 
             if (materializationResult is not DocumentCacheMaterializationResult.Success success)
             {
+                RecordMaterializerOutcome(targetContext, invocationKind, materializationResult);
                 LogContinuingMaterializerOutcome(targetContext, materializationResult);
                 return DocumentCacheProjectionItemProcessResult.Continue;
             }
@@ -401,6 +419,10 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                 .ConfigureAwait(false);
             if (candidateResult.AdministrativeFailure is not null)
             {
+                RecordAdministrativeFailureOutcome(
+                    new DocumentCacheProjectionItemProcessRequest(targetContext, workItem, invocationKind),
+                    candidateResult.AdministrativeFailure
+                );
                 return DocumentCacheProjectionItemProcessResult.FromAdministrativeFailure(
                     candidateResult.AdministrativeFailure
                 );
@@ -422,25 +444,32 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         }
         catch (DocumentCacheProjectionProcessingException exception)
         {
-            return PauseTargetForDeterministicFailure(targetContext, workItem, exception);
+            return PauseTargetForDeterministicFailure(targetContext, workItem, invocationKind, exception);
         }
         catch (DocumentCacheTargetMappingException exception)
         {
-            return PauseTargetForDeterministicFailure(targetContext, workItem, exception);
+            return PauseTargetForDeterministicFailure(targetContext, workItem, invocationKind, exception);
         }
         catch (Exception exception)
         {
-            return TargetBackoffForProviderFailure(targetContext, exception);
+            return TargetBackoffForProviderFailure(targetContext, invocationKind, exception);
         }
     }
 
     private DocumentCacheProjectionItemProcessResult PauseTargetForDeterministicFailure(
         DocumentCacheProjectionTargetRuntimeContext targetContext,
         DocumentProjectionWorkPageItem workItem,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
         Exception exception
     )
     {
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
+        _telemetry.RecordItemOutcome(
+            targetContext,
+            invocationKind,
+            DocumentCacheProjectionTelemetryLabel.TargetPaused,
+            DocumentCacheProjectionDocumentDiagnosticCategory.DeterministicInvariantFailure.ToString()
+        );
         RecordDocumentFailure(
             targetContext,
             workItem,
@@ -474,9 +503,16 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         DocumentCacheProjectionTargetRuntimeContext targetContext,
         DocumentProjectionWorkPageItem workItem,
         DocumentCacheWriterResult writerResult,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
         DateTimeOffset observedAt
     )
     {
+        _telemetry.RecordItemOutcome(
+            targetContext,
+            invocationKind,
+            DocumentCacheProjectionTelemetryLabel.TargetPaused,
+            DocumentCacheProjectionDocumentDiagnosticCategory.DeterministicInvariantFailure.ToString()
+        );
         RecordDocumentFailure(
             targetContext,
             workItem,
@@ -508,12 +544,19 @@ internal sealed class DocumentCacheProjectionItemProcessor(
 
     private DocumentCacheProjectionItemProcessResult TargetBackoffForProviderFailure(
         DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
         Exception exception
     )
     {
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
         DateTimeOffset backoffUntil =
             observedAt + targetContext.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff;
+        _telemetry.RecordItemOutcome(
+            targetContext,
+            invocationKind,
+            DocumentCacheProjectionDrainPageOutcome.TargetBackoff.ToString(),
+            DocumentCacheProjectionTelemetryLabel.ProviderFailure
+        );
         _logger.LogError(
             exception,
             "DocumentCache projection target {TargetKey} hit a provider/runtime failure while processing an item; target backoff applies.",
@@ -752,6 +795,49 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             "DocumentCache projection observed materializer outcome {Outcome} for target {TargetKey}; no projector acknowledgement or repair was attempted.",
             materializationResult.GetType().Name,
             LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+        );
+
+    private void RecordWriterOutcome(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
+        DocumentCacheWriterResult writerResult
+    )
+    {
+        DocumentCacheLifecycleState? lifecycle = writerResult
+            is DocumentCacheWriterResult.LifecycleOrLatchFenced fence
+            ? fence.LifecycleState
+            : DocumentCacheWriterTelemetry.TryGetLifecycle(writerResult);
+
+        _telemetry.RecordItemOutcome(
+            targetContext,
+            invocationKind,
+            writerResult.Outcome.ToString(),
+            DocumentCacheProjectionTelemetryLabel.WriterOutcome,
+            lifecycle
+        );
+    }
+
+    private void RecordMaterializerOutcome(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
+        DocumentCacheMaterializationResult materializationResult
+    ) =>
+        _telemetry.RecordItemOutcome(
+            targetContext,
+            invocationKind,
+            materializationResult.GetType().Name,
+            DocumentCacheProjectionTelemetryLabel.MaterializerOutcome
+        );
+
+    private void RecordAdministrativeFailureOutcome(
+        DocumentCacheProjectionItemProcessRequest request,
+        DocumentCacheAdministrativeDrainFailure failure
+    ) =>
+        _telemetry.RecordItemOutcome(
+            request.TargetContext,
+            request.InvocationKind,
+            failure.Classification.ToString(),
+            failure.DiagnosticCategory.ToString()
         );
 }
 

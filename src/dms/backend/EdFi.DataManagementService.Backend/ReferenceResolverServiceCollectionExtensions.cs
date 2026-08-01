@@ -90,6 +90,9 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheWriterTelemetry, DocumentCacheWriterTelemetry>()
         );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>()
+        );
         services.TryAddSingleton(TimeProvider.System);
         services.TryAdd(
             ServiceDescriptor.Singleton<

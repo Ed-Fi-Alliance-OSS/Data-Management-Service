@@ -778,6 +778,7 @@ public sealed class DocumentCacheProjectionObservationStore
 {
     private readonly object _sync = new();
     private readonly TimeProvider _timeProvider;
+    private readonly IDocumentCacheProjectionTelemetry _telemetry;
 
     private ImmutableDictionary<
         DocumentCacheTargetKey,
@@ -801,9 +802,13 @@ public sealed class DocumentCacheProjectionObservationStore
     public DocumentCacheProjectionObservationStore()
         : this(TimeProvider.System) { }
 
-    public DocumentCacheProjectionObservationStore(TimeProvider timeProvider)
+    public DocumentCacheProjectionObservationStore(
+        TimeProvider timeProvider,
+        IDocumentCacheProjectionTelemetry? telemetry = null
+    )
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _telemetry = telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
     }
 
     public DocumentCacheProjectionObservationSnapshot CurrentSnapshot
@@ -852,6 +857,8 @@ public sealed class DocumentCacheProjectionObservationStore
 
             _currentTargets = _currentTargets.SetItem(snapshot.TargetKey, snapshot);
         }
+
+        _telemetry.RecordTargetObservation(snapshot);
     }
 
     public void EndTargetContext(
