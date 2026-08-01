@@ -178,6 +178,22 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
     private const int MaximumPageSize = 500;
+
+    /// <summary>
+    /// The descriptor URIs the descriptor-filter tests query by. <c>schoolTypeDescriptor</c> is a
+    /// root-level descriptor on <c>edfi.School</c>, so the compiled query capability binds it to
+    /// <c>RelationalQueryFieldTarget.DescriptorIdColumn</c> — the only query target that resolves a
+    /// reference at request time.
+    /// </summary>
+    private const string RegularSchoolTypeDescriptorUri = "uri://ed-fi.org/SchoolTypeDescriptor#Regular";
+    private const string AlternativeSchoolTypeDescriptorUri =
+        "uri://ed-fi.org/SchoolTypeDescriptor#Alternative";
+    private const string CaseVariantRegularSchoolTypeDescriptorUri =
+        "URI://ED-FI.org/SchoolTYPEDescriptor#rEgUlAr";
+    private const string UnseededSchoolTypeDescriptorUri = "uri://ed-fi.org/SchoolTypeDescriptor#Nonexistent";
+    private const string CharterStatusDescriptorUri =
+        "uri://ed-fi.org/CharterStatusDescriptor#School Charter";
+
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
@@ -198,6 +214,17 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         ),
     ];
 
+    /// <summary>
+    /// Two of the three seeded schools share a school type so a descriptor-URI filter has to both
+    /// include and exclude.
+    /// </summary>
+    private static readonly Dictionary<int, string> _schoolTypeDescriptorUriBySchoolId = new()
+    {
+        [255901] = RegularSchoolTypeDescriptorUri,
+        [255902] = AlternativeSchoolTypeDescriptorUri,
+        [255903] = RegularSchoolTypeDescriptorUri,
+    };
+
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
@@ -212,6 +239,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     private long _educationOrganizationCategoryDescriptorId;
     private long _ninthGradeLevelDescriptorId;
     private long _tenthGradeLevelDescriptorId;
+    private readonly Dictionary<string, long> _descriptorIdBySchoolTypeUri = [];
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -388,6 +416,158 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
         AssertSingleQueryHydration();
         AssertPageMaterialization(expectedSchool.DocumentId);
+    }
+
+    [Test]
+    public async Task It_filters_by_a_descriptor_uri_and_returns_only_matching_resources()
+    {
+        var expectedSchools = _persistedSchoolsInDocumentOrder
+            .Where(school =>
+                _schoolTypeDescriptorUriBySchoolId[school.SchoolId] == RegularSchoolTypeDescriptorUri
+            )
+            .ToArray();
+
+        expectedSchools.Should().HaveCount(2);
+
+        var result = await ExecuteQueryAsync(
+            [
+                CreateQueryElement(
+                    "schoolTypeDescriptor",
+                    "$.schoolTypeDescriptor",
+                    RegularSchoolTypeDescriptorUri
+                ),
+            ],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-descriptor-filter"
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(2);
+        success
+            .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(expectedSchools.Select(school => school.DocumentUuid.ToString()));
+        success
+            .EdfiDocs.Select(document => document!["schoolTypeDescriptor"]!.GetValue<string>())
+            .Should()
+            .AllBe(RegularSchoolTypeDescriptorUri);
+
+        AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
+        AssertPageMaterialization(expectedSchools.Select(school => school.DocumentId).ToArray());
+    }
+
+    [Test]
+    public async Task It_matches_a_case_variant_descriptor_uri_against_the_stored_descriptor()
+    {
+        // The stored descriptor URI keeps its original casing; the preprocessor lower-cases the query
+        // value before resolution, so a case-variant filter has to return exactly the same page.
+        var expectedSchools = _persistedSchoolsInDocumentOrder
+            .Where(school =>
+                _schoolTypeDescriptorUriBySchoolId[school.SchoolId] == RegularSchoolTypeDescriptorUri
+            )
+            .ToArray();
+
+        CaseVariantRegularSchoolTypeDescriptorUri.Should().NotBe(RegularSchoolTypeDescriptorUri);
+        CaseVariantRegularSchoolTypeDescriptorUri
+            .ToLowerInvariant()
+            .Should()
+            .Be(RegularSchoolTypeDescriptorUri.ToLowerInvariant());
+
+        var result = await ExecuteQueryAsync(
+            [
+                CreateQueryElement(
+                    "schoolTypeDescriptor",
+                    "$.schoolTypeDescriptor",
+                    CaseVariantRegularSchoolTypeDescriptorUri
+                ),
+            ],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-descriptor-filter-case-variant"
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(2);
+        success
+            .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(expectedSchools.Select(school => school.DocumentUuid.ToString()));
+        success
+            .EdfiDocs.Select(document => document!["schoolTypeDescriptor"]!.GetValue<string>())
+            .Should()
+            .AllBe(RegularSchoolTypeDescriptorUri);
+
+        AssertPageMaterialization(expectedSchools.Select(school => school.DocumentId).ToArray());
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_for_a_descriptor_uri_that_does_not_exist()
+    {
+        var totalCountResult = await ExecuteQueryAsync(
+            [
+                CreateQueryElement(
+                    "schoolTypeDescriptor",
+                    "$.schoolTypeDescriptor",
+                    UnseededSchoolTypeDescriptorUri
+                ),
+            ],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-descriptor-filter-missing-total-count"
+        );
+
+        totalCountResult.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        AssertNoQueryExecution();
+
+        _recorder.Reset();
+
+        var withoutTotalCountResult = await ExecuteQueryAsync(
+            [
+                CreateQueryElement(
+                    "schoolTypeDescriptor",
+                    "$.schoolTypeDescriptor",
+                    UnseededSchoolTypeDescriptorUri
+                ),
+            ],
+            limit: 25,
+            offset: 0,
+            totalCount: false,
+            traceId: "mssql-query-descriptor-filter-missing"
+        );
+
+        withoutTotalCountResult.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], null));
+        AssertNoQueryExecution();
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_for_a_descriptor_uri_of_another_descriptor_type()
+    {
+        // The URI exists, but as a CharterStatusDescriptor rather than the SchoolTypeDescriptor the
+        // query field targets. The referential-id resolver reported this as Missing and the natural-key
+        // resolver reports DescriptorTypeMismatch; both short-circuit to the same 200 empty page, so the
+        // reason-code delta stays invisible at the query surface.
+        var result = await ExecuteQueryAsync(
+            [
+                CreateQueryElement(
+                    "schoolTypeDescriptor",
+                    "$.schoolTypeDescriptor",
+                    CharterStatusDescriptorUri
+                ),
+            ],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-descriptor-filter-wrong-type"
+        );
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        AssertNoQueryExecution();
     }
 
     [Test]
@@ -626,6 +806,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             FROM [dms].[Document] doc
             INNER JOIN [{physicalSchema}].[School] school
                 ON school.[DocumentId] = doc.[DocumentId]
+            INNER JOIN [dms].[Descriptor] schoolType
+                ON schoolType.[DocumentId] = school.[SchoolTypeDescriptor_DescriptorId]
             WHERE doc.[ResourceKeyId] = @resourceKeyId
             ORDER BY doc.[DocumentId];
             """,
@@ -700,6 +882,36 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             "Tenth grade",
             "Tenth grade"
         );
+        _descriptorIdBySchoolTypeUri[RegularSchoolTypeDescriptorUri] = await SeedDescriptorAsync(
+            Guid.Parse("70777777-7777-7777-7777-777777777777"),
+            "SchoolTypeDescriptor",
+            "SchoolTypeDescriptor",
+            RegularSchoolTypeDescriptorUri,
+            "uri://ed-fi.org/SchoolTypeDescriptor",
+            "Regular",
+            "Regular"
+        );
+        _descriptorIdBySchoolTypeUri[AlternativeSchoolTypeDescriptorUri] = await SeedDescriptorAsync(
+            Guid.Parse("80888888-8888-8888-8888-888888888888"),
+            "SchoolTypeDescriptor",
+            "SchoolTypeDescriptor",
+            AlternativeSchoolTypeDescriptorUri,
+            "uri://ed-fi.org/SchoolTypeDescriptor",
+            "Alternative",
+            "Alternative"
+        );
+
+        // Seeded only so the wrong-descriptor-type filter names a URI that really exists. No school
+        // references it, so a resource query filtered by it can only ever produce an empty page.
+        await SeedDescriptorAsync(
+            Guid.Parse("90999999-9999-9999-9999-999999999999"),
+            "CharterStatusDescriptor",
+            "CharterStatusDescriptor",
+            CharterStatusDescriptorUri,
+            "uri://ed-fi.org/CharterStatusDescriptor",
+            "School Charter",
+            "School Charter"
+        );
     }
 
     private async Task<long> SeedDescriptorAsync(
@@ -741,7 +953,12 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             "edfi",
             "School",
             async () =>
-                await InsertSchoolAsync(documentId, schoolSeed.SchoolId, schoolSeed.NameOfInstitution),
+                await InsertSchoolAsync(
+                    documentId,
+                    schoolSeed.SchoolId,
+                    schoolSeed.NameOfInstitution,
+                    _descriptorIdBySchoolTypeUri[_schoolTypeDescriptorUriBySchoolId[schoolSeed.SchoolId]]
+                ),
             mirrorMetadataForDocumentId: documentId
         );
         await InsertSchoolExtensionAsync(documentId, isExemplary: true);
@@ -786,6 +1003,17 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _recorder.PageMaterializationCallCount.Should().Be(1);
         _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
         _recorder.PageMaterializedDocumentIds.Should().Equal(expectedDocumentIds);
+    }
+
+    /// <summary>
+    /// Pins the preprocessing short-circuit: an empty page produced before planning never hydrates and
+    /// never materializes, which is what distinguishes it from a page query that simply matched no rows.
+    /// </summary>
+    private void AssertNoQueryExecution()
+    {
+        _recorder.HydrationKeysets.Should().BeEmpty();
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
     }
 
     private static void AssertSchoolQueryDocument(JsonNode? document, PersistedQuerySchool expectedSchool)
@@ -887,16 +1115,27 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         );
     }
 
-    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    private async Task InsertSchoolAsync(
+        long documentId,
+        int schoolId,
+        string nameOfInstitution,
+        long schoolTypeDescriptorId
+    )
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            INSERT INTO [edfi].[School] (
+                [DocumentId],
+                [NameOfInstitution],
+                [SchoolId],
+                [SchoolTypeDescriptor_DescriptorId]
+            )
+            VALUES (@documentId, @nameOfInstitution, @schoolId, @schoolTypeDescriptorId);
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
-            new SqlParameter("@schoolId", schoolId)
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@schoolTypeDescriptorId", schoolTypeDescriptorId)
         );
     }
 
