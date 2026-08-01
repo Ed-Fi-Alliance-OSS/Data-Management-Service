@@ -40,6 +40,12 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>()
         );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeMutex,
+                MssqlDocumentCacheAdministrativeMutex
+            >()
+        );
 
         services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,

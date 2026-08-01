@@ -41,6 +41,12 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>()
         );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeMutex,
+                PostgresqlDocumentCacheAdministrativeMutex
+            >()
+        );
 
         services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,

@@ -66,6 +66,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
         var documentProjectionWorkPager =
             scope.ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>();
+        var documentCacheAdministrativeMutex =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>();
         var documentCacheProjectionDrainPageProcessor =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
@@ -103,6 +105,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         documentCacheWriter.Should().BeOfType<PostgresqlDocumentCacheWriter>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         documentProjectionWorkPager.Should().BeOfType<PostgresqlDocumentProjectionWorkPager>();
+        documentCacheAdministrativeMutex.Should().BeOfType<PostgresqlDocumentCacheAdministrativeMutex>();
         documentCacheProjectionDrainPageProcessor
             .Should()
             .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
@@ -151,6 +154,15 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
                 && descriptor.ImplementationType == typeof(PostgresqlDocumentProjectionWorkPager)
             );
         services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentCacheAdministrativeMutex))
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Singleton
+                && descriptor.ImplementationType == typeof(PostgresqlDocumentCacheAdministrativeMutex)
+            );
+        services
             .Single(descriptor =>
                 descriptor.ServiceType == typeof(IDocumentCacheProjectionDrainPageProcessor)
             )
@@ -168,6 +180,10 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             .ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>()
             .Should()
             .BeOfType<PostgresqlDocumentProjectionWorkPager>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>()
+            .Should()
+            .BeOfType<PostgresqlDocumentCacheAdministrativeMutex>();
     }
 
     [Test]

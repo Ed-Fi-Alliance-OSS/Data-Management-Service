@@ -62,6 +62,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheWriterRetryAdapter>();
         var documentProjectionWorkPager =
             scope.ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>();
+        var documentCacheAdministrativeMutex =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>();
         var documentCacheProjectionDrainPageProcessor =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
@@ -98,6 +100,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheWriter.Should().BeOfType<MssqlDocumentCacheWriter>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         documentProjectionWorkPager.Should().BeOfType<MssqlDocumentProjectionWorkPager>();
+        documentCacheAdministrativeMutex.Should().BeOfType<MssqlDocumentCacheAdministrativeMutex>();
         documentCacheProjectionDrainPageProcessor
             .Should()
             .BeOfType<DocumentCacheProjectionDrainPageProcessor>();
@@ -143,6 +146,15 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
                 && descriptor.ImplementationType == typeof(MssqlDocumentProjectionWorkPager)
             );
         services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentCacheAdministrativeMutex))
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Singleton
+                && descriptor.ImplementationType == typeof(MssqlDocumentCacheAdministrativeMutex)
+            );
+        services
             .Single(descriptor =>
                 descriptor.ServiceType == typeof(IDocumentCacheProjectionDrainPageProcessor)
             )
@@ -160,6 +172,10 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>()
             .Should()
             .BeOfType<MssqlDocumentProjectionWorkPager>();
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>()
+            .Should()
+            .BeOfType<MssqlDocumentCacheAdministrativeMutex>();
     }
 
     [Test]
