@@ -568,6 +568,115 @@ public class DocumentCacheTargetRegistryTests
         }
 
         [Test]
+        public async Task It_retries_recoverable_SqlServerDocumentCachePrerequisite_failures_without_replacing_the_generation()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.ContextBuilder.QueueProviderPrerequisiteFailure(DocumentCacheLifecycleState.Disabled);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+            DocumentCacheTargetRegistrySnapshot initialSnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.Startup
+            );
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+
+            DocumentCacheTargetRegistrySnapshot retrySnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered
+            );
+
+            initialSnapshot
+                .Targets.Single()
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.Category == DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+                );
+            DocumentCacheTargetObservation retriedObservation = retrySnapshot.Targets.Single();
+            retriedObservation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
+            retriedObservation.Generation!.Value.Should().Be(1);
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 1);
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(1)
+                )
+                .Should()
+                .NotBeNull();
+        }
+
+        [Test]
+        public async Task It_freezes_unsupported_SqlServerDocumentCachePrerequisite_incidents_for_the_same_generation()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.ContextBuilder.QueueProviderPrerequisiteFailure(DocumentCacheLifecycleState.Tracking);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+
+            DocumentCacheTargetRegistrySnapshot retrySnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered
+            );
+
+            DocumentCacheTargetObservation observation = retrySnapshot.Targets.Single();
+            observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Ineligible);
+            observation.Generation!.Value.Should().Be(1);
+            observation
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.Category
+                    == DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident
+                );
+            fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
+            fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_allows_replacement_metadata_to_revalidate_after_unsupported_SqlServerDocumentCachePrerequisite_incidents()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.ContextBuilder.QueueProviderPrerequisiteFailure(DocumentCacheLifecycleState.Tracking);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-b", RelationalProviderToken.SqlServer)
+            );
+
+            DocumentCacheTargetRegistrySnapshot replacementSnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.CmsRefreshNotification
+            );
+
+            DocumentCacheTargetObservation observation = replacementSnapshot.Targets.Single();
+            observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
+            observation.Generation!.Value.Should().Be(2);
+            observation
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TargetReplaced
+                );
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 2);
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(2)
+                )
+                .Should()
+                .NotBeNull();
+        }
+
+        [Test]
         public async Task It_creates_a_new_generation_when_the_connection_factory_input_changes()
         {
             RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
@@ -873,6 +982,7 @@ public class DocumentCacheTargetRegistryTests
     private sealed class RecordingTargetContextBuilder : IDocumentCacheTargetContextBuilder
     {
         private readonly HashSet<DocumentCacheTargetKey> _ineligibleTargetKeys = [];
+        private readonly Queue<DocumentCacheLifecycleState> _queuedProviderPrerequisiteFailures = new();
 
         public List<BuildCall> BuildCalls { get; } = [];
 
@@ -882,6 +992,9 @@ public class DocumentCacheTargetRegistryTests
 
             _ineligibleTargetKeys.Add(targetKey);
         }
+
+        public void QueueProviderPrerequisiteFailure(DocumentCacheLifecycleState lifecycleState) =>
+            _queuedProviderPrerequisiteFailures.Enqueue(lifecycleState);
 
         public Task<DocumentCacheTargetContextBuildResult> BuildAsync(
             DocumentCacheTargetKey targetKey,
@@ -898,6 +1011,20 @@ public class DocumentCacheTargetRegistryTests
             {
                 return Task.FromResult(
                     CreateProviderMetadataBuildResult(targetKey, resolvedDataStore, generation)
+                );
+            }
+
+            if (
+                _queuedProviderPrerequisiteFailures.TryDequeue(out DocumentCacheLifecycleState lifecycleState)
+            )
+            {
+                return Task.FromResult(
+                    CreateProviderPrerequisiteBuildResult(
+                        targetKey,
+                        resolvedDataStore,
+                        generation,
+                        lifecycleState
+                    )
                 );
             }
 
@@ -947,6 +1074,64 @@ public class DocumentCacheTargetRegistryTests
                 inventory: null,
                 enqueueTrigger: null,
                 sqlServerPrerequisites: null,
+                retryState: null,
+                [diagnostic]
+            );
+
+            return new DocumentCacheTargetContextBuildResult(observation, ExecutionContext: null);
+        }
+
+        private static DocumentCacheTargetContextBuildResult CreateProviderPrerequisiteBuildResult(
+            DocumentCacheTargetKey targetKey,
+            DocumentCacheResolvedTargetDataStore resolvedDataStore,
+            DocumentCacheTargetContextGeneration generation,
+            DocumentCacheLifecycleState lifecycleState
+        )
+        {
+            RelationalProviderToken providerToken =
+                resolvedDataStore.RelationalProviderToken ?? RelationalProviderToken.SqlServer;
+            DocumentCacheLifecycleObservation lifecycle = new(lifecycleState, false);
+            DocumentCacheSqlServerPrerequisiteDetails failedPrerequisites = new(
+                new DocumentCacheProviderPrerequisiteResult(
+                    DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot,
+                    DocumentCacheProviderPrerequisiteStatus.Disabled,
+                    "RCSI disabled."
+                ),
+                new DocumentCacheProviderPrerequisiteResult(
+                    DocumentCacheProviderPrerequisiteName.NestedTriggers,
+                    DocumentCacheProviderPrerequisiteStatus.Satisfied,
+                    "Nested triggers satisfied."
+                )
+            );
+            DocumentCacheProviderPrerequisiteValidationResult prerequisiteFailure =
+                DocumentCacheProviderPrerequisiteValidationResult.Initialization(
+                    failedPrerequisites,
+                    lifecycle
+                );
+            DocumentCacheTargetDiagnostic diagnostic = new(
+                targetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                providerToken,
+                generation,
+                _fingerprint,
+                lifecycle,
+                _satisfiedInventory,
+                _satisfiedEnqueueTrigger,
+                prerequisiteFailure.SqlServerPrerequisites,
+                retryState: null,
+                prerequisiteFailure.FailureCategory!.Value,
+                prerequisiteFailure.Message
+            );
+            DocumentCacheTargetObservation observation = DocumentCacheTargetObservation.ResolvedIneligible(
+                targetKey,
+                _effectiveSettings,
+                generation,
+                providerToken,
+                _fingerprint,
+                lifecycle,
+                _satisfiedInventory,
+                _satisfiedEnqueueTrigger,
+                prerequisiteFailure.SqlServerPrerequisites,
                 retryState: null,
                 [diagnostic]
             );

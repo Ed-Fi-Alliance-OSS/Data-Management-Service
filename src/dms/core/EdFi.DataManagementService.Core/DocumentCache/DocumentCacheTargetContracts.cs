@@ -538,8 +538,8 @@ public sealed record DocumentCacheProviderPrerequisiteValidationResult
                 ? DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
                 : DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
             lifecycle.State == DocumentCacheLifecycleState.Disabled
-                ? "Provider prerequisite failed; correction and DMS/projector restart are required."
-                : "Provider prerequisite failure was observed outside the supported Disabled lifecycle."
+                ? "Provider prerequisite failed; correction can be retried by startup, CMS refresh, or supervisor tick."
+                : "Provider prerequisite failure was observed outside the supported Disabled lifecycle; process restart or target replacement is required."
         );
     }
 

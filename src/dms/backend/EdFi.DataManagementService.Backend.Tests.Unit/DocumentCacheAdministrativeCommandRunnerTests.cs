@@ -33,6 +33,10 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         DocumentCacheLifecycleState.Tracking,
         CacheAheadRecoveryRequired: false
     );
+    private static readonly DocumentCacheLifecycleObservation DisabledLifecycle = new(
+        DocumentCacheLifecycleState.Disabled,
+        CacheAheadRecoveryRequired: false
+    );
 
     [Test]
     public async Task It_rejects_target_replacement_before_acquiring_the_mutex()
@@ -154,6 +158,46 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
             );
         mutex.AcquireCount.Should().Be(1);
+    }
+
+    [TestCase(
+        DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
+        DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed
+    )]
+    [TestCase(
+        DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
+        DocumentCacheAdministrativeCommandClassification.UnsupportedPrerequisiteIncident
+    )]
+    public async Task It_rejects_SqlServerDocumentCachePrerequisite_failures_before_acquiring_the_mutex(
+        DocumentCacheTargetDiagnosticCategory diagnosticCategory,
+        DocumentCacheAdministrativeCommandClassification expectedClassification
+    )
+    {
+        DocumentCacheTargetObservation targetObservation = IneligiblePrerequisiteObservation(
+            diagnosticCategory
+        );
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            new MutableTargetRegistry(Snapshot([targetObservation]), RuntimeSnapshot([])),
+            new StubProjectionSupervisor([]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result.Classification.Should().Be(expectedClassification);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle()
+            .Which.CurrentPhase.Should()
+            .Be(DocumentCacheAdministrativeCommandPhase.Preflight);
+        mutex.AcquireCount.Should().Be(0);
     }
 
     [Test]
@@ -352,6 +396,71 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 "Enqueue trigger satisfied."
             ),
             DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+
+    private static DocumentCacheTargetObservation IneligiblePrerequisiteObservation(
+        DocumentCacheTargetDiagnosticCategory diagnosticCategory
+    )
+    {
+        DocumentCacheLifecycleObservation lifecycle =
+            diagnosticCategory == DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+                ? DisabledLifecycle
+                : TrackingLifecycle;
+        DocumentCacheProviderPrerequisiteValidationResult prerequisiteResult =
+            DocumentCacheProviderPrerequisiteValidationResult.Initialization(
+                FailedSqlServerPrerequisites(),
+                lifecycle
+            );
+        DocumentCacheTargetContextGeneration generation = new(1);
+        DocumentCacheTargetEffectiveSettings settings = EffectiveSettings(TimeSpan.FromHours(24));
+        DocumentCacheTargetDiagnostic diagnostic = new(
+            TargetKey,
+            DocumentCacheTargetResolutionState.Resolved,
+            RelationalProviderToken.SqlServer,
+            generation,
+            Fingerprint,
+            lifecycle,
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            prerequisiteResult.SqlServerPrerequisites,
+            retryState: null,
+            prerequisiteResult.FailureCategory!.Value,
+            prerequisiteResult.Message
+        );
+
+        return DocumentCacheTargetObservation.ResolvedIneligible(
+            TargetKey,
+            settings,
+            generation,
+            RelationalProviderToken.SqlServer,
+            Fingerprint,
+            lifecycle,
+            diagnostic.Inventory,
+            diagnostic.EnqueueTrigger,
+            prerequisiteResult.SqlServerPrerequisites,
+            retryState: null,
+            [diagnostic]
+        );
+    }
+
+    private static DocumentCacheSqlServerPrerequisiteDetails FailedSqlServerPrerequisites() =>
+        new(
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot,
+                DocumentCacheProviderPrerequisiteStatus.Disabled,
+                "SQL Server READ_COMMITTED_SNAPSHOT is disabled."
+            ),
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.NestedTriggers,
+                DocumentCacheProviderPrerequisiteStatus.Satisfied,
+                "SQL Server nested triggers are enabled."
+            )
         );
 
     private static DocumentCacheTargetEffectiveSettings EffectiveSettings(TimeSpan workflowTimeout) =>

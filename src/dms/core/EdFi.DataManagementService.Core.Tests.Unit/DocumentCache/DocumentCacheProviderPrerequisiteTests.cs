@@ -102,7 +102,7 @@ public class DocumentCachePrerequisiteTests
             result
                 .FailureCategory.Should()
                 .Be(DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed);
-            result.Message.Should().Contain("restart");
+            result.Message.Should().Contain("retried");
         }
 
         [TestCase(DocumentCacheLifecycleState.Tracking)]

@@ -267,7 +267,10 @@ public sealed class DocumentCacheTargetRegistry(
             DocumentCacheTargetContextGeneration reusableGeneration = previousState
                 .StableObservation
                 .Generation!;
-            if (previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus)
+            if (
+                previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus
+                || ShouldRetryReusableGeneration(previousState.StableObservation)
+            )
             {
                 DocumentCacheTargetContextBuildResult refreshedBuildResult = await targetContextBuilder
                     .BuildAsync(targetKey, resolvedDataStore, reusableGeneration, cancellationToken)
@@ -487,6 +490,24 @@ public sealed class DocumentCacheTargetRegistry(
         );
 
     private static string GetProviderTenantKey(DocumentCacheTargetKey targetKey) => targetKey.TenantKey;
+
+    private static bool ShouldRetryReusableGeneration(DocumentCacheTargetObservation observation)
+    {
+        if (
+            observation.ResolutionState != DocumentCacheTargetResolutionState.Resolved
+            || observation.EligibilityState != DocumentCacheTargetEligibilityState.Ineligible
+        )
+        {
+            return false;
+        }
+
+        ImmutableHashSet<DocumentCacheTargetDiagnosticCategory> categories = observation
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .ToImmutableHashSet();
+
+        return categories.Contains(DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed)
+            && !categories.Contains(DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident);
+    }
 
     private sealed record TenantRefreshResult(bool Succeeded)
     {

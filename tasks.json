@@ -413,7 +413,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~SqlServerDocumentCachePrerequisite\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~SqlServerDocumentCachePrerequisite\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "telemetry",
