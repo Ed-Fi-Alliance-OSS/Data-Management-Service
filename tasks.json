@@ -478,7 +478,7 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheProjector\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "administrative-tests",
