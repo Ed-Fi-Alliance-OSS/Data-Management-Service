@@ -65,6 +65,62 @@ public enum DocumentCacheProjectionDrainPageOutcome
     TargetBackoff = 3,
     LifecycleFenced = 4,
     TargetPaused = 5,
+    AdministrativeFailure = 6,
+}
+
+public sealed record DocumentCacheAdministrativeDrainFailure
+{
+    public DocumentCacheAdministrativeDrainFailure(
+        DocumentCacheAdministrativeCommandStatus status,
+        DocumentCacheAdministrativeCommandClassification classification,
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
+        string message,
+        bool retryable,
+        ImmutableArray<long> affectedDocumentIds = default
+    )
+    {
+        Status = DocumentCacheProjectionSchedulingGuard.RequireDefined(
+            status,
+            nameof(status),
+            "Unsupported administrative command status."
+        );
+        Classification = DocumentCacheProjectionSchedulingGuard.RequireDefined(
+            classification,
+            nameof(classification),
+            "Unsupported administrative command classification."
+        );
+        DiagnosticCategory = DocumentCacheProjectionSchedulingGuard.RequireDefined(
+            diagnosticCategory,
+            nameof(diagnosticCategory),
+            "Unsupported administrative diagnostic category."
+        );
+        if (!affectedDocumentIds.IsDefaultOrEmpty && affectedDocumentIds.Any(documentId => documentId <= 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(affectedDocumentIds),
+                "Affected document ids must be positive."
+            );
+        }
+
+        Status = status;
+        Classification = classification;
+        DiagnosticCategory = diagnosticCategory;
+        Message = string.IsNullOrWhiteSpace(message) ? diagnosticCategory.ToString() : message;
+        Retryable = retryable;
+        AffectedDocumentIds = affectedDocumentIds.IsDefault ? [] : affectedDocumentIds;
+    }
+
+    public DocumentCacheAdministrativeCommandStatus Status { get; }
+
+    public DocumentCacheAdministrativeCommandClassification Classification { get; }
+
+    public DocumentCacheAdministrativeDiagnosticCategory DiagnosticCategory { get; }
+
+    public string Message { get; }
+
+    public bool Retryable { get; }
+
+    public ImmutableArray<long> AffectedDocumentIds { get; }
 }
 
 public sealed record DocumentCacheProjectionDrainPageResult
@@ -73,7 +129,11 @@ public sealed record DocumentCacheProjectionDrainPageResult
         DocumentCacheProjectionDrainPageOutcome outcome,
         int processedItemCount,
         DateTimeOffset? backoffUntil,
-        DateTimeOffset? nextRetryAt
+        DateTimeOffset? nextRetryAt,
+        int acknowledgedOrRemovedItemCount,
+        int documentScopedFailureCount,
+        ImmutableArray<long> documentScopedFailureIds,
+        DocumentCacheAdministrativeDrainFailure? administrativeFailure
     )
     {
         Outcome = DocumentCacheProjectionSchedulingGuard.RequireDefined(
@@ -100,8 +160,68 @@ public sealed record DocumentCacheProjectionDrainPageResult
             throw new ArgumentException("Only no-work drain results may carry a next retry boundary.");
         }
 
+        if (
+            outcome == DocumentCacheProjectionDrainPageOutcome.AdministrativeFailure
+            && administrativeFailure is null
+        )
+        {
+            throw new ArgumentException("Administrative failure drain results require failure details.");
+        }
+
+        if (
+            outcome != DocumentCacheProjectionDrainPageOutcome.AdministrativeFailure
+            && administrativeFailure is not null
+        )
+        {
+            throw new ArgumentException(
+                "Only administrative failure drain results may carry failure details."
+            );
+        }
+
+        if (acknowledgedOrRemovedItemCount < 0 || acknowledgedOrRemovedItemCount > processedItemCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(acknowledgedOrRemovedItemCount),
+                "Acknowledged work count must be within the processed item count."
+            );
+        }
+
+        if (documentScopedFailureCount < 0 || documentScopedFailureCount > processedItemCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(documentScopedFailureCount),
+                "Document-scoped failure count must be within the processed item count."
+            );
+        }
+
+        if (
+            !documentScopedFailureIds.IsDefaultOrEmpty
+            && documentScopedFailureIds.Any(documentId => documentId <= 0)
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(documentScopedFailureIds),
+                "Document-scoped failure ids must be positive."
+            );
+        }
+
+        if (
+            !documentScopedFailureIds.IsDefaultOrEmpty
+            && documentScopedFailureIds.Length > documentScopedFailureCount
+        )
+        {
+            throw new ArgumentException(
+                "Document-scoped failure diagnostics cannot exceed the failure count.",
+                nameof(documentScopedFailureIds)
+            );
+        }
+
         BackoffUntil = backoffUntil;
         NextRetryAt = nextRetryAt;
+        AcknowledgedOrRemovedItemCount = acknowledgedOrRemovedItemCount;
+        DocumentScopedFailureCount = documentScopedFailureCount;
+        DocumentScopedFailureIds = documentScopedFailureIds.IsDefault ? [] : documentScopedFailureIds;
+        AdministrativeFailure = administrativeFailure;
     }
 
     public DocumentCacheProjectionDrainPageOutcome Outcome { get; }
@@ -112,12 +232,29 @@ public sealed record DocumentCacheProjectionDrainPageResult
 
     public DateTimeOffset? NextRetryAt { get; }
 
-    public static DocumentCacheProjectionDrainPageResult PageProcessed(int processedItemCount) =>
+    public int AcknowledgedOrRemovedItemCount { get; }
+
+    public int DocumentScopedFailureCount { get; }
+
+    public ImmutableArray<long> DocumentScopedFailureIds { get; }
+
+    public DocumentCacheAdministrativeDrainFailure? AdministrativeFailure { get; }
+
+    public static DocumentCacheProjectionDrainPageResult PageProcessed(
+        int processedItemCount,
+        int acknowledgedOrRemovedItemCount = 0,
+        int documentScopedFailureCount = 0,
+        ImmutableArray<long> documentScopedFailureIds = default
+    ) =>
         new(
             DocumentCacheProjectionDrainPageOutcome.PageProcessed,
             processedItemCount,
             backoffUntil: null,
-            nextRetryAt: null
+            nextRetryAt: null,
+            acknowledgedOrRemovedItemCount,
+            documentScopedFailureCount,
+            documentScopedFailureIds,
+            administrativeFailure: null
         );
 
     public static DocumentCacheProjectionDrainPageResult NoEligibleWork { get; } =
@@ -125,7 +262,11 @@ public sealed record DocumentCacheProjectionDrainPageResult
             DocumentCacheProjectionDrainPageOutcome.NoEligibleWork,
             processedItemCount: 0,
             backoffUntil: null,
-            nextRetryAt: null
+            nextRetryAt: null,
+            acknowledgedOrRemovedItemCount: 0,
+            documentScopedFailureCount: 0,
+            documentScopedFailureIds: [],
+            administrativeFailure: null
         );
 
     public static DocumentCacheProjectionDrainPageResult NoEligibleWorkWithRetry(
@@ -135,7 +276,11 @@ public sealed record DocumentCacheProjectionDrainPageResult
             DocumentCacheProjectionDrainPageOutcome.NoEligibleWork,
             processedItemCount: 0,
             backoffUntil: null,
-            nextRetryAt
+            nextRetryAt,
+            acknowledgedOrRemovedItemCount: 0,
+            documentScopedFailureCount: 0,
+            documentScopedFailureIds: [],
+            administrativeFailure: null
         );
 
     public static DocumentCacheProjectionDrainPageResult LifecycleFenced { get; } =
@@ -143,7 +288,11 @@ public sealed record DocumentCacheProjectionDrainPageResult
             DocumentCacheProjectionDrainPageOutcome.LifecycleFenced,
             processedItemCount: 0,
             backoffUntil: null,
-            nextRetryAt: null
+            nextRetryAt: null,
+            acknowledgedOrRemovedItemCount: 0,
+            documentScopedFailureCount: 0,
+            documentScopedFailureIds: [],
+            administrativeFailure: null
         );
 
     public static DocumentCacheProjectionDrainPageResult TargetBackoff(DateTimeOffset backoffUntil) =>
@@ -151,15 +300,46 @@ public sealed record DocumentCacheProjectionDrainPageResult
             DocumentCacheProjectionDrainPageOutcome.TargetBackoff,
             processedItemCount: 0,
             backoffUntil,
-            nextRetryAt: null
+            nextRetryAt: null,
+            acknowledgedOrRemovedItemCount: 0,
+            documentScopedFailureCount: 0,
+            documentScopedFailureIds: [],
+            administrativeFailure: null
         );
 
-    public static DocumentCacheProjectionDrainPageResult TargetPaused(int processedItemCount) =>
+    public static DocumentCacheProjectionDrainPageResult TargetPaused(
+        int processedItemCount,
+        int acknowledgedOrRemovedItemCount = 0,
+        int documentScopedFailureCount = 0,
+        ImmutableArray<long> documentScopedFailureIds = default
+    ) =>
         new(
             DocumentCacheProjectionDrainPageOutcome.TargetPaused,
             processedItemCount,
             backoffUntil: null,
-            nextRetryAt: null
+            nextRetryAt: null,
+            acknowledgedOrRemovedItemCount,
+            documentScopedFailureCount,
+            documentScopedFailureIds,
+            administrativeFailure: null
+        );
+
+    public static DocumentCacheProjectionDrainPageResult AdministrativeFailureResult(
+        int processedItemCount,
+        int acknowledgedOrRemovedItemCount,
+        int documentScopedFailureCount,
+        ImmutableArray<long> documentScopedFailureIds,
+        DocumentCacheAdministrativeDrainFailure administrativeFailure
+    ) =>
+        new(
+            DocumentCacheProjectionDrainPageOutcome.AdministrativeFailure,
+            processedItemCount,
+            backoffUntil: null,
+            nextRetryAt: null,
+            acknowledgedOrRemovedItemCount,
+            documentScopedFailureCount,
+            documentScopedFailureIds,
+            administrativeFailure
         );
 }
 
@@ -282,7 +462,10 @@ public sealed record DocumentCacheProjectionSchedulerDispatchResult
 
 public sealed class DocumentCacheProjectionTargetDrainExecutor
 {
+    private static readonly AsyncLocal<object?> CurrentAdministrativeOwner = new();
+
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _administrativeOwnerToken = new();
     private int _owner;
 
     public DocumentCacheProjectionDrainInvocationKind? CurrentOwner =>
@@ -299,6 +482,9 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
 
     public bool IsCommandOwned =>
         Volatile.Read(ref _owner) == (int)DocumentCacheProjectionDrainInvocationKind.Administrative;
+
+    public bool IsOwnedByCurrentAdministrativeFlow =>
+        ReferenceEquals(CurrentAdministrativeOwner.Value, _administrativeOwnerToken);
 
     public async Task<DocumentCacheProjectionDrainPageResult?> TryRunOrdinaryDrainSliceAsync(
         Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> drainSlice,
@@ -326,7 +512,15 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
     public async Task<DocumentCacheProjectionDrainPageResult> RunAdministrativeDrainSliceAsync(
         Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> drainSlice,
         CancellationToken cancellationToken = default
-    ) => await RunAdministrativeCommandAsync(drainSlice, cancellationToken).ConfigureAwait(false);
+    )
+    {
+        if (IsOwnedByCurrentAdministrativeFlow)
+        {
+            return await drainSlice(cancellationToken).ConfigureAwait(false);
+        }
+
+        return await RunAdministrativeCommandAsync(drainSlice, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<T> RunAdministrativeCommandAsync<T>(
         Func<CancellationToken, Task<T>> command,
@@ -337,12 +531,15 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         Volatile.Write(ref _owner, (int)DocumentCacheProjectionDrainInvocationKind.Administrative);
+        object? previousAdministrativeOwner = CurrentAdministrativeOwner.Value;
+        CurrentAdministrativeOwner.Value = _administrativeOwnerToken;
         try
         {
             return await command(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
+            CurrentAdministrativeOwner.Value = previousAdministrativeOwner;
             Volatile.Write(ref _owner, 0);
             _gate.Release();
         }
@@ -624,6 +821,7 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
                 FailureCount = result.Outcome
                     is DocumentCacheProjectionDrainPageOutcome.TargetBackoff
                         or DocumentCacheProjectionDrainPageOutcome.TargetPaused
+                        or DocumentCacheProjectionDrainPageOutcome.AdministrativeFailure
                     ? FailureCount + 1
                     : FailureCount,
                 LastCompletedAt = completedAt,

@@ -51,7 +51,9 @@ public class Given_DocumentCacheProjectionItemProcessor
         DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
             .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
 
-        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.Continue);
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeTrue();
+        result.DocumentScopedFailureRecorded.Should().BeFalse();
         targetContext.FailureBackoffState.Count.Should().Be(0);
         materializer.Calls.Should().BeEmpty();
         DocumentCacheWriterRequest writerRequest = writer.Calls.Should().ContainSingle().Subject;
@@ -77,7 +79,9 @@ public class Given_DocumentCacheProjectionItemProcessor
         DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
             .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 11)));
 
-        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.Continue);
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeTrue();
+        result.DocumentScopedFailureRecorded.Should().BeFalse();
         materializer
             .Calls.Should()
             .ContainSingle()
@@ -101,7 +105,9 @@ public class Given_DocumentCacheProjectionItemProcessor
         DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
             .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
 
-        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.Continue);
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
+        result.DocumentScopedFailureRecorded.Should().BeFalse();
         writer.Calls.Should().ContainSingle();
         targetContext.FailureBackoffState.Count.Should().Be(0);
     }
@@ -118,7 +124,9 @@ public class Given_DocumentCacheProjectionItemProcessor
         DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
             .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
 
-        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.Continue);
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
+        result.DocumentScopedFailureRecorded.Should().BeFalse();
         materializer.Calls.Should().BeEmpty();
         targetContext.FailureBackoffState.Count.Should().Be(0);
     }
@@ -142,7 +150,9 @@ public class Given_DocumentCacheProjectionItemProcessor
         DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
             .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 11)));
 
-        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.Continue);
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
+        result.DocumentScopedFailureRecorded.Should().BeTrue();
         DocumentCacheProjectionDocumentDiagnostic diagnostic = targetContext
             .FailureBackoffState.CreateFailureDiagnosticsSnapshot()
             .DocumentDiagnostics.Should()
@@ -164,7 +174,9 @@ public class Given_DocumentCacheProjectionItemProcessor
         DocumentCacheProjectionItemProcessResult result = await CreateProcessor()
             .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
 
-        result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.Continue);
+        result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
+        result.DocumentScopedFailureRecorded.Should().BeTrue();
         targetContext
             .FailureBackoffState.CreateFailureDiagnosticsSnapshot()
             .DocumentDiagnostics.Should()

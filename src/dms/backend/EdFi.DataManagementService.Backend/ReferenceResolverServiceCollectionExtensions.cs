@@ -140,6 +140,18 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Singleton<IDocumentCacheBaselineSeeder, DocumentCacheBaselineSeeder>()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeDrainDelay,
+                DocumentCacheAdministrativeDrainDelay
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeDrainer,
+                DocumentCacheAdministrativeDrainer
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>()
         );
         services.TryAdd(

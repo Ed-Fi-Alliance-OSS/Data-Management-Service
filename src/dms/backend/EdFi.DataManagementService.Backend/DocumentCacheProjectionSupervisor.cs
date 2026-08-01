@@ -312,7 +312,9 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly Func<ValueTask>? _disposeScopeAsync;
+    private readonly IDocumentCacheSessionBoundWriter? _sessionBoundWriter;
     private int _cancelled;
+    private DocumentCacheAdministrativeCommandExecutionContext? _administrativeCommandContext;
 
     public DocumentCacheProjectionTargetRuntimeContext(
         DocumentCacheTargetExecutionContext targetExecutionContext,
@@ -335,6 +337,33 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
             TargetExecutionContext.TargetKey,
             TargetExecutionContext.Generation
         );
+        _sessionBoundWriter = null;
+        _disposeScopeAsync = disposeScopeAsync;
+    }
+
+    internal DocumentCacheProjectionTargetRuntimeContext(
+        DocumentCacheTargetExecutionContext targetExecutionContext,
+        DocumentCacheProjectionTargetProviderAdapters providerAdapters,
+        IDocumentCacheProjectionObservationSink observationSink,
+        IDocumentCacheSessionBoundWriter? sessionBoundWriter,
+        Func<ValueTask>? disposeScopeAsync = null
+    )
+    {
+        TargetExecutionContext =
+            targetExecutionContext ?? throw new ArgumentNullException(nameof(targetExecutionContext));
+        ProviderAdapters = providerAdapters ?? throw new ArgumentNullException(nameof(providerAdapters));
+        ObservationSink = observationSink ?? throw new ArgumentNullException(nameof(observationSink));
+        Cursor = new DocumentCacheProjectionCursorState();
+        FailureBackoffState = new DocumentCacheProjectionFailureBackoffState(
+            TargetExecutionContext.EffectiveSettings.ProjectorPageSize
+        );
+        SchedulingState = new DocumentCacheProjectionTargetSchedulingState();
+        DrainExecutor = new DocumentCacheProjectionTargetDrainExecutor();
+        ContextKey = new DocumentCacheProjectionTargetContextKey(
+            TargetExecutionContext.TargetKey,
+            TargetExecutionContext.Generation
+        );
+        _sessionBoundWriter = sessionBoundWriter;
         _disposeScopeAsync = disposeScopeAsync;
     }
 
@@ -351,6 +380,11 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
     public IDocumentCacheMaterializer Materializer => ProviderAdapters.Materializer;
 
     public IDocumentCacheWriter Writer => ProviderAdapters.Writer;
+
+    internal IDocumentCacheSessionBoundWriter? SessionBoundWriter => _sessionBoundWriter;
+
+    internal DocumentCacheAdministrativeCommandExecutionContext? AdministrativeCommandContext =>
+        Volatile.Read(ref _administrativeCommandContext);
 
     public DocumentCacheMaterializationTargetContext MaterializationTargetContext =>
         ProviderAdapters.MaterializationTargetContext;
@@ -377,6 +411,29 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         }
     }
 
+    internal IDisposable BindAdministrativeCommand(
+        DocumentCacheAdministrativeCommandExecutionContext commandContext
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandContext);
+        if (!ReferenceEquals(commandContext.TargetContext, this))
+        {
+            throw new ArgumentException(
+                "Administrative command context must be pinned to this target context.",
+                nameof(commandContext)
+            );
+        }
+
+        if (Interlocked.CompareExchange(ref _administrativeCommandContext, commandContext, null) is not null)
+        {
+            throw new InvalidOperationException(
+                "DocumentCache target context already has an active administrative command."
+            );
+        }
+
+        return new AdministrativeCommandBinding(this, commandContext);
+    }
+
     public async ValueTask DisposeAsync()
     {
         Cancel();
@@ -385,6 +442,21 @@ public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposab
         if (_disposeScopeAsync is not null)
         {
             await _disposeScopeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private sealed class AdministrativeCommandBinding(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DocumentCacheAdministrativeCommandExecutionContext commandContext
+    ) : IDisposable
+    {
+        public void Dispose()
+        {
+            Interlocked.CompareExchange(
+                ref targetContext._administrativeCommandContext,
+                null,
+                commandContext
+            );
         }
     }
 }
@@ -409,6 +481,8 @@ public sealed class DocumentCacheProjectionTargetRuntimeContextFactory(
                 serviceScope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>();
             IDocumentCacheWriter writer =
                 serviceScope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>();
+            IDocumentCacheSessionBoundWriter? sessionBoundWriter =
+                serviceScope.ServiceProvider.GetService<IDocumentCacheSessionBoundWriter>();
             DocumentCacheMaterializationTargetContext materializationTargetContext =
                 await CreateMaterializationTargetContextAsync(
                         serviceScope.ServiceProvider,
@@ -428,6 +502,7 @@ public sealed class DocumentCacheProjectionTargetRuntimeContextFactory(
                 executionContext,
                 providerAdapters,
                 observationSink,
+                sessionBoundWriter,
                 serviceScope.DisposeAsync
             );
         }

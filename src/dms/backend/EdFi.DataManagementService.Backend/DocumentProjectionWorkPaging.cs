@@ -169,7 +169,10 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
         }
 
         List<long> suppressedDocumentIds = [];
+        List<long> documentScopedFailureIds = [];
         int processedItemCount = 0;
+        int acknowledgedOrRemovedItemCount = 0;
+        int documentScopedFailureCount = 0;
         foreach (DocumentProjectionWorkPageItem item in page.Items)
         {
             effectiveCancellationToken.ThrowIfCancellationRequested();
@@ -192,6 +195,33 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
                     effectiveCancellationToken
                 )
                 .ConfigureAwait(false);
+            if (itemResult.AcknowledgedOrRemovedDurableWork)
+            {
+                acknowledgedOrRemovedItemCount++;
+            }
+
+            if (itemResult.DocumentScopedFailureRecorded)
+            {
+                documentScopedFailureCount++;
+                documentScopedFailureIds.Add(item.DocumentId);
+            }
+
+            if (itemResult.AdministrativeFailure is not null)
+            {
+                targetContext.FailureBackoffState.RecordSuppressedTraversal(
+                    suppressedDocumentIds,
+                    observedAt
+                );
+                ObserveTarget(targetContext, observedAt);
+                return DocumentCacheProjectionDrainPageResult.AdministrativeFailureResult(
+                    processedItemCount,
+                    acknowledgedOrRemovedItemCount,
+                    documentScopedFailureCount,
+                    documentScopedFailureIds.Take(page.PageSize).ToImmutableArray(),
+                    itemResult.AdministrativeFailure
+                );
+            }
+
             if (itemResult.Outcome == DocumentCacheProjectionItemProcessOutcome.Continue)
             {
                 continue;
@@ -206,7 +236,12 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
                 DocumentCacheProjectionItemProcessOutcome.TargetBackoff =>
                     DocumentCacheProjectionDrainPageResult.TargetBackoff(itemResult.BackoffUntil!.Value),
                 DocumentCacheProjectionItemProcessOutcome.TargetPaused =>
-                    DocumentCacheProjectionDrainPageResult.TargetPaused(processedItemCount),
+                    DocumentCacheProjectionDrainPageResult.TargetPaused(
+                        processedItemCount,
+                        acknowledgedOrRemovedItemCount,
+                        documentScopedFailureCount,
+                        documentScopedFailureIds.Take(page.PageSize).ToImmutableArray()
+                    ),
                 _ => throw new InvalidOperationException(
                     $"Unsupported DocumentCache projection item outcome '{itemResult.Outcome}'."
                 ),
@@ -223,7 +258,12 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
         );
 
-        return DocumentCacheProjectionDrainPageResult.PageProcessed(processedItemCount);
+        return DocumentCacheProjectionDrainPageResult.PageProcessed(
+            processedItemCount,
+            acknowledgedOrRemovedItemCount,
+            documentScopedFailureCount,
+            documentScopedFailureIds.Take(page.PageSize).ToImmutableArray()
+        );
     }
 
     private Task<DocumentProjectionWorkPage> ReadPageAsync(

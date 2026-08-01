@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
@@ -52,7 +54,10 @@ internal sealed record DocumentCacheProjectionItemProcessResult
 {
     private DocumentCacheProjectionItemProcessResult(
         DocumentCacheProjectionItemProcessOutcome outcome,
-        DateTimeOffset? backoffUntil
+        DateTimeOffset? backoffUntil,
+        bool acknowledgedOrRemovedDurableWork,
+        bool documentScopedFailureRecorded,
+        DocumentCacheAdministrativeDrainFailure? administrativeFailure
     )
     {
         Outcome = DocumentCacheProjectionItemProcessingGuard.RequireDefined(
@@ -71,23 +76,89 @@ internal sealed record DocumentCacheProjectionItemProcessResult
         }
 
         BackoffUntil = backoffUntil;
+        AcknowledgedOrRemovedDurableWork = acknowledgedOrRemovedDurableWork;
+        DocumentScopedFailureRecorded = documentScopedFailureRecorded;
+        AdministrativeFailure = administrativeFailure;
     }
 
     public DocumentCacheProjectionItemProcessOutcome Outcome { get; }
 
     public DateTimeOffset? BackoffUntil { get; }
 
+    public bool AcknowledgedOrRemovedDurableWork { get; }
+
+    public bool DocumentScopedFailureRecorded { get; }
+
+    public DocumentCacheAdministrativeDrainFailure? AdministrativeFailure { get; }
+
     public static DocumentCacheProjectionItemProcessResult Continue { get; } =
-        new(DocumentCacheProjectionItemProcessOutcome.Continue, backoffUntil: null);
+        new(
+            DocumentCacheProjectionItemProcessOutcome.Continue,
+            backoffUntil: null,
+            acknowledgedOrRemovedDurableWork: false,
+            documentScopedFailureRecorded: false,
+            administrativeFailure: null
+        );
+
+    public static DocumentCacheProjectionItemProcessResult AcknowledgedOrRemoved { get; } =
+        new(
+            DocumentCacheProjectionItemProcessOutcome.Continue,
+            backoffUntil: null,
+            acknowledgedOrRemovedDurableWork: true,
+            documentScopedFailureRecorded: false,
+            administrativeFailure: null
+        );
+
+    public static DocumentCacheProjectionItemProcessResult DocumentScopedFailure { get; } =
+        new(
+            DocumentCacheProjectionItemProcessOutcome.Continue,
+            backoffUntil: null,
+            acknowledgedOrRemovedDurableWork: false,
+            documentScopedFailureRecorded: true,
+            administrativeFailure: null
+        );
 
     public static DocumentCacheProjectionItemProcessResult LifecycleFenced { get; } =
-        new(DocumentCacheProjectionItemProcessOutcome.LifecycleFenced, backoffUntil: null);
+        new(
+            DocumentCacheProjectionItemProcessOutcome.LifecycleFenced,
+            backoffUntil: null,
+            acknowledgedOrRemovedDurableWork: false,
+            documentScopedFailureRecorded: false,
+            administrativeFailure: null
+        );
 
     public static DocumentCacheProjectionItemProcessResult TargetPaused { get; } =
-        new(DocumentCacheProjectionItemProcessOutcome.TargetPaused, backoffUntil: null);
+        new(
+            DocumentCacheProjectionItemProcessOutcome.TargetPaused,
+            backoffUntil: null,
+            acknowledgedOrRemovedDurableWork: false,
+            documentScopedFailureRecorded: false,
+            administrativeFailure: null
+        );
 
     public static DocumentCacheProjectionItemProcessResult TargetBackoff(DateTimeOffset backoffUntil) =>
-        new(DocumentCacheProjectionItemProcessOutcome.TargetBackoff, backoffUntil);
+        new(
+            DocumentCacheProjectionItemProcessOutcome.TargetBackoff,
+            backoffUntil,
+            acknowledgedOrRemovedDurableWork: false,
+            documentScopedFailureRecorded: false,
+            administrativeFailure: null
+        );
+
+    public static DocumentCacheProjectionItemProcessResult FromAdministrativeFailure(
+        DocumentCacheAdministrativeDrainFailure administrativeFailure
+    )
+    {
+        ArgumentNullException.ThrowIfNull(administrativeFailure);
+
+        return new(
+            DocumentCacheProjectionItemProcessOutcome.Continue,
+            backoffUntil: null,
+            acknowledgedOrRemovedDurableWork: false,
+            documentScopedFailureRecorded: false,
+            administrativeFailure
+        );
+    }
 }
 
 internal sealed class DocumentCacheProjectionItemProcessor(
@@ -119,17 +190,25 @@ internal sealed class DocumentCacheProjectionItemProcessor(
 
         try
         {
-            DocumentCacheWriterResult fastPathResult = await targetContext
-                .Writer.WriteAsync(
-                    CreateWriterRequest(targetContext, workItem, candidate: null, effectiveCancellationToken)
+            DocumentCacheProjectionWriterInvocationResult fastPathResult = await WriteCacheAsync(
+                    request,
+                    candidate: null,
+                    effectiveCancellationToken
                 )
                 .ConfigureAwait(false);
+            if (fastPathResult.AdministrativeFailure is not null)
+            {
+                return DocumentCacheProjectionItemProcessResult.FromAdministrativeFailure(
+                    fastPathResult.AdministrativeFailure
+                );
+            }
 
             return await HandleWriterResultAsync(
                     targetContext,
                     workItem,
-                    fastPathResult,
+                    fastPathResult.WriterResult!,
                     materializationAllowed: true,
+                    request.InvocationKind,
                     effectiveCancellationToken
                 )
                 .ConfigureAwait(false);
@@ -157,6 +236,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         DocumentProjectionWorkPageItem workItem,
         DocumentCacheWriterResult writerResult,
         bool materializationAllowed,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
         CancellationToken cancellationToken
     )
     {
@@ -166,10 +246,15 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             case DocumentCacheWriterResult.AlreadyCurrentAcknowledged:
             case DocumentCacheWriterResult.CandidateWrittenAcknowledged:
                 targetContext.FailureBackoffState.ClearFailure(workItem.DocumentId);
-                return DocumentCacheProjectionItemProcessResult.Continue;
+                return DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved;
 
             case DocumentCacheWriterResult.NeedsMaterialization when materializationAllowed:
-                return await MaterializeAndWriteAsync(targetContext, workItem, cancellationToken)
+                return await MaterializeAndWriteAsync(
+                        targetContext,
+                        workItem,
+                        invocationKind,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
             case DocumentCacheWriterResult.NeedsMaterialization:
@@ -195,7 +280,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     $"Cache writer outcome {writerResult.Outcome}.",
                     observedAt
                 );
-                return DocumentCacheProjectionItemProcessResult.Continue;
+                return DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
 
             case DocumentCacheWriterResult.RetryBudgetExhausted:
             case DocumentCacheWriterResult.CallerAbortedRetry:
@@ -208,10 +293,19 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     $"Cache writer outcome {writerResult.Outcome}.",
                     observedAt
                 );
-                return DocumentCacheProjectionItemProcessResult.Continue;
+                return DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
 
             case DocumentCacheWriterResult.LifecycleOrLatchFenced:
                 LogContinuingWriterOutcome(targetContext, writerResult);
+                if (targetContext.AdministrativeCommandContext is not null)
+                {
+                    return AdministrativeFailureForLifecycleFence(
+                        targetContext.AdministrativeCommandContext,
+                        (DocumentCacheWriterResult.LifecycleOrLatchFenced)writerResult,
+                        workItem.DocumentId
+                    );
+                }
+
                 return DocumentCacheProjectionItemProcessResult.LifecycleFenced;
 
             case DocumentCacheWriterResult.CacheAheadLatchSet:
@@ -223,6 +317,18 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     observedAt
                 );
                 targetContext.SchedulingState.PauseTarget();
+                if (targetContext.AdministrativeCommandContext is not null)
+                {
+                    return AdministrativeFailureForCommandState(
+                        targetContext.AdministrativeCommandContext,
+                        DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+                        DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet,
+                        "Session-bound DocumentCache writer set the cache-ahead recovery latch during administrative drain.",
+                        workItem.DocumentId,
+                        retryable: true
+                    );
+                }
+
                 return DocumentCacheProjectionItemProcessResult.TargetPaused;
 
             case DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure:
@@ -234,6 +340,18 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     observedAt
                 );
                 targetContext.SchedulingState.PauseTarget();
+                if (targetContext.AdministrativeCommandContext is not null)
+                {
+                    return AdministrativeFailureForCommandState(
+                        targetContext.AdministrativeCommandContext,
+                        DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                        DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+                        $"Cache writer outcome {writerResult.Outcome} paused the administrative drain target.",
+                        workItem.DocumentId,
+                        retryable: targetContext.AdministrativeCommandContext.Mutated
+                    );
+                }
+
                 return DocumentCacheProjectionItemProcessResult.TargetPaused;
 
             default:
@@ -249,6 +367,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
     private async Task<DocumentCacheProjectionItemProcessResult> MaterializeAndWriteAsync(
         DocumentCacheProjectionTargetRuntimeContext targetContext,
         DocumentProjectionWorkPageItem workItem,
+        DocumentCacheProjectionDrainInvocationKind invocationKind,
         CancellationToken cancellationToken
     )
     {
@@ -274,17 +393,25 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            DocumentCacheWriterResult candidateResult = await targetContext
-                .Writer.WriteAsync(
-                    CreateWriterRequest(targetContext, workItem, success.Candidate, cancellationToken)
+            DocumentCacheProjectionWriterInvocationResult candidateResult = await WriteCacheAsync(
+                    new DocumentCacheProjectionItemProcessRequest(targetContext, workItem, invocationKind),
+                    success.Candidate,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
+            if (candidateResult.AdministrativeFailure is not null)
+            {
+                return DocumentCacheProjectionItemProcessResult.FromAdministrativeFailure(
+                    candidateResult.AdministrativeFailure
+                );
+            }
 
             return await HandleWriterResultAsync(
                     targetContext,
                     workItem,
-                    candidateResult,
+                    candidateResult.WriterResult!,
                     materializationAllowed: false,
+                    invocationKind,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -328,6 +455,18 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
         );
 
+        if (targetContext.AdministrativeCommandContext is not null)
+        {
+            return AdministrativeFailureForCommandState(
+                targetContext.AdministrativeCommandContext,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+                exception.Message,
+                workItem.DocumentId,
+                retryable: targetContext.AdministrativeCommandContext.Mutated
+            );
+        }
+
         return DocumentCacheProjectionItemProcessResult.TargetPaused;
     }
 
@@ -352,6 +491,18 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             writerResult.Outcome
         );
 
+        if (targetContext.AdministrativeCommandContext is not null)
+        {
+            return AdministrativeFailureForCommandState(
+                targetContext.AdministrativeCommandContext,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+                $"Unexpected cache writer outcome {writerResult.Outcome}.",
+                workItem.DocumentId,
+                retryable: targetContext.AdministrativeCommandContext.Mutated
+            );
+        }
+
         return DocumentCacheProjectionItemProcessResult.TargetPaused;
     }
 
@@ -369,7 +520,188 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
         );
 
+        if (targetContext.AdministrativeCommandContext is not null)
+        {
+            return AdministrativeFailureForCommandState(
+                targetContext.AdministrativeCommandContext,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+                exception.Message,
+                documentId: null,
+                retryable: targetContext.AdministrativeCommandContext.Mutated
+            );
+        }
+
         return DocumentCacheProjectionItemProcessResult.TargetBackoff(backoffUntil);
+    }
+
+    private static async Task<DocumentCacheProjectionWriterInvocationResult> WriteCacheAsync(
+        DocumentCacheProjectionItemProcessRequest request,
+        DocumentCacheMaterializationCandidate? candidate,
+        CancellationToken cancellationToken
+    )
+    {
+        DocumentCacheWriterRequest writerRequest = CreateWriterRequest(
+            request.TargetContext,
+            request.WorkItem,
+            candidate,
+            cancellationToken
+        );
+
+        DocumentCacheAdministrativeCommandExecutionContext? commandContext = request
+            .TargetContext
+            .AdministrativeCommandContext;
+        if (request.InvocationKind == DocumentCacheProjectionDrainInvocationKind.Ordinary)
+        {
+            DocumentCacheWriterResult ordinaryResult = await request
+                .TargetContext.Writer.WriteAsync(writerRequest)
+                .ConfigureAwait(false);
+
+            return DocumentCacheProjectionWriterInvocationResult.Success(ordinaryResult);
+        }
+
+        if (commandContext is null)
+        {
+            return DocumentCacheProjectionWriterInvocationResult.FromAdministrativeFailure(
+                AdministrativeFailureForMissingCommandContext(request.WorkItem.DocumentId)
+            );
+        }
+
+        IDocumentCacheSessionBoundWriter? sessionBoundWriter = request.TargetContext.SessionBoundWriter;
+        if (sessionBoundWriter is null)
+        {
+            return DocumentCacheProjectionWriterInvocationResult.FromAdministrativeFailure(
+                AdministrativeFailureForCommandStateDetails(
+                    commandContext,
+                    DocumentCacheAdministrativeCommandClassification.ProviderIneligible,
+                    DocumentCacheAdministrativeDiagnosticCategory.ProviderIneligible,
+                    "Administrative drain requires a provider session-bound DocumentCache writer.",
+                    request.WorkItem.DocumentId,
+                    retryable: false
+                )
+            );
+        }
+
+        DocumentCacheSessionBoundWriterResult sessionBoundResult = await sessionBoundWriter
+            .WriteAsync(
+                new DocumentCacheSessionBoundWriterRequest(
+                    commandContext.MutexLease,
+                    writerRequest,
+                    commandContext.Mutated
+                )
+            )
+            .ConfigureAwait(false);
+
+        if (sessionBoundResult.Mutated && !commandContext.Mutated)
+        {
+            commandContext.MarkMutated();
+        }
+
+        if (sessionBoundResult.Classification != DocumentCacheAdministrativeCommandClassification.Succeeded)
+        {
+            return DocumentCacheProjectionWriterInvocationResult.FromAdministrativeFailure(
+                AdministrativeFailureForSessionBoundWriter(sessionBoundResult, request.WorkItem.DocumentId)
+            );
+        }
+
+        return DocumentCacheProjectionWriterInvocationResult.Success(sessionBoundResult.WriterResult!);
+    }
+
+    private static DocumentCacheProjectionItemProcessResult AdministrativeFailureForLifecycleFence(
+        DocumentCacheAdministrativeCommandExecutionContext commandContext,
+        DocumentCacheWriterResult.LifecycleOrLatchFenced writerResult,
+        long documentId
+    )
+    {
+        bool latchSet = writerResult.Reason == DocumentCacheWriterFenceReason.CacheAheadRecoveryRequired;
+
+        return AdministrativeFailureForCommandState(
+            commandContext,
+            latchSet
+                ? DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet
+                : DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+            latchSet
+                ? DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet
+                : DocumentCacheAdministrativeDiagnosticCategory.LifecycleMismatch,
+            latchSet
+                ? "Session-bound DocumentCache writer observed a cache-ahead recovery latch during administrative drain."
+                : "Session-bound DocumentCache writer observed a lifecycle fence during administrative drain.",
+            documentId,
+            retryable: commandContext.Mutated
+        );
+    }
+
+    private static DocumentCacheProjectionItemProcessResult AdministrativeFailureForCommandState(
+        DocumentCacheAdministrativeCommandExecutionContext commandContext,
+        DocumentCacheAdministrativeCommandClassification classification,
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
+        string message,
+        long? documentId,
+        bool retryable
+    ) =>
+        DocumentCacheProjectionItemProcessResult.FromAdministrativeFailure(
+            AdministrativeFailureForCommandStateDetails(
+                commandContext,
+                classification,
+                diagnosticCategory,
+                message,
+                documentId,
+                retryable
+            )
+        );
+
+    private static DocumentCacheAdministrativeDrainFailure AdministrativeFailureForCommandStateDetails(
+        DocumentCacheAdministrativeCommandExecutionContext commandContext,
+        DocumentCacheAdministrativeCommandClassification classification,
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
+        string message,
+        long? documentId,
+        bool retryable
+    )
+    {
+        ImmutableArray<long> affectedDocumentIds = documentId is null ? [] : [documentId.Value];
+
+        return new DocumentCacheAdministrativeDrainFailure(
+            commandContext.Mutated
+                ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
+                : DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            classification,
+            diagnosticCategory,
+            message,
+            retryable,
+            affectedDocumentIds
+        );
+    }
+
+    private static DocumentCacheAdministrativeDrainFailure AdministrativeFailureForMissingCommandContext(
+        long documentId
+    ) =>
+        new(
+            DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+            DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+            "Administrative drain item processing requires a pinned command context.",
+            retryable: false,
+            affectedDocumentIds: [documentId]
+        );
+
+    private static DocumentCacheAdministrativeDrainFailure AdministrativeFailureForSessionBoundWriter(
+        DocumentCacheSessionBoundWriterResult result,
+        long documentId
+    )
+    {
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory =
+            result.DiagnosticCategory
+            ?? DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure;
+
+        return new DocumentCacheAdministrativeDrainFailure(
+            result.Status,
+            result.Classification,
+            diagnosticCategory,
+            result.Message,
+            retryable: result.Status == DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+            affectedDocumentIds: [documentId]
+        );
     }
 
     private static DocumentCacheWriterRequest CreateWriterRequest(
@@ -421,6 +753,30 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             materializationResult.GetType().Name,
             LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
         );
+}
+
+internal sealed record DocumentCacheProjectionWriterInvocationResult(
+    DocumentCacheWriterResult? WriterResult,
+    DocumentCacheAdministrativeDrainFailure? AdministrativeFailure
+)
+{
+    public static DocumentCacheProjectionWriterInvocationResult Success(
+        DocumentCacheWriterResult writerResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writerResult);
+
+        return new(writerResult, AdministrativeFailure: null);
+    }
+
+    public static DocumentCacheProjectionWriterInvocationResult FromAdministrativeFailure(
+        DocumentCacheAdministrativeDrainFailure administrativeFailure
+    )
+    {
+        ArgumentNullException.ThrowIfNull(administrativeFailure);
+
+        return new(WriterResult: null, AdministrativeFailure: administrativeFailure);
+    }
 }
 
 file static class DocumentCacheProjectionItemProcessingGuard

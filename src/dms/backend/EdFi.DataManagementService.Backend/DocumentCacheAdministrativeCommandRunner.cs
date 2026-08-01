@@ -312,10 +312,11 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
         DocumentCacheAdministrativeCommandClassification classification,
         DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
         string message,
-        bool retryable
+        bool retryable,
+        ImmutableArray<long> affectedDocumentIds = default
     )
     {
-        AddPhaseDiagnostic(diagnosticCategory, message, retryable);
+        AddPhaseDiagnostic(diagnosticCategory, message, retryable, affectedDocumentIds);
 
         return new(
             Request.Command,
@@ -484,8 +485,19 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             {
                 DocumentCacheAdministrativeCommandResult result = await targetContext
                     .DrainExecutor.RunAdministrativeCommandAsync(
-                        drainCancellationToken =>
-                            ExecutePinnedCommandAsync(commandContext, workflow, drainCancellationToken),
+                        async drainCancellationToken =>
+                        {
+                            using IDisposable commandBinding = targetContext.BindAdministrativeCommand(
+                                commandContext
+                            );
+
+                            return await ExecutePinnedCommandAsync(
+                                    commandContext,
+                                    workflow,
+                                    drainCancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        },
                         workflowTimeout.Token
                     )
                     .ConfigureAwait(false);
