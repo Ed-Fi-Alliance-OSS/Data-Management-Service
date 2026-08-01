@@ -14,8 +14,9 @@ namespace EdFi.DataManagementService.Backend;
 /// <remarks>
 /// Dialect-neutral by construction. Both builders project the same column names
 /// (<see cref="NaturalKeyLookupColumns" />) with the same types — notably <c>Ordinal</c> as a 4-byte
-/// integer on both engines — and both emit exactly one result set per group even when SQL Server has to
-/// chunk a group's <c>VALUES</c> input, because the chunks are <c>UNION ALL</c>-ed inside one statement.
+/// integer on both engines — and both emit exactly one statement, and therefore exactly one result set,
+/// per group whatever the entry count: PostgreSQL passes each probe column as one array parameter and SQL
+/// Server passes each group as one JSON parameter shredded by <c>OPENJSON</c>.
 /// </remarks>
 internal static class NaturalKeyLookupResultReader
 {

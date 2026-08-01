@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using FluentAssertions;
@@ -15,13 +16,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [TestFixture]
 public class Given_MssqlNaturalKeyLookupCommandBuilder
 {
-    private const int ParameterBudget = MssqlNaturalKeyLookupCommandBuilder.MssqlParameterBudget;
-
     private static readonly MappingSet _mappingSet =
         RelationalAccessTestData.CreateNaturalKeyProbeMappingSet();
 
     [Test]
-    public void It_probes_the_target_root_with_typed_values_rows()
+    public void It_probes_the_target_root_with_one_openjson_input_per_group()
     {
         var command = MssqlNaturalKeyLookupCommandBuilder.Build(
             CreateBatch(
@@ -36,21 +35,40 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
             )
         );
 
-        command.CommandText.Should().Contain("FROM (VALUES");
-        command.CommandText.Should().Contain(") AS input([Ordinal], [c0])");
-        command.CommandText.Should().Contain("INNER JOIN [edfi].[School] t");
-        command.CommandText.Should().Contain("t.[SchoolId] = input.[c0]");
         command
             .CommandText.Should()
             .Contain("SELECT input.[Ordinal] AS [Ordinal], t.[DocumentId] AS [DocumentId]");
-        command.Parameters.Select(parameter => parameter.Name).Should().Equal("@g0p0_0", "@g0p1_0");
-        command.Parameters[0].Value.Should().Be(255901);
+        command
+            .CommandText.Should()
+            .Contain("FROM OPENJSON(@g0) WITH ([Ordinal] int '$.o', [c0] int '$.v0') AS input");
+        command.CommandText.Should().Contain("INNER JOIN [edfi].[School] t");
+        command.CommandText.Should().Contain("t.[SchoolId] = input.[c0]");
+        command.CommandText.Should().NotContain("(VALUES", "the set-valued input is JSON, not a VALUES list");
+        command.Parameters.Select(parameter => parameter.Name).Should().Equal("@g0");
+        command.Parameters[0].Value.Should().Be("""[{"o":1,"v0":255901},{"o":2,"v0":255902}]""");
+        AssertJsonParameter(command.Parameters[0]);
         command.CommandText.Should().NotContain("ReferentialIdentity");
         command.CommandText.Should().NotContain("[dms].[Document]");
     }
 
     [Test]
-    public void It_returns_rows_in_request_order_from_inline_ordinal_literals()
+    public void It_binds_exactly_one_json_parameter_per_group()
+    {
+        var command = MssqlNaturalKeyLookupCommandBuilder.Build(CreateThreeGroupBatch());
+
+        command
+            .Parameters.Should()
+            .HaveCount(3, "each group's whole entry list travels as one nvarchar(max) JSON payload");
+        command.Parameters.Select(parameter => parameter.Name).Should().Equal("@g0", "@g1", "@g2");
+
+        foreach (var parameter in command.Parameters)
+        {
+            AssertJsonParameter(parameter);
+        }
+    }
+
+    [Test]
+    public void It_carries_the_one_based_request_ordinal_inside_the_json()
     {
         var command = MssqlNaturalKeyLookupCommandBuilder.Build(
             CreateBatch(
@@ -66,20 +84,27 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
             )
         );
 
-        command.CommandText.Should().Contain("(1, @g0p0_0)");
-        command.CommandText.Should().Contain("(2, @g0p1_0)");
-        command.CommandText.Should().Contain("(3, @g0p2_0)");
+        command
+            .CommandText.Should()
+            .Contain(
+                "[Ordinal] int '$.o'",
+                "the reader maps a row back with Entries[ordinal - 1], so the ordinal is input, not output"
+            );
         command
             .CommandText.Should()
             .NotContain(
                 "ROW_NUMBER()",
-                "the request ordinal is an inline literal; today's bulk ordinal is fabricated and re-sorted in C#"
+                "the request ordinal comes from the caller; today's bulk ordinal is fabricated and re-sorted in C#"
             );
-        command.Parameters.Should().HaveCount(3, "the ordinal is a literal, never a parameter");
+
+        var ordinals = ParseJsonArray(command.Parameters[0])
+            .Select(element => element.GetProperty("o").GetInt32());
+
+        ordinals.Should().Equal(1, 2, 3);
     }
 
     [Test]
-    public void It_maps_each_scalar_kind_to_its_sql_server_parameter_type()
+    public void It_maps_each_scalar_kind_to_its_sql_server_with_clause_type()
     {
         var command = MssqlNaturalKeyLookupCommandBuilder.Build(
             CreateBatch(
@@ -93,19 +118,55 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
             )
         );
 
-        AssertSqlDbType(command.Parameters[0], SqlDbType.NVarChar, expectedSize: 50);
-        AssertSqlDbType(command.Parameters[1], SqlDbType.Int);
-        AssertSqlDbType(command.Parameters[2], SqlDbType.BigInt);
-        AssertSqlDbType(command.Parameters[3], SqlDbType.Decimal);
-        AssertSqlDbType(command.Parameters[4], SqlDbType.Bit);
-        AssertSqlDbType(command.Parameters[5], SqlDbType.Date);
-        AssertSqlDbType(command.Parameters[6], SqlDbType.DateTime2);
-        AssertSqlDbType(command.Parameters[7], SqlDbType.Time);
+        var defaults = new MssqlDialectRules().ScalarTypeDefaults;
 
-        SqlParameter decimalParameter = new();
-        command.Parameters[3].ConfigureParameter!(decimalParameter);
-        decimalParameter.Precision.Should().Be(9);
-        decimalParameter.Scale.Should().Be(2);
+        command
+            .CommandText.Should()
+            .Contain(
+                "FROM OPENJSON(@g0) WITH ([Ordinal] int '$.o', "
+                    + "[c0] nvarchar(50) '$.v0', "
+                    + "[c1] int '$.v1', "
+                    + "[c2] bigint '$.v2', "
+                    + "[c3] decimal(9,2) '$.v3', "
+                    + "[c4] bit '$.v4', "
+                    + "[c5] date '$.v5', "
+                    + "[c6] datetime2(7) '$.v6', "
+                    + "[c7] time(7) '$.v7') AS input"
+            );
+
+        // The shredded input column must be the same type the DDL rules give the storage column it is
+        // compared against, or SQL Server converts on every row instead of seeking the RefKey index.
+        command.CommandText.Should().Contain($"[c1] {defaults.Int32Type} ");
+        command.CommandText.Should().Contain($"[c2] {defaults.Int64Type} ");
+        command.CommandText.Should().Contain($"[c4] {defaults.BooleanType} ");
+        command.CommandText.Should().Contain($"[c5] {defaults.DateType} ");
+        command.CommandText.Should().Contain($"[c6] {defaults.DateTimeType} ");
+        command.CommandText.Should().Contain($"[c7] {defaults.TimeType} ");
+    }
+
+    [Test]
+    public void It_serializes_each_scalar_kind_in_the_form_openjson_converts_back()
+    {
+        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
+            CreateBatch(
+                new NaturalKeyProbeLookupGroup(
+                    RelationalAccessTestData.AllScalarKindsResource,
+                    RelationalAccessTestData.CreateAllScalarKindsProbeTarget(),
+                    RelationalAccessTestData.CreateNaturalKeyEntries([
+                        RelationalAccessTestData.CreateAllScalarKindsValues(),
+                    ])
+                )
+            )
+        );
+
+        command
+            .Parameters[0]
+            .Value.Should()
+            .Be(
+                """[{"o":1,"v0":"alpha","v1":2026,"v2":9000000000,"v3":1.5,"v4":true,"v5":"2026-03-05","v6":"2026-03-05T13:30:45.0000000","v7":"13:30:45.0000000"}]""",
+                "strings, ISO dates and JSON numbers/booleans are what the typed WITH clause converts from; "
+                    + "the datetime carries no Z because datetime2(7) stores no offset"
+            );
     }
 
     [Test]
@@ -113,12 +174,22 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
     {
         var command = MssqlNaturalKeyLookupCommandBuilder.Build(CreateProgramBatch());
 
+        command
+            .CommandText.Should()
+            .Contain(
+                "FROM OPENJSON(@g0) WITH ([Ordinal] int '$.o', [c0] bigint '$.v0', "
+                    + "[c1] nvarchar(60) '$.v1', [c2] nvarchar(306) '$.v2') AS input",
+                "the descriptor URI input column is sized to dms.Descriptor.UriLowered so the seek survives"
+            );
         command.CommandText.Should().Contain("INNER JOIN [dms].[Descriptor] d2");
         command.CommandText.Should().Contain("d2.[UriLowered] = input.[c2]");
         command.CommandText.Should().Contain("d2.[Discriminator] = N'ProgramTypeDescriptor'");
         command.CommandText.Should().Contain("t.[ProgramTypeDescriptor_DescriptorId] = d2.[DocumentId]");
-        command.Parameters[2].Value.Should().Be("uri://ed-fi.org/programtypedescriptor#athletics");
-        AssertSqlDbType(command.Parameters[2], SqlDbType.NVarChar, expectedSize: 306);
+        ParseJsonArray(command.Parameters[0])[0]
+            .GetProperty("v2")
+            .GetString()
+            .Should()
+            .Be("uri://ed-fi.org/programtypedescriptor#athletics");
     }
 
     [Test]
@@ -140,6 +211,7 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
         command.CommandText.Should().NotContain("_View");
         command.CommandText.Should().Contain("t.[EducationOrganizationId] = input.[c0]");
         command.CommandText.Should().Contain("t.[Discriminator] AS [Discriminator]");
+        command.CommandText.Should().Contain("[c0] bigint '$.v0'");
     }
 
     [Test]
@@ -156,45 +228,30 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
             )
         );
 
+        command
+            .CommandText.Should()
+            .Contain("FROM OPENJSON(@g0) WITH ([Ordinal] int '$.o', [c0] nvarchar(306) '$.v0') AS input");
         command.CommandText.Should().Contain("INNER JOIN [dms].[Descriptor] descriptor");
         command.CommandText.Should().Contain("descriptor.[UriLowered] = input.[c0]");
         command.CommandText.Should().NotContain("descriptor.[Discriminator] =");
         command.CommandText.Should().Contain("descriptor.[Discriminator] AS [Discriminator]");
         command.CommandText.Should().Contain("descriptor.[ResourceKeyId] AS [ResourceKeyId]");
-        AssertSqlDbType(command.Parameters[0], SqlDbType.NVarChar, expectedSize: 306);
+        command
+            .Parameters[0]
+            .Value.Should()
+            .Be("""[{"o":1,"v0":"uri://ed-fi.org/schooltypedescriptor#alternative"}]""");
     }
 
     [Test]
     public void It_emits_one_statement_per_target_group_in_group_order()
     {
-        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
-            CreateBatch(
-                new NaturalKeyProbeLookupGroup(
-                    RelationalAccessTestData.SchoolResource,
-                    RelationalAccessTestData.CreateSchoolProbeTarget(),
-                    RelationalAccessTestData.CreateNaturalKeyEntries([
-                        [255901],
-                    ])
-                ),
-                new NaturalKeyProbeLookupGroup(
-                    RelationalAccessTestData.EducationOrganizationResource,
-                    RelationalAccessTestData.CreateEducationOrganizationProbeTarget(),
-                    RelationalAccessTestData.CreateNaturalKeyEntries([
-                        [255901L],
-                    ])
-                ),
-                new DescriptorLookupGroup(
-                    RelationalAccessTestData.SchoolTypeDescriptorResource,
-                    RelationalAccessTestData.CreateNaturalKeyEntries([
-                        ["uri://ed-fi.org/schooltypedescriptor#alternative"],
-                    ])
-                )
-            )
-        );
+        var command = MssqlNaturalKeyLookupCommandBuilder.Build(CreateThreeGroupBatch());
 
         CountOccurrences(command.CommandText, "SELECT input.[Ordinal]")
             .Should()
             .Be(3, "each group is one statement and therefore one result set");
+        CountOccurrences(command.CommandText, "FROM OPENJSON(").Should().Be(3);
+        command.CommandText.Should().NotContain("UNION ALL", "a group is never split any more");
         command
             .CommandText.IndexOf("[edfi].[School] t", StringComparison.Ordinal)
             .Should()
@@ -210,169 +267,60 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
             .BeLessThan(
                 command.CommandText.IndexOf("[dms].[Descriptor] descriptor", StringComparison.Ordinal)
             );
-        command
-            .Parameters.Select(parameter => parameter.Name)
-            .Should()
-            .Equal("@g0p0_0", "@g1p0_0", "@g2p0_0");
     }
 
     [Test]
-    public void It_chunks_a_wide_probe_into_additional_values_clauses_with_continuous_ordinals()
+    public void It_pins_the_shredded_json_as_the_driving_side_of_every_join()
     {
-        // 290 x 7 = 2030 parameters: over the 2000 per-chunk budget so the group chunks, but under the
-        // 2098 per-command ceiling so the command is one SQL Server would actually accept.
-        const int EntryCount = 290;
-        const int ColumnCount = 7;
-        var chunkEntryCount = ParameterBudget / ColumnCount;
+        var command = MssqlNaturalKeyLookupCommandBuilder.Build(CreateThreeGroupBatch());
 
-        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
-            CreateBatch(
-                new NaturalKeyProbeLookupGroup(
-                    RelationalAccessTestData.StudentSectionAssociationResource,
-                    RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
-                    CreateStudentSectionAssociationEntries(EntryCount)
-                )
-            )
-        );
-
-        chunkEntryCount.Should().Be(285);
-        CountOccurrences(command.CommandText, ") AS input(")
-            .Should()
-            .Be(2, "the group splits into two VALUES clauses inside the same command");
-        CountOccurrences(command.CommandText, "UNION ALL")
-            .Should()
-            .Be(1, "the chunks stay one statement, so the group is still exactly one result set");
-        command
-            .CommandText.Should()
-            .Contain(
-                $"({chunkEntryCount}, @g0p{chunkEntryCount - 1}_0",
-                "the first chunk fills up to the budget boundary"
-            );
-        command
-            .CommandText.Should()
-            .Contain(
-                $"({chunkEntryCount + 1}, @g0p{chunkEntryCount}_0",
-                "ordinals continue across chunks instead of restarting"
-            );
-        command
-            .CommandText.Should()
-            .Contain($"({EntryCount}, @g0p{EntryCount - 1}_0", "the last entry keeps its request ordinal");
-        command.Parameters.Should().HaveCount(EntryCount * ColumnCount);
-        (chunkEntryCount * ColumnCount)
-            .Should()
-            .BeLessThanOrEqualTo(ParameterBudget, "each VALUES chunk stays inside the parameter budget");
-        MssqlNaturalKeyLookupCommandBuilder
-            .TotalParameterCount(
-                CreateBatch(
-                    new NaturalKeyProbeLookupGroup(
-                        RelationalAccessTestData.StudentSectionAssociationResource,
-                        RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
-                        CreateStudentSectionAssociationEntries(EntryCount)
-                    )
-                )
-            )
+        CountOccurrences(command.CommandText, "OPTION (FORCE ORDER)")
             .Should()
             .Be(
-                command.Parameters.Count,
-                "callers size batches with TotalParameterCount, so it must agree with what Build binds"
+                3,
+                "OPENJSON has no statistics, so without the hint the optimizer scans the target table and "
+                    + "re-parses the whole payload once per row"
             );
         command
-            .Parameters.Count.Should()
-            .BeLessThanOrEqualTo(
-                MssqlNaturalKeyLookupCommandBuilder.MssqlMaxCommandParameters,
-                "chunking never rescues a command from the driver ceiling, so this batch must fit under it"
-            );
+            .CommandText.Should()
+            .EndWith("OPTION (FORCE ORDER)", "the hint closes each statement, not the batch");
     }
 
     [Test]
-    public void It_rejects_a_batch_that_exceeds_the_command_parameter_ceiling()
+    public void It_uses_the_same_sql_shape_regardless_of_entry_count()
     {
-        // 300 x 7 = 2100 bound parameters. Chunking splits the VALUES clauses but the 2100-parameter limit
-        // applies to the whole command, so SQL Server would refuse this at execution time.
-        const int EntryCount = 300;
-
-        var act = () =>
-            MssqlNaturalKeyLookupCommandBuilder.Build(
-                CreateBatch(
-                    new NaturalKeyProbeLookupGroup(
-                        RelationalAccessTestData.StudentSectionAssociationResource,
-                        RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
-                        CreateStudentSectionAssociationEntries(EntryCount)
-                    )
-                )
-            );
-
-        act.Should()
-            .Throw<ArgumentOutOfRangeException>()
-            .WithMessage("*at most 2098 bound parameters per command*");
-    }
-
-    [Test]
-    public void It_counts_parameters_across_every_group_so_callers_can_size_a_batch()
-    {
-        var batch = CreateBatch(
-            new NaturalKeyProbeLookupGroup(
-                RelationalAccessTestData.StudentSectionAssociationResource,
-                RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
-                CreateStudentSectionAssociationEntries(10)
-            ),
-            new DescriptorLookupGroup(
-                RelationalAccessTestData.SchoolTypeDescriptorResource,
-                RelationalAccessTestData.CreateNaturalKeyEntries([
-                    ["uri://ed-fi.org/schooltypedescriptor#alternative"],
-                ])
-            )
-        );
-
-        MssqlNaturalKeyLookupCommandBuilder.TotalParameterCount(batch).Should().Be((10 * 7) + 1);
-        MssqlNaturalKeyLookupCommandBuilder.Build(batch).Parameters.Should().HaveCount((10 * 7) + 1);
-    }
-
-    [Test]
-    public void It_keeps_a_narrow_probe_in_a_single_values_clause()
-    {
-        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
+        var single = MssqlNaturalKeyLookupCommandBuilder.Build(
             CreateBatch(
                 new NaturalKeyProbeLookupGroup(
                     RelationalAccessTestData.SchoolResource,
                     RelationalAccessTestData.CreateSyntheticProbeTarget(1),
-                    RelationalAccessTestData.CreateSyntheticNaturalKeyEntries(400, 1)
+                    RelationalAccessTestData.CreateSyntheticNaturalKeyEntries(1, 1)
                 )
             )
         );
-
-        CountOccurrences(command.CommandText, ") AS input(").Should().Be(1);
-        command.CommandText.Should().NotContain("UNION ALL");
-        command.Parameters.Should().HaveCount(400);
-    }
-
-    [TestCase(1)]
-    [TestCase(2)]
-    [TestCase(7)]
-    [TestCase(20)]
-    public void It_keeps_a_realistic_batch_in_a_single_values_clause(int columnCount)
-    {
-        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
+        var many = MssqlNaturalKeyLookupCommandBuilder.Build(
             CreateBatch(
                 new NaturalKeyProbeLookupGroup(
                     RelationalAccessTestData.SchoolResource,
-                    RelationalAccessTestData.CreateSyntheticProbeTarget(columnCount),
-                    RelationalAccessTestData.CreateSyntheticNaturalKeyEntries(100, columnCount)
+                    RelationalAccessTestData.CreateSyntheticProbeTarget(1),
+                    RelationalAccessTestData.CreateSyntheticNaturalKeyEntries(5000, 1)
                 )
             )
         );
 
-        CountOccurrences(command.CommandText, ") AS input(")
-            .Should()
-            .Be(1, "the realistic case — at most ~100 references per target — never chunks");
-        command.Parameters.Should().HaveCount(100 * columnCount);
-        command.Parameters.Count.Should().BeLessThanOrEqualTo(ParameterBudget);
+        many.CommandText.Should()
+            .Be(
+                single.CommandText,
+                "N lives in the JSON payload, so 5000 entries reuse the one-entry statement and its plan"
+            );
+        many.Parameters.Should().HaveCount(1);
+        ParseJsonArray(many.Parameters[0]).Should().HaveCount(5000);
     }
 
     [Test]
-    public void It_emits_an_empty_result_set_for_an_empty_group()
+    public void It_keeps_the_statement_shape_for_an_empty_group()
     {
-        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
+        var empty = MssqlNaturalKeyLookupCommandBuilder.Build(
             CreateBatch(
                 new NaturalKeyProbeLookupGroup(
                     RelationalAccessTestData.SchoolResource,
@@ -381,44 +329,106 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
                 )
             )
         );
+        var populated = MssqlNaturalKeyLookupCommandBuilder.Build(
+            CreateBatch(
+                new NaturalKeyProbeLookupGroup(
+                    RelationalAccessTestData.SchoolResource,
+                    RelationalAccessTestData.CreateSchoolProbeTarget(),
+                    RelationalAccessTestData.CreateNaturalKeyEntries([
+                        [255901],
+                    ])
+                )
+            )
+        );
 
-        command
+        empty
             .CommandText.Should()
-            .Contain(
-                "SELECT CAST(NULL AS int) AS [Ordinal], CAST(NULL AS bigint) AS [DocumentId]",
-                "SQL Server has no empty VALUES clause, but the group still owes the reader a result set"
+            .Be(
+                populated.CommandText,
+                "an empty JSON array shreds to zero rows, so the group still owes the reader one result set"
             );
-        command.CommandText.Should().Contain("WHERE 1 = 0");
-        command.Parameters.Should().BeEmpty();
+        empty.CommandText.Should().NotContain("WHERE 1 = 0");
+        empty.Parameters.Should().HaveCount(1, "the group still binds its payload parameter");
+        empty.Parameters[0].Value.Should().Be("[]");
     }
 
     [Test]
-    public void It_caches_command_text_per_mapping_set_group_shape_and_entry_count()
+    public void It_never_lets_an_identity_value_alter_the_sql_text()
+    {
+        const string Hostile = "');DROP TABLE [edfi].[School];--\"\\ x] [y";
+
+        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
+            CreateBatch(
+                new NaturalKeyProbeLookupGroup(
+                    RelationalAccessTestData.StudentSectionAssociationResource,
+                    RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
+                    RelationalAccessTestData.CreateNaturalKeyEntries([
+                        [
+                            new DateOnly(2026, 8, 17),
+                            Hostile,
+                            255901L,
+                            2026,
+                            Hostile,
+                            "Fall Semester",
+                            "10001",
+                        ],
+                    ])
+                )
+            )
+        );
+
+        var benign = MssqlNaturalKeyLookupCommandBuilder.Build(
+            CreateBatch(
+                new NaturalKeyProbeLookupGroup(
+                    RelationalAccessTestData.StudentSectionAssociationResource,
+                    RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
+                    RelationalAccessTestData.CreateNaturalKeyEntries([
+                        [
+                            new DateOnly(2026, 8, 17),
+                            "ALG-1",
+                            255901L,
+                            2026,
+                            "Section-1",
+                            "Fall Semester",
+                            "10001",
+                        ],
+                    ])
+                )
+            )
+        );
+
+        command
+            .CommandText.Should()
+            .Be(benign.CommandText, "values never reach the SQL text — only the JSON payload");
+        command.CommandText.Should().NotContain("DROP TABLE");
+        ParseJsonArray(command.Parameters[0])[0]
+            .GetProperty("v1")
+            .GetString()
+            .Should()
+            .Be(Hostile, "the value round-trips through JSON escaping unchanged");
+    }
+
+    [Test]
+    public void It_caches_command_text_per_mapping_set_and_group_shape()
     {
         var first = MssqlNaturalKeyLookupCommandBuilder.Build(CreateProgramBatch());
         var second = MssqlNaturalKeyLookupCommandBuilder.Build(CreateProgramBatch());
 
         ReferenceEquals(first.CommandText, second.CommandText).Should().BeTrue();
 
-        var wider = MssqlNaturalKeyLookupCommandBuilder.Build(
+        var otherShape = MssqlNaturalKeyLookupCommandBuilder.Build(
             CreateBatch(
                 new NaturalKeyProbeLookupGroup(
-                    RelationalAccessTestData.ProgramResource,
-                    RelationalAccessTestData.CreateProgramProbeTarget(),
+                    RelationalAccessTestData.SchoolResource,
+                    RelationalAccessTestData.CreateSchoolProbeTarget(),
                     RelationalAccessTestData.CreateNaturalKeyEntries([
-                        [255901L, "Athletics", "uri://ed-fi.org/programtypedescriptor#athletics"],
-                        [255902L, "Bilingual", "uri://ed-fi.org/programtypedescriptor#bilingual"],
+                        [255901],
                     ])
                 )
             )
         );
 
-        wider
-            .CommandText.Should()
-            .NotBe(
-                first.CommandText,
-                "the VALUES text varies with the entry count, so the count is part of the key"
-            );
+        otherShape.CommandText.Should().NotBe(first.CommandText);
     }
 
     [Test]
@@ -451,6 +461,56 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
 
         command.CommandText.Should().NotContain("ReferentialIdentity");
         command.CommandText.Should().NotContain("[dms].[Document]");
+        command.CommandText.Should().NotContain("ROW_NUMBER()");
+    }
+
+    [Test]
+    public void It_keeps_a_bulk_batch_in_one_command_of_one_parameter()
+    {
+        var command = MssqlNaturalKeyLookupCommandBuilder.Build(
+            CreateBatch(
+                new NaturalKeyProbeLookupGroup(
+                    RelationalAccessTestData.StudentSectionAssociationResource,
+                    RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
+                    CreateStudentSectionAssociationEntries(2500)
+                )
+            )
+        );
+
+        command
+            .Parameters.Should()
+            .HaveCount(
+                1,
+                "2500 x 7 probe values used to be 17500 bound parameters; they are now one JSON payload"
+            );
+        command
+            .Parameters.Count.Should()
+            .BeLessThanOrEqualTo(MssqlNaturalKeyLookupCommandBuilder.MssqlMaxCommandParameters);
+        ParseJsonArray(command.Parameters[0]).Should().HaveCount(2500);
+    }
+
+    [Test]
+    public void It_rejects_a_batch_with_more_groups_than_the_command_parameter_ceiling()
+    {
+        var groups = Enumerable
+            .Range(0, MssqlNaturalKeyLookupCommandBuilder.MssqlMaxCommandParameters + 1)
+            .Select(_ =>
+                (NaturalKeyLookupGroup)
+                    new NaturalKeyProbeLookupGroup(
+                        RelationalAccessTestData.SchoolResource,
+                        RelationalAccessTestData.CreateSchoolProbeTarget(),
+                        RelationalAccessTestData.CreateNaturalKeyEntries([
+                            [255901],
+                        ])
+                    )
+            )
+            .ToArray();
+
+        var act = () => MssqlNaturalKeyLookupCommandBuilder.Build(CreateBatch(groups));
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*at most 2098 bound parameters per command*");
     }
 
     [Test]
@@ -486,6 +546,30 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
             )
         );
 
+    private static NaturalKeyLookupBatch CreateThreeGroupBatch() =>
+        CreateBatch(
+            new NaturalKeyProbeLookupGroup(
+                RelationalAccessTestData.SchoolResource,
+                RelationalAccessTestData.CreateSchoolProbeTarget(),
+                RelationalAccessTestData.CreateNaturalKeyEntries([
+                    [255901],
+                ])
+            ),
+            new NaturalKeyProbeLookupGroup(
+                RelationalAccessTestData.EducationOrganizationResource,
+                RelationalAccessTestData.CreateEducationOrganizationProbeTarget(),
+                RelationalAccessTestData.CreateNaturalKeyEntries([
+                    [255901L],
+                ])
+            ),
+            new DescriptorLookupGroup(
+                RelationalAccessTestData.SchoolTypeDescriptorResource,
+                RelationalAccessTestData.CreateNaturalKeyEntries([
+                    ["uri://ed-fi.org/schooltypedescriptor#alternative"],
+                ])
+            )
+        );
+
     private static IReadOnlyList<NaturalKeyLookupEntry> CreateStudentSectionAssociationEntries(
         int entryCount
     ) =>
@@ -506,22 +590,21 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
                 )
         );
 
-    private static void AssertSqlDbType(
-        RelationalParameter parameter,
-        SqlDbType expectedSqlDbType,
-        int? expectedSize = null
-    )
+    private static void AssertJsonParameter(RelationalParameter parameter)
     {
         SqlParameter sqlParameter = new();
         parameter.ConfigureParameter.Should().NotBeNull();
         parameter.ConfigureParameter!(sqlParameter);
 
-        sqlParameter.SqlDbType.Should().Be(expectedSqlDbType);
+        sqlParameter.SqlDbType.Should().Be(SqlDbType.NVarChar);
+        sqlParameter.Size.Should().Be(-1, "the payload grows with the batch, so it must be nvarchar(max)");
+    }
 
-        if (expectedSize is { } size)
-        {
-            sqlParameter.Size.Should().Be(size);
-        }
+    private static IReadOnlyList<JsonElement> ParseJsonArray(RelationalParameter parameter)
+    {
+        using var document = JsonDocument.Parse((string)parameter.Value!);
+
+        return [.. document.RootElement.EnumerateArray().Select(element => element.Clone())];
     }
 
     private static int CountOccurrences(string text, string fragment)

@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using Microsoft.Data.SqlClient;
@@ -20,41 +22,63 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 /// therefore one result set) per target group, in group order.
 /// </summary>
 /// <remarks>
-/// Each group's input is a typed <c>VALUES</c> derived table — one row per entry, one parameter per probe
-/// value, with the request ordinal written as an inline literal rather than a fabricated
-/// <c>ROW_NUMBER()</c>. No <c>OPENJSON</c> and no table-valued parameter: both would require either a
-/// server-side type dependency or a JSON round trip for what is a small, index-seekable key list.
+/// Each group's input is a single <c>nvarchar(max)</c> JSON document shredded by <c>OPENJSON … WITH</c>
+/// into a typed relation — one row per entry, the request ordinal carried inside the JSON as <c>$.o</c>
+/// rather than fabricated by <c>ROW_NUMBER()</c>. One bound parameter per group, whatever the batch size,
+/// so the emitted text is identical for one entry and for five thousand.
+///
+/// The first implementation bound one parameter per probe <em>value</em> in a typed <c>VALUES</c> derived
+/// table. Task 7's benchmark measured that at 2.65×–3.76× the hash resolver it replaces on SQL Server:
+/// SqlClient costs roughly 17 µs per bound parameter and the cost grows faster than linearly, so
+/// <c>references × probe width</c> parameters dominated everything else. The hash resolver already escapes
+/// to a table-valued parameter above 2000 ids for exactly that reason. <c>OPENJSON</c> buys the same
+/// set-valued input with no server-side type dependency; it needs database compatibility level 130 or
+/// higher, which the DMS core schema already requires — <c>CK_DocumentCache_IsJsonObject</c> is an
+/// <c>ISJSON</c> check constraint.
+///
+/// The JSON is written with <see cref="Utf8JsonWriter" />, never by string concatenation: identity values
+/// are data, so a value carrying a quote or a bracket is escaped by construction and can never alter the
+/// SQL text (which is cached per shape and holds no value at all).
+///
+/// Every statement closes with <c>OPTION (FORCE ORDER)</c> — see
+/// <see cref="AppendJoinOrderHint(StringBuilder)" /> for the measurement that makes it load bearing.
 /// </remarks>
 internal static class MssqlNaturalKeyLookupCommandBuilder
 {
-    /// <summary>
-    /// The largest number of parameters a single <c>VALUES</c> chunk may bind, with headroom under SQL
-    /// Server's 2100-parameter ceiling.
-    /// </summary>
-    /// <remarks>
-    /// A group wider than this is split into additional <c>VALUES</c> clauses, <c>UNION ALL</c>-ed inside
-    /// the same statement so the group still yields exactly one result set and the batch still costs one
-    /// round trip. Ordinals continue across the chunks.
-    ///
-    /// Note what this does and does not buy: SQL Server's 2100-parameter limit applies to the whole
-    /// command, not to each statement or chunk, so chunking bounds the size of any one <c>VALUES</c>
-    /// clause (SQL Server also caps a <c>VALUES</c> clause at 1000 rows) but cannot by itself keep a very
-    /// large batch under the driver ceiling. Bounding the batch is the caller's job — the resolver groups
-    /// at most ~100 references per target.
-    /// </remarks>
-    internal const int MssqlParameterBudget = 2000;
-
     /// <summary>
     /// The largest number of parameters one command may bind: SQL Server's 2100-parameter ceiling less the
     /// two that <c>sp_executesql</c> consumes for the statement text and the parameter declaration.
     /// </summary>
     /// <remarks>
-    /// Chunking cannot enforce this — the ceiling applies to the command, not to each statement — so the
-    /// batch itself has to be small enough. The caller sizes batches with
-    /// <see cref="TotalParameterCount(NaturalKeyLookupBatch)"/>; this guard is the backstop that turns an
-    /// oversized batch into a diagnosable build-time failure instead of a driver error at execution.
+    /// A batch binds exactly one parameter per group, and a group is one target resource, so reaching this
+    /// ceiling would take a single request naming 2099 distinct targets. The guard is kept as a cheap
+    /// invariant that turns that impossibility into a diagnosable build-time failure rather than a driver
+    /// error mid-request; it costs one comparison per command.
     /// </remarks>
     internal const int MssqlMaxCommandParameters = 2098;
+
+    /// <summary>
+    /// The JSON property carrying an entry's one-based ordinal within its group.
+    /// </summary>
+    private const string OrdinalJsonProperty = "o";
+
+    private static readonly JsonEncodedText OrdinalJsonPropertyName = JsonEncodedText.Encode(
+        OrdinalJsonProperty
+    );
+
+    /// <summary>
+    /// Pre-encoded <c>v{k}</c> property names. Sized well past the widest DS 5.2 RefKey (seven columns);
+    /// a wider probe falls back to encoding on the fly.
+    /// </summary>
+    private static readonly JsonEncodedText[] ValueJsonPropertyNames =
+    [
+        .. Enumerable
+            .Range(0, 32)
+            .Select(columnIndex => JsonEncodedText.Encode(ValueJsonProperty(columnIndex))),
+    ];
+
+    private static readonly SqlScalarTypeDefaults ScalarTypeDefaults =
+        new MssqlDialectRules().ScalarTypeDefaults;
 
     private static readonly ConditionalWeakTable<
         MappingSet,
@@ -70,54 +94,27 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
         return new RelationalCommand(BuildCommandText(batch), BuildParameters(batch));
     }
 
-    /// <summary>
-    /// The number of entries one <c>VALUES</c> chunk holds for a probe of the given width.
-    /// </summary>
-    internal static int ChunkEntryCount(int probeValueCount) =>
-        Math.Max(1, MssqlParameterBudget / probeValueCount);
-
-    /// <summary>
-    /// The number of parameters <paramref name="batch"/> would bind — the sum, over every group, of its
-    /// entry count times its probe width. Chunking does not change this total.
-    /// </summary>
-    /// <remarks>
-    /// Callers building a batch should keep this at or below <see cref="MssqlMaxCommandParameters"/>,
-    /// splitting into additional batches when a group set would exceed it.
-    /// </remarks>
-    internal static int TotalParameterCount(NaturalKeyLookupBatch batch)
-    {
-        ArgumentNullException.ThrowIfNull(batch);
-
-        long totalParameterCount = 0;
-
-        foreach (var group in batch.Groups)
-        {
-            totalParameterCount +=
-                (long)group.Entries.Count * NaturalKeyLookupCommandSupport.ProbeValueCount(group);
-        }
-
-        return (int)Math.Min(totalParameterCount, int.MaxValue);
-    }
-
     private static void EnsureSupportedParameterCount(NaturalKeyLookupBatch batch)
     {
-        var totalParameterCount = TotalParameterCount(batch);
-
-        if (totalParameterCount <= MssqlMaxCommandParameters)
+        if (batch.Groups.Count <= MssqlMaxCommandParameters)
         {
             return;
         }
 
         throw new ArgumentOutOfRangeException(
             nameof(batch),
-            totalParameterCount,
-            $"SQL Server natural-key lookup supports at most {MssqlMaxCommandParameters} bound parameters per command. Split the batch into smaller batches."
+            batch.Groups.Count,
+            $"SQL Server natural-key lookup supports at most {MssqlMaxCommandParameters} bound parameters per command, one per target group. Split the batch into smaller batches."
         );
     }
 
+    // ── Command text ────────────────────────────────────────────────────
+
     private static string BuildCommandText(NaturalKeyLookupBatch batch)
     {
-        var shapeKey = NaturalKeyLookupCommandSupport.BuildShapeKey(batch, includeEntryCounts: true);
+        // Entry counts are deliberately excluded: the entries live in the JSON payload, not in the SQL,
+        // so one cached statement serves every batch size of a given shape.
+        var shapeKey = NaturalKeyLookupCommandSupport.BuildShapeKey(batch, includeEntryCounts: false);
         var commandTextByShape = CommandTextByShapeByMappingSet.GetValue(
             batch.MappingSet,
             static _ => new ConcurrentDictionary<string, string>(StringComparer.Ordinal)
@@ -144,43 +141,10 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
 
     private static string BuildGroupSql(MappingSet mappingSet, NaturalKeyLookupGroup group, int groupIndex)
     {
-        if (group.Entries.Count == 0)
-        {
-            return BuildEmptyGroupSql(group);
-        }
-
-        var valueCount = NaturalKeyLookupCommandSupport.ProbeValueCount(group);
-        var chunkEntryCount = ChunkEntryCount(valueCount);
-        List<string> chunks = [];
-
-        for (var chunkStart = 0; chunkStart < group.Entries.Count; chunkStart += chunkEntryCount)
-        {
-            var chunkEnd = Math.Min(chunkStart + chunkEntryCount, group.Entries.Count);
-            chunks.Add(BuildChunkSql(mappingSet, group, groupIndex, chunkStart, chunkEnd));
-        }
-
-        return string.Join(Environment.NewLine + "UNION ALL" + Environment.NewLine, chunks);
-    }
-
-    private static string BuildChunkSql(
-        MappingSet mappingSet,
-        NaturalKeyLookupGroup group,
-        int groupIndex,
-        int chunkStart,
-        int chunkEnd
-    )
-    {
         StringBuilder builder = new();
 
         AppendProjection(builder, mappingSet, group);
-        AppendValuesInput(
-            builder,
-            group,
-            groupIndex,
-            chunkStart,
-            chunkEnd,
-            NaturalKeyLookupCommandSupport.ProbeValueCount(group)
-        );
+        AppendJsonInput(builder, group, groupIndex);
 
         switch (group)
         {
@@ -197,7 +161,33 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
                 );
         }
 
+        AppendJoinOrderHint(builder);
+
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Pins the shredded JSON input as the driving side of the join.
+    /// </summary>
+    /// <remarks>
+    /// Load bearing, and measured. <c>OPENJSON</c> is a table-valued function: it carries no statistics and
+    /// its cardinality is always guessed at 50 rows, so the optimizer is free to place it on the INNER side
+    /// of a nested loop — and against <c>dms.Descriptor</c> it does, scanning the table and re-parsing the
+    /// whole JSON document once per descriptor row. Measured on SQL Server 2022 against a 257-row
+    /// descriptor table: 32 entries cost 5.6 ms per execution unhinted and 0.25 ms with this hint; 256
+    /// entries cost 44 ms unhinted and 0.5 ms with it. The unhinted plan shredded 8224 rows for a 32-entry
+    /// payload.
+    ///
+    /// The hint pins only the join ORDER, which the statement already writes in the only sensible
+    /// sequence — shred the small key set, resolve any descriptor-valued parts, then seek the target's
+    /// RefKey index. It does not pin the join ALGORITHM, so the optimizer may still hash-join a large
+    /// input against a small target. Verified to leave the already-good plans untouched: a 2500-entry
+    /// single-column probe and a 256-entry six-column probe measured identically with and without it.
+    /// </remarks>
+    private static void AppendJoinOrderHint(StringBuilder builder)
+    {
+        builder.AppendLine();
+        builder.Append("OPTION (FORCE ORDER)");
     }
 
     private static void AppendProjection(
@@ -246,39 +236,38 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
         builder.AppendLine();
     }
 
-    private static void AppendValuesInput(
-        StringBuilder builder,
-        NaturalKeyLookupGroup group,
-        int groupIndex,
-        int chunkStart,
-        int chunkEnd,
-        int valueCount
-    )
+    /// <summary>
+    /// Emits the <c>OPENJSON … WITH</c> input relation: the ordinal as <c>int</c> from <c>$.o</c>, then one
+    /// typed column per probe value from <c>$.v{k}</c>.
+    /// </summary>
+    /// <remarks>
+    /// An empty group needs no special case — an empty JSON array shreds to zero rows, so the group still
+    /// owes the reader exactly one (empty) result set and the statement text is unchanged.
+    /// </remarks>
+    private static void AppendJsonInput(StringBuilder builder, NaturalKeyLookupGroup group, int groupIndex)
     {
-        builder.AppendLine("FROM (VALUES");
+        var bindings = ResolveColumnBindings(group);
 
-        for (var entryIndex = chunkStart; entryIndex < chunkEnd; entryIndex++)
+        builder.Append("FROM OPENJSON(").Append(GroupParameterName(groupIndex)).Append(") WITH (");
+        builder
+            .Append(Quote(NaturalKeyLookupColumns.Ordinal))
+            .Append(" int '$.")
+            .Append(OrdinalJsonProperty)
+            .Append('\'');
+
+        for (var columnIndex = 0; columnIndex < bindings.Count; columnIndex++)
         {
-            builder.Append("    (");
-            builder.Append(group.Entries[entryIndex].Ordinal.ToString(CultureInfo.InvariantCulture));
-
-            for (var columnIndex = 0; columnIndex < valueCount; columnIndex++)
-            {
-                builder.Append(", ").Append(ParameterName(groupIndex, entryIndex, columnIndex));
-            }
-
-            builder.Append(')');
-            builder.AppendLine(entryIndex < chunkEnd - 1 ? "," : string.Empty);
+            builder
+                .Append(", ")
+                .Append(Quote(NaturalKeyLookupCommandSupport.InputColumnAlias(columnIndex)))
+                .Append(' ')
+                .Append(bindings[columnIndex].SqlType)
+                .Append(" '$.")
+                .Append(ValueJsonProperty(columnIndex))
+                .Append('\'');
         }
 
-        builder.Append(") AS input(").Append(Quote(NaturalKeyLookupColumns.Ordinal));
-
-        for (var columnIndex = 0; columnIndex < valueCount; columnIndex++)
-        {
-            builder.Append(", ").Append(Quote(NaturalKeyLookupCommandSupport.InputColumnAlias(columnIndex)));
-        }
-
-        builder.AppendLine(")");
+        builder.Append(") AS ").AppendLine(NaturalKeyLookupCommandSupport.InputAlias);
     }
 
     private static void AppendDescriptorPartJoins(
@@ -357,137 +346,29 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
         );
     }
 
-    /// <summary>
-    /// SQL Server has no empty <c>VALUES</c> clause, but an empty group still owes the reader a result set
-    /// in group order, so it becomes a typed no-row projection.
-    /// </summary>
-    private static string BuildEmptyGroupSql(NaturalKeyLookupGroup group)
-    {
-        StringBuilder builder = new();
-
-        builder.Append(
-            $"SELECT CAST(NULL AS int) AS {Quote(NaturalKeyLookupColumns.Ordinal)}, CAST(NULL AS bigint) AS {Quote(NaturalKeyLookupColumns.DocumentId)}"
-        );
-
-        switch (group)
-        {
-            case NaturalKeyProbeLookupGroup { Probe.IsAbstract: true }:
-                builder.Append(
-                    $", CAST(NULL AS nvarchar(256)) AS {Quote(NaturalKeyLookupColumns.Discriminator)}"
-                );
-                break;
-            case DescriptorLookupGroup:
-                builder.Append(
-                    $", CAST(NULL AS nvarchar(128)) AS {Quote(NaturalKeyLookupColumns.Discriminator)}"
-                );
-                builder.Append($", CAST(NULL AS smallint) AS {Quote(NaturalKeyLookupColumns.ResourceKeyId)}");
-                break;
-            default:
-                break;
-        }
-
-        builder.AppendLine();
-        builder.Append("WHERE 1 = 0");
-
-        return builder.ToString();
-    }
+    // ── Parameters ──────────────────────────────────────────────────────
 
     private static IReadOnlyList<RelationalParameter> BuildParameters(NaturalKeyLookupBatch batch)
     {
-        List<RelationalParameter> parameters = [];
+        List<RelationalParameter> parameters = new(batch.Groups.Count);
 
         for (var groupIndex = 0; groupIndex < batch.Groups.Count; groupIndex++)
         {
             var group = batch.Groups[groupIndex];
-            var parameterTypes = ResolveParameterTypes(group);
 
-            for (var entryIndex = 0; entryIndex < group.Entries.Count; entryIndex++)
-            {
-                var entry = group.Entries[entryIndex];
-
-                for (var columnIndex = 0; columnIndex < parameterTypes.Count; columnIndex++)
-                {
-                    var parameterType = parameterTypes[columnIndex];
-
-                    parameters.Add(
-                        new RelationalParameter(
-                            ParameterName(groupIndex, entryIndex, columnIndex),
-                            ConvertValue(entry.Values[columnIndex], columnIndex, parameterType.SqlDbType),
-                            parameter => ConfigureParameter(parameter, parameterType)
-                        )
-                    );
-                }
-            }
+            parameters.Add(
+                new RelationalParameter(
+                    GroupParameterName(groupIndex),
+                    BuildGroupJson(group, ResolveColumnBindings(group)),
+                    ConfigureJsonParameter
+                )
+            );
         }
 
         return parameters;
     }
 
-    private static IReadOnlyList<MssqlParameterType> ResolveParameterTypes(NaturalKeyLookupGroup group) =>
-        group switch
-        {
-            NaturalKeyProbeLookupGroup probeGroup =>
-            [
-                .. probeGroup.Probe.Columns.Select(ResolveParameterType),
-            ],
-            DescriptorLookupGroup => [DescriptorUriParameterType],
-            _ => throw new NotSupportedException(
-                $"Unsupported natural-key lookup group kind '{group.GetType().Name}'."
-            ),
-        };
-
-    private static readonly MssqlParameterType DescriptorUriParameterType = new(
-        SqlDbType.NVarChar,
-        NaturalKeyLookupCommandSupport.DescriptorUriMaxLength,
-        null,
-        null
-    );
-
-    private static MssqlParameterType ResolveParameterType(NaturalKeyProbeColumn column) =>
-        column.DescriptorResource is not null
-            ? DescriptorUriParameterType
-            : column.ScalarType.Kind switch
-            {
-                ScalarKind.String => new MssqlParameterType(
-                    SqlDbType.NVarChar,
-                    column.ScalarType.MaxLength ?? -1,
-                    null,
-                    null
-                ),
-                ScalarKind.Int32 => new MssqlParameterType(SqlDbType.Int, null, null, null),
-                ScalarKind.Int64 => new MssqlParameterType(SqlDbType.BigInt, null, null, null),
-                ScalarKind.Decimal => new MssqlParameterType(
-                    SqlDbType.Decimal,
-                    null,
-                    (byte?)column.ScalarType.Decimal?.Precision,
-                    (byte?)column.ScalarType.Decimal?.Scale
-                ),
-                ScalarKind.Boolean => new MssqlParameterType(SqlDbType.Bit, null, null, null),
-                ScalarKind.Date => new MssqlParameterType(SqlDbType.Date, null, null, null),
-                ScalarKind.DateTime => new MssqlParameterType(SqlDbType.DateTime2, null, null, null),
-                ScalarKind.Time => new MssqlParameterType(SqlDbType.Time, null, null, null),
-                var kind => throw new NotSupportedException(
-                    $"SQL Server natural-key lookup does not support scalar kind '{kind}'."
-                ),
-            };
-
-    private static object ConvertValue(object value, int columnIndex, SqlDbType sqlDbType) =>
-        sqlDbType switch
-        {
-            SqlDbType.NVarChar => RelationalProbeValue.ToStringValue(value, columnIndex),
-            SqlDbType.Int => RelationalProbeValue.ToInt32(value, columnIndex),
-            SqlDbType.BigInt => RelationalProbeValue.ToInt64(value, columnIndex),
-            SqlDbType.Decimal => RelationalProbeValue.ToDecimal(value, columnIndex),
-            SqlDbType.Bit => RelationalProbeValue.ToBoolean(value, columnIndex),
-            SqlDbType.Date => RelationalProbeValue.ToDate(value, columnIndex),
-            SqlDbType.DateTime2 => RelationalProbeValue.ToDateTime(value, columnIndex),
-            SqlDbType.Time => RelationalProbeValue.ToTime(value, columnIndex),
-            _ => throw new NotSupportedException(
-                $"SQL Server natural-key lookup does not support parameter type '{sqlDbType}'."
-            ),
-        };
-
-    private static void ConfigureParameter(DbParameter parameter, MssqlParameterType parameterType)
+    private static void ConfigureJsonParameter(DbParameter parameter)
     {
         if (parameter is not SqlParameter sqlParameter)
         {
@@ -496,26 +377,244 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
             );
         }
 
-        sqlParameter.SqlDbType = parameterType.SqlDbType;
+        sqlParameter.SqlDbType = SqlDbType.NVarChar;
 
-        if (parameterType.Size is { } size)
+        // nvarchar(max): the payload grows with the batch, and a fixed size would silently truncate it.
+        sqlParameter.Size = -1;
+    }
+
+    /// <summary>
+    /// Serializes a group's entries as a JSON array of <c>{"o":ordinal,"v0":…,"v1":…}</c> objects, each
+    /// value in the canonical text form <c>OPENJSON</c>'s typed <c>WITH</c> conversion parses back to the
+    /// probe column's type.
+    /// </summary>
+    private static string BuildGroupJson(
+        NaturalKeyLookupGroup group,
+        IReadOnlyList<MssqlProbeColumnBinding> bindings
+    )
+    {
+        ArrayBufferWriter<byte> buffer = new();
+
+        using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { SkipValidation = true }))
         {
-            sqlParameter.Size = size;
+            writer.WriteStartArray();
+
+            foreach (var entry in group.Entries)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber(OrdinalJsonPropertyName, entry.Ordinal);
+
+                for (var columnIndex = 0; columnIndex < bindings.Count; columnIndex++)
+                {
+                    WriteProbeValue(
+                        writer,
+                        ValueJsonPropertyName(columnIndex),
+                        entry.Values[columnIndex],
+                        columnIndex,
+                        bindings[columnIndex].ValueKind
+                    );
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
         }
 
-        if (parameterType.Precision is { } precision)
-        {
-            sqlParameter.Precision = precision;
-        }
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
 
-        if (parameterType.Scale is { } scale)
+    /// <summary>
+    /// Writes one probe value in the form its <c>WITH</c>-clause type converts from.
+    /// </summary>
+    /// <remarks>
+    /// Verified against SQL Server 2022: JSON numbers convert exactly to <c>int</c>, <c>bigint</c> (past
+    /// 2^53) and <c>decimal(p,s)</c>; a JSON boolean converts to <c>bit</c>; ISO-8601 strings convert to
+    /// <c>date</c>, <c>datetime2(7)</c> and <c>time(7)</c>. A value that fails to convert raises an error
+    /// rather than becoming NULL, so a serialization mistake is loud rather than a silent miss.
+    ///
+    /// The <see cref="DateTime" /> form deliberately carries no <c>Z</c> and no offset: the value is
+    /// already normalized to UTC, the column is <c>datetime2(7)</c> which stores no offset, and this is
+    /// exactly the wall-clock component list a <see cref="SqlDbType.DateTime2" /> parameter would have
+    /// sent.
+    /// </remarks>
+    private static void WriteProbeValue(
+        Utf8JsonWriter writer,
+        JsonEncodedText propertyName,
+        object value,
+        int columnIndex,
+        MssqlProbeValueKind valueKind
+    )
+    {
+        switch (valueKind)
         {
-            sqlParameter.Scale = scale;
+            case MssqlProbeValueKind.String:
+                writer.WriteString(propertyName, RelationalProbeValue.ToStringValue(value, columnIndex));
+                break;
+            case MssqlProbeValueKind.Int32:
+                writer.WriteNumber(propertyName, RelationalProbeValue.ToInt32(value, columnIndex));
+                break;
+            case MssqlProbeValueKind.Int64:
+                writer.WriteNumber(propertyName, RelationalProbeValue.ToInt64(value, columnIndex));
+                break;
+            case MssqlProbeValueKind.Decimal:
+                writer.WriteNumber(propertyName, RelationalProbeValue.ToDecimal(value, columnIndex));
+                break;
+            case MssqlProbeValueKind.Boolean:
+                writer.WriteBoolean(propertyName, RelationalProbeValue.ToBoolean(value, columnIndex));
+                break;
+            case MssqlProbeValueKind.Date:
+                writer.WriteString(
+                    propertyName,
+                    RelationalProbeValue
+                        .ToDate(value, columnIndex)
+                        .ToString(DateJsonFormat, CultureInfo.InvariantCulture)
+                );
+                break;
+            case MssqlProbeValueKind.DateTime:
+                writer.WriteString(
+                    propertyName,
+                    RelationalProbeValue
+                        .ToDateTime(value, columnIndex)
+                        .ToString(DateTimeJsonFormat, CultureInfo.InvariantCulture)
+                );
+                break;
+            case MssqlProbeValueKind.Time:
+                writer.WriteString(
+                    propertyName,
+                    RelationalProbeValue
+                        .ToTime(value, columnIndex)
+                        .ToString(TimeJsonFormat, CultureInfo.InvariantCulture)
+                );
+                break;
+            default:
+                throw new NotSupportedException(
+                    $"SQL Server natural-key lookup does not support probe value kind '{valueKind}'."
+                );
         }
     }
 
-    private static string ParameterName(int groupIndex, int entryIndex, int columnIndex) =>
-        string.Create(CultureInfo.InvariantCulture, $"@g{groupIndex}p{entryIndex}_{columnIndex}");
+    private const string DateJsonFormat = "yyyy-MM-dd";
+    private const string DateTimeJsonFormat = "yyyy-MM-dd'T'HH:mm:ss.fffffff";
+    private const string TimeJsonFormat = "HH:mm:ss.fffffff";
+
+    // ── Column bindings ─────────────────────────────────────────────────
+
+    private static IReadOnlyList<MssqlProbeColumnBinding> ResolveColumnBindings(
+        NaturalKeyLookupGroup group
+    ) =>
+        group switch
+        {
+            NaturalKeyProbeLookupGroup probeGroup =>
+            [
+                .. probeGroup.Probe.Columns.Select(ResolveColumnBinding),
+            ],
+            DescriptorLookupGroup => [DescriptorUriBinding],
+            _ => throw new NotSupportedException(
+                $"Unsupported natural-key lookup group kind '{group.GetType().Name}'."
+            ),
+        };
+
+    /// <summary>
+    /// The descriptor URI probe column. The explicit 306 matches <c>dms.Descriptor.UriLowered</c>: an
+    /// <c>nvarchar(max)</c> input column would implicitly widen and cost the
+    /// <c>UX_Descriptor_UriLowered_Discriminator</c> seek.
+    /// </summary>
+    private static readonly MssqlProbeColumnBinding DescriptorUriBinding = new(
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{ScalarTypeDefaults.StringType}({NaturalKeyLookupCommandSupport.DescriptorUriMaxLength})"
+        ),
+        MssqlProbeValueKind.String
+    );
+
+    /// <summary>
+    /// Renders a probe column's <c>WITH</c>-clause type from the same
+    /// <see cref="MssqlDialectRules" /> scalar-type defaults the DDL emitter renders storage columns from,
+    /// so the shredded input column and the column it is compared against always agree.
+    /// </summary>
+    private static MssqlProbeColumnBinding ResolveColumnBinding(NaturalKeyProbeColumn column) =>
+        column.DescriptorResource is not null
+            ? DescriptorUriBinding
+            : column.ScalarType.Kind switch
+            {
+                ScalarKind.String => new MssqlProbeColumnBinding(
+                    StringWithClauseType(column.ScalarType.MaxLength),
+                    MssqlProbeValueKind.String
+                ),
+                ScalarKind.Int32 => new MssqlProbeColumnBinding(
+                    ScalarTypeDefaults.Int32Type,
+                    MssqlProbeValueKind.Int32
+                ),
+                ScalarKind.Int64 => new MssqlProbeColumnBinding(
+                    ScalarTypeDefaults.Int64Type,
+                    MssqlProbeValueKind.Int64
+                ),
+                ScalarKind.Decimal => new MssqlProbeColumnBinding(
+                    DecimalWithClauseType(column.ScalarType.Decimal),
+                    MssqlProbeValueKind.Decimal
+                ),
+                ScalarKind.Boolean => new MssqlProbeColumnBinding(
+                    ScalarTypeDefaults.BooleanType,
+                    MssqlProbeValueKind.Boolean
+                ),
+                ScalarKind.Date => new MssqlProbeColumnBinding(
+                    ScalarTypeDefaults.DateType,
+                    MssqlProbeValueKind.Date
+                ),
+                ScalarKind.DateTime => new MssqlProbeColumnBinding(
+                    ScalarTypeDefaults.DateTimeType,
+                    MssqlProbeValueKind.DateTime
+                ),
+                ScalarKind.Time => new MssqlProbeColumnBinding(
+                    ScalarTypeDefaults.TimeType,
+                    MssqlProbeValueKind.Time
+                ),
+                var kind => throw new NotSupportedException(
+                    $"SQL Server natural-key lookup does not support scalar kind '{kind}'."
+                ),
+            };
+
+    private static string StringWithClauseType(int? maxLength)
+    {
+        if (maxLength is not { } declaredLength)
+        {
+            // Unbounded only for MetaEd duration/enumeration properties; SQL Server needs an explicit
+            // length or (max), exactly as MssqlDialect.RenderColumnType does for the storage column.
+            return $"{ScalarTypeDefaults.StringType}(max)";
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{ScalarTypeDefaults.StringType}({declaredLength})"
+        );
+    }
+
+    private static string DecimalWithClauseType((int Precision, int Scale)? decimalType)
+    {
+        if (decimalType is not { } declaredDecimal)
+        {
+            return ScalarTypeDefaults.DecimalType;
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{ScalarTypeDefaults.DecimalType}({declaredDecimal.Precision},{declaredDecimal.Scale})"
+        );
+    }
+
+    // ── Naming ──────────────────────────────────────────────────────────
+
+    private static string GroupParameterName(int groupIndex) =>
+        string.Create(CultureInfo.InvariantCulture, $"@g{groupIndex}");
+
+    private static string ValueJsonProperty(int columnIndex) =>
+        string.Create(CultureInfo.InvariantCulture, $"v{columnIndex}");
+
+    private static JsonEncodedText ValueJsonPropertyName(int columnIndex) =>
+        columnIndex < ValueJsonPropertyNames.Length
+            ? ValueJsonPropertyNames[columnIndex]
+            : JsonEncodedText.Encode(ValueJsonProperty(columnIndex));
 
     private static string QuoteTableName(DbTableName tableName) =>
         $"{Quote(tableName.Schema.Value)}.{Quote(tableName.Name)}";
@@ -526,10 +625,20 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
     private static string EscapeSqlLiteral(string value) =>
         value.Replace("'", "''", StringComparison.Ordinal);
 
-    private readonly record struct MssqlParameterType(
-        SqlDbType SqlDbType,
-        int? Size,
-        byte? Precision,
-        byte? Scale
-    );
+    /// <summary>
+    /// How one probe column is shredded: the <c>WITH</c>-clause SQL type and the JSON form its values take.
+    /// </summary>
+    private readonly record struct MssqlProbeColumnBinding(string SqlType, MssqlProbeValueKind ValueKind);
+
+    private enum MssqlProbeValueKind
+    {
+        String,
+        Int32,
+        Int64,
+        Decimal,
+        Boolean,
+        Date,
+        DateTime,
+        Time,
+    }
 }

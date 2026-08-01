@@ -179,8 +179,10 @@ internal static class NaturalKeyLookupCommandSupport
     /// </summary>
     /// <param name="batch">The batch being built.</param>
     /// <param name="includeEntryCounts">
-    /// <see langword="true"/> for SQL Server, whose <c>VALUES</c> text (and chunking) varies with the
-    /// entry count; <see langword="false"/> for PostgreSQL, whose parallel-array text does not.
+    /// <see langword="true"/> when the emitted text varies with a group's entry count. Neither dialect
+    /// needs it today — PostgreSQL passes each probe column as one array parameter and SQL Server passes
+    /// each group as one <c>OPENJSON</c> payload, so both texts are entry-count invariant — but it stays
+    /// so a future dialect that inlines entries cannot silently reuse another batch's statement.
     /// </param>
     public static string BuildShapeKey(NaturalKeyLookupBatch batch, bool includeEntryCounts)
     {
