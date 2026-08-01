@@ -3016,6 +3016,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 )
                 ?.Classification
             ?? CdcProviderRetryContinuityClassification.None;
+        var state = diagnostics.Any(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error)
+            ? CdcProviderArtifactState.Mismatched
+            : CdcProviderArtifactState.Matched;
 
         return new CdcProviderSetupStepResult(
             artifactInventory:
@@ -3023,7 +3026,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 new CdcProviderArtifactObservation(
                     CdcProviderArtifactKind.ProviderHistory,
                     _databaseCdcSafeName,
-                    CdcProviderArtifactState.Matched,
+                    state,
                     observedValues
                 ),
             ],
@@ -3042,12 +3045,29 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
     private static CdcProviderSetupStepResult ProviderMetadataUnavailableResult(Exception exception) =>
         new(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _databaseCdcSafeName,
+                    CdcProviderArtifactState.Unavailable,
+                    new Dictionary<string, string>
+                    {
+                        ["history"] = "unavailable",
+                        ["provider_error_class"] = exception.GetType().Name,
+                    }
+                ),
+            ],
             providerHistoryObservations:
             [
                 new CdcProviderHistoryObservation(
                     CdcProviderArtifactKind.ProviderHistory,
                     _databaseCdcSafeName,
-                    new Dictionary<string, string> { ["history"] = "unavailable" },
+                    new Dictionary<string, string>
+                    {
+                        ["history"] = "unavailable",
+                        ["provider_error_class"] = exception.GetType().Name,
+                    },
                     CdcProviderRetryContinuityClassification.SourceHistoryUnknown
                 ),
             ],

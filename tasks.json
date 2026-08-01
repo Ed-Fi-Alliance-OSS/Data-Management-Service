@@ -600,5 +600,87 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderArtifactOutput"
     ],
     "completed": true
+  },
+  {
+    "category": "sqlserver-heartbeat-database",
+    "description": "Medium: Tighten SQL Server CdcHeartbeat check-constraint exact-match validation so malformed constraints cannot pass provider setup validation and then fail the generated heartbeat update.",
+    "acceptance-criteria": [
+      "SQL Server heartbeat shape validation proves CK_CdcHeartbeat_Singleton enforces HeartbeatId = 1 and CK_CdcHeartbeat_Sequence enforces HeartbeatSequence >= 0, instead of only searching constraint text for the column and literal values.",
+      "Validation fails closed for wrong operators or logically weaker constraints such as HeartbeatId <> 1, HeartbeatId <= 1, HeartbeatSequence <= 0, or constraints that merely contain the expected column and literal text.",
+      "Validation still passes for the heartbeat table and constraints created by the DMS SQL Server provider setup path.",
+      "Focused unit coverage includes at least one malformed singleton constraint and one malformed sequence constraint, and asserts a safe heartbeat mismatch diagnostic."
+    ],
+    "steps-to-verify": [
+      "Review HeartbeatTableShapeSql and heartbeat shape parsing in CdcSqlServerHeartbeatDatabaseProvider for exact operator semantics.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcHeartbeatDatabase"
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-history",
+    "description": "Medium: Keep SQL Server ProviderHistory artifact state aligned with final metadata diagnostics, including unavailable final refresh results. Do not let setup results or manifests show matched or stale provider-history artifacts when provider history is unavailable or failed closed.",
+    "acceptance-criteria": [
+      "DatabaseCdcMetadataRefreshResult emits a ProviderHistory artifact state that reflects final diagnostics, using an unavailable or mismatched state when provider-history errors are present instead of always reporting Matched.",
+      "ProviderMetadataUnavailableResult emits a ProviderHistory artifact observation with unavailable safe metadata so aggregate artifact inventory replaces any earlier pre-refresh ProviderHistory artifact.",
+      "SQL Server setup results, manifests, and provider_history_observations agree when final CDC job or retained-LSN metadata is unavailable or fails closed.",
+      "Unit coverage proves a final metadata refresh error cannot leave provider_artifacts showing a matched ProviderHistory artifact from an earlier setup step."
+    ],
+    "steps-to-verify": [
+      "Review DatabaseCdcMetadataRefreshResult, ProviderMetadataUnavailableResult, and CdcProviderSetupAggregate provider-artifact merging for final ProviderHistory state.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest"
+    ],
+    "completed": true
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "Medium: Reject SQL Server CDC gating roles with explicit SELECT permissions on cdc-schema objects that are not the change tables for the three expected capture instances. Keep this scoped to gating-role exact-match validation, not a general CDC schema permission auditor.",
+    "acceptance-criteria": [
+      "Gating-role explicit-permission inspection ignores only the SELECT permissions that SQL Server creates for the expected dms.Document, dms.DocumentCache, and dms.CdcHeartbeat capture instances.",
+      "Validation fails closed when the binding-derived gating role has SELECT on an unrelated cdc schema object, a change table for an unexpected capture instance, schema-level cdc SELECT, or any other explicit CDC permission outside the expected capture semantics.",
+      "The diagnostic uses CDC_SQLSERVER_GATING_ROLE_MISMATCH or an equally stable gating-role diagnostic and includes only safe role, capture, and object names.",
+      "Existing setup-created SQL Server CDC gating roles still exact-match after initial setup and on ValidateOnly rerun.",
+      "Focused unit coverage includes an extra cdc-schema SELECT grant that is not tied to an expected capture instance."
+    ],
+    "steps-to-verify": [
+      "Review ConnectorPrincipalAccessSql gating_role_explicit_permissions filtering in CdcSqlServerHeartbeatDatabaseProvider.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "Medium: Validate an existing SQL Server CDC gating role before creating missing capture instances. InitialCreateOrExactMatch should fail closed on a dirty binding-derived role without creating provider history artifacts that then fail later access validation.",
+    "acceptance-criteria": [
+      "When one or more expected SQL Server CDC capture instances are missing and the binding-derived gating role already exists, setup inspects the existing role before any sp_cdc_enable_table call.",
+      "Pre-capture role validation rejects non-normal roles, unexpected direct members, parent roles, owned objects, explicit permissions, and unexpected capture-instance usage before creating missing capture instances.",
+      "A rejected pre-existing gating role reports a SqlServerGatingRole mismatch diagnostic or artifact observation using only safe role and object names, and no new capture instances are created in that setup attempt.",
+      "A missing gating role is still created by InitialCreateOrExactMatch, and a clean pre-existing gating role that has no forbidden shape problems can still be used to create the expected capture instances.",
+      "Focused coverage includes a pre-existing dirty gating role with missing expected capture instances and asserts that setup returns a fail-closed result without calling sp_cdc_enable_table."
+    ],
+    "steps-to-verify": [
+      "Review ExecuteCaptureInstancesAsync and the connector-access inspection path in CdcSqlServerHeartbeatDatabaseProvider to confirm role-shape validation happens before capture creation when the role already exists.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "contracts",
+    "description": "Low: Remove the unused provider-step ManifestPayload input from CdcProviderSetupStepResult. Provider steps should expose observed setup metadata only; manifest JSON should be emitted solely from the aggregated setup result.",
+    "acceptance-criteria": [
+      "CdcProviderSetupStepResult no longer accepts or exposes a ManifestPayload value.",
+      "CdcProviderSetupService manifest generation still creates CdcProviderSetupResult.ManifestPayload only from CdcProviderManifestEmitter over the aggregated observed setup result.",
+      "Tests no longer need a provider-supplied manifest payload case whose only purpose is to prove the service ignores that payload.",
+      "No provider or test construction site passes manifestPayload to CdcProviderSetupStepResult."
+    ],
+    "steps-to-verify": [
+      "Run rg -n 'manifestPayload|CdcProviderSetupStepResult.*ManifestPayload' src/dms/backend/EdFi.DataManagementService.Backend.Ddl src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit and confirm only result-level manifest payload usages remain.",
+      "Review CdcProviderSetupService.AddStepResult to confirm manifest payloads cannot be supplied by provider step results.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest"
+    ],
+    "completed": false
   }
 ]

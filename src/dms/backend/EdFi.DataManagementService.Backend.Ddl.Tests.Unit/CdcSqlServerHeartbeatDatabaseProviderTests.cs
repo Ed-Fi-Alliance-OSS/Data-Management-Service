@@ -438,6 +438,119 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
+    public async Task It_should_mark_final_provider_history_refresh_mismatched_when_job_metadata_becomes_unavailable()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            dropJobsDuringFinalProviderMetadataRefresh: true
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_DATABASE_CDC_JOBS_MISSING"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["capture_instance_count"] == "3"
+                && observation.SafeObservedValues["capture_job_present"] == "False"
+                && observation.SafeObservedValues["cleanup_job_present"] == "False"
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.SafeObservedValues["capture_job_present"] == "False"
+                && observation.Classification == CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+            );
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload!.Json);
+        manifestDocument
+            .RootElement.GetProperty("provider_artifacts")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(artifact =>
+                artifact.GetProperty("artifact_kind").GetString() == "provider_history"
+                && artifact.GetProperty("state").GetString() == "mismatched"
+                && artifact.GetProperty("observed_values").GetProperty("capture_job_present").GetString()
+                    == "False"
+            );
+    }
+
+    [Test]
+    public async Task It_should_replace_provider_history_artifact_when_final_metadata_refresh_is_unavailable()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            failFinalProviderMetadataRefresh: true
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_PROVIDER_METADATA_UNAVAILABLE"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                && diagnostic.ProviderErrorClass == nameof(InvalidOperationException)
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.State == CdcProviderArtifactState.Unavailable
+                && observation.SafeObservedValues["history"] == "unavailable"
+                && observation.SafeObservedValues["provider_error_class"] == nameof(InvalidOperationException)
+            );
+        result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.SafeObservedValues["history"] == "unavailable"
+                && observation.Classification == CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+            );
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload!.Json);
+        manifestDocument
+            .RootElement.GetProperty("provider_artifacts")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(artifact =>
+                artifact.GetProperty("artifact_kind").GetString() == "provider_history"
+                && artifact.GetProperty("state").GetString() == "unavailable"
+                && artifact.GetProperty("observed_values").GetProperty("history").GetString() == "unavailable"
+            );
+    }
+
+    [Test]
     public async Task It_should_report_projection_prerequisite_diagnostics_without_mutation()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
@@ -1255,9 +1368,12 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly string _cleanupJobEnabled;
     private readonly string _cleanupJobRunning;
     private readonly string _cleanupJobLastRunStatus;
+    private readonly bool _failFinalProviderMetadataRefresh;
+    private readonly bool _dropJobsDuringFinalProviderMetadataRefresh;
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
     private readonly RecordingSqlServerConnectorAccess _connectorAccess;
     private readonly string _sourceIdentity;
+    private int _databaseCdcStateQueryCount;
 
     public RecordingSqlServerCdcExecutor(
         bool databaseCdcEnabled = false,
@@ -1274,6 +1390,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobEnabled = "True",
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
+        bool failFinalProviderMetadataRefresh = false,
+        bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
         string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity
@@ -1297,6 +1415,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _cleanupJobEnabled = cleanupJobEnabled;
         _cleanupJobRunning = cleanupJobRunning;
         _cleanupJobLastRunStatus = cleanupJobLastRunStatus;
+        _failFinalProviderMetadataRefresh = failFinalProviderMetadataRefresh;
+        _dropJobsDuringFinalProviderMetadataRefresh = dropJobsDuringFinalProviderMetadataRefresh;
         _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
         _sourceIdentity = sourceIdentity;
     }
@@ -1315,6 +1435,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobEnabled = "True",
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
+        bool failFinalProviderMetadataRefresh = false,
+        bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null
     ) =>
@@ -1333,6 +1455,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             cleanupJobEnabled: cleanupJobEnabled,
             cleanupJobRunning: cleanupJobRunning,
             cleanupJobLastRunStatus: cleanupJobLastRunStatus,
+            failFinalProviderMetadataRefresh: failFinalProviderMetadataRefresh,
+            dropJobsDuringFinalProviderMetadataRefresh: dropJobsDuringFinalProviderMetadataRefresh,
             captureInstances: captureInstances,
             connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.Exact()
         );
@@ -1399,14 +1523,7 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             [
                 Row(("source_identity", _sourceIdentity)),
             ],
-            var text when text.Contains("cdc:sqlserver:database-cdc-state") =>
-            [
-                Row(
-                    ("is_cdc_enabled", _databaseCdcEnabled.ToString()),
-                    ("read_committed_snapshot_on", _readCommittedSnapshotOn.ToString()),
-                    ("nested_triggers_value", _nestedTriggersValue)
-                ),
-            ],
+            var text when text.Contains("cdc:sqlserver:database-cdc-state") => DatabaseCdcStateRows(),
             var text when text.Contains("cdc:sqlserver:capture-instance-count") =>
             [
                 Row(("capture_instance_count", _captureInstanceCount.ToString())),
@@ -1454,9 +1571,35 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         return Task.FromResult(rows);
     }
 
+    private IReadOnlyList<IReadOnlyDictionary<string, string?>> DatabaseCdcStateRows()
+    {
+        _databaseCdcStateQueryCount++;
+
+        if (_failFinalProviderMetadataRefresh && IsFinalProviderMetadataRefresh)
+        {
+            throw new InvalidOperationException("Final SQL Server CDC provider metadata refresh failed.");
+        }
+
+        return
+        [
+            Row(
+                ("is_cdc_enabled", _databaseCdcEnabled.ToString()),
+                ("read_committed_snapshot_on", _readCommittedSnapshotOn.ToString()),
+                ("nested_triggers_value", _nestedTriggersValue)
+            ),
+        ];
+    }
+
+    private bool IsFinalProviderMetadataRefresh => _databaseCdcStateQueryCount > 1;
+
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> JobHelpRows()
     {
         List<IReadOnlyDictionary<string, string?>> rows = [];
+
+        if (_dropJobsDuringFinalProviderMetadataRefresh && IsFinalProviderMetadataRefresh)
+        {
+            return rows;
+        }
 
         if (_captureJobPresent)
         {
@@ -1560,6 +1703,11 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> JobRuntimeRows()
     {
         List<IReadOnlyDictionary<string, string?>> rows = [];
+
+        if (_dropJobsDuringFinalProviderMetadataRefresh && IsFinalProviderMetadataRefresh)
+        {
+            return rows;
+        }
 
         if (_captureJobPresent)
         {
