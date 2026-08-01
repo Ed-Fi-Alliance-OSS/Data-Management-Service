@@ -64,6 +64,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>();
         var documentCacheAdministrativeMutex =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>();
+        var documentCacheAdministrativePrimitives =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativePrimitives>();
         var documentCacheProjectionDrainPageProcessor =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
@@ -101,6 +103,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         documentProjectionWorkPager.Should().BeOfType<MssqlDocumentProjectionWorkPager>();
         documentCacheAdministrativeMutex.Should().BeOfType<MssqlDocumentCacheAdministrativeMutex>();
+        documentCacheAdministrativePrimitives.Should().BeOfType<MssqlDocumentCacheAdministrativePrimitives>();
         documentCacheProjectionDrainPageProcessor
             .Should()
             .BeOfType<DocumentCacheProjectionDrainPageProcessor>();

@@ -68,6 +68,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentProjectionWorkPager>();
         var documentCacheAdministrativeMutex =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>();
+        var documentCacheAdministrativePrimitives =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativePrimitives>();
         var documentCacheProjectionDrainPageProcessor =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
@@ -105,6 +107,9 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         documentCacheWriter.Should().BeOfType<PostgresqlDocumentCacheWriter>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         documentProjectionWorkPager.Should().BeOfType<PostgresqlDocumentProjectionWorkPager>();
+        documentCacheAdministrativePrimitives
+            .Should()
+            .BeOfType<PostgresqlDocumentCacheAdministrativePrimitives>();
         documentCacheAdministrativeMutex.Should().BeOfType<PostgresqlDocumentCacheAdministrativeMutex>();
         documentCacheProjectionDrainPageProcessor
             .Should()

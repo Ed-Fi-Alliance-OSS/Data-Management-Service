@@ -47,6 +47,12 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlDocumentCacheAdministrativeMutex
             >()
         );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativePrimitives,
+                PostgresqlDocumentCacheAdministrativePrimitives
+            >()
+        );
 
         services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,

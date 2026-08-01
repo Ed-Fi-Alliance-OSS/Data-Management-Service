@@ -46,6 +46,12 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
                 MssqlDocumentCacheAdministrativeMutex
             >()
         );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativePrimitives,
+                MssqlDocumentCacheAdministrativePrimitives
+            >()
+        );
 
         services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
