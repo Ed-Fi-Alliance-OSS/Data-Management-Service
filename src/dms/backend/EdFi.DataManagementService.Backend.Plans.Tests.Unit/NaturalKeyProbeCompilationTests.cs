@@ -364,9 +364,13 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
     }
 
     /// <summary>
-    /// Differential guard: the compiled own-identity probe must reproduce, resource by resource, the
-    /// column list the runtime derivation produces today from the <c>ReferentialIdentity</c> trigger
-    /// parameter block. Deleted with the trigger in a later phase.
+    /// Differential guard: the compiled own-identity probe must reproduce, resource by resource, BOTH
+    /// arms of what the runtime derivations produce today from the <c>ReferentialIdentity</c> trigger
+    /// parameter block — the natural-key column list the constraint resolver compares a unique violation
+    /// against, and the ordered identity-path list the failure mapper attributes the 409
+    /// <c>duplicateIdentityValues</c> body to. The two arms differ (reference-sourced identity parts
+    /// collapse onto one FK column in the constraint but stay individually attributed in the 409 body),
+    /// so each needs its own pin. Deleted with the trigger in a later phase.
     /// </summary>
     private static void AssertLegacyTriggerParity(MappingSet mappingSet)
     {
@@ -380,6 +384,15 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
                 .Columns.Select(column => column.ColumnName)
                 .Should()
                 .Equal(legacyColumns, $"probe and trigger must agree for '{Format(resource)}'");
+
+            ownNk
+                .IdentityJsonPathsInOrder.Select(identityPath => identityPath.Canonical)
+                .Should()
+                .Equal(
+                    LegacyIdentityElementPaths(mappingSet, resource),
+                    $"409 duplicateIdentityValues attribution must agree for '{Format(resource)}'"
+                );
+
             comparedResources++;
         }
 
@@ -404,15 +417,7 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
             )
             .RelationalModel;
         var rootTable = resourceModel.Root;
-
-        var referentialIdentityTrigger = mappingSet.Model.TriggersInCreateOrder.Single(trigger =>
-            trigger.Table.Equals(rootTable.Table)
-            && trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance parameters
-            && string.Equals(parameters.ProjectName, resource.ProjectName, StringComparison.Ordinal)
-            && string.Equals(parameters.ResourceName, resource.ResourceName, StringComparison.Ordinal)
-        );
-        var referentialIdentityParameters = (TriggerKindParameters.ReferentialIdentityMaintenance)
-            referentialIdentityTrigger.Parameters;
+        var referentialIdentityParameters = LegacyReferentialIdentityParameters(mappingSet, resource);
 
         Dictionary<string, DocumentReferenceBinding> identityBindingsByPath = new(StringComparer.Ordinal);
 
@@ -451,6 +456,45 @@ public class Given_NaturalKeyProbes_Over_Authoritative_MappingSets
         }
 
         return rootNaturalKeyColumns;
+    }
+
+    /// <summary>
+    /// The identity JSONPaths the pre-severing
+    /// <c>RelationalWriteDatabaseFailureResultMapper.BuildDuplicateIdentityValues</c> walked: the
+    /// <c>ReferentialIdentityMaintenance</c> identity elements in order, one per identity path, with no
+    /// de-duplication and no FK collapse.
+    /// </summary>
+    private static IReadOnlyList<string> LegacyIdentityElementPaths(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    ) =>
+        LegacyReferentialIdentityParameters(mappingSet, resource)
+            .IdentityElements.Select(identityElement => identityElement.IdentityJsonPath)
+            .ToArray();
+
+    /// <summary>
+    /// Resolves a resource's <c>ReferentialIdentityMaintenance</c> trigger parameter block exactly the way
+    /// <c>RelationalWriteSupport.GetReferentialIdentityParametersOrThrow</c> does.
+    /// </summary>
+    private static TriggerKindParameters.ReferentialIdentityMaintenance LegacyReferentialIdentityParameters(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        var rootTable = mappingSet
+            .Model.ConcreteResourcesInNameOrder.Single(concreteResource =>
+                concreteResource.RelationalModel.Resource.Equals(resource)
+            )
+            .RelationalModel.Root;
+
+        var referentialIdentityTrigger = mappingSet.Model.TriggersInCreateOrder.Single(trigger =>
+            trigger.Table.Equals(rootTable.Table)
+            && trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance parameters
+            && string.Equals(parameters.ProjectName, resource.ProjectName, StringComparison.Ordinal)
+            && string.Equals(parameters.ResourceName, resource.ResourceName, StringComparison.Ordinal)
+        );
+
+        return (TriggerKindParameters.ReferentialIdentityMaintenance)referentialIdentityTrigger.Parameters;
     }
 
     private static IReadOnlyList<TableConstraint.Unique> FindProbeTableConstraints(
