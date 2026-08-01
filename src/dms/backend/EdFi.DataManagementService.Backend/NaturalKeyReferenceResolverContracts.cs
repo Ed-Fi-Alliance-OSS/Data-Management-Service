@@ -13,9 +13,9 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 /// <remarks>
 /// Only hits produce rows — every statement the builders emit is an <c>INNER JOIN</c> — so an entry with no
-/// row is a miss. Adapters that have to split a batch (SQL Server's per-command parameter ceiling)
-/// re-attribute their sub-batch rows to the original batch's coordinates before returning, so the caller
-/// always reads <see cref="GroupIndex"/> and <see cref="Ordinal"/> against the batch it handed in.
+/// row is a miss. Rows arrive in unspecified order, so <see cref="GroupIndex"/> together with
+/// <see cref="Ordinal"/> is the only safe way to attribute one. Both adapters return rows already in the
+/// coordinates of the batch the caller handed in.
 /// </remarks>
 /// <param name="GroupIndex">The zero-based index of the group in <c>NaturalKeyLookupBatch.Groups</c>.</param>
 /// <param name="Ordinal">
@@ -44,8 +44,8 @@ public sealed record NaturalKeyLookupRow(
 /// <remarks>
 /// The counterpart of <see cref="IReferenceResolverAdapter" /> for the natural-key resolver. One call is
 /// one round trip on both dialects: each adapter issues exactly one command, because neither binds a
-/// parameter per entry — PostgreSQL passes one array parameter per probe column and SQL Server passes one
-/// JSON payload per group.
+/// parameter per entry — PostgreSQL passes one array parameter per probe column per group and SQL Server
+/// passes one JSON payload per group.
 /// </remarks>
 public interface INaturalKeyLookupAdapter
 {
