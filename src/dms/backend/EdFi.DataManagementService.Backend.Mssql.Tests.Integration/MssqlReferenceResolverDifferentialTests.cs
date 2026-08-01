@@ -330,11 +330,12 @@ public class Given_MssqlReferenceResolverDifferential
     }
 
     [Test]
-    public async Task It_resolves_a_parameter_budget_crossing_lookup_set_identically()
+    public async Task It_resolves_a_large_deduped_lookup_set_identically()
     {
-        // 2500 one-column entries: past the 2098-parameter per-command ceiling (so the adapter slices the
-        // batch) and past the 2000-parameter per-VALUES-clause budget (so the builder also chunks within
-        // a slice). Both bounds are exercised end to end against a live server.
+        // 2500 one-column entries in a single command. Under the OPENJSON input design the whole group
+        // binds one nvarchar(max) parameter, so this is the large-batch equivalence case rather than a
+        // parameter-budget case; it exercises payload size and ordinal attribution end to end against a
+        // live server, mirroring the PostgreSQL suite's large-batch test.
         const int LargeLookupCount = 2500;
         var fixture = _database.Fixture;
         var schoolResourceKeyId = _database.MappingSet.ResourceKeyIdByResource[fixture.SchoolResource];
