@@ -1346,6 +1346,96 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_reject_gating_role_deny_on_expected_cdc_schema_object()
+    {
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                GatingRoleExplicitPermissions = ["cdc.dms_binding_document_CT.DENY_SELECT"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == "dms_binding_gate"
+                && diagnostic.ObservedValue!.Contains("permissions:cdc.dms_binding_document_CT.DENY_SELECT")
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == "dms_binding_gate"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["gating_role_explicit_permissions"]
+                    == "cdc.dms_binding_document_CT.DENY_SELECT"
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task It_should_reject_required_source_column_select_denial()
+    {
+        var sourceSelectDenial = "dms.Document.DocumentUuid.via.direct";
+        var executor = ExistingArtifactsWithConnectorAccess(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal"],
+                DatabaseConnect = true,
+                DocumentSelect = true,
+                DocumentCacheSelect = true,
+                HeartbeatSelect = true,
+                HeartbeatSequenceUpdate = true,
+                HeartbeatAtUpdate = true,
+                SourceSelectDenials = [sourceSelectDenial],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document")
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["source_select_denials"] == sourceSelectDenial
+            );
+        result
+            .GrantInventory.Should()
+            .NotContain(grant =>
+                grant.SafeObjectName.Value == "dms.Document" && grant.Privileges.Contains("SELECT")
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
     public async Task It_should_reject_inherited_or_public_forbidden_connector_permissions()
     {
         var executor = ExistingArtifactsWithConnectorAccess(
@@ -1599,6 +1689,8 @@ internal sealed class RecordingSqlServerConnectorAccess
     public IReadOnlyList<string> WorkTablePrivileges { get; init; } = [];
 
     public IReadOnlyList<string> ExtraDmsSelectTables { get; init; } = [];
+
+    public IReadOnlyList<string> SourceSelectDenials { get; init; } = [];
 
     public static RecordingSqlServerConnectorAccess MissingGrants() => new();
 
@@ -1971,7 +2063,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             ("document_cache_write_privileges", Csv(_connectorAccess.DocumentCacheWritePrivileges)),
             ("heartbeat_write_privileges", Csv(_connectorAccess.HeartbeatWritePrivileges)),
             ("work_table_privileges", Csv(_connectorAccess.WorkTablePrivileges)),
-            ("extra_dms_select_tables", Csv(_connectorAccess.ExtraDmsSelectTables))
+            ("extra_dms_select_tables", Csv(_connectorAccess.ExtraDmsSelectTables)),
+            ("source_select_denials", Csv(_connectorAccess.SourceSelectDenials))
         );
 
     private int ExpectedCaptureInstancesUsingGatingRole()

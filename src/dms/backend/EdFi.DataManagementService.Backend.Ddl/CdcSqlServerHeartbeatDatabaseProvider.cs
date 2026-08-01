@@ -734,9 +734,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var disallowedServerRoles = ReadCsv(row, "disallowed_server_roles");
         var ownership = ReadCsv(row, "ownership");
         var hasDatabaseConnect = ReadBool(row, "database_connect");
-        var hasDocumentSelect = ReadBool(row, "document_select");
-        var hasDocumentCacheSelect = ReadBool(row, "document_cache_select");
-        var hasHeartbeatSelect = ReadBool(row, "heartbeat_select");
+        var sourceSelectDenials = ReadCsv(row, "source_select_denials");
+        var hasDocumentSelect =
+            ReadBool(row, "document_select") && !HasSourceSelectDenial(sourceSelectDenials, "dms.Document");
+        var hasDocumentCacheSelect =
+            ReadBool(row, "document_cache_select")
+            && !HasSourceSelectDenial(sourceSelectDenials, "dms.DocumentCache");
+        var hasHeartbeatSelect =
+            ReadBool(row, "heartbeat_select")
+            && !HasSourceSelectDenial(sourceSelectDenials, "dms.CdcHeartbeat");
         var hasHeartbeatSequenceUpdate = ReadBool(row, "heartbeat_sequence_update");
         var hasHeartbeatAtUpdate = ReadBool(row, "heartbeat_at_update");
         var hasHeartbeatIdUpdate = ReadBool(row, "heartbeat_id_update");
@@ -789,6 +795,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             connectorIdentityIsGrantable
             && gatingRoleShapeIsGrantable
             && !hasForbiddenPrivileges
+            && sourceSelectDenials.Count == 0
             && missingRequiredPrivileges.Count > 0;
         var isExactMatch =
             connectorIdentityIsGrantable
@@ -836,6 +843,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["heartbeat_id_update"] = hasHeartbeatIdUpdate.ToString(),
             ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
             ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
+            ["source_select_denials"] = CsvOrNone(sourceSelectDenials),
         };
         var gatingRoleObservedValues = new Dictionary<string, string>
         {
@@ -1182,6 +1190,43 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         )
                     )
                 )
+            ),
+            required_source_select_denials AS (
+                SELECT DISTINCT
+                    column_info.object_id,
+                    CONVERT(
+                        nvarchar(700),
+                        N'dms.'
+                            + column_info.object_name COLLATE DATABASE_DEFAULT
+                            + N'.'
+                            + column_info.column_name COLLATE DATABASE_DEFAULT
+                            + N'.via.'
+                            + deny_info.source_name COLLATE DATABASE_DEFAULT
+                    ) AS denial_token
+                FROM connector_permissions deny_info
+                INNER JOIN dms_table_columns column_info
+                    ON column_info.object_id IN (
+                        @document_object_id,
+                        @document_cache_object_id,
+                        @heartbeat_object_id
+                    )
+                    AND (
+                        (
+                            deny_info.class = 0
+                            AND deny_info.major_id = 0
+                        )
+                        OR (
+                            deny_info.class = 3
+                            AND deny_info.major_id = column_info.schema_id
+                        )
+                        OR (
+                            deny_info.class = 1
+                            AND deny_info.major_id = column_info.object_id
+                            AND deny_info.minor_id IN (0, column_info.column_id)
+                        )
+                    )
+                WHERE deny_info.state = N'D'
+                AND deny_info.permission_name = N'SELECT'
             )
             SELECT
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM connector) THEN 1 ELSE 0 END) AS connector_exists,
@@ -1241,14 +1286,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                                             + N'.'
                                             + object_info.name COLLATE DATABASE_DEFAULT
                                             + N'.'
+                                            + CASE WHEN permission_info.state = N'D' THEN N'DENY_' ELSE N'' END
                                             + permission_info.permission_name COLLATE DATABASE_DEFAULT
                                     WHEN permission_info.class = 3 AND schema_info.schema_id IS NOT NULL
                                         THEN N'schema.'
                                             + schema_info.name COLLATE DATABASE_DEFAULT
                                             + N'.'
+                                            + CASE WHEN permission_info.state = N'D' THEN N'DENY_' ELSE N'' END
                                             + permission_info.permission_name COLLATE DATABASE_DEFAULT
                                     WHEN permission_info.class = 0
                                         THEN N'database.'
+                                            + CASE WHEN permission_info.state = N'D' THEN N'DENY_' ELSE N'' END
                                             + permission_info.permission_name COLLATE DATABASE_DEFAULT
                                     ELSE permission_info.permission_name COLLATE DATABASE_DEFAULT
                                 END
@@ -1256,7 +1304,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         FROM gating_role
                         INNER JOIN sys.database_permissions permission_info
                             ON permission_info.grantee_principal_id = gating_role.principal_id
-                            AND permission_info.state IN (N'G', N'W')
+                            AND permission_info.state IN (N'G', N'W', N'D')
                         LEFT JOIN sys.objects object_info
                             ON permission_info.class = 1
                             AND object_info.object_id = permission_info.major_id
@@ -1266,6 +1314,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                             ON permission_info.class = 3
                             AND schema_info.schema_id = permission_info.major_id
                         WHERE NOT (
+                            permission_info.state IN (N'G', N'W')
+                            AND
                             permission_info.class = 1
                             AND permission_info.permission_name = N'SELECT'
                             AND object_schema_info.name = N'cdc'
@@ -1352,6 +1402,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         WHERE effective_permission.permission_name = N'SELECT'
                         AND effective_permission.object_id = @document_object_id
                     )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM required_source_select_denials deny_info
+                        WHERE deny_info.object_id = @document_object_id
+                    )
                 ) THEN 1 ELSE 0 END) AS document_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
@@ -1366,6 +1421,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         WHERE effective_permission.permission_name = N'SELECT'
                         AND effective_permission.object_id = @document_cache_object_id
                     )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM required_source_select_denials deny_info
+                        WHERE deny_info.object_id = @document_cache_object_id
+                    )
                 ) THEN 1 ELSE 0 END) AS document_cache_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
                     SELECT 1
@@ -1379,6 +1439,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         FROM dms_object_effective_permissions effective_permission
                         WHERE effective_permission.permission_name = N'SELECT'
                         AND effective_permission.object_id = @heartbeat_object_id
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM required_source_select_denials deny_info
+                        WHERE deny_info.object_id = @heartbeat_object_id
                     )
                 ) THEN 1 ELSE 0 END) AS heartbeat_select,
                 CONVERT(nvarchar(5), CASE WHEN EXISTS (
@@ -1522,7 +1587,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         AND permission_info.permission_name = N'SELECT'
                         AND object_info.object_name NOT IN (N'Document', N'DocumentCache', N'CdcHeartbeat', N'DocumentProjectionWork')
                     ) permission_info
-                ), N'') AS extra_dms_select_tables;
+                ), N'') AS extra_dms_select_tables,
+                COALESCE((
+                    SELECT STRING_AGG(denial_info.denial_token, N',') WITHIN GROUP (ORDER BY denial_info.denial_token)
+                    FROM required_source_select_denials denial_info
+                ), N'') AS source_select_denials;
             """;
     }
 
@@ -1690,14 +1759,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                                             + N'.'
                                             + object_info.name COLLATE DATABASE_DEFAULT
                                             + N'.'
+                                            + CASE WHEN permission_info.state = N'D' THEN N'DENY_' ELSE N'' END
                                             + permission_info.permission_name COLLATE DATABASE_DEFAULT
                                     WHEN permission_info.class = 3 AND schema_info.schema_id IS NOT NULL
                                         THEN N'schema.'
                                             + schema_info.name COLLATE DATABASE_DEFAULT
                                             + N'.'
+                                            + CASE WHEN permission_info.state = N'D' THEN N'DENY_' ELSE N'' END
                                             + permission_info.permission_name COLLATE DATABASE_DEFAULT
                                     WHEN permission_info.class = 0
                                         THEN N'database.'
+                                            + CASE WHEN permission_info.state = N'D' THEN N'DENY_' ELSE N'' END
                                             + permission_info.permission_name COLLATE DATABASE_DEFAULT
                                     ELSE permission_info.permission_name COLLATE DATABASE_DEFAULT
                                 END
@@ -1705,7 +1777,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         FROM gating_role
                         INNER JOIN sys.database_permissions permission_info
                             ON permission_info.grantee_principal_id = gating_role.principal_id
-                            AND permission_info.state IN (N'G', N'W')
+                            AND permission_info.state IN (N'G', N'W', N'D')
                         LEFT JOIN sys.objects object_info
                             ON permission_info.class = 1
                             AND object_info.object_id = permission_info.major_id
@@ -1715,6 +1787,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                             ON permission_info.class = 3
                             AND schema_info.schema_id = permission_info.major_id
                         WHERE NOT (
+                            permission_info.state IN (N'G', N'W')
+                            AND
                             permission_info.class = 1
                             AND permission_info.permission_name = N'SELECT'
                             AND object_schema_info.name = N'cdc'
@@ -2964,6 +3038,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return missing;
     }
+
+    private static bool HasSourceSelectDenial(
+        IReadOnlyList<string> sourceSelectDenials,
+        string sourceTableName
+    ) =>
+        sourceSelectDenials.Any(denial => denial.StartsWith($"{sourceTableName}.", StringComparison.Ordinal));
 
     private static IReadOnlyList<CdcProviderDiagnostic> ConnectorPrincipalAccessDiagnostics(
         CdcSafeName connectorPrincipal,

@@ -260,6 +260,50 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
+    public async Task It_should_fail_closed_when_required_source_column_select_is_denied()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            DENY SELECT ON OBJECT::[dms].[Document] ([DocumentUuid]) TO {QuoteIdentifier(
+                _connectorPrincipalName
+            )};
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_REQUIRED_GRANTS_MISSING"
+                && diagnostic.ObservedValue!.Contains("SELECT_dms.Document", StringComparison.Ordinal)
+            );
+        validateResult
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.Grant
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation
+                    .SafeObservedValues["source_select_denials"]
+                    .Contains("dms.Document.DocumentUuid.via.direct", StringComparison.Ordinal)
+            );
+        (await HasConnectorColumnPermissionStateAsync(connection, "Document", "DocumentUuid", "SELECT", "D"))
+            .Should()
+            .BeTrue("validation reports the DENY without permission repair");
+    }
+
+    [Test]
     public async Task It_should_exact_match_on_rerun_and_validate_only_after_initial_setup()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
@@ -671,6 +715,62 @@ public class Given_MssqlCdcProviderAccessRetry
         )
             .Should()
             .BeTrue("validation reports the mismatched CDC role permission without destructive cleanup");
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_on_gating_role_deny_for_expected_cdc_object_without_removing_it()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        var expectedPermissionToken = $"cdc.{DocumentCaptureInstanceName}_CT.DENY_SELECT";
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            DENY SELECT ON OBJECT::[cdc].[{DocumentCaptureInstanceName}_CT] TO {QuoteIdentifier(
+                GatingRoleName
+            )};
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == GatingRoleName
+                && diagnostic.ObservedValue!.Contains(expectedPermissionToken, StringComparison.Ordinal)
+            );
+        validateResult
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == GatingRoleName
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["gating_role_explicit_permissions"]
+                    == expectedPermissionToken
+            );
+        (
+            await HasRoleObjectPermissionStateAsync(
+                connection,
+                GatingRoleName,
+                $"{DocumentCaptureInstanceName}_CT",
+                "SELECT",
+                "D",
+                schemaName: "cdc"
+            )
+        )
+            .Should()
+            .BeTrue("validation reports the mismatched CDC role DENY without destructive cleanup");
     }
 
     [Test]
@@ -1296,6 +1396,40 @@ public class Given_MssqlCdcProviderAccessRetry
         return Convert.ToInt64(await command.ExecuteScalarAsync()) > 0;
     }
 
+    private async Task<bool> HasConnectorColumnPermissionStateAsync(
+        SqlConnection connection,
+        string objectName,
+        string columnName,
+        string permissionName,
+        string permissionState
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM sys.database_permissions permission_info
+            INNER JOIN sys.objects object_info
+                ON object_info.object_id = permission_info.major_id
+            INNER JOIN sys.schemas schema_info
+                ON schema_info.schema_id = object_info.schema_id
+            INNER JOIN sys.columns column_info
+                ON column_info.object_id = permission_info.major_id
+                AND column_info.column_id = permission_info.minor_id
+            WHERE permission_info.grantee_principal_id = DATABASE_PRINCIPAL_ID(@connector_principal)
+            AND schema_info.name = N'dms'
+            AND object_info.name = @object_name
+            AND column_info.name = @column_name
+            AND permission_info.permission_name = @permission_name
+            AND permission_info.state = @permission_state;
+            """;
+        command.Parameters.AddWithValue("connector_principal", _connectorPrincipalName);
+        command.Parameters.AddWithValue("object_name", objectName);
+        command.Parameters.AddWithValue("column_name", columnName);
+        command.Parameters.AddWithValue("permission_name", permissionName);
+        command.Parameters.AddWithValue("permission_state", permissionState);
+        return Convert.ToInt64(await command.ExecuteScalarAsync()) > 0;
+    }
+
     private static async Task<bool> HasRoleObjectPermissionAsync(
         SqlConnection connection,
         string roleName,
@@ -1322,6 +1456,37 @@ public class Given_MssqlCdcProviderAccessRetry
         command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("object_name", objectName);
         command.Parameters.AddWithValue("permission_name", permissionName);
+        return Convert.ToInt64(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task<bool> HasRoleObjectPermissionStateAsync(
+        SqlConnection connection,
+        string roleName,
+        string objectName,
+        string permissionName,
+        string permissionState,
+        string schemaName = "dms"
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM sys.database_permissions permission_info
+            INNER JOIN sys.objects object_info
+                ON object_info.object_id = permission_info.major_id
+            INNER JOIN sys.schemas schema_info
+                ON schema_info.schema_id = object_info.schema_id
+            WHERE permission_info.grantee_principal_id = DATABASE_PRINCIPAL_ID(@role_name)
+            AND schema_info.name = @schema_name
+            AND object_info.name = @object_name
+            AND permission_info.permission_name = @permission_name
+            AND permission_info.state = @permission_state;
+            """;
+        command.Parameters.AddWithValue("role_name", roleName);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("object_name", objectName);
+        command.Parameters.AddWithValue("permission_name", permissionName);
+        command.Parameters.AddWithValue("permission_state", permissionState);
         return Convert.ToInt64(await command.ExecuteScalarAsync()) > 0;
     }
 
