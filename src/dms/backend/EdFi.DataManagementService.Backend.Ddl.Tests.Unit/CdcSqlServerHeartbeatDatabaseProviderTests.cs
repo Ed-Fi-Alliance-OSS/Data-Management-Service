@@ -157,6 +157,36 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_fail_closed_with_source_inventory_diagnostics_for_sparse_observed_ordinals()
+    {
+        var executor = new RecordingSqlServerCdcExecutor(
+            omittedSourceInventoryTableKind: CdcSourceTableKind.DocumentCache,
+            omittedSourceInventoryColumnName: "ResourceName"
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SOURCE_COLUMN_MISSING"
+                && diagnostic.SafeName.Value == "dms.DocumentCache.ResourceName"
+            );
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.SetupPrincipalFailure
+            );
+        executor
+            .ExecutedSql.Should()
+            .NotContain(sql => sql.Contains("cdc:sqlserver:enable-capture-instance"));
+    }
+
+    [Test]
     public void MssqlCdcCaptureInstances_should_create_binding_derived_capture_instances_for_the_three_fixed_sources()
     {
         var enableCaptureSql = _executor
@@ -1612,6 +1642,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
     private readonly RecordingSqlServerConnectorAccess _connectorAccess;
     private readonly string _sourceIdentity;
+    private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
+    private readonly string _omittedSourceInventoryColumnName;
     private int _databaseCdcStateQueryCount;
 
     public RecordingSqlServerCdcExecutor(
@@ -1635,7 +1667,9 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
-        string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity
+        string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity,
+        CdcSourceTableKind? omittedSourceInventoryTableKind = null,
+        string omittedSourceInventoryColumnName = ""
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
@@ -1662,6 +1696,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _dropJobsDuringFinalProviderMetadataRefresh = dropJobsDuringFinalProviderMetadataRefresh;
         _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
         _sourceIdentity = sourceIdentity;
+        _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
+        _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -2018,16 +2054,25 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             }
 
             rows.AddRange(
-                table.Columns.Select(column =>
-                    Row(
-                        ("table_schema", table.TableName.Schema.Value),
-                        ("table_name", table.TableName.Name),
-                        ("column_name", column.ColumnName.Value),
-                        ("ordinal", column.Ordinal.ToString()),
-                        ("provider_data_type", column.ProviderDataType),
-                        ("is_nullable", column.IsNullable.ToString())
+                table
+                    .Columns.Where(column =>
+                        _omittedSourceInventoryTableKind != table.TableKind
+                        || !string.Equals(
+                            _omittedSourceInventoryColumnName,
+                            column.ColumnName.Value,
+                            StringComparison.Ordinal
+                        )
                     )
-                )
+                    .Select(column =>
+                        Row(
+                            ("table_schema", table.TableName.Schema.Value),
+                            ("table_name", table.TableName.Name),
+                            ("column_name", column.ColumnName.Value),
+                            ("ordinal", column.Ordinal.ToString()),
+                            ("provider_data_type", column.ProviderDataType),
+                            ("is_nullable", column.IsNullable.ToString())
+                        )
+                    )
             );
         }
 

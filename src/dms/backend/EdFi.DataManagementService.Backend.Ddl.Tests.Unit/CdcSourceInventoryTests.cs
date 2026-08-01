@@ -204,6 +204,34 @@ public class Given_CdcSourceInventoryValidator
     }
 
     [Test]
+    public void It_should_report_missing_columns_when_observed_catalog_ordinals_are_sparse()
+    {
+        IReadOnlyList<CdcProviderDiagnostic> diagnostics = [];
+        var observed = ReplaceTable(
+            _expected,
+            CdcSourceTableKind.DocumentCache,
+            table =>
+                ReplaceColumns(
+                    table,
+                    table.Columns.Where(column => column.ColumnName.Value != "ResourceName").ToArray()
+                )
+        );
+
+        Action action = () =>
+            diagnostics = CdcSourceInventoryValidator.ValidateLiveSourceInventory(_expected, observed);
+
+        action.Should().NotThrow();
+        diagnostics
+            .Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SOURCE_COLUMN_MISSING"
+                && diagnostic.SafeName.Value == "dms.DocumentCache.ResourceName"
+                && diagnostic.ExpectedValue == "present"
+                && diagnostic.ObservedValue == "missing"
+            );
+    }
+
+    [Test]
     public void It_should_fail_closed_when_the_work_table_is_added_to_observed_inventory()
     {
         var observed = _expected

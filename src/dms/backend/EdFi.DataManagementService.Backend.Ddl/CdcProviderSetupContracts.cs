@@ -425,15 +425,6 @@ internal sealed record CdcSourceTableInventory(
             throw new ArgumentException("CDC source table column ordinals must be unique.", nameof(columns));
         }
 
-        var expectedOrdinalOrder = Enumerable.Range(1, columns.Count).ToArray();
-        if (!columns.Select(column => column.Ordinal).SequenceEqual(expectedOrdinalOrder))
-        {
-            throw new ArgumentException(
-                "CDC source table columns must be supplied in table-ordinal order starting at 1.",
-                nameof(columns)
-            );
-        }
-
         return columns;
     }
 
@@ -630,6 +621,25 @@ internal static class CdcSourceInventoryContract
             );
         }
 
+        foreach (var table in sourceInventory)
+        {
+            ValidateExpectedColumnOrdinals(table, parameterName);
+        }
+
         return sourceInventory;
+    }
+
+    private static void ValidateExpectedColumnOrdinals(CdcSourceTableInventory table, string parameterName)
+    {
+        var expectedOrdinalOrder = Enumerable.Range(1, table.Columns.Count).ToArray();
+        if (table.Columns.Select(column => column.Ordinal).SequenceEqual(expectedOrdinalOrder))
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            "CDC expected source table columns must be supplied in table-ordinal order starting at 1.",
+            parameterName
+        );
     }
 }

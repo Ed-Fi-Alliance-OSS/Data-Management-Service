@@ -132,6 +132,34 @@ public class Given_PostgresqlCdcHeartbeatPublication_Initial_Setup
             .Contain($"\"value\": \"{CdcProviderSetupContractTestData.PostgresqlSourceFingerprint.Value}\"");
         _result.ManifestPayload.Json.Should().NotContain(CdcProviderSetupContractTestData.SourceIdentity);
     }
+
+    [Test]
+    public async Task It_should_fail_closed_with_source_inventory_diagnostics_for_sparse_observed_ordinals()
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(
+            omittedSourceInventoryTableKind: CdcSourceTableKind.DocumentCache,
+            omittedSourceInventoryColumnName: "ResourceName"
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SOURCE_COLUMN_MISSING"
+                && diagnostic.SafeName.Value == "dms.DocumentCache.ResourceName"
+            );
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.SetupPrincipalFailure
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("CREATE PUBLICATION"));
+    }
 }
 
 [TestFixture]
@@ -817,6 +845,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private readonly string _connectorWorkTablePrivileges;
     private readonly string _connectorExtraDmsSelectTables;
     private readonly string _sourceIdentity;
+    private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
+    private readonly string _omittedSourceInventoryColumnName;
 
     public RecordingPostgresqlCdcExecutor(
         bool heartbeatTableExists = false,
@@ -854,7 +884,9 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         string connectorDocumentCacheWritePrivileges = "",
         string connectorWorkTablePrivileges = "",
         string connectorExtraDmsSelectTables = "",
-        string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity
+        string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity,
+        CdcSourceTableKind? omittedSourceInventoryTableKind = null,
+        string omittedSourceInventoryColumnName = ""
     )
     {
         _heartbeatTableExists = heartbeatTableExists;
@@ -899,6 +931,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         _connectorWorkTablePrivileges = connectorWorkTablePrivileges;
         _connectorExtraDmsSelectTables = connectorExtraDmsSelectTables;
         _sourceIdentity = sourceIdentity;
+        _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
+        _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -1102,16 +1136,25 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
             }
 
             rows.AddRange(
-                table.Columns.Select(column =>
-                    Row(
-                        ("table_schema", table.TableName.Schema.Value),
-                        ("table_name", table.TableName.Name),
-                        ("column_name", column.ColumnName.Value),
-                        ("ordinal", column.Ordinal.ToString()),
-                        ("provider_data_type", column.ProviderDataType),
-                        ("is_nullable", column.IsNullable.ToString())
+                table
+                    .Columns.Where(column =>
+                        _omittedSourceInventoryTableKind != table.TableKind
+                        || !string.Equals(
+                            _omittedSourceInventoryColumnName,
+                            column.ColumnName.Value,
+                            StringComparison.Ordinal
+                        )
                     )
-                )
+                    .Select(column =>
+                        Row(
+                            ("table_schema", table.TableName.Schema.Value),
+                            ("table_name", table.TableName.Name),
+                            ("column_name", column.ColumnName.Value),
+                            ("ordinal", column.Ordinal.ToString()),
+                            ("provider_data_type", column.ProviderDataType),
+                            ("is_nullable", column.IsNullable.ToString())
+                        )
+                    )
             );
         }
 

@@ -766,6 +766,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcHeartbeatPublication",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase"
     ],
-    "completed": false
+    "completed": true
   }
 ]

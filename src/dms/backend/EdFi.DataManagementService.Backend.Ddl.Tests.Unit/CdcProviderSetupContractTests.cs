@@ -272,28 +272,37 @@ public class Given_CdcProviderSetupContract_Request
     [Test]
     public void It_should_reject_columns_that_are_not_in_table_ordinal_order()
     {
+        var misorderedInventory = CdcProviderSetupContractTestData
+            .BuildRequiredSourceInventory()
+            .Select(table =>
+                table.TableKind == CdcSourceTableKind.Document
+                    ? new CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        [
+                            new CdcSourceColumnInventory(
+                                new DbColumnName("DocumentUuid"),
+                                @"""DocumentUuid""",
+                                2,
+                                "uuid",
+                                IsNullable: false
+                            ),
+                            new CdcSourceColumnInventory(
+                                new DbColumnName("DocumentId"),
+                                @"""DocumentId""",
+                                1,
+                                "bigint",
+                                IsNullable: false
+                            ),
+                        ]
+                    )
+                    : table
+            )
+            .ToArray();
+
         Action action = () =>
-            new CdcSourceTableInventory(
-                CdcSourceTableKind.Document,
-                new DbTableName(new DbSchemaName("dms"), "Document"),
-                @"""dms"".""Document""",
-                [
-                    new CdcSourceColumnInventory(
-                        new DbColumnName("DocumentUuid"),
-                        @"""DocumentUuid""",
-                        2,
-                        "uuid",
-                        IsNullable: false
-                    ),
-                    new CdcSourceColumnInventory(
-                        new DbColumnName("DocumentId"),
-                        @"""DocumentId""",
-                        1,
-                        "bigint",
-                        IsNullable: false
-                    ),
-                ]
-            );
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(sourceInventory: misorderedInventory);
 
         action.Should().Throw<ArgumentException>().WithMessage("*table-ordinal order*");
     }
