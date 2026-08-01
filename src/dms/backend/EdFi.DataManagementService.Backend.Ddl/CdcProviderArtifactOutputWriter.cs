@@ -26,11 +26,19 @@ internal static class CdcProviderArtifactOutputWriter
             File.WriteAllText(outputPath, NormalizeLineEndings(payload.Json), Utf8NoBom);
             return null;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsExpectedOutputFailure(exception))
         {
             return ArtifactOutputFailure(payload.FileName, exception);
         }
     }
+
+    private static bool IsExpectedOutputFailure(Exception exception) =>
+        exception
+            is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException
+                or ArgumentException
+                and not ArgumentNullException;
 
     private static CdcProviderDiagnostic ArtifactOutputFailure(CdcSafeName fileName, Exception exception) =>
         new(

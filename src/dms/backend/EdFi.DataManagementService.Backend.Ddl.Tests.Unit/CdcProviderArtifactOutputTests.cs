@@ -122,6 +122,37 @@ public class Given_CdcProviderArtifactOutput
         result.ManifestPayload!.Json.Should().Contain("CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED");
     }
 
+    [Test]
+    public async Task It_should_report_invalid_manifest_output_paths_as_artifact_output_diagnostics()
+    {
+        var invalidOutputPath = Path.Combine(_tempRoot, $"invalid{'\0'}path");
+        var service = new CdcProviderSetupService([
+            new TestProvider(CdcProvider.Postgresql, [BuildCompleteObservedProviderStateStep()]),
+        ]);
+        var request = CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+            artifactOutput: new CdcProviderArtifactOutputRequest(
+                IncludeManifestPayload: true,
+                ManifestOutputDirectoryPath: invalidOutputPath
+            )
+        );
+
+        var result = await service.SetupAsync(request);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED")
+            .Which.Should()
+            .Match<CdcProviderDiagnostic>(diagnostic =>
+                diagnostic.SafeName.Value == "cdc-provider.pgsql.manifest.json"
+                && diagnostic.ObservedValue == nameof(ArgumentException)
+                && diagnostic.ProviderErrorClass == nameof(ArgumentException)
+            );
+        result.ManifestPayload!.Json.Should().Contain("CDC_PROVIDER_ARTIFACT_OUTPUT_FAILED");
+        result.ManifestPayload.Json.Should().NotContain(_tempRoot);
+        result.ManifestPayload.Json.Should().NotContain("invalid");
+    }
+
     private static CdcProviderSetupStep BuildCompleteObservedProviderStateStep() =>
         new(
             CdcProviderArtifactKind.PostgresqlPublication,

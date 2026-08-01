@@ -599,6 +599,6 @@
       "Review CdcProviderArtifactOutputWriter exception handling and CdcProviderSetupService manifest-output aggregation.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderArtifactOutput"
     ],
-    "completed": false
+    "completed": true
   }
 ]
