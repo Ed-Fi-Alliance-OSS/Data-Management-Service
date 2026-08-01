@@ -309,7 +309,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~GuardedNewEmptyActivation\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~GuardedNewEmptyActivation\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "offline-activation",

@@ -134,6 +134,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheGuardedNewEmptyActivationCommand,
+                DocumentCacheGuardedNewEmptyActivationCommand
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheBaselineSeedDelay, DocumentCacheBaselineSeedDelay>()
         );
         services.TryAdd(
