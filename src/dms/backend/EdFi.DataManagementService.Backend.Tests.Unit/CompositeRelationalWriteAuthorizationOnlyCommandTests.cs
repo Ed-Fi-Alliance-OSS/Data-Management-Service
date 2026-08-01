@@ -6,6 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -268,6 +269,86 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
     }
 
     [Test]
+    public async Task It_runs_a_relationship_check_that_does_not_fit_the_remaining_budget_as_an_ordered_segment()
+    {
+        var request = CreateRequest(withNamespace: true, withRelationship: true);
+        var session = new ScriptedWriteSession(
+            CreateReader(CreateAuthorizedTable()),
+            CreateReader(CreateAuthorizedTable())
+        );
+
+        var resolution = await CreateSut(commandBudget: ExactlyTheNamespaceBudget)
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        // Each statement fits a command of its own, but not the same one. Feasibility has to be measured
+        // against what the namespace statement already consumed, not against the whole command budget:
+        // co-batching both anyway overflows the command the builder is still assembling.
+        resolution.ImmediateResult.Should().BeNull();
+        session.Commands.Should().HaveCount(2);
+        session
+            .Commands[0]
+            .Parameters.Should()
+            .Contain(parameter =>
+                parameter.Name.Contains("namespacePrefixes_s0", StringComparison.OrdinalIgnoreCase)
+            )
+            .And.NotContain(parameter =>
+                parameter.Name.Contains("ClaimEducationOrganizationIds", StringComparison.OrdinalIgnoreCase)
+            );
+        session
+            .Commands[1]
+            .Parameters.Should()
+            .Contain(parameter =>
+                parameter.Name.Contains("ClaimEducationOrganizationIds", StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
+    [Test]
+    public async Task It_issues_no_relationship_segment_when_the_namespace_command_denies()
+    {
+        var request = CreateRequest(withNamespace: true, withRelationship: true);
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1"));
+
+        var resolution = await CreateSut(
+                new StubProviderFailureExtractor("AUTH1", payload),
+                ExactlyTheNamespaceBudget
+            )
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        // Splitting the checks across two commands must not cost the namespace its precedence: its
+        // command runs first, and a denial there means the relationship segment is never sent.
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>();
+        session.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// The exact boundary: this fixture's one-prefix proposed namespace statement binds two parameters and
+    /// its proposed relationship statement binds two, so a two-parameter command holds either alone and
+    /// neither pair. Both counts are what the arrangement actually emits, so a change to it moves this
+    /// boundary rather than silently making the case unreachable.
+    /// </summary>
+    private static readonly RelationalCommandBudget ExactlyTheNamespaceBudget = new(2, 1000);
+
+    [Test]
     public async Task It_maps_a_namespace_auth1_failure_to_the_namespace_denial()
     {
         var request = CreateRequest(withNamespace: true, withRelationship: true);
@@ -352,8 +433,9 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
     }
 
     private static CompositeRelationalWriteSecondCommand CreateSut(
-        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
-    ) => new(relationalParameterConfigurator: null, providerFailureExtractor);
+        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
+        RelationalCommandBudget? commandBudget = null
+    ) => new(relationalParameterConfigurator: null, providerFailureExtractor, commandBudget: commandBudget);
 
     /// <summary>
     /// Enough claims that the SQL Server parameterization becomes a table-valued parameter rather than a

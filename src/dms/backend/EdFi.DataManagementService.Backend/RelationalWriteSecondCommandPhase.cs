@@ -82,7 +82,8 @@ internal interface IRelationalWriteSecondCommandPhase
 /// namespace before relationship is what makes a namespace denial win over a concurrent relationship
 /// denial — the same ordering the stored-value checks use in the first phase. Both authorization
 /// statements precede the <c>dms.Document</c> insert, so a create's artifacts exist only once the proposed
-/// values authorized; where a check cannot join the command at all, its ordered segment runs before the
+/// values authorized; where a check cannot join the command — an unrenameable claim binding, or a
+/// parameter count the earlier statements left no room for — its ordered segment runs first, before the
 /// data-modifying statements are built. The deferred dispositions that need no statement of their own (a
 /// caller with no claims, a proposed plan that cannot be reconciled with the finalized root row) are held
 /// back until the command has run, so a namespace denial still outranks them.
@@ -274,7 +275,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         var namespaceEmitted = TryAppendNamespace(builder, request, namespacePlan);
         var relationshipEmitted =
             relationshipCommand is not null
-            && CanCoBatchRelationship(runtimeCheck!, relationshipCommand, Budget(request))
+            && CanCoBatchRelationshipInto(builder, runtimeCheck!, relationshipCommand)
             && TryAppendRelationship(builder, relationshipCommand);
 
         if (namespaceEmitted || relationshipEmitted)
@@ -341,7 +342,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         if (
             relationshipCommand is not null
-            && !CanCoBatchRelationship(runtimeCheck!, relationshipCommand, budget)
+            && !CanCoBatchRelationshipIntoDml(runtimeCheck!, relationshipCommand, budget)
         )
         {
             // Create artifacts only after proposed authorization: a check that cannot join the command has
@@ -1086,17 +1087,46 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     }
 
     /// <summary>
-    /// A structured claim list binds as a table-valued parameter, which the composite rewriter cannot
-    /// rename into a co-batched statement, and a statement that does not fit the command's remaining
-    /// parameter budget must not overflow it. Either condition selects the ordered-segment path.
+    /// Whether the check's claim parameterization can be co-batched at all. A structured claim list binds
+    /// as a table-valued parameter, which the composite rewriter cannot rename into a co-batched statement,
+    /// so it always selects the ordered-segment path regardless of how much budget is left.
     /// </summary>
-    private static bool CanCoBatchRelationship(
+    private static bool CanCoBatchRelationshipShape(
+        ProposedRelationshipAuthorizationRuntimeCheck runtimeCheck
+    ) =>
+        runtimeCheck.ClaimEducationOrganizationIdParameterization.Kind
+            is not AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured;
+
+    /// <summary>
+    /// Whether the check can join the command <paramref name="builder"/> is assembling: its shape must be
+    /// co-batchable and it must fit what the statements already appended left behind.
+    /// </summary>
+    /// <remarks>
+    /// The remaining budget is the operative quantity, not the command's total. A proposed namespace
+    /// statement and a proposed relationship statement can each fit a command of their own and still not
+    /// fit the same one — one prefix list plus one claim list is enough on SQL Server, where both bind as
+    /// scalars. Measuring against the total would append both and overflow the command the builder is
+    /// still assembling, which the builder's own guard turns into a failure rather than a fallback.
+    /// </remarks>
+    private static bool CanCoBatchRelationshipInto(
+        RelationalCompositeCommandBuilder builder,
+        ProposedRelationshipAuthorizationRuntimeCheck runtimeCheck,
+        RelationalCommand relationshipCommand
+    ) => CanCoBatchRelationshipShape(runtimeCheck) && builder.Fits(relationshipCommand.Parameters.Count);
+
+    /// <summary>
+    /// Whether the check can join a DML command stream at all. Deliberately measured against the whole
+    /// command budget rather than a builder's remaining budget: no builder exists yet at this point, and
+    /// the packer decides which command each unit lands in once the check is offered to it as a unit
+    /// alongside the data-modifying statements. A check too large for any single command still has to take
+    /// the ordered segment, because the packer cannot split one statement.
+    /// </summary>
+    private static bool CanCoBatchRelationshipIntoDml(
         ProposedRelationshipAuthorizationRuntimeCheck runtimeCheck,
         RelationalCommand relationshipCommand,
         RelationalCommandBudget budget
     ) =>
-        runtimeCheck.ClaimEducationOrganizationIdParameterization.Kind
-            is not AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured
+        CanCoBatchRelationshipShape(runtimeCheck)
         && relationshipCommand.Parameters.Count <= budget.MaxParametersPerCommand;
 
     private sealed record NamespaceStatementPlan(

@@ -279,6 +279,7 @@ Error and short-circuit paths never execute a normal-path count.
 | Immediate reference-resolution failure | 1 |
 | Race or retry | one attempt's count per attempt; the existing two-attempt loop is unchanged |
 | Parameter overflow | per the packing algorithm below; never a function of table count |
+| Any of the 2-command rows above, where the two proposed statements do not fit one command | 3 — the namespace check, then the relationship check as an ordered segment, then the no-DML resolution needs no further command |
 
 ### Second-Command Emission Rule
 
@@ -293,6 +294,20 @@ Authorization-only mode contains exactly the proposed `AUTH1` statements that DM
 contained, in the same order — namespace before relationship — and nothing else. Deferred precondition
 failures, deferred reference failures, and guarded no-ops are all no-DML situations, so a request that
 is several of them at once still issues one authorization-only command rather than one per condition.
+
+The count that varies is not the number of conditions but the number of *statements that fit one
+command*. Authorization-only mode issues **one command when both proposed statements fit it, and two
+ordered segments when they do not** — the namespace check first, then the relationship check on the same
+session and transaction. Two things select the split: a structured (table-valued) claim list, which the
+composite rewriter cannot rename; and a combined parameter count above the command budget, which is
+reachable on SQL Server because a proposed prefix list and a proposed claim list both bind as scalars and
+each may approach 2000 against a 2098 budget. Feasibility is therefore measured against the command's
+*remaining* budget once the namespace statement has been appended, never against the budget as a whole:
+the two statements can each fit a command of their own and still not fit the same one. Splitting them
+costs the namespace check none of its precedence, because its command runs first and a denial there
+returns before the relationship segment is sent. DML mode's feasibility check stays distinct and does
+measure against the whole budget, because there no builder exists yet and the packer places each unit
+into a command once the check is offered alongside the data-modifying statements.
 
 Proposed authorization cannot be hoisted into the first command. Its statements bind values taken from
 the finalized merged root row (`RelationalWriteFinalizedRootRow.Build`, consumed by
@@ -772,10 +787,11 @@ Live verification after adoption, on providers recreated after the `origin/main`
    cannot vanish between them; the wildcard-`If-Match`-target-vanishes-before-locking characterization is
    retired into the unresolvable-target case, which produces the same 412.
 
-### Second-Command Defects Closed By The DELETE Slice
+### Second-Command Defects Closed After Its Adoption
 
-Two ordering defects in the already-adopted write path were found and fixed while the DELETE slice was
-being verified. Both let a data-modifying statement run before an authorization decision was final.
+Three defects in the already-adopted second command were found and fixed during and after the DELETE
+slice's verification. The first two let a data-modifying statement run before an authorization decision
+was final; the third turned a legitimate fallback into a failure.
 
 1. **A deferred proposed-relationship denial permitted DML.** `NoClaims` and an unreconcilable proposed
    relationship plan are both held back until the namespace check has had its chance to outrank them. In
@@ -789,8 +805,18 @@ being verified. Both let a data-modifying statement run before an authorization 
    not fit was silently omitted while the deletes were co-batched anyway, and a relationship check left
    with disposition `Emitted` but no ordinal reached `outcomes[-1]` after the deletes had already run.
 
-Both fixes were mutation-verified: restoring the pre-fix condition fails exactly the tests written for
-them and nothing else.
+3. **Authorization-only mode measured relationship feasibility against the wrong budget.** It compared
+   the check's parameter count to the command's *total* budget rather than to what the namespace statement
+   already consumed. Two statements that each fit a command of their own but not the same one were
+   therefore both appended, and the builder's own overflow guard turned an available fallback into a
+   failed request. The predicate now measures the builder's remaining budget. DML mode's check is
+   deliberately left measuring the whole budget, because it runs before any builder exists and the packer
+   is what places each unit into a command; the two are now separate predicates so neither can be
+   "corrected" into the other. Reachable on SQL Server, where a proposed prefix list and a proposed claim
+   list both bind as scalars and each may approach 2000 against a 2098 budget.
+
+All three fixes were mutation-verified: restoring the pre-fix condition fails exactly the tests written
+for it and nothing else.
 
 ### Executor Test Removal And Replacement Audit
 
@@ -864,6 +890,7 @@ otherwise. BEGIN and COMMIT are excluded, per the counting convention.
 | POST create, SQL Server structured claims | 4 | 3 | 2 | Measured shape — `MssqlRelationalPostAuthorizationTests` pins the authorization command ahead of the document-insert command on one session; deviation 3 of the second-command slice (a TVP cannot be renamed) |
 | PUT changed | 4 | 2 | 2 | Measured, at target |
 | PUT missing target | 1 | 1 | 1 | Measured, at target |
+| No-DML write whose two proposed checks do not fit one command | — | 3 | 2 | Unit-asserted at an injected budget boundary; reachable on SQL Server with scalar prefix and claim lists that each approach 2000 |
 | PUT/POST with a collection key another table binds | — | 3 | 3 | Estimate. The two second-command commands (shared reservation, then the DML) are asserted at the unit level; no live count characterization covers the aligned-extension-scope shape, so the total including the first phase is inferred |
 | DELETE, no precondition | 3 | 1 | 1 | Measured, at target |
 | DELETE, stored namespace and relationship authorization | 5 | 1 | 1 | Measured, at target |
