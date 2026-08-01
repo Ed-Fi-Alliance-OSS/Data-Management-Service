@@ -29,6 +29,18 @@ internal static class OrderedDeleteCommandBuilder
         );
     }
 
+    /// <summary>
+    /// Builds the two-statement descriptor delete. The first statement seeks the descriptor row's own
+    /// <c>UX_Descriptor_DocumentUuid</c> index and carries the descriptor row's <c>ResourceKeyId</c>
+    /// mirror as the residual scoping predicate, so no <c>dms.Document</c> read is involved.
+    /// </summary>
+    /// <remarks>
+    /// The descriptor delete must precede the document delete: the descriptor stamping trigger's DELETE
+    /// branch stamps the owning <c>dms.Document</c> row with <c>RETURNING … INTO STRICT</c>, which raises
+    /// if that row is already gone. The trailing document delete stays in Phase 3 — it removes the
+    /// document row (cascading the referential-identity rows away) and its
+    /// <c>RETURNING</c>/<c>OUTPUT DELETED</c> is the affected-rows signal the delete executor reads.
+    /// </remarks>
     public static RelationalCommand BuildDescriptorDeleteCommand(
         SqlDialect dialect,
         DocumentUuid documentUuid,
@@ -39,12 +51,8 @@ internal static class OrderedDeleteCommandBuilder
             SqlDialect.Pgsql => new RelationalCommand(
                 """
                 DELETE FROM dms."Descriptor"
-                WHERE "DocumentId" IN (
-                    SELECT "DocumentId"
-                    FROM dms."Document"
-                    WHERE "DocumentUuid" = @documentUuid
-                      AND "ResourceKeyId" = @resourceKeyId
-                );
+                WHERE "DocumentUuid" = @documentUuid
+                  AND "ResourceKeyId" = @resourceKeyId;
 
                 DELETE FROM dms."Document"
                 WHERE "DocumentUuid" = @documentUuid
@@ -59,12 +67,8 @@ internal static class OrderedDeleteCommandBuilder
             SqlDialect.Mssql => new RelationalCommand(
                 """
                 DELETE FROM [dms].[Descriptor]
-                WHERE [DocumentId] IN (
-                    SELECT [DocumentId]
-                    FROM [dms].[Document]
-                    WHERE [DocumentUuid] = @documentUuid
-                      AND [ResourceKeyId] = @resourceKeyId
-                );
+                WHERE [DocumentUuid] = @documentUuid
+                  AND [ResourceKeyId] = @resourceKeyId;
 
                 DELETE FROM [dms].[Document]
                 OUTPUT DELETED.[DocumentId]

@@ -606,7 +606,30 @@ public class Given_A_Host_Using_The_Relational_Backend
             );
         }
 
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            string uriLowered,
+            string discriminator,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult<RelationalWriteTargetLookupResult>(
+                new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            );
+        }
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => ResolveExistingPutTarget(documentUuid, cancellationToken);
+
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
             DocumentUuid documentUuid,

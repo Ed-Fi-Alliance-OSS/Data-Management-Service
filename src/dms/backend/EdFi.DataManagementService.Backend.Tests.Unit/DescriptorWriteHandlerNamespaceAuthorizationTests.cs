@@ -1248,10 +1248,11 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string uriLowered,
+            string discriminator,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )
@@ -1260,7 +1261,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             return Task.FromResult(PostResult);
         }
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
             DocumentUuid documentUuid,
@@ -1271,8 +1272,23 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             return Task.FromResult(PutResult);
         }
 
-        // The descriptor write path still resolves PUT targets through dms.Document; only the regular
-        // resource path seeks the root table. Throwing keeps that split honest.
+        // Descriptor writes resolve their targets from dms.Descriptor; the dms.Document and root-table
+        // surfaces belong to other callers. Throwing keeps that split honest.
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
             DbTableName rootTable,
             DocumentUuid documentUuid,

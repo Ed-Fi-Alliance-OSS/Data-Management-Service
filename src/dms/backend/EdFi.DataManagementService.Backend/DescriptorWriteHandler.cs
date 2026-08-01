@@ -15,8 +15,10 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Descriptor write handler that persists descriptor resources into
-/// <c>dms.Document</c>, <c>dms.Descriptor</c>, and <c>dms.ReferentialIdentity</c>.
+/// Descriptor write handler that persists descriptor resources into <c>dms.Descriptor</c>, with a
+/// <c>dms.Document</c> INSERT/DELETE pair that survives only until Phase 4 replaces the identity column
+/// with <c>dms.DocumentIdSequence</c>. Every lookup, lock, and scoping predicate on this path reads the
+/// descriptor row; nothing here touches <c>dms.ReferentialIdentity</c>.
 /// </summary>
 internal sealed class DescriptorWriteHandler(
     IRelationalWriteTargetLookupService targetLookupService,
@@ -46,11 +48,19 @@ internal sealed class DescriptorWriteHandler(
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
 
     /// <summary>
-    /// The row the descriptor write path locks. Non-descriptor writes lock the resource root row, but
-    /// the descriptor handler still resolves and reads its target through <c>dms.Document</c>, so it
-    /// keeps locking that row until the descriptor path is re-anchored onto <c>dms.Descriptor</c>.
+    /// The row the descriptor write path locks: the <c>dms.Descriptor</c> row, which is also the row
+    /// every lookup resolves and every current-state read loads, so the guarded-no-op comparison never
+    /// spans two tables.
     /// </summary>
-    private static readonly DbTableName _descriptorLockTable = new(new DbSchemaName("dms"), "Document");
+    /// <remarks>
+    /// Lock acquisition order on this path is <c>dms.Descriptor</c> then <c>dms.Document</c> — the writer
+    /// takes the descriptor row here and the stamping trigger takes the document row later, inside the
+    /// triggering statement. No writer takes those in the opposite order: the descriptor DELETE statement
+    /// is also Descriptor-then-Document, and the non-descriptor write path never writes a
+    /// <c>dms.Descriptor</c> row. With no Document-then-Descriptor writer there is no cycle to deadlock
+    /// on, and Phase 4 dissolves the question outright by removing the <c>dms.Document</c> write.
+    /// </remarks>
+    private static readonly DbTableName _descriptorLockTable = new(new DbSchemaName("dms"), "Descriptor");
 
     public async Task<UpsertResult> HandlePostAsync(
         DescriptorWriteRequest request,
@@ -59,13 +69,6 @@ internal sealed class DescriptorWriteHandler(
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (request.ReferentialId is null)
-        {
-            throw new InvalidOperationException(
-                "Descriptor POST requires a ReferentialId for target context resolution."
-            );
-        }
 
         // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
         // unsupported strategies resolve before any session opens, so a denial issues no DB roundtrip.
@@ -117,10 +120,11 @@ internal sealed class DescriptorWriteHandler(
                 );
 
                 var targetLookupResult = await _targetLookupService
-                    .ResolveForPostAsync(
+                    .ResolveDescriptorForPostAsync(
                         request.MappingSet,
                         request.Resource,
-                        request.ReferentialId.Value,
+                        DescriptorProbeUri(body),
+                        body.Discriminator,
                         request.DocumentUuid,
                         cancellationToken
                     )
@@ -151,7 +155,6 @@ internal sealed class DescriptorWriteHandler(
                                 body,
                                 documentId,
                                 documentUuid,
-                                resourceKeyId,
                                 storedNamespaceAuthorization,
                                 proposedNamespaceAuthorization,
                                 cancellationToken
@@ -170,7 +173,7 @@ internal sealed class DescriptorWriteHandler(
                     request.MappingSet,
                     request.Resource,
                     request.DocumentUuid,
-                    request.ReferentialId,
+                    body,
                     DescriptorPreconditionTargetKind.Post,
                     request.WritePrecondition,
                     writeSession,
@@ -248,7 +251,6 @@ internal sealed class DescriptorWriteHandler(
                             body,
                             sessionTargetContext.DocumentId,
                             sessionTargetContext.DocumentUuid,
-                            resourceKeyId,
                             persisted,
                             currentEtag,
                             writeSession,
@@ -377,7 +379,7 @@ internal sealed class DescriptorWriteHandler(
                         request.MappingSet,
                         request.Resource,
                         request.DocumentUuid,
-                        referentialId: null,
+                        descriptorBody: null,
                         DescriptorPreconditionTargetKind.Put,
                         request.WritePrecondition,
                         writeSession,
@@ -461,7 +463,7 @@ internal sealed class DescriptorWriteHandler(
             );
 
             var targetLookupResult = await _targetLookupService
-                .ResolveForPutAsync(
+                .ResolveDescriptorForPutAsync(
                     request.MappingSet,
                     request.Resource,
                     request.DocumentUuid,
@@ -637,7 +639,7 @@ internal sealed class DescriptorWriteHandler(
                     if (storedNamespaceAuthorization is not null)
                     {
                         var resolvedDeleteTarget = await RelationalDocumentUuidLookupSupport
-                            .TryResolveDeleteTargetAsync(
+                            .TryResolveDescriptorDeleteTargetAsync(
                                 sessionCommandExecutor,
                                 request.MappingSet,
                                 request.Resource,
@@ -707,7 +709,7 @@ internal sealed class DescriptorWriteHandler(
                             request.MappingSet,
                             request.Resource,
                             request.DocumentUuid,
-                            referentialId: null,
+                            descriptorBody: null,
                             DescriptorPreconditionTargetKind.Delete,
                             ifMatch,
                             writeSession,
@@ -829,7 +831,7 @@ internal sealed class DescriptorWriteHandler(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
-        ReferentialId? referentialId,
+        ExtractedDescriptorBody? descriptorBody,
         DescriptorPreconditionTargetKind targetKind,
         WritePrecondition precondition,
         IRelationalWriteSession writeSession,
@@ -850,19 +852,20 @@ internal sealed class DescriptorWriteHandler(
         switch (targetKind)
         {
             case DescriptorPreconditionTargetKind.Post:
-                if (referentialId is null)
+                if (descriptorBody is null)
                 {
                     throw new InvalidOperationException(
-                        "Descriptor POST requires a ReferentialId for target context resolution."
+                        "Descriptor POST requires the extracted request body for target context resolution."
                     );
                 }
 
                 var postTargetLookupResult = await RelationalWriteTargetLookupSupport
-                    .ResolveForPostAsync(
+                    .ResolveDescriptorForPostAsync(
                         sessionCommandExecutor,
                         mappingSet,
                         resource,
-                        referentialId.Value,
+                        DescriptorProbeUri(descriptorBody),
+                        descriptorBody.Discriminator,
                         documentUuid,
                         cancellationToken
                     )
@@ -873,7 +876,7 @@ internal sealed class DescriptorWriteHandler(
 
             case DescriptorPreconditionTargetKind.Put:
                 var putTargetLookupResult = await RelationalWriteTargetLookupSupport
-                    .ResolveForPutAsync(
+                    .ResolveDescriptorForPutAsync(
                         sessionCommandExecutor,
                         mappingSet,
                         resource,
@@ -892,7 +895,7 @@ internal sealed class DescriptorWriteHandler(
 
             case DescriptorPreconditionTargetKind.Delete:
                 var resolvedDeleteTarget = await RelationalDocumentUuidLookupSupport
-                    .TryResolveDeleteTargetAsync(
+                    .TryResolveDescriptorDeleteTargetAsync(
                         sessionCommandExecutor,
                         mappingSet,
                         resource,
@@ -1064,6 +1067,13 @@ internal sealed class DescriptorWriteHandler(
                 EtagPreconditionEvaluator.GetFailureReason(precondition)
             );
     }
+
+    /// <summary>
+    /// The value the descriptor upsert probe binds: the request URI lower-cased with the invariant
+    /// culture, matching both the engine-computed <c>dms.Descriptor.UriLowered</c> column the probe seeks
+    /// and Core's own descriptor-reference canonicalization.
+    /// </summary>
+    private static string DescriptorProbeUri(ExtractedDescriptorBody body) => body.Uri.ToLowerInvariant();
 
     private static RelationalWriteTargetContext TranslateDescriptorTargetContext(
         RelationalWriteTargetLookupResult targetLookupResult,
@@ -1452,18 +1462,8 @@ internal sealed class DescriptorWriteHandler(
 
         var command = request.MappingSet.Key.Dialect switch
         {
-            SqlDialect.Pgsql => BuildPostgresqlInsertCommand(
-                body,
-                documentUuid,
-                resourceKeyId,
-                request.ReferentialId!.Value
-            ),
-            SqlDialect.Mssql => BuildMssqlInsertCommand(
-                body,
-                documentUuid,
-                resourceKeyId,
-                request.ReferentialId!.Value
-            ),
+            SqlDialect.Pgsql => BuildPostgresqlInsertCommand(body, documentUuid, resourceKeyId),
+            SqlDialect.Mssql => BuildMssqlInsertCommand(body, documentUuid, resourceKeyId),
             _ => throw new NotSupportedException(
                 $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
             ),
@@ -1490,12 +1490,16 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
+    /// <summary>
+    /// Applies a POST-as-update through the same single-table UPDATE the PUT path issues. The two
+    /// diverged only in the <c>ReferentialIdentity</c> upsert that used to trail the descriptor UPDATE;
+    /// with that statement gone the two batches are identical, so there is one pair of builders.
+    /// </summary>
     private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
         long documentId,
         DocumentUuid existingDocumentUuid,
-        short resourceKeyId,
         IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken
     )
@@ -1509,18 +1513,8 @@ internal sealed class DescriptorWriteHandler(
 
         var command = request.MappingSet.Key.Dialect switch
         {
-            SqlDialect.Pgsql => BuildPostgresqlUpsertUpdateCommand(
-                body,
-                documentId,
-                resourceKeyId,
-                request.ReferentialId!.Value
-            ),
-            SqlDialect.Mssql => BuildMssqlUpsertUpdateCommand(
-                body,
-                documentId,
-                resourceKeyId,
-                request.ReferentialId!.Value
-            ),
+            SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(body, documentId),
+            SqlDialect.Mssql => BuildMssqlUpdateCommand(body, documentId),
             _ => throw new NotSupportedException(
                 $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
             ),
@@ -1552,7 +1546,6 @@ internal sealed class DescriptorWriteHandler(
         ExtractedDescriptorBody body,
         long documentId,
         DocumentUuid documentUuid,
-        short resourceKeyId,
         PersistedDescriptorState persisted,
         string currentEtag,
         IRelationalWriteSession writeSession,
@@ -1577,7 +1570,6 @@ internal sealed class DescriptorWriteHandler(
                 body,
                 documentId,
                 documentUuid,
-                resourceKeyId,
                 writeSession.CreateCommandExecutor(),
                 cancellationToken
             )
@@ -1664,7 +1656,6 @@ internal sealed class DescriptorWriteHandler(
         ExtractedDescriptorBody body,
         long documentId,
         DocumentUuid existingDocumentUuid,
-        short resourceKeyId,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         CancellationToken cancellationToken
@@ -1689,7 +1680,6 @@ internal sealed class DescriptorWriteHandler(
                     body,
                     documentId,
                     existingDocumentUuid,
-                    resourceKeyId,
                     persisted,
                     currentEtag,
                     writeSession,
@@ -2028,14 +2018,13 @@ internal sealed class DescriptorWriteHandler(
     private static RelationalCommand BuildPostgresqlInsertCommand(
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
-        short resourceKeyId,
-        ReferentialId referentialId
+        short resourceKeyId
     )
     {
-        // The Document CTE surfaces the insert-time ContentVersion (the descriptor stamp trigger only
-        // mirrors that value on INSERT and does not bump it), so the final SELECT returns exactly what
-        // a later GET reads. The ReferentialIdentity insert is wrapped in its own data-modifying CTE so
-        // it still executes even though the primary query reads only ContentVersion.
+        // The Document CTE originates the DocumentId and surfaces the insert-time ContentVersion (the
+        // descriptor stamp trigger only mirrors that value on INSERT and does not bump it), so the final
+        // SELECT returns exactly what a later GET reads. It reads new_doc rather than the descriptor row
+        // because the stamp trigger has not fired at CTE-evaluation time.
         const string Sql = """
             WITH new_doc AS (
                 INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
@@ -2054,25 +2043,16 @@ internal sealed class DescriptorWriteHandler(
                     @discriminator, @uri
                 FROM new_doc
             )
-            , new_referential AS (
-                INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-                SELECT @referentialId, "DocumentId", @resourceKeyId
-                FROM new_doc
-            )
             SELECT "ContentVersion" FROM new_doc;
             """;
 
-        return new RelationalCommand(
-            Sql,
-            BuildInsertParameters(body, documentUuid, resourceKeyId, referentialId)
-        );
+        return new RelationalCommand(Sql, BuildInsertParameters(body, documentUuid, resourceKeyId));
     }
 
     private static RelationalCommand BuildMssqlInsertCommand(
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
-        short resourceKeyId,
-        ReferentialId referentialId
+        short resourceKeyId
     )
     {
         // Capture the insert-time ContentVersion into a table variable via OUTPUT ... INTO, run every
@@ -2103,27 +2083,23 @@ internal sealed class DescriptorWriteHandler(
                 @discriminator, @uri
             );
 
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @newDocumentId, @resourceKeyId);
-
             SELECT [ContentVersion] FROM @insertedContentVersion;
             """;
 
-        return new RelationalCommand(
-            Sql,
-            BuildInsertParameters(body, documentUuid, resourceKeyId, referentialId)
-        );
+        return new RelationalCommand(Sql, BuildInsertParameters(body, documentUuid, resourceKeyId));
     }
 
-    // Update SQL builders (POST as upsert-as-update)
+    // ── Update SQL builders (shared by PUT and POST-as-update) ───────────────
 
     private static RelationalCommand BuildPostgresqlUpdateCommand(
         ExtractedDescriptorBody body,
         long documentId
     )
     {
-        // The descriptor stamp trigger bumps dms."Document"."ContentVersion" in an AFTER UPDATE trigger,
-        // so it is not visible to a RETURNING on the descriptor UPDATE; re-select the post-trigger value.
+        // The descriptor stamp trigger bumps ContentVersion in an AFTER UPDATE trigger, so it is not
+        // visible to a RETURNING on the descriptor UPDATE; re-select the post-trigger value. The trigger
+        // mirrors the bumped stamp back onto the descriptor row inside the same triggering statement, so
+        // the re-select reads the descriptor row rather than dms."Document".
         const string Sql = """
             UPDATE dms."Descriptor"
             SET "Namespace" = @namespace,
@@ -2135,7 +2111,7 @@ internal sealed class DescriptorWriteHandler(
                 "Uri" = @uri
             WHERE "DocumentId" = @documentId;
 
-            SELECT "ContentVersion" FROM dms."Document" WHERE "DocumentId" = @documentId;
+            SELECT "ContentVersion" FROM dms."Descriptor" WHERE "DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -2143,9 +2119,11 @@ internal sealed class DescriptorWriteHandler(
 
     private static RelationalCommand BuildMssqlUpdateCommand(ExtractedDescriptorBody body, long documentId)
     {
-        // The descriptor stamp trigger bumps [dms].[Document].[ContentVersion] in an AFTER UPDATE
-        // trigger, so OUTPUT on the descriptor UPDATE would return the pre-trigger value (and MSSQL
-        // disallows a plain OUTPUT on a trigger-bearing table); re-select the post-trigger value.
+        // The descriptor stamp trigger bumps ContentVersion in an AFTER UPDATE trigger, so OUTPUT on the
+        // descriptor UPDATE would return the pre-trigger value (and MSSQL disallows a plain OUTPUT on a
+        // trigger-bearing table); re-select the post-trigger value. The trigger mirrors the bumped stamp
+        // back onto the descriptor row inside the same triggering statement, so the re-select reads the
+        // descriptor row rather than [dms].[Document].
         const string Sql = """
             UPDATE [dms].[Descriptor]
             SET [Namespace] = @namespace,
@@ -2157,88 +2135,10 @@ internal sealed class DescriptorWriteHandler(
                 [Uri] = @uri
             WHERE [DocumentId] = @documentId;
 
-            SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;
+            SELECT [ContentVersion] FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
-    }
-
-    // ── Upsert-update SQL builders (POST as upsert — includes ReferentialIdentity) ──
-
-    private static RelationalCommand BuildPostgresqlUpsertUpdateCommand(
-        ExtractedDescriptorBody body,
-        long documentId,
-        short resourceKeyId,
-        ReferentialId referentialId
-    )
-    {
-        // The descriptor stamp trigger bumps dms."Document"."ContentVersion" in an AFTER UPDATE trigger,
-        // so it is not visible to a RETURNING on the descriptor UPDATE; re-select the post-trigger value.
-        const string Sql = """
-            UPDATE dms."Descriptor"
-            SET "Namespace" = @namespace,
-                "CodeValue" = @codeValue,
-                "ShortDescription" = @shortDescription,
-                "Description" = @description,
-                "EffectiveBeginDate" = @effectiveBeginDate::date,
-                "EffectiveEndDate" = @effectiveEndDate::date,
-                "Uri" = @uri
-            WHERE "DocumentId" = @documentId;
-
-            INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO UPDATE
-            SET "DocumentId" = EXCLUDED."DocumentId",
-                "ResourceKeyId" = EXCLUDED."ResourceKeyId";
-
-            SELECT "ContentVersion" FROM dms."Document" WHERE "DocumentId" = @documentId;
-            """;
-
-        return new RelationalCommand(
-            Sql,
-            BuildUpsertUpdateParameters(body, documentId, resourceKeyId, referentialId)
-        );
-    }
-
-    private static RelationalCommand BuildMssqlUpsertUpdateCommand(
-        ExtractedDescriptorBody body,
-        long documentId,
-        short resourceKeyId,
-        ReferentialId referentialId
-    )
-    {
-        // The descriptor stamp trigger bumps [dms].[Document].[ContentVersion] in an AFTER UPDATE
-        // trigger, so OUTPUT on the descriptor UPDATE would return the pre-trigger value (and MSSQL
-        // disallows a plain OUTPUT on a trigger-bearing table); re-select the post-trigger value.
-        const string Sql = """
-            UPDATE [dms].[Descriptor]
-            SET [Namespace] = @namespace,
-                [CodeValue] = @codeValue,
-                [ShortDescription] = @shortDescription,
-                [Description] = @description,
-                [EffectiveBeginDate] = @effectiveBeginDate,
-                [EffectiveEndDate] = @effectiveEndDate,
-                [Uri] = @uri
-            WHERE [DocumentId] = @documentId;
-
-            MERGE [dms].[ReferentialIdentity] AS target
-            USING (VALUES (@referentialId, @documentId, @resourceKeyId))
-                AS source ([ReferentialId], [DocumentId], [ResourceKeyId])
-            ON target.[ReferentialId] = source.[ReferentialId]
-            WHEN MATCHED THEN
-                UPDATE SET [DocumentId] = source.[DocumentId],
-                           [ResourceKeyId] = source.[ResourceKeyId]
-            WHEN NOT MATCHED THEN
-                INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
-                VALUES (source.[ReferentialId], source.[DocumentId], source.[ResourceKeyId]);
-
-            SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;
-            """;
-
-        return new RelationalCommand(
-            Sql,
-            BuildUpsertUpdateParameters(body, documentId, resourceKeyId, referentialId)
-        );
     }
 
     // ── Persisted descriptor read ──────────────────────────────────────────
@@ -2488,14 +2388,12 @@ internal sealed class DescriptorWriteHandler(
     private static List<RelationalParameter> BuildInsertParameters(
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
-        short resourceKeyId,
-        ReferentialId referentialId
+        short resourceKeyId
     )
     {
         var parameters = BuildInsertFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentUuid", documentUuid.Value));
         parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
-        parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
         return parameters;
     }
 
@@ -2506,20 +2404,6 @@ internal sealed class DescriptorWriteHandler(
     {
         var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentId", documentId));
-        return parameters;
-    }
-
-    private static List<RelationalParameter> BuildUpsertUpdateParameters(
-        ExtractedDescriptorBody body,
-        long documentId,
-        short resourceKeyId,
-        ReferentialId referentialId
-    )
-    {
-        var parameters = BuildCommonFieldParameters(body);
-        parameters.Add(new RelationalParameter("@documentId", documentId));
-        parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
-        parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
         return parameters;
     }
 

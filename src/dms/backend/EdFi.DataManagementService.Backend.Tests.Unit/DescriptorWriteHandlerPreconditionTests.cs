@@ -55,10 +55,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
-        sessionFactory
-            .Session.Executor.Commands[0]
-            .CommandText.Should()
-            .Contain("FROM dms.\"ReferentialIdentity\"");
+        AssertDescriptorPostProbe(sessionFactory.Session.Executor.Commands[0]);
         sessionFactory.Session.ScalarCommands.Should().BeEmpty();
     }
 
@@ -100,9 +97,44 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        AssertDescriptorPostProbe(sessionFactory.Session.Executor.Commands[0]);
         sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+        // The upsert-update batch re-selects the post-trigger stamp from the descriptor row it just
+        // updated, not from dms."Document", and issues no ReferentialIdentity statement.
+        sessionFactory
+            .Session.Executor.Commands[2]
+            .CommandText.Should()
+            .Contain("SELECT \"ContentVersion\" FROM dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands[2].CommandText.Should().NotContain("ReferentialIdentity");
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        // The write session locks the descriptor row it resolved, read, and is about to update.
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FROM \"dms\".\"Descriptor\"");
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+    }
+
+    [Test]
+    public async Task It_locks_the_descriptor_row_with_the_dialect_lock_hint()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Mssql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Mssql), documentUuid);
+
+        await sut.HandlePostAsync(request);
+
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FROM [dms].[Descriptor]");
+        sessionFactory
+            .Session.ScalarCommands[0]
+            .CommandText.Should()
+            .Contain("WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().NotContain("[dms].[Document]");
     }
 
     [Test]
@@ -969,15 +1001,57 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-        sessionFactory
-            .Session.Executor.Commands[0]
-            .CommandText.Should()
-            .Contain("FROM dms.\"ReferentialIdentity\"");
+        AssertDescriptorPostProbe(sessionFactory.Session.Executor.Commands[0]);
+        // The insert batch keeps the dms."Document" insert (it originates the DocumentId until Phase 4)
+        // and writes no ReferentialIdentity row.
         sessionFactory
             .Session.Executor.Commands[1]
             .CommandText.Should()
             .Contain("INSERT INTO dms.\"Document\"");
+        sessionFactory
+            .Session.Executor.Commands[1]
+            .CommandText.Should()
+            .Contain("INSERT INTO dms.\"Descriptor\"");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("ReferentialIdentity");
+        sessionFactory
+            .Session.Executor.Commands[1]
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .NotContain("@referentialId");
         sessionFactory.Session.ScalarCommands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_writes_no_referential_identity_row_on_a_mssql_descriptor_insert()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Mssql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(50L)]);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Mssql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+        };
+
+        var result = await sut.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory
+            .Session.Executor.Commands[1]
+            .CommandText.Should()
+            .Contain("INSERT INTO [dms].[Document]");
+        sessionFactory
+            .Session.Executor.Commands[1]
+            .CommandText.Should()
+            .Contain("SET @newDocumentId = SCOPE_IDENTITY();");
+        sessionFactory.Session.Executor.Commands[1].CommandText.Should().NotContain("ReferentialIdentity");
+        sessionFactory
+            .Session.Executor.Commands[1]
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .NotContain("@referentialId");
     }
 
     [Test]
@@ -1364,6 +1438,24 @@ public class Given_Descriptor_Write_Preconditions
             )
         );
 
+    /// <summary>
+    /// The in-session POST target probe: a single-row seek of UX_Descriptor_UriLowered_Discriminator on
+    /// dms."Descriptor", scoped by the descriptor row's ResourceKeyId mirror. Nothing on this path reads
+    /// dms."ReferentialIdentity".
+    /// </summary>
+    private static void AssertDescriptorPostProbe(RelationalCommand command)
+    {
+        command.CommandText.Should().Contain("FROM dms.\"Descriptor\" descriptor");
+        command.CommandText.Should().Contain("descriptor.\"UriLowered\" = @uriLowered");
+        command.CommandText.Should().Contain("descriptor.\"Discriminator\" = @discriminator");
+        command.CommandText.Should().Contain("descriptor.\"ResourceKeyId\" = @resourceKeyId");
+        command.CommandText.Should().NotContain("ReferentialIdentity");
+        command
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal("uri://ed-fi.org/schooltypedescriptor#charter", "SchoolTypeDescriptor", (short)1);
+    }
+
     private static InMemoryRelationalResultSet CreateContentVersionRow(long contentVersion) =>
         InMemoryRelationalResultSet.Create(
             new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
@@ -1700,10 +1792,11 @@ public class Given_Descriptor_Write_Preconditions
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string uriLowered,
+            string discriminator,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )
@@ -1712,7 +1805,7 @@ public class Given_Descriptor_Write_Preconditions
             return Task.FromResult(PostResult);
         }
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
             DocumentUuid documentUuid,
@@ -1723,8 +1816,23 @@ public class Given_Descriptor_Write_Preconditions
             return Task.FromResult(PutResult);
         }
 
-        // The descriptor write path still resolves PUT targets through dms.Document; only the regular
-        // resource path seeks the root table. Throwing keeps that split honest.
+        // Descriptor writes resolve their targets from dms.Descriptor; the dms.Document and root-table
+        // surfaces belong to other callers. Throwing keeps that split honest.
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
             DbTableName rootTable,
             DocumentUuid documentUuid,

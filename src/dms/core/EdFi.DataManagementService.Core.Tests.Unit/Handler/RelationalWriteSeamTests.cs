@@ -862,7 +862,36 @@ actual: {requestInfo.FrontendResponse.Body}
             );
         }
 
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            string uriLowered,
+            string discriminator,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                (resultFactory ?? DefaultResultFactory)(
+                    new RelationalWriteTargetRequest.Post(
+                        new ReferentialId(Guid.Empty),
+                        candidateDocumentUuid,
+                        new DocumentIdentity([])
+                    )
+                )
+            );
+        }
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => ResolvePutTarget(documentUuid, cancellationToken);
+
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
             DocumentUuid documentUuid,

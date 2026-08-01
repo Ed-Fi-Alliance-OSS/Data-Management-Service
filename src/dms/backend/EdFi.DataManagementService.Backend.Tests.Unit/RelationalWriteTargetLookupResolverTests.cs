@@ -144,26 +144,126 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
             .Equal(documentUuid.Value);
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
-    public async Task It_keeps_the_descriptor_put_lookup_on_the_document_table(
+    [TestCase(
+        SqlDialect.Pgsql,
+        "FROM dms.\"Descriptor\" descriptor",
+        "descriptor.\"DocumentUuid\" = @documentUuid",
+        "descriptor.\"ResourceKeyId\" = @resourceKeyId",
+        "dms.\"Document\""
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "FROM [dms].[Descriptor] descriptor",
+        "descriptor.[DocumentUuid] = @documentUuid",
+        "descriptor.[ResourceKeyId] = @resourceKeyId",
+        "[dms].[Document]"
+    )]
+    public async Task It_seeks_the_descriptor_uuid_index_for_the_descriptor_put_lookup(
         SqlDialect dialect,
-        string expectedTableFragment
+        string expectedTableFragment,
+        string expectedDocumentUuidPredicate,
+        string expectedResourceKeyIdPredicate,
+        string forbiddenTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var commandExecutor = new RecordingRelationalCommandExecutor(CreateLookupReader(), dialect);
         var sut = new RelationalWriteTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+        var result = await sut.ResolveDescriptorForPutAsync(
+            CreateMappingSet(dialect),
+            _requestResource,
+            documentUuid
+        );
 
         result.Should().BeOfType<RelationalWriteTargetLookupResult.NotFound>();
         commandExecutor.CapturedCommand.Should().NotBeNull();
         commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.CapturedCommand.CommandText.Should().Contain(expectedDocumentUuidPredicate);
+        // Descriptors share one table, so resource scoping stays a residual predicate on the descriptor
+        // row's ResourceKeyId mirror rather than being structural the way a resource root table is.
+        commandExecutor.CapturedCommand.CommandText.Should().Contain(expectedResourceKeyIdPredicate);
+        commandExecutor.CapturedCommand.CommandText.Should().NotContain(forbiddenTableFragment);
         commandExecutor
             .CapturedCommand.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)1);
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "FROM dms.\"Descriptor\" descriptor",
+        "descriptor.\"UriLowered\" = @uriLowered",
+        "descriptor.\"Discriminator\" = @discriminator",
+        "descriptor.\"ResourceKeyId\" = @resourceKeyId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "FROM [dms].[Descriptor] descriptor",
+        "descriptor.[UriLowered] = @uriLowered",
+        "descriptor.[Discriminator] = @discriminator",
+        "descriptor.[ResourceKeyId] = @resourceKeyId"
+    )]
+    public async Task It_seeks_the_descriptor_uri_index_for_descriptor_post_upsert_detection(
+        SqlDialect dialect,
+        string expectedTableFragment,
+        string expectedUriPredicate,
+        string expectedDiscriminatorPredicate,
+        string expectedResourceKeyIdPredicate
+    )
+    {
+        var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new RecordingRelationalCommandExecutor(CreateLookupReader(), dialect);
+        var sut = new RelationalWriteTargetLookupService(commandExecutor);
+
+        var result = await sut.ResolveDescriptorForPostAsync(
+            CreateMappingSet(dialect),
+            _requestResource,
+            "uri://ed-fi.org/schooltypedescriptor#charter",
+            "SchoolTypeDescriptor",
+            candidateDocumentUuid
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid));
+        commandExecutor.ExecuteReaderAsyncCallCount.Should().Be(1);
+        commandExecutor.CapturedCommand.Should().NotBeNull();
+        commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.CapturedCommand.CommandText.Should().Contain(expectedUriPredicate);
+        commandExecutor.CapturedCommand.CommandText.Should().Contain(expectedDiscriminatorPredicate);
+        commandExecutor.CapturedCommand.CommandText.Should().Contain(expectedResourceKeyIdPredicate);
+        commandExecutor.CapturedCommand.CommandText.Should().NotContain("ReferentialIdentity");
+        commandExecutor
+            .CapturedCommand.Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal("uri://ed-fi.org/schooltypedescriptor#charter", "SchoolTypeDescriptor", (short)1);
+    }
+
+    [Test]
+    public async Task It_returns_the_existing_descriptor_when_the_uri_probe_matches_a_persisted_row()
+    {
+        var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
+        var existingDocumentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new RecordingRelationalCommandExecutor(
+            CreateLookupReader((909L, existingDocumentUuid.Value, 77L)),
+            SqlDialect.Pgsql
+        );
+        var sut = new RelationalWriteTargetLookupService(commandExecutor);
+
+        var result = await sut.ResolveDescriptorForPostAsync(
+            CreateMappingSet(SqlDialect.Pgsql),
+            _requestResource,
+            "uri://ed-fi.org/schooltypedescriptor#charter",
+            "SchoolTypeDescriptor",
+            candidateDocumentUuid
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetLookupResult.ExistingDocument(909L, existingDocumentUuid, 77L)
+            );
     }
 
     [TestCase(SqlDialect.Pgsql, "\"edfi\".\"Section\" root", "root.\"School_DocumentId\" = @nk0")]

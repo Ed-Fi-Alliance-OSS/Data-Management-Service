@@ -13,6 +13,13 @@ namespace EdFi.DataManagementService.Backend;
 
 public interface IRelationalWriteTargetLookupService
 {
+    /// <summary>
+    /// POST target lookup through <c>dms.ReferentialIdentity</c>. No production caller remains — the
+    /// descriptor POST resolves its upsert target from <c>dms.Descriptor</c>
+    /// (<see cref="ResolveDescriptorForPostAsync"/>) and the regular POST seeks the root table's
+    /// natural-key index. Kept for the referential-identity differential tests until Phase 4 removes
+    /// the table.
+    /// </summary>
     Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -22,11 +29,45 @@ public interface IRelationalWriteTargetLookupService
     );
 
     /// <summary>
-    /// PUT target lookup through <c>dms.Document</c>. Only the descriptor write path still uses this;
-    /// the regular resource PUT resolves its target from the root table
-    /// (<see cref="ResolveForPutByRootTableAsync"/>).
+    /// PUT target lookup through <c>dms.Document</c>. No production caller remains — the descriptor PUT
+    /// resolves its target from <c>dms.Descriptor</c> (<see cref="ResolveDescriptorForPutAsync"/>) and
+    /// the regular resource PUT from the root table (<see cref="ResolveForPutByRootTableAsync"/>).
+    /// Kept until Phase 4 removes the table.
     /// </summary>
     Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Descriptor POST upsert detection by the descriptor's own natural key: a single-row seek of
+    /// <c>UX_Descriptor_UriLowered_Discriminator</c> on <c>dms.Descriptor</c>, returning the same
+    /// <c>(DocumentId, DocumentUuid, ContentVersion)</c> triple the referential-id probe returned.
+    /// </summary>
+    /// <remarks>
+    /// The returned <c>DocumentUuid</c>/<c>ContentVersion</c> come from the descriptor row's
+    /// trigger-maintained document-metadata mirrors, so they are the same values the write session then
+    /// locks and re-reads. <c>ResourceKeyId</c> rides along as a residual predicate: the discriminator is
+    /// a bare resource name with no project qualifier, so it alone does not scope the probe to the
+    /// routed resource.
+    /// </remarks>
+    Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string uriLowered,
+        string discriminator,
+        DocumentUuid candidateDocumentUuid,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Descriptor PUT target lookup by a single-row seek of <c>UX_Descriptor_DocumentUuid</c> on
+    /// <c>dms.Descriptor</c>, scoped by the descriptor row's <c>ResourceKeyId</c> mirror so a uuid
+    /// belonging to a different descriptor resource does not resolve.
+    /// </summary>
+    Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
@@ -122,6 +163,42 @@ internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecu
         );
     }
 
+    public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string uriLowered,
+        string discriminator,
+        DocumentUuid candidateDocumentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync(
+            _commandExecutor,
+            mappingSet,
+            resource,
+            uriLowered,
+            discriminator,
+            candidateDocumentUuid,
+            cancellationToken
+        );
+    }
+
+    public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return RelationalWriteTargetLookupSupport.ResolveDescriptorForPutAsync(
+            _commandExecutor,
+            mappingSet,
+            resource,
+            documentUuid,
+            cancellationToken
+        );
+    }
+
     public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
         DbTableName rootTable,
         DocumentUuid documentUuid,
@@ -192,6 +269,8 @@ internal static class RelationalWriteTargetLookupSupport
 {
     private const string ReferentialIdParameterName = "@referentialId";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
+    private const string UriLoweredParameterName = "@uriLowered";
+    private const string DiscriminatorParameterName = "@discriminator";
     private const string NaturalKeyParameterNamePrefix = "@nk";
 
     /// <summary>
@@ -301,6 +380,100 @@ internal static class RelationalWriteTargetLookupSupport
                 existingDocument.DocumentId,
                 existingDocument.DocumentUuid,
                 existingDocument.ObservedContentVersion
+            );
+    }
+
+    /// <summary>
+    /// Seeks <c>UX_Descriptor_UriLowered_Discriminator</c> for a persisted descriptor whose URI and
+    /// discriminator equal the request's, returning <c>CreateNew</c> when there is none.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="uriLowered"/> is the request URI lower-cased with the invariant culture, matching
+    /// the engine-computed <c>dms.Descriptor.UriLowered</c> column the index covers.
+    /// <c>ResourceKeyId</c> is a residual predicate on the seek: the discriminator is the bare resource
+    /// name, so nothing else in the index keeps a same-named descriptor from another project out of the
+    /// result. That mirror is trigger-sourced and nullable, so a descriptor row written with triggers
+    /// suppressed carries <c>NULL</c> there and fails closed — the probe misses it and the POST attempts
+    /// an insert, which the URI unique constraint then rejects as a write conflict.
+    /// </remarks>
+    public static async Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string uriLowered,
+        string discriminator,
+        DocumentUuid candidateDocumentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(uriLowered);
+        ArgumentNullException.ThrowIfNull(discriminator);
+
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+
+        var existingDescriptor = await ExecuteLookupAsync(
+                commandExecutor,
+                mappingSet.Key.Dialect switch
+                {
+                    SqlDialect.Pgsql => BuildPostgresqlDescriptorUriProbeCommand(
+                        uriLowered,
+                        discriminator,
+                        resourceKeyId
+                    ),
+                    SqlDialect.Mssql => BuildMssqlDescriptorUriProbeCommand(
+                        uriLowered,
+                        discriminator,
+                        resourceKeyId
+                    ),
+                    _ => throw new NotSupportedException(
+                        $"Relational descriptor POST target lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
+                    ),
+                },
+                $"resource '{RelationalWriteSupport.FormatResource(resource)}' and descriptor uri '{uriLowered}'",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return existingDescriptor is null
+            ? new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            : new RelationalWriteTargetLookupResult.ExistingDocument(
+                existingDescriptor.DocumentId,
+                existingDescriptor.DocumentUuid,
+                existingDescriptor.ObservedContentVersion
+            );
+    }
+
+    /// <summary>
+    /// Descriptor PUT target lookup: the <c>dms.Descriptor</c> uuid probe narrowed to the
+    /// <c>(DocumentId, DocumentUuid, ContentVersion)</c> triple the write session then locks and loads
+    /// current state from.
+    /// </summary>
+    public static async Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resolvedTarget = await RelationalDocumentUuidLookupSupport
+            .TryResolveDescriptorTargetByDocumentUuidAsync(
+                commandExecutor,
+                mappingSet,
+                resource,
+                documentUuid,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return resolvedTarget is null
+            ? new RelationalWriteTargetLookupResult.NotFound()
+            : new RelationalWriteTargetLookupResult.ExistingDocument(
+                resolvedTarget.DocumentId,
+                new DocumentUuid(resolvedTarget.DocumentUuid),
+                resolvedTarget.ContentVersion
             );
     }
 
@@ -731,6 +904,56 @@ internal static class RelationalWriteTargetLookupSupport
             """;
 
         return new RelationalCommand(commandText, parameters);
+    }
+
+    private static RelationalCommand BuildPostgresqlDescriptorUriProbeCommand(
+        string uriLowered,
+        string discriminator,
+        short resourceKeyId
+    )
+    {
+        return new RelationalCommand(
+            """
+            SELECT
+                descriptor."DocumentId" AS "DocumentId",
+                descriptor."DocumentUuid" AS "DocumentUuid",
+                descriptor."ContentVersion" AS "ContentVersion"
+            FROM dms."Descriptor" descriptor
+            WHERE descriptor."UriLowered" = @uriLowered
+                AND descriptor."Discriminator" = @discriminator
+                AND descriptor."ResourceKeyId" = @resourceKeyId
+            """,
+            [
+                new RelationalParameter(UriLoweredParameterName, uriLowered),
+                new RelationalParameter(DiscriminatorParameterName, discriminator),
+                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
+            ]
+        );
+    }
+
+    private static RelationalCommand BuildMssqlDescriptorUriProbeCommand(
+        string uriLowered,
+        string discriminator,
+        short resourceKeyId
+    )
+    {
+        return new RelationalCommand(
+            """
+            SELECT
+                descriptor.[DocumentId] AS [DocumentId],
+                descriptor.[DocumentUuid] AS [DocumentUuid],
+                descriptor.[ContentVersion] AS [ContentVersion]
+            FROM [dms].[Descriptor] descriptor
+            WHERE descriptor.[UriLowered] = @uriLowered
+                AND descriptor.[Discriminator] = @discriminator
+                AND descriptor.[ResourceKeyId] = @resourceKeyId
+            """,
+            [
+                new RelationalParameter(UriLoweredParameterName, uriLowered),
+                new RelationalParameter(DiscriminatorParameterName, discriminator),
+                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
+            ]
+        );
     }
 
     private static RelationalCommand BuildPostgresqlLookupByReferentialIdCommand(

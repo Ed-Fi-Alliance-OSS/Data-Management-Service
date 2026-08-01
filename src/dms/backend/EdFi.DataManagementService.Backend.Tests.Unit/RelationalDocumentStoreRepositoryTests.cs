@@ -9366,6 +9366,24 @@ public class Given_RelationalDocumentStoreRepositoryTests
             return NextPutResult(documentUuid);
         }
 
+        // The repository routes descriptor writes to IDescriptorWriteHandler, so it never resolves a
+        // descriptor target itself. Throwing keeps that routing honest.
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            string uriLowered,
+            string discriminator,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPutByRootTableAsync(
             DbTableName rootTable,
             DocumentUuid documentUuid,

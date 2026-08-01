@@ -52,18 +52,24 @@ public class Given_OrderedDeleteCommandBuilder
     [TestCase(
         SqlDialect.Pgsql,
         "DELETE FROM dms.\"Descriptor\"",
+        "\"DocumentUuid\" = @documentUuid",
+        "\"ResourceKeyId\" = @resourceKeyId",
         "DELETE FROM dms.\"Document\"",
         "RETURNING \"DocumentId\""
     )]
     [TestCase(
         SqlDialect.Mssql,
         "DELETE FROM [dms].[Descriptor]",
+        "[DocumentUuid] = @documentUuid",
+        "[ResourceKeyId] = @resourceKeyId",
         "DELETE FROM [dms].[Document]",
         "OUTPUT DELETED.[DocumentId]"
     )]
     public void It_builds_descriptor_delete_command_with_descriptor_delete_before_document_delete(
         SqlDialect dialect,
         string descriptorDeleteFragment,
+        string documentUuidPredicateFragment,
+        string resourceKeyIdPredicateFragment,
         string documentDeleteFragment,
         string finalResultFragment
     )
@@ -78,9 +84,19 @@ public class Given_OrderedDeleteCommandBuilder
         );
 
         AssertContainsInOrder(command.CommandText, descriptorDeleteFragment, documentDeleteFragment);
-        var finalStatement = SplitStatements(command)[^1];
-        finalStatement.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(finalResultFragment);
+
+        // The descriptor delete predicates directly on the descriptor row's own uuid and ResourceKeyId
+        // mirrors — no dms.Document sub-select — while the trailing document delete and the
+        // descriptor-before-document ordering stay put.
+        var statements = SplitStatements(command);
+        statements.Should().HaveCount(2);
+        statements[0].Should().Contain(descriptorDeleteFragment);
+        statements[0].Should().Contain(documentUuidPredicateFragment);
+        statements[0].Should().Contain(resourceKeyIdPredicateFragment);
+        statements[0].Should().NotContain(documentDeleteFragment);
+        statements[0].Should().NotContain("SELECT");
+        statements[^1].Should().Contain(documentDeleteFragment);
+        statements[^1].Should().Contain(finalResultFragment);
 
         command.Parameters.Should().HaveCount(2);
         command
