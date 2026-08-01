@@ -147,3 +147,8 @@ Completed administrative-tests task for reference/design/backend-redesign/epics/
 Key decisions: added PG/MSSQL DocumentCacheAdministration integration suites over real mutex sessions; covered workflow timeout before/after mutation, rollback of started short transaction, caller cancellation after mutation, session loss after mutation, noncurrent pinned-generation diagnostics, and compact operation-boundary assertions across all admin commands.
 Files changed: PostgresqlDocumentCacheAdministrationTests.cs; MssqlDocumentCacheAdministrationTests.cs; tasks.json; progress.txt.
 Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Next likely final verification task.
+
+Completed verification task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: kept production DI split; added unused test/integration stubs for frontend-owned DocumentCache supervisor/registry seams so provider-neutral ValidateOnBuild tests can validate shared backend registrations. Final verification passed; MSSQL default env unset fell back to unreachable endpoint, reran same filter with SQL Server 2025 container on localhost,14333.
+Files changed: ReferenceResolverServiceCollectionExtensionsTests.cs; DocumentCacheWriterFaultInjectionTests.cs; PostgresqlBackendIntegrationTestServiceCollectionExtensions.cs; MssqlBackendIntegrationTestServiceCollectionExtensions.cs; tasks.json; progress.txt.
+Blockers/notes: none. All tasks in 18-04 story now complete.

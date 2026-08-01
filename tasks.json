@@ -534,6 +534,6 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCache\"",
       "dotnet build src/dms/backend/EdFi.DataManagementService.Backend/EdFi.DataManagementService.Backend.csproj"
     ],
-    "completed": false
+    "completed": true
   }
 ]
