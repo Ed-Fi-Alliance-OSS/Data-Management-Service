@@ -224,7 +224,20 @@ internal sealed record FocusedPostAsUpdateSchoolExtensionAddressRow(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture
+/// <summary>
+/// A POST whose natural key differs from every persisted row is a create, not an update.
+/// </summary>
+/// <remarks>
+/// This fixture used to pin the POST arm of the immutable-identity guard by handing the backend the
+/// stored document's <c>ReferentialId</c> together with a *different* <c>DocumentIdentity</c>. Core cannot
+/// produce that pair — <c>ReferentialIdCalculator.ReferentialIdFrom</c> derives the id FROM the identity —
+/// so the scenario was reachable only by fabricating the request (or by a UUIDv5 collision). Now that
+/// upsert detection seeks <c>UX_&lt;R&gt;_NK</c>, a matched target carries the request's identity by
+/// construction, which makes the POST arm of the guard unreachable rather than merely untested. The
+/// immutable-identity guard itself is unchanged and stays covered on the PUT path, where the caller
+/// addresses an existing document by uuid and submits a different identity.
+/// </remarks>
+public class Given_A_Postgresql_Relational_Post_With_A_Changed_Identity_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
@@ -264,7 +277,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         }
         """;
 
-    private const string ImmutableIdentityPostAsUpdateRequestBodyJson = """
+    private const string ChangedIdentityPostRequestBodyJson = """
         {
           "schoolId": 255902,
           "shortName": "LHS",
@@ -299,7 +312,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         }
         """;
 
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly ResourceInfo SchoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("School"),
@@ -310,7 +322,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000005")
     );
-    private static readonly DocumentUuid RejectedPostAsUpdateDocumentUuid = new(
+    private static readonly DocumentUuid ChangedIdentityPostDocumentUuid = new(
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000006")
     );
 
@@ -318,12 +330,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private FocusedPostAsUpdateDocumentRow _documentBeforeRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateDocumentRow _documentAfterRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateSchoolRow _schoolBeforeRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateSchoolRow _schoolAfterRejectedPostAsUpdate = null!;
-    private UpsertResult _rejectedPostAsUpdateResult = null!;
-    private ReferentialId _persistedSchoolReferentialId;
+    private FocusedPostAsUpdateDocumentRow _documentBeforeChangedIdentityPost = null!;
+    private FocusedPostAsUpdateDocumentRow _documentAfterChangedIdentityPost = null!;
+    private FocusedPostAsUpdateSchoolRow _schoolBeforeChangedIdentityPost = null!;
+    private FocusedPostAsUpdateSchoolRow _schoolAfterChangedIdentityPost = null!;
+    private UpsertResult _changedIdentityPostResult = null!;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -346,33 +357,25 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
 
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-        _documentBeforeRejectedPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
-        _schoolBeforeRejectedPostAsUpdate = await ReadSchoolAsync(
-            _documentBeforeRejectedPostAsUpdate.DocumentId
-        );
-        _persistedSchoolReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforeRejectedPostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolResource]
-                )
-            ).ReferentialId
+        _documentBeforeChangedIdentityPost = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
+        _schoolBeforeChangedIdentityPost = await ReadSchoolAsync(
+            _documentBeforeChangedIdentityPost.DocumentId
         );
 
-        _rejectedPostAsUpdateResult = await ExecuteUpsertAsync(
-            ImmutableIdentityPostAsUpdateRequestBodyJson,
-            RejectedPostAsUpdateDocumentUuid,
-            "pg-post-as-update-immutable-identity-reject",
-            schoolId: 255902,
-            referentialId: _persistedSchoolReferentialId
+        // A POST carrying schoolId 255902 against a stored schoolId 255901. The referential id is derived
+        // from the submitted identity, exactly as Core derives it, so this is a request the API can
+        // actually produce.
+        _changedIdentityPostResult = await ExecuteUpsertAsync(
+            ChangedIdentityPostRequestBodyJson,
+            ChangedIdentityPostDocumentUuid,
+            "pg-post-changed-identity",
+            schoolId: 255902
         );
 
-        _documentAfterRejectedPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
-        _schoolAfterRejectedPostAsUpdate = await ReadSchoolAsync(
-            _documentAfterRejectedPostAsUpdate.DocumentId
-        );
+        _documentAfterChangedIdentityPost = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
+        _schoolAfterChangedIdentityPost = await ReadSchoolAsync(_documentAfterChangedIdentityPost.DocumentId);
         _documentCount = await ReadDocumentCountAsync();
-        _incomingDocumentUuidCount = await ReadDocumentCountAsync(RejectedPostAsUpdateDocumentUuid.Value);
+        _incomingDocumentUuidCount = await ReadDocumentCountAsync(ChangedIdentityPostDocumentUuid.Value);
     }
 
     [OneTimeTearDown]
@@ -390,33 +393,34 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     }
 
     [Test]
-    public void It_returns_explicit_immutable_identity_failure_for_post_as_update()
+    public void It_creates_a_new_document_for_a_post_whose_natural_key_does_not_match_a_persisted_row()
     {
-        _rejectedPostAsUpdateResult.Should().BeOfType<UpsertResult.UpsertFailureImmutableIdentity>();
-        _rejectedPostAsUpdateResult.Should().NotBeOfType<UpsertResult.UnknownFailure>();
-        _rejectedPostAsUpdateResult
-            .As<UpsertResult.UpsertFailureImmutableIdentity>()
-            .FailureMessage.Should()
-            .Be(
-                "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
-            );
+        // Upsert detection seeks UX_<R>_NK, so schoolId 255902 selects no target and the POST is a create.
+        // It is never an immutable-identity failure: the guard compares a resolved target's identity
+        // against the merged row, and by construction a natural-key match already agrees.
+        _changedIdentityPostResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        _changedIdentityPostResult.Should().NotBeOfType<UpsertResult.UpsertFailureImmutableIdentity>();
+        _changedIdentityPostResult.Should().NotBeOfType<UpsertResult.UnknownFailure>();
+        _changedIdentityPostResult
+            .As<UpsertResult.InsertSuccess>()
+            .NewDocumentUuid.Should()
+            .Be(ChangedIdentityPostDocumentUuid);
     }
 
     [Test]
-    public void It_does_not_commit_row_changes_for_rejected_post_as_update()
+    public void It_leaves_the_existing_document_untouched_when_a_changed_identity_post_creates_a_new_one()
     {
-        _documentAfterRejectedPostAsUpdate.Should().Be(_documentBeforeRejectedPostAsUpdate);
-        _schoolAfterRejectedPostAsUpdate.Should().Be(_schoolBeforeRejectedPostAsUpdate);
-        _documentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
+        _documentAfterChangedIdentityPost.Should().Be(_documentBeforeChangedIdentityPost);
+        _schoolAfterChangedIdentityPost.Should().Be(_schoolBeforeChangedIdentityPost);
+        _documentCount.Should().Be(2);
+        _incomingDocumentUuidCount.Should().Be(1);
     }
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
         string traceId,
-        long schoolId = 255901,
-        ReferentialId? referentialId = null
+        long schoolId = 255901
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -427,7 +431,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
                 new DataStore(
                     Id: 1,
                     DataStoreType: "test",
-                    Name: "PostgresqlRelationalWritePostAsUpdateImmutableIdentity",
+                    Name: "PostgresqlRelationalWritePostChangedIdentity",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -435,7 +439,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, schoolId, referentialId)
+            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, schoolId)
         );
     }
 
@@ -443,12 +447,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         string requestBodyJson,
         DocumentUuid documentUuid,
         string traceId,
-        long schoolId,
-        ReferentialId? referentialId
+        long schoolId
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(schoolId, referentialId),
+            DocumentInfo: CreateSchoolDocumentInfo(schoolId),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -456,7 +459,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             DocumentUuid: documentUuid
         );
 
-    private static DocumentInfo CreateSchoolDocumentInfo(long schoolId, ReferentialId? referentialId = null)
+    /// <summary>
+    /// The referential id is always derived from the submitted identity, the way
+    /// <c>ReferentialIdCalculator</c> does it in Core. There is deliberately no override: a request pairing
+    /// one document's hash with another's identity is not something the API can emit, and pinning behavior
+    /// against it would be pinning a fabricated state.
+    /// </summary>
+    private static DocumentInfo CreateSchoolDocumentInfo(long schoolId)
     {
         var schoolIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
@@ -467,8 +476,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -518,33 +526,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
-            );
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-                AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
             );
     }
 
