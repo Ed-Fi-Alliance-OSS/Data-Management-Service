@@ -398,16 +398,22 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     return CaptureInstancesResult(inspection, createdKinds: []);
                 }
 
-                var gatingRoleCreated = false;
-                if (
-                    !await GatingRoleExistsAsync(executor, context.Request, cancellationToken)
-                        .ConfigureAwait(false)
-                )
+                var gatingRole = await InspectGatingRoleBeforeCaptureCreationAsync(
+                        executor,
+                        context.Request,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                if (!gatingRole.Exists)
                 {
                     await executor
                         .ExecuteNonQueryAsync(CreateGatingRoleSql(context.Request), cancellationToken)
                         .ConfigureAwait(false);
-                    gatingRoleCreated = true;
+                    gatingRole = gatingRole with { Created = true };
+                }
+                else if (!gatingRole.IsCleanForCaptureCreation)
+                {
+                    return GatingRolePreCaptureResult(context.Request, gatingRole);
                 }
 
                 foreach (var tableKind in _captureTableOrder.Where(missingKinds.Contains))
@@ -426,7 +432,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 return CaptureInstancesResult(
                     inspection,
                     missingKinds,
-                    gatingRoleCreated ? context.Request.ArtifactNames.SqlServer!.GatingRoleName : null
+                    gatingRole.Created ? context.Request.ArtifactNames.SqlServer!.GatingRoleName : null
                 );
             }
 
@@ -450,21 +456,127 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
     }
 
-    private static async Task<bool> GatingRoleExistsAsync(
+    private static async Task<SqlServerGatingRolePreCaptureInspection> InspectGatingRoleBeforeCaptureCreationAsync(
         ICdcProviderDatabaseExecutor executor,
         CdcProviderSetupRequest request,
         CancellationToken cancellationToken
     )
     {
         var rows = await executor
-            .QueryAsync(GatingRoleExistsSql(request), cancellationToken)
+            .QueryAsync(GatingRolePreCaptureSql(request), cancellationToken)
             .ConfigureAwait(false);
         if (rows.Count == 0)
         {
-            throw new InvalidOperationException("SQL Server CDC gating role state was not returned.");
+            throw new InvalidOperationException("SQL Server CDC gating role shape was not returned.");
         }
 
-        return ReadBool(rows[0], "gating_role_exists");
+        var row = rows[0];
+        var connectorPrincipal = request.ConnectorPrincipal.SafePrincipalName;
+        var gatingRoleName = request.ArtifactNames.SqlServer!.GatingRoleName;
+        var gatingRoleExists = ReadBool(row, "gating_role_exists");
+        var gatingRoleIsNormalRole = ReadBool(row, "gating_role_is_normal_role");
+        var gatingRoleDirectMembers = ReadCsv(row, "gating_role_direct_members");
+        var gatingRoleParentRoles = ReadCsv(row, "gating_role_parent_roles");
+        var gatingRoleOwnedObjects = ReadCsv(row, "gating_role_owned_objects");
+        var gatingRoleExplicitPermissions = ReadCsv(row, "gating_role_explicit_permissions");
+        var expectedCaptureInstancesUsingRole = ReadInt32(row, "expected_capture_instances_using_role");
+        var unexpectedCaptureInstancesUsingRole = ReadCsv(row, "unexpected_capture_instances_using_role");
+        var directMemberMismatch =
+            gatingRoleDirectMembers.Count > 0
+            && !gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal);
+        var isCleanForCaptureCreation =
+            !gatingRoleExists
+            || (
+                gatingRoleIsNormalRole
+                && !directMemberMismatch
+                && gatingRoleParentRoles.Count == 0
+                && gatingRoleOwnedObjects.Count == 0
+                && gatingRoleExplicitPermissions.Count == 0
+                && unexpectedCaptureInstancesUsingRole.Count == 0
+            );
+
+        var observedValues = new Dictionary<string, string>
+        {
+            ["gating_role_exists"] = gatingRoleExists.ToString(),
+            ["gating_role_is_normal_role"] = gatingRoleIsNormalRole.ToString(),
+            ["gating_role_direct_members"] = CsvOrNone(gatingRoleDirectMembers),
+            ["gating_role_parent_roles"] = CsvOrNone(gatingRoleParentRoles),
+            ["gating_role_owned_objects"] = CsvOrNone(gatingRoleOwnedObjects),
+            ["gating_role_explicit_permissions"] = CsvOrNone(gatingRoleExplicitPermissions),
+            ["expected_capture_instances_using_role"] = expectedCaptureInstancesUsingRole.ToString(),
+            ["unexpected_capture_instances_using_role"] = CsvOrNone(unexpectedCaptureInstancesUsingRole),
+        };
+        IReadOnlyList<CdcProviderDiagnostic> diagnostics = isCleanForCaptureCreation
+            ? []
+            :
+            [
+                GatingRoleMismatchDiagnostic(
+                    gatingRoleName,
+                    expectedValue: "normal-role-empty-or-connector-member-no-ownership-no-permissions-no-unexpected-captures",
+                    observedParts: GatingRolePreCaptureObservedMismatchParts(
+                        gatingRoleIsNormalRole,
+                        directMemberMismatch,
+                        gatingRoleDirectMembers,
+                        gatingRoleParentRoles,
+                        gatingRoleOwnedObjects,
+                        gatingRoleExplicitPermissions,
+                        unexpectedCaptureInstancesUsingRole
+                    )
+                ),
+            ];
+
+        return new SqlServerGatingRolePreCaptureInspection(
+            Exists: gatingRoleExists,
+            Created: false,
+            IsCleanForCaptureCreation: isCleanForCaptureCreation,
+            ObservedValues: observedValues,
+            Diagnostics: diagnostics
+        );
+    }
+
+    private static IReadOnlyList<string?> GatingRolePreCaptureObservedMismatchParts(
+        bool gatingRoleIsNormalRole,
+        bool directMemberMismatch,
+        IReadOnlyList<string> gatingRoleDirectMembers,
+        IReadOnlyList<string> gatingRoleParentRoles,
+        IReadOnlyList<string> gatingRoleOwnedObjects,
+        IReadOnlyList<string> gatingRoleExplicitPermissions,
+        IReadOnlyList<string> unexpectedCaptureInstancesUsingRole
+    )
+    {
+        List<string?> observedParts = [];
+
+        if (!gatingRoleIsNormalRole)
+        {
+            observedParts.Add("not-normal-role");
+        }
+
+        if (directMemberMismatch)
+        {
+            observedParts.Add($"members:{CsvOrNone(gatingRoleDirectMembers)}");
+        }
+
+        if (gatingRoleParentRoles.Count > 0)
+        {
+            observedParts.Add($"parent_roles:{CsvOrNone(gatingRoleParentRoles)}");
+        }
+
+        if (gatingRoleOwnedObjects.Count > 0)
+        {
+            observedParts.Add($"ownership:{CsvOrNone(gatingRoleOwnedObjects)}");
+        }
+
+        if (gatingRoleExplicitPermissions.Count > 0)
+        {
+            observedParts.Add($"permissions:{CsvOrNone(gatingRoleExplicitPermissions)}");
+        }
+
+        if (unexpectedCaptureInstancesUsingRole.Count > 0)
+        {
+            observedParts.Add($"unexpected_captures:{CsvOrNone(unexpectedCaptureInstancesUsingRole)}");
+        }
+
+        return observedParts;
     }
 
     private static async Task<CdcProviderSetupStepResult> ExecuteConnectorPrincipalAccessAsync(
@@ -1408,16 +1520,109 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             """;
     }
 
-    private static string GatingRoleExistsSql(CdcProviderSetupRequest request)
+    private static string GatingRolePreCaptureSql(CdcProviderSetupRequest request)
     {
         var gatingRoleLiteral = EscapeSqlLiteral(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
+        var expectedCaptureInstances = string.Join(
+            ",\n            ",
+            _captureTableOrder.Select(kind =>
+                $"(N'{EscapeSqlLiteral(request.ArtifactNames.SqlServer.CaptureInstanceNames[kind].Value)}')"
+            )
+        );
 
         return $"""
-            /* cdc:sqlserver:gating-role-exists */
-            SELECT CONVERT(nvarchar(5), CASE
-                WHEN DATABASE_PRINCIPAL_ID(N'{gatingRoleLiteral}') IS NULL THEN 0
-                ELSE 1
-            END) AS gating_role_exists;
+            /* cdc:sqlserver:gating-role-pre-capture */
+            DECLARE @gating_role_name sysname = N'{gatingRoleLiteral}';
+            DECLARE @expected_capture_instances_using_role int = 0;
+            DECLARE @unexpected_capture_instances_using_role nvarchar(max) = N'';
+
+            DECLARE @expected_capture_instances TABLE (capture_instance sysname NOT NULL PRIMARY KEY);
+            INSERT INTO @expected_capture_instances (capture_instance)
+            VALUES
+            {expectedCaptureInstances};
+
+            IF OBJECT_ID(N'cdc.change_tables', N'U') IS NOT NULL
+            BEGIN
+                SELECT @expected_capture_instances_using_role = COUNT_BIG(*)
+                FROM cdc.change_tables capture_info
+                INNER JOIN @expected_capture_instances expected
+                    ON expected.capture_instance = capture_info.capture_instance
+                WHERE capture_info.role_name = @gating_role_name;
+
+                SELECT @unexpected_capture_instances_using_role = COALESCE(
+                    STRING_AGG(capture_info.capture_instance, N',') WITHIN GROUP (ORDER BY capture_info.capture_instance),
+                    N''
+                )
+                FROM cdc.change_tables capture_info
+                LEFT JOIN @expected_capture_instances expected
+                    ON expected.capture_instance = capture_info.capture_instance
+                WHERE capture_info.role_name = @gating_role_name
+                AND expected.capture_instance IS NULL;
+            END;
+
+            WITH gating_role AS (
+                SELECT TOP (1)
+                    principal_info.principal_id,
+                    principal_info.name,
+                    principal_info.type,
+                    principal_info.is_fixed_role
+                FROM sys.database_principals principal_info
+                WHERE principal_info.name = @gating_role_name
+            )
+            SELECT
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role) THEN 1 ELSE 0 END) AS gating_role_exists,
+                CONVERT(nvarchar(5), CASE WHEN EXISTS (SELECT 1 FROM gating_role WHERE type = N'R' AND is_fixed_role = 0) THEN 1 ELSE 0 END) AS gating_role_is_normal_role,
+                COALESCE((
+                    SELECT STRING_AGG(role_member_principal.name, N',') WITHIN GROUP (ORDER BY role_member_principal.name)
+                    FROM gating_role
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.role_principal_id = gating_role.principal_id
+                    INNER JOIN sys.database_principals role_member_principal
+                        ON role_member_principal.principal_id = role_member.member_principal_id
+                ), N'') AS gating_role_direct_members,
+                COALESCE((
+                    SELECT STRING_AGG(parent_role.name, N',') WITHIN GROUP (ORDER BY parent_role.name)
+                    FROM gating_role
+                    INNER JOIN sys.database_role_members role_member
+                        ON role_member.member_principal_id = gating_role.principal_id
+                    INNER JOIN sys.database_principals parent_role
+                        ON parent_role.principal_id = role_member.role_principal_id
+                ), N'') AS gating_role_parent_roles,
+                COALESCE((
+                    SELECT STRING_AGG(owned_object, N',') WITHIN GROUP (ORDER BY owned_object)
+                    FROM (
+                        SELECT N'schema:' + schema_info.name AS owned_object
+                        FROM gating_role
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.principal_id = gating_role.principal_id
+                        UNION ALL
+                        SELECT N'object:' + schema_info.name + N'.' + object_info.name
+                        FROM gating_role
+                        INNER JOIN sys.objects object_info
+                            ON object_info.principal_id = gating_role.principal_id
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.schema_id = object_info.schema_id
+                    ) ownership
+                ), N'') AS gating_role_owned_objects,
+                COALESCE((
+                    SELECT STRING_AGG(permission_info.permission_name, N',') WITHIN GROUP (ORDER BY permission_info.permission_name)
+                    FROM gating_role
+                    INNER JOIN sys.database_permissions permission_info
+                        ON permission_info.grantee_principal_id = gating_role.principal_id
+                        AND permission_info.state IN (N'G', N'W')
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM sys.objects object_info
+                        INNER JOIN sys.schemas schema_info
+                            ON schema_info.schema_id = object_info.schema_id
+                        WHERE object_info.object_id = permission_info.major_id
+                        AND permission_info.class = 1
+                        AND permission_info.permission_name = N'SELECT'
+                        AND schema_info.name = N'cdc'
+                    )
+                ), N'') AS gating_role_explicit_permissions,
+                CONVERT(nvarchar(20), @expected_capture_instances_using_role) AS expected_capture_instances_using_role,
+                @unexpected_capture_instances_using_role AS unexpected_capture_instances_using_role;
             """;
     }
 
@@ -2242,6 +2447,23 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         );
     }
 
+    private static CdcProviderSetupStepResult GatingRolePreCaptureResult(
+        CdcProviderSetupRequest request,
+        SqlServerGatingRolePreCaptureInspection inspection
+    ) =>
+        new(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.SqlServerGatingRole,
+                    request.ArtifactNames.SqlServer!.GatingRoleName,
+                    CdcProviderArtifactState.Mismatched,
+                    inspection.ObservedValues
+                ),
+            ],
+            diagnostics: inspection.Diagnostics
+        );
+
     private static CdcProviderArtifactState CaptureInstanceState(
         SqlServerCaptureInstanceInspection capture,
         HashSet<CdcSourceTableKind> createdKinds
@@ -2660,41 +2882,31 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         )
         {
             diagnostics.Add(
-                new CdcProviderDiagnostic(
-                    Code: "CDC_SQLSERVER_GATING_ROLE_MISMATCH",
-                    Category: CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure,
-                    Severity: CdcProviderDiagnosticSeverity.Error,
-                    PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
-                    ArtifactKind: CdcProviderArtifactKind.SqlServerGatingRole,
-                    SafeName: gatingRoleName,
-                    ExpectedValue: "normal-role-exact-connector-member-no-ownership-no-permissions-three-captures",
-                    ObservedValue: string.Join(
-                        ";",
-                        new[]
-                        {
-                            gatingRoleIsNormalRole ? null : "not-normal-role",
-                            gatingRoleDirectMemberMismatch
-                                ? $"members:{CsvOrNone(gatingRoleDirectMembers)}"
-                                : null,
-                            gatingRoleParentRoles.Count == 0
-                                ? null
-                                : $"parent_roles:{CsvOrNone(gatingRoleParentRoles)}",
-                            gatingRoleOwnedObjects.Count == 0
-                                ? null
-                                : $"ownership:{CsvOrNone(gatingRoleOwnedObjects)}",
-                            gatingRoleExplicitPermissions.Count == 0
-                                ? null
-                                : $"permissions:{CsvOrNone(gatingRoleExplicitPermissions)}",
-                            expectedCaptureInstancesUsingRole == _captureTableOrder.Count
-                                ? null
-                                : $"expected_capture_count:{expectedCaptureInstancesUsingRole}",
-                            unexpectedCaptureInstancesUsingRole.Count == 0
-                                ? null
-                                : $"unexpected_captures:{CsvOrNone(unexpectedCaptureInstancesUsingRole)}",
-                        }.Where(value => value is not null)
-                    ),
-                    ProviderErrorClass: null,
-                    Classification: CdcProviderRetryContinuityClassification.FailClosed
+                GatingRoleMismatchDiagnostic(
+                    gatingRoleName,
+                    expectedValue: "normal-role-exact-connector-member-no-ownership-no-permissions-three-captures",
+                    observedParts:
+                    [
+                        gatingRoleIsNormalRole ? null : "not-normal-role",
+                        gatingRoleDirectMemberMismatch
+                            ? $"members:{CsvOrNone(gatingRoleDirectMembers)}"
+                            : null,
+                        gatingRoleParentRoles.Count == 0
+                            ? null
+                            : $"parent_roles:{CsvOrNone(gatingRoleParentRoles)}",
+                        gatingRoleOwnedObjects.Count == 0
+                            ? null
+                            : $"ownership:{CsvOrNone(gatingRoleOwnedObjects)}",
+                        gatingRoleExplicitPermissions.Count == 0
+                            ? null
+                            : $"permissions:{CsvOrNone(gatingRoleExplicitPermissions)}",
+                        expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+                            ? null
+                            : $"expected_capture_count:{expectedCaptureInstancesUsingRole}",
+                        unexpectedCaptureInstancesUsingRole.Count == 0
+                            ? null
+                            : $"unexpected_captures:{CsvOrNone(unexpectedCaptureInstancesUsingRole)}",
+                    ]
                 )
             );
         }
@@ -2793,6 +3005,24 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return diagnostics;
     }
+
+    private static CdcProviderDiagnostic GatingRoleMismatchDiagnostic(
+        CdcSafeName gatingRoleName,
+        string expectedValue,
+        IReadOnlyList<string?> observedParts
+    ) =>
+        new(
+            Code: "CDC_SQLSERVER_GATING_ROLE_MISMATCH",
+            Category: CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.ConnectorPrincipal,
+            ArtifactKind: CdcProviderArtifactKind.SqlServerGatingRole,
+            SafeName: gatingRoleName,
+            ExpectedValue: expectedValue,
+            ObservedValue: string.Join(";", observedParts.Where(value => value is not null)),
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.FailClosed
+        );
 
     private static CdcProviderDiagnostic ConnectorPrincipalPrivilegeFailure(
         CdcSafeName connectorPrincipal,
@@ -3463,6 +3693,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     );
 
     private sealed record RetainedLsnObservation(long RowCount, string MinLsn, string MaxLsn);
+
+    private sealed record SqlServerGatingRolePreCaptureInspection(
+        bool Exists,
+        bool Created,
+        bool IsCleanForCaptureCreation,
+        IReadOnlyDictionary<string, string> ObservedValues,
+        IReadOnlyList<CdcProviderDiagnostic> Diagnostics
+    );
 
     private sealed record ConnectorPrincipalAccessInspection(
         bool IsExactMatch,

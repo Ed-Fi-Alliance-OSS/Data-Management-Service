@@ -616,6 +616,74 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
+    public async Task MssqlCdcCaptureInstances_should_reject_dirty_existing_gating_role_before_creating_missing_capture_instances()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            connectorAccess: new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                GatingRoleDirectMembers = ["connector_principal", "extra_reader"],
+                GatingRoleExplicitPermissions = ["SELECT"],
+                GatingRoleOwnedObjects = ["schema:dms"],
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.SafeName.Value == "dms_binding_gate"
+                && diagnostic.ObservedValue!.Contains("members:connector_principal,extra_reader")
+                && diagnostic.ObservedValue.Contains("permissions:SELECT")
+                && diagnostic.ObservedValue.Contains("ownership:schema_dms")
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == "dms_binding_gate"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["gating_role_direct_members"]
+                    == "connector_principal,extra_reader"
+                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "SELECT"
+                && observation.SafeObservedValues["gating_role_owned_objects"] == "schema_dms"
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:create-gating-role"));
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_cdc_enable_table"));
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_use_clean_existing_gating_role_to_create_missing_capture_instances()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            connectorAccess: new RecordingSqlServerConnectorAccess { GatingRoleExists = true }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:create-gating-role"));
+        executor
+            .ExecutedSql.Where(sql => sql.Contains("cdc:sqlserver:enable-capture-instance"))
+            .Should()
+            .HaveCount(3);
+        executor
+            .ExecutedSql.Should()
+            .ContainSingle(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
+    }
+
+    [Test]
     public async Task MssqlCdcCaptureInstances_should_fail_closed_when_capture_instance_metadata_mismatches()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
@@ -1557,9 +1625,9 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             ],
             var text when text.Contains("cdc:sqlserver:source-inventory") => SourceInventoryRows(),
             var text when text.Contains("cdc:sqlserver:capture-instances") => CaptureInstanceRows(),
-            var text when text.Contains("cdc:sqlserver:gating-role-exists") =>
+            var text when text.Contains("cdc:sqlserver:gating-role-pre-capture") =>
             [
-                Row(("gating_role_exists", _connectorAccess.GatingRoleExists.ToString())),
+                ConnectorPrincipalAccessRow(),
             ],
             var text when text.Contains("cdc:sqlserver:connector-principal-access") =>
             [
