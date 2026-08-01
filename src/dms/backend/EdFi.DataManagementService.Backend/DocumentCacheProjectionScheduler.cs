@@ -847,9 +847,14 @@ public sealed class DocumentCacheProjectionScheduler(
             )
         );
 
-        await _workerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using CancellationTokenSource dispatchCancellationSource =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, context.CancellationToken);
+        bool workerGateHeld = false;
         try
         {
+            await _workerGate.WaitAsync(dispatchCancellationSource.Token).ConfigureAwait(false);
+            workerGateHeld = true;
+
             DateTimeOffset dispatchStartedAt = timeProvider.GetUtcNow();
             startedAt = dispatchStartedAt;
             DocumentCacheProjectionTargetReadinessBlockReason? blockReason =
@@ -896,7 +901,7 @@ public sealed class DocumentCacheProjectionScheduler(
                             drainCancellationToken
                         );
                     },
-                    cancellationToken
+                    dispatchCancellationSource.Token
                 )
                 .ConfigureAwait(false);
 
@@ -928,6 +933,29 @@ public sealed class DocumentCacheProjectionScheduler(
         }
         catch (OperationCanceledException)
         {
+            if (context.CancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                DateTimeOffset cancelledAt = timeProvider.GetUtcNow();
+                ObserveTarget(
+                    context,
+                    new DocumentCacheProjectionExecutionStateSnapshot(
+                        isRunning: true,
+                        isActivelyProcessing: false,
+                        isWaitingForWorkerGate: false,
+                        isInBackoff: false,
+                        backoffUntil: null,
+                        cancellationRequested: true,
+                        cancellationObservedAt: cancelledAt
+                    )
+                );
+
+                return DocumentCacheProjectionSchedulerDispatchResult.Skipped(
+                    context,
+                    DocumentCacheProjectionTargetReadinessBlockReason.CancellationPending,
+                    cancelledAt
+                );
+            }
+
             throw;
         }
         catch (Exception exception)
@@ -965,7 +993,10 @@ public sealed class DocumentCacheProjectionScheduler(
         }
         finally
         {
-            _workerGate.Release();
+            if (workerGateHeld)
+            {
+                _workerGate.Release();
+            }
         }
     }
 

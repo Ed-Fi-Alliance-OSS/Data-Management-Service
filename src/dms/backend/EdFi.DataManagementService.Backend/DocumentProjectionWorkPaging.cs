@@ -136,6 +136,7 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             );
         CancellationToken effectiveCancellationToken = linkedCancellationSource.Token;
 
+        effectiveCancellationToken.ThrowIfCancellationRequested();
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
         DocumentProjectionWorkPage page = await ReadPageAsync(targetContext, effectiveCancellationToken)
             .ConfigureAwait(false);
@@ -156,6 +157,7 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
                 );
             }
 
+            effectiveCancellationToken.ThrowIfCancellationRequested();
             page = await ReadPageAsync(targetContext, effectiveCancellationToken).ConfigureAwait(false);
         }
 
@@ -170,6 +172,7 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
         int processedItemCount = 0;
         foreach (DocumentProjectionWorkPageItem item in page.Items)
         {
+            effectiveCancellationToken.ThrowIfCancellationRequested();
             targetContext.Cursor.Advance(item.FirstEnqueuedAt, item.DocumentId);
             if (targetContext.FailureBackoffState.IsSuppressed(item.DocumentId, observedAt))
             {

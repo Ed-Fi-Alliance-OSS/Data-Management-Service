@@ -42,3 +42,8 @@ Completed lifecycle-fence task for reference/design/backend-redesign/epics/18-do
 Key decisions: supervisor now performs lightweight provider lifecycle reads on context startup/refresh; scheduling state splits permanent target pause from resumable lifecycle-fence pause; Tracking/Rebuilding with clear latch clears only lifecycle fence pause; missing/unreadable/latch/unsupported lifecycle stays fenced with bounded sanitized snapshot.
 Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionScheduler.cs; DocumentCacheLifecycleFenceTests.cs; DocumentCacheProjectionSupervisorTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Next likely shutdown/cancellation before administrative mutex stack.
+
+Completed shutdown task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: linked per-target cancellation into ordinary worker gate wait so target replacement/removal reports CancellationPending without blocking peers; added cancellation checks before durable page reads, cursor wrap retry, and each item; kept started writer behavior delegated to writer transaction/retry contract and process-local state naturally fresh per runtime context.
+Files changed: DocumentCacheProjectionScheduler.cs; DocumentProjectionWorkPaging.cs; DocumentCacheProjectionShutdownTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely administrative mutex adapter before command runner/primitives.

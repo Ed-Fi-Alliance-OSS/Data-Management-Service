@@ -164,7 +164,7 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionShutdown\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "administrative-mutex",
