@@ -39,6 +39,9 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, PostgresqlDocumentCacheWriter>());
         services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter, PostgresqlDocumentCacheWriter>()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>()
         );
         services.TryAdd(

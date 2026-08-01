@@ -22,9 +22,10 @@ internal sealed class MssqlDocumentCacheWriter(
     ITransactionFaultInjectionObserver? faultInjectionObserver = null,
     IDocumentCacheWriterTelemetry? telemetry = null,
     string? sessionInitializationCommandText = null
-) : IDocumentCacheWriter
+) : IDocumentCacheWriter, IDocumentCacheSessionBoundWriter
 {
     private const int InvalidObjectNameNumber = 208;
+    private const int CommandTimeoutNumber = -2;
 
     private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
         DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Mssql);
@@ -63,7 +64,13 @@ internal sealed class MssqlDocumentCacheWriter(
                     request.Purpose,
                     request.CancellationToken
                 ),
-                (_, cancellationToken) => ExecuteAttemptAsync(request, connectionString, cancellationToken)
+                (_, cancellationToken) =>
+                    ExecuteAttemptAsync(
+                        request,
+                        beginTransactionAsync: attemptCancellationToken =>
+                            BeginOrdinaryTransactionAsync(connectionString, attemptCancellationToken),
+                        cancellationToken
+                    )
             )
             .ConfigureAwait(false);
 
@@ -80,19 +87,125 @@ internal sealed class MssqlDocumentCacheWriter(
         return result;
     }
 
+    public async Task<DocumentCacheSessionBoundWriterResult> WriteAsync(
+        DocumentCacheSessionBoundWriterRequest request
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        DocumentCacheWriterRequest writerRequest = request.WriterRequest;
+
+        if (request.MutexLease.ProviderToken != RelationalProviderToken.SqlServer)
+        {
+            throw new InvalidOperationException(
+                $"SQL Server session-bound DocumentCache writer requires a SQL Server mutex lease, but received '{request.MutexLease.ProviderToken.Value}'."
+            );
+        }
+
+        try
+        {
+            DocumentCacheWriterResult result = await _retryAdapter
+                .ExecuteAsync(
+                    new DocumentCacheWriterRetryRequest(
+                        RelationalProviderToken.SqlServer,
+                        writerRequest.TargetContext.TargetKey,
+                        writerRequest.Purpose,
+                        writerRequest.CancellationToken
+                    ),
+                    (_, cancellationToken) =>
+                        ExecuteAttemptAsync(
+                            writerRequest,
+                            beginTransactionAsync: attemptCancellationToken =>
+                                BeginSessionBoundTransactionAsync(
+                                    request.MutexLease,
+                                    attemptCancellationToken
+                                ),
+                            cancellationToken
+                        )
+                )
+                .ConfigureAwait(false);
+
+            _telemetry.RecordOutcome(
+                DocumentCacheWriterMetricContext.ForCacheWriter(
+                    RelationalProviderToken.SqlServer,
+                    writerRequest.TargetContext.TargetKey,
+                    writerRequest.Purpose,
+                    DocumentCacheWriterTelemetry.TryGetLifecycle(result),
+                    result.Outcome
+                )
+            );
+
+            return DocumentCacheSessionBoundWriterResult.FromWriterResult(
+                result,
+                request.CommandExecutionMutated
+            );
+        }
+        catch (DocumentCacheAdministrativeMutexSessionLostException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "SQL Server session-bound DocumentCache writer lost the administrative mutex session for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.SessionLoss(
+                request.CommandExecutionMutated,
+                "Administrative mutex session was lost during the session-bound DocumentCache writer."
+            );
+        }
+        catch (DbException exception)
+            when (request.MutexLease.IsSessionOpen && IsProviderCommandTimeout(exception))
+        {
+            _logger.LogWarning(
+                exception,
+                "SQL Server session-bound DocumentCache writer observed a provider command timeout for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.ProviderCommandTimeout(
+                request.CommandExecutionMutated,
+                "Provider command timeout interrupted the session-bound DocumentCache writer."
+            );
+        }
+        catch (DbException exception) when (!request.MutexLease.IsSessionOpen)
+        {
+            _logger.LogWarning(
+                exception,
+                "SQL Server session-bound DocumentCache writer observed a closed administrative mutex session for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.SessionLoss(
+                request.CommandExecutionMutated,
+                "Administrative mutex session closed during the session-bound DocumentCache writer."
+            );
+        }
+        catch (InvalidOperationException exception) when (!request.MutexLease.IsSessionOpen)
+        {
+            _logger.LogWarning(
+                exception,
+                "SQL Server session-bound DocumentCache writer observed a lost administrative mutex session for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.SessionLoss(
+                request.CommandExecutionMutated,
+                "Administrative mutex session was lost during the session-bound DocumentCache writer."
+            );
+        }
+    }
+
     private async Task<DocumentCacheWriterResult> ExecuteAttemptAsync(
         DocumentCacheWriterRequest request,
-        string connectionString,
+        Func<CancellationToken, Task<MssqlDocumentCacheWriterTransaction>> beginTransactionAsync,
         CancellationToken cancellationToken
     )
     {
-        await using SqlConnection connection = new(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await InitializeSessionAsync(connection, cancellationToken).ConfigureAwait(false);
-        await using SqlTransaction transaction = (SqlTransaction)
-            await connection
-                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                .ConfigureAwait(false);
+        await using MssqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        SqlConnection connection = transactionScope.Connection;
+        SqlTransaction transaction = transactionScope.Transaction;
 
         var transactionCompleted = false;
         var transactionTelemetryRecorded = false;
@@ -116,7 +229,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -146,7 +259,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (!selection.RequiresProviderCompletion)
             {
                 telemetryOutcome = selection.TerminalResult!.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return selection.TerminalResult!;
             }
@@ -154,7 +267,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (selection.RequestsCacheAheadLatchFlow)
             {
                 telemetryOutcome = selection.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 DocumentCacheWriterSupport.RecordTransactionDuration(
                     _telemetry,
@@ -174,7 +287,7 @@ internal sealed class MssqlDocumentCacheWriter(
                             DocumentCacheWriterCacheAheadIncidentFlow.DefaultIncidentTimeout
                         ),
                         incidentCancellationToken =>
-                            ConfirmCacheAheadAsync(request, connectionString, incidentCancellationToken),
+                            ConfirmCacheAheadAsync(request, beginTransactionAsync, incidentCancellationToken),
                         _logger
                     )
                     .ConfigureAwait(false);
@@ -204,27 +317,25 @@ internal sealed class MssqlDocumentCacheWriter(
             telemetryOutcome = result.Outcome;
             if (result is DocumentCacheWriterResult.RacingWriterLost)
             {
-                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return result;
             }
 
-            await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
             return result;
         }
         catch (SqlException exception)
             when (MssqlDocumentCacheWriterDeleteRaceClassifier.IsRetryableDeleteRace(exception))
         {
-            await DocumentCacheWriterSupport
-                .RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw new DocumentCacheWriterRetryableDeleteRaceException();
         }
         catch
         {
-            await DocumentCacheWriterSupport
-                .RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -395,17 +506,16 @@ internal sealed class MssqlDocumentCacheWriter(
 
     private async Task<DocumentCacheWriterResult> ConfirmCacheAheadAsync(
         DocumentCacheWriterRequest request,
-        string connectionString,
+        Func<CancellationToken, Task<MssqlDocumentCacheWriterTransaction>> beginTransactionAsync,
         CancellationToken cancellationToken
     )
     {
-        await using SqlConnection connection = new(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await InitializeSessionAsync(connection, cancellationToken).ConfigureAwait(false);
-        await using SqlTransaction transaction = (SqlTransaction)
-            await connection
-                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                .ConfigureAwait(false);
+        await using MssqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        SqlConnection connection = transactionScope.Connection;
+        SqlTransaction transaction = transactionScope.Transaction;
 
         var transactionCompleted = false;
         long transactionStartTimestamp = Stopwatch.GetTimestamp();
@@ -427,7 +537,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -449,7 +559,7 @@ internal sealed class MssqlDocumentCacheWriter(
             if (recheckDecision.TerminalResult is not null)
             {
                 telemetryOutcome = recheckDecision.TerminalResult.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return recheckDecision.TerminalResult;
             }
@@ -479,7 +589,7 @@ internal sealed class MssqlDocumentCacheWriter(
                     .ConfigureAwait(false);
             }
 
-            await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
             DocumentCacheWriterResult result = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
@@ -491,8 +601,7 @@ internal sealed class MssqlDocumentCacheWriter(
         }
         catch
         {
-            await DocumentCacheWriterSupport
-                .RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -956,15 +1065,101 @@ internal sealed class MssqlDocumentCacheWriter(
         );
     }
 
-    private static async Task CommitAsync(SqlTransaction transaction, CancellationToken cancellationToken)
+    private async Task<MssqlDocumentCacheWriterTransaction> BeginOrdinaryTransactionAsync(
+        string connectionString,
+        CancellationToken cancellationToken
+    )
     {
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        SqlConnection connection = new(connectionString);
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await InitializeSessionAsync(connection, cancellationToken).ConfigureAwait(false);
+            SqlTransaction transaction = (SqlTransaction)
+                await connection
+                    .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                    .ConfigureAwait(false);
+
+            return MssqlDocumentCacheWriterTransaction.Ordinary(connection, transaction);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
-    private static async Task RollbackAsync(SqlTransaction transaction, CancellationToken cancellationToken)
+    private static async Task<MssqlDocumentCacheWriterTransaction> BeginSessionBoundTransactionAsync(
+        IDocumentCacheAdministrativeMutexLease mutexLease,
+        CancellationToken cancellationToken
+    )
     {
-        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        if (!mutexLease.IsSessionOpen)
+        {
+            throw new DocumentCacheAdministrativeMutexSessionLostException(RelationalProviderToken.SqlServer);
+        }
+
+        IRelationalWriteSession session = await mutexLease
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (
+            session.Connection is not SqlConnection connection
+            || session.Transaction is not SqlTransaction transaction
+        )
+        {
+            await DisposeInvalidSessionAsync(session).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                "SQL Server session-bound DocumentCache writer requires a SQL Server administrative mutex session."
+            );
+        }
+
+        return MssqlDocumentCacheWriterTransaction.SessionBound(connection, transaction, session);
     }
+
+    private static async Task RollbackIfNeededAsync(
+        MssqlDocumentCacheWriterTransaction transactionScope,
+        bool transactionCompleted,
+        CancellationToken cancellationToken
+    )
+    {
+        if (transactionCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException exception)
+        {
+            _ = exception;
+        }
+        catch (DbException exception)
+        {
+            _ = exception;
+        }
+    }
+
+    private static async Task DisposeInvalidSessionAsync(IRelationalWriteSession session)
+    {
+        try
+        {
+            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or DbException)
+        {
+            _ = exception;
+        }
+        finally
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsProviderCommandTimeout(DbException exception) =>
+        exception is SqlException { Number: CommandTimeoutNumber };
 
     private static string RequireTargetConnectionString(DocumentCacheWriterRequest request)
     {
@@ -993,5 +1188,115 @@ internal sealed class MssqlDocumentCacheWriter(
         }
 
         return request.TargetContext.TargetDataStore.ConnectionString;
+    }
+
+    private static long? GetNullableInt64(SqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal);
+    }
+
+    private static short? GetNullableInt16(SqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt16(ordinal);
+    }
+
+    private static Guid? GetNullableGuid(SqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetGuid(ordinal);
+    }
+
+    private static string? GetNullableString(SqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private sealed record MssqlDocumentCacheWriterCurrentObservation(
+        long? SourceContentVersion,
+        long? CacheContentVersion,
+        long? WorkRequiredContentVersion,
+        Guid? SourceDocumentUuid,
+        short? SourceResourceKeyId,
+        string? SourceProjectName,
+        string? SourceResourceName,
+        string? SourceResourceVersion
+    )
+    {
+        public DocumentCacheWriterCurrentStateObservation ToCurrentState() =>
+            new(SourceContentVersion, CacheContentVersion, WorkRequiredContentVersion);
+    }
+
+    private sealed class MssqlDocumentCacheWriterTransaction : IAsyncDisposable
+    {
+        private readonly IRelationalWriteSession? _session;
+        private readonly bool _ownsConnection;
+
+        private MssqlDocumentCacheWriterTransaction(
+            SqlConnection connection,
+            SqlTransaction transaction,
+            IRelationalWriteSession? session,
+            bool ownsConnection
+        )
+        {
+            Connection = connection ?? throw new ArgumentNullException(nameof(connection));
+            Transaction = transaction ?? throw new ArgumentNullException(nameof(transaction));
+            _session = session;
+            _ownsConnection = ownsConnection;
+        }
+
+        public SqlConnection Connection { get; }
+
+        public SqlTransaction Transaction { get; }
+
+        public static MssqlDocumentCacheWriterTransaction Ordinary(
+            SqlConnection connection,
+            SqlTransaction transaction
+        ) => new(connection, transaction, session: null, ownsConnection: true);
+
+        public static MssqlDocumentCacheWriterTransaction SessionBound(
+            SqlConnection connection,
+            SqlTransaction transaction,
+            IRelationalWriteSession session
+        ) => new(connection, transaction, session, ownsConnection: false);
+
+        public async Task CommitAsync(CancellationToken cancellationToken)
+        {
+            if (_session is null)
+            {
+                await Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await _session.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task RollbackAsync(CancellationToken cancellationToken)
+        {
+            if (_session is null)
+            {
+                await Transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await _session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_session is not null)
+            {
+                await _session.DisposeAsync().ConfigureAwait(false);
+                return;
+            }
+
+            await Transaction.DisposeAsync().ConfigureAwait(false);
+            if (_ownsConnection)
+            {
+                await Connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 }

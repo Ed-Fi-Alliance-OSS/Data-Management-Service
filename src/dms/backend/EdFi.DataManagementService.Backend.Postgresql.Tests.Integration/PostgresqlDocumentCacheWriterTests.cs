@@ -125,6 +125,45 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
+    [Category("DocumentCacheSessionBoundWriter")]
+    public async Task DocumentCacheSessionBoundWriter_it_writes_candidate_and_acknowledges_on_the_mutex_session()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "session-bound");
+        var mutex = new PostgresqlDocumentCacheAdministrativeMutex(
+            _dataSourceCache,
+            NullLogger<PostgresqlDocumentCacheAdministrativeMutex>.Instance
+        );
+
+        await using IDocumentCacheAdministrativeMutexLease lease = await mutex.AcquireAsync(
+            new DocumentCacheTargetConnectionInput(
+                RelationalProviderToken.Postgresql,
+                _database.ConnectionString
+            )
+        );
+
+        DocumentCacheSessionBoundWriterResult result = await (
+            (IDocumentCacheSessionBoundWriter)_writer
+        ).WriteAsync(
+            new DocumentCacheSessionBoundWriterRequest(
+                lease,
+                CreateRequest(source, candidate),
+                commandExecutionMutated: false
+            )
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.WriterResult.Should().BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>();
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        JsonNode.Parse((await ReadCacheRowAsync(source.DocumentId)).DocumentJson)!["value"]!
+            .GetValue<string>()
+            .Should()
+            .Be("session-bound");
+    }
+
+    [Test]
     public async Task It_acknowledges_equal_version_work_without_refreshing_cache()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);

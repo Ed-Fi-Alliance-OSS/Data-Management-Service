@@ -57,3 +57,8 @@ Completed administrative-primitives task for reference/design/backend-redesign/e
 Key decisions: added mutex-session primitive API over existing lifecycle/prerequisite/preflight facts; provider SQL renders PG LOCK TABLE dms.Document IN SHARE MODE and SQL Server TABLOCK,HOLDLOCK; lifecycle transitions are guarded by expected lifecycle+latch in one UPDATE; activation prerequisite+transition helper skips mutation on SQL Server prerequisite failure.
 Files changed: DocumentCacheAdministrativePrimitives.cs; PostgresqlDocumentCacheAdministrativePrimitives.cs; MssqlDocumentCacheAdministrativePrimitives.cs; provider DI registration/tests; DocumentCacheAdministrativePrimitivesTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Next likely session-bound-writer, then administrative-runner can compose mutex+primitives.
+
+Completed session-bound-writer task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added internal session-bound writer contract/result mapping; refactored PG/MSSQL writers so ordinary path opens normal connections while command-owned path gets every retry/cache-ahead transaction from the mutex lease; session loss/provider timeout/writer retry budget map to admin classifications using current command mutated flag.
+Files changed: DocumentCacheSessionBoundWriter.cs; PostgresqlDocumentCacheWriter.cs; MssqlDocumentCacheWriter.cs; provider DI registrations; unit and provider integration writer tests; tasks.json; progress.txt.
+Blockers/notes: default MSSQL env unset/stale; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Next likely administrative-runner or bounded-clearing.

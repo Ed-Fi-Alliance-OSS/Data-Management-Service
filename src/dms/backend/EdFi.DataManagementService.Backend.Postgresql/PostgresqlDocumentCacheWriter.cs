@@ -23,8 +23,10 @@ internal sealed class PostgresqlDocumentCacheWriter(
     ILogger<PostgresqlDocumentCacheWriter> logger,
     ITransactionFaultInjectionObserver? faultInjectionObserver = null,
     IDocumentCacheWriterTelemetry? telemetry = null
-) : IDocumentCacheWriter
+) : IDocumentCacheWriter, IDocumentCacheSessionBoundWriter
 {
+    private const string QueryCanceledSqlState = "57014";
+
     private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
         DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Pgsql);
     private static readonly PostgresqlRelationalWriteExceptionClassifier LifecycleReadExceptionClassifier =
@@ -60,7 +62,13 @@ internal sealed class PostgresqlDocumentCacheWriter(
                     request.Purpose,
                     request.CancellationToken
                 ),
-                (_, cancellationToken) => ExecuteAttemptAsync(request, connectionString, cancellationToken)
+                (_, cancellationToken) =>
+                    ExecuteAttemptAsync(
+                        request,
+                        beginTransactionAsync: attemptCancellationToken =>
+                            BeginOrdinaryTransactionAsync(connectionString, attemptCancellationToken),
+                        cancellationToken
+                    )
             )
             .ConfigureAwait(false);
 
@@ -77,19 +85,125 @@ internal sealed class PostgresqlDocumentCacheWriter(
         return result;
     }
 
+    public async Task<DocumentCacheSessionBoundWriterResult> WriteAsync(
+        DocumentCacheSessionBoundWriterRequest request
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        DocumentCacheWriterRequest writerRequest = request.WriterRequest;
+
+        if (request.MutexLease.ProviderToken != RelationalProviderToken.Postgresql)
+        {
+            throw new InvalidOperationException(
+                $"PostgreSQL session-bound DocumentCache writer requires a PostgreSQL mutex lease, but received '{request.MutexLease.ProviderToken.Value}'."
+            );
+        }
+
+        try
+        {
+            DocumentCacheWriterResult result = await _retryAdapter
+                .ExecuteAsync(
+                    new DocumentCacheWriterRetryRequest(
+                        RelationalProviderToken.Postgresql,
+                        writerRequest.TargetContext.TargetKey,
+                        writerRequest.Purpose,
+                        writerRequest.CancellationToken
+                    ),
+                    (_, cancellationToken) =>
+                        ExecuteAttemptAsync(
+                            writerRequest,
+                            beginTransactionAsync: attemptCancellationToken =>
+                                BeginSessionBoundTransactionAsync(
+                                    request.MutexLease,
+                                    attemptCancellationToken
+                                ),
+                            cancellationToken
+                        )
+                )
+                .ConfigureAwait(false);
+
+            _telemetry.RecordOutcome(
+                DocumentCacheWriterMetricContext.ForCacheWriter(
+                    RelationalProviderToken.Postgresql,
+                    writerRequest.TargetContext.TargetKey,
+                    writerRequest.Purpose,
+                    DocumentCacheWriterTelemetry.TryGetLifecycle(result),
+                    result.Outcome
+                )
+            );
+
+            return DocumentCacheSessionBoundWriterResult.FromWriterResult(
+                result,
+                request.CommandExecutionMutated
+            );
+        }
+        catch (DocumentCacheAdministrativeMutexSessionLostException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "PostgreSQL session-bound DocumentCache writer lost the administrative mutex session for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.SessionLoss(
+                request.CommandExecutionMutated,
+                "Administrative mutex session was lost during the session-bound DocumentCache writer."
+            );
+        }
+        catch (DbException exception)
+            when (request.MutexLease.IsSessionOpen && IsProviderCommandTimeout(exception))
+        {
+            _logger.LogWarning(
+                exception,
+                "PostgreSQL session-bound DocumentCache writer observed a provider command timeout for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.ProviderCommandTimeout(
+                request.CommandExecutionMutated,
+                "Provider command timeout interrupted the session-bound DocumentCache writer."
+            );
+        }
+        catch (DbException exception) when (!request.MutexLease.IsSessionOpen)
+        {
+            _logger.LogWarning(
+                exception,
+                "PostgreSQL session-bound DocumentCache writer observed a closed administrative mutex session for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.SessionLoss(
+                request.CommandExecutionMutated,
+                "Administrative mutex session closed during the session-bound DocumentCache writer."
+            );
+        }
+        catch (InvalidOperationException exception) when (!request.MutexLease.IsSessionOpen)
+        {
+            _logger.LogWarning(
+                exception,
+                "PostgreSQL session-bound DocumentCache writer observed a lost administrative mutex session for target {TargetKey}.",
+                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+            );
+
+            return DocumentCacheSessionBoundWriterResult.SessionLoss(
+                request.CommandExecutionMutated,
+                "Administrative mutex session was lost during the session-bound DocumentCache writer."
+            );
+        }
+    }
+
     private async Task<DocumentCacheWriterResult> ExecuteAttemptAsync(
         DocumentCacheWriterRequest request,
-        string connectionString,
+        Func<CancellationToken, Task<PostgresqlDocumentCacheWriterTransaction>> beginTransactionAsync,
         CancellationToken cancellationToken
     )
     {
-        NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(connectionString);
-        await using NpgsqlConnection connection = await dataSource
-            .OpenConnectionAsync(cancellationToken)
+        await using PostgresqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        await using NpgsqlTransaction transaction = await connection
-            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-            .ConfigureAwait(false);
+        NpgsqlConnection connection = transactionScope.Connection;
+        NpgsqlTransaction transaction = transactionScope.Transaction;
 
         var transactionCompleted = false;
         var transactionTelemetryRecorded = false;
@@ -113,7 +227,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -143,7 +257,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (!selection.RequiresProviderCompletion)
             {
                 telemetryOutcome = selection.TerminalResult!.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return selection.TerminalResult!;
             }
@@ -151,7 +265,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (selection.RequestsCacheAheadLatchFlow)
             {
                 telemetryOutcome = selection.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 DocumentCacheWriterSupport.RecordTransactionDuration(
                     _telemetry,
@@ -171,7 +285,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                             DocumentCacheWriterCacheAheadIncidentFlow.DefaultIncidentTimeout
                         ),
                         incidentCancellationToken =>
-                            ConfirmCacheAheadAsync(request, connectionString, incidentCancellationToken),
+                            ConfirmCacheAheadAsync(request, beginTransactionAsync, incidentCancellationToken),
                         _logger
                     )
                     .ConfigureAwait(false);
@@ -201,26 +315,24 @@ internal sealed class PostgresqlDocumentCacheWriter(
             telemetryOutcome = result.Outcome;
             if (result is DocumentCacheWriterResult.RacingWriterLost)
             {
-                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return result;
             }
 
-            await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
             return result;
         }
         catch (PostgresException exception) when (IsRetryableDeleteRace(exception))
         {
-            await DocumentCacheWriterSupport
-                .RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw new DocumentCacheWriterRetryableDeleteRaceException();
         }
         catch
         {
-            await DocumentCacheWriterSupport
-                .RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -391,17 +503,16 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
     private async Task<DocumentCacheWriterResult> ConfirmCacheAheadAsync(
         DocumentCacheWriterRequest request,
-        string connectionString,
+        Func<CancellationToken, Task<PostgresqlDocumentCacheWriterTransaction>> beginTransactionAsync,
         CancellationToken cancellationToken
     )
     {
-        NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(connectionString);
-        await using NpgsqlConnection connection = await dataSource
-            .OpenConnectionAsync(cancellationToken)
+        await using PostgresqlDocumentCacheWriterTransaction transactionScope = await beginTransactionAsync(
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        await using NpgsqlTransaction transaction = await connection
-            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-            .ConfigureAwait(false);
+        NpgsqlConnection connection = transactionScope.Connection;
+        NpgsqlTransaction transaction = transactionScope.Transaction;
 
         var transactionCompleted = false;
         long transactionStartTimestamp = Stopwatch.GetTimestamp();
@@ -423,7 +534,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await RollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -445,7 +556,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (recheckDecision.TerminalResult is not null)
             {
                 telemetryOutcome = recheckDecision.TerminalResult.Outcome;
-                await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+                await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
                 transactionCompleted = true;
                 return recheckDecision.TerminalResult;
             }
@@ -475,7 +586,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                     .ConfigureAwait(false);
             }
 
-            await CommitAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await transactionScope.CommitAsync(cancellationToken).ConfigureAwait(false);
             transactionCompleted = true;
 
             DocumentCacheWriterResult result = DocumentCacheWriterCacheAheadIncidentFlow.CompleteLatchUpdate(
@@ -487,8 +598,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
         catch
         {
-            await DocumentCacheWriterSupport
-                .RollbackIfNeededAsync(transaction, transactionCompleted, cancellationToken)
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -885,18 +995,104 @@ internal sealed class PostgresqlDocumentCacheWriter(
         );
     }
 
-    private static async Task CommitAsync(NpgsqlTransaction transaction, CancellationToken cancellationToken)
-    {
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task RollbackAsync(
-        NpgsqlTransaction transaction,
+    private async Task<PostgresqlDocumentCacheWriterTransaction> BeginOrdinaryTransactionAsync(
+        string connectionString,
         CancellationToken cancellationToken
     )
     {
-        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(connectionString);
+        NpgsqlConnection connection = await dataSource
+            .OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            NpgsqlTransaction transaction = await connection
+                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                .ConfigureAwait(false);
+
+            return PostgresqlDocumentCacheWriterTransaction.Ordinary(connection, transaction);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
+
+    private static async Task<PostgresqlDocumentCacheWriterTransaction> BeginSessionBoundTransactionAsync(
+        IDocumentCacheAdministrativeMutexLease mutexLease,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!mutexLease.IsSessionOpen)
+        {
+            throw new DocumentCacheAdministrativeMutexSessionLostException(
+                RelationalProviderToken.Postgresql
+            );
+        }
+
+        IRelationalWriteSession session = await mutexLease
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (
+            session.Connection is not NpgsqlConnection connection
+            || session.Transaction is not NpgsqlTransaction transaction
+        )
+        {
+            await DisposeInvalidSessionAsync(session).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                "PostgreSQL session-bound DocumentCache writer requires a PostgreSQL administrative mutex session."
+            );
+        }
+
+        return PostgresqlDocumentCacheWriterTransaction.SessionBound(connection, transaction, session);
+    }
+
+    private static async Task RollbackIfNeededAsync(
+        PostgresqlDocumentCacheWriterTransaction transactionScope,
+        bool transactionCompleted,
+        CancellationToken cancellationToken
+    )
+    {
+        if (transactionCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException exception)
+        {
+            _ = exception;
+        }
+        catch (DbException exception)
+        {
+            _ = exception;
+        }
+    }
+
+    private static async Task DisposeInvalidSessionAsync(IRelationalWriteSession session)
+    {
+        try
+        {
+            await session.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or DbException)
+        {
+            _ = exception;
+        }
+        finally
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsProviderCommandTimeout(DbException exception) =>
+        exception is PostgresException { SqlState: QueryCanceledSqlState };
 
     private static bool IsRetryableDeleteRace(PostgresException exception) =>
         exception.SqlState == PostgresErrorCodes.ForeignKeyViolation
@@ -937,5 +1133,115 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
 
         return request.TargetContext.TargetDataStore.ConnectionString;
+    }
+
+    private static long? GetNullableInt64(NpgsqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal);
+    }
+
+    private static short? GetNullableInt16(NpgsqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt16(ordinal);
+    }
+
+    private static Guid? GetNullableGuid(NpgsqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetGuid(ordinal);
+    }
+
+    private static string? GetNullableString(NpgsqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private sealed record PostgresqlDocumentCacheWriterCurrentObservation(
+        long? SourceContentVersion,
+        long? CacheContentVersion,
+        long? WorkRequiredContentVersion,
+        Guid? SourceDocumentUuid,
+        short? SourceResourceKeyId,
+        string? SourceProjectName,
+        string? SourceResourceName,
+        string? SourceResourceVersion
+    )
+    {
+        public DocumentCacheWriterCurrentStateObservation ToCurrentState() =>
+            new(SourceContentVersion, CacheContentVersion, WorkRequiredContentVersion);
+    }
+
+    private sealed class PostgresqlDocumentCacheWriterTransaction : IAsyncDisposable
+    {
+        private readonly IRelationalWriteSession? _session;
+        private readonly bool _ownsConnection;
+
+        private PostgresqlDocumentCacheWriterTransaction(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction,
+            IRelationalWriteSession? session,
+            bool ownsConnection
+        )
+        {
+            Connection = connection ?? throw new ArgumentNullException(nameof(connection));
+            Transaction = transaction ?? throw new ArgumentNullException(nameof(transaction));
+            _session = session;
+            _ownsConnection = ownsConnection;
+        }
+
+        public NpgsqlConnection Connection { get; }
+
+        public NpgsqlTransaction Transaction { get; }
+
+        public static PostgresqlDocumentCacheWriterTransaction Ordinary(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction
+        ) => new(connection, transaction, session: null, ownsConnection: true);
+
+        public static PostgresqlDocumentCacheWriterTransaction SessionBound(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction,
+            IRelationalWriteSession session
+        ) => new(connection, transaction, session, ownsConnection: false);
+
+        public async Task CommitAsync(CancellationToken cancellationToken)
+        {
+            if (_session is null)
+            {
+                await Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await _session.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task RollbackAsync(CancellationToken cancellationToken)
+        {
+            if (_session is null)
+            {
+                await Transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await _session.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_session is not null)
+            {
+                await _session.DisposeAsync().ConfigureAwait(false);
+                return;
+            }
+
+            await Transaction.DisposeAsync().ConfigureAwait(false);
+            if (_ownsConnection)
+            {
+                await Connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 }

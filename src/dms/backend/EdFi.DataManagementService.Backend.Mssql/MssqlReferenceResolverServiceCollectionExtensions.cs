@@ -38,6 +38,9 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(ServiceDescriptor.Scoped<IDocumentCacheWriter, MssqlDocumentCacheWriter>());
         services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheSessionBoundWriter, MssqlDocumentCacheWriter>()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>()
         );
         services.TryAdd(
