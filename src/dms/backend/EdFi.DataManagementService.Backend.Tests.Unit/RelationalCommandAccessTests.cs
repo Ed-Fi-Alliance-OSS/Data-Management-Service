@@ -582,6 +582,235 @@ internal static class RelationalAccessTestData
         );
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Natural-key probe fixtures (Phase 3). These describe the compiled probe metadata the natural-key
+    // lookup command builders consume; they are deliberately independent of the ReferentialId-based
+    // lookup fixtures above, which serve the old resolver.
+    // ---------------------------------------------------------------------------------------------
+
+    public static readonly QualifiedResourceName StudentSectionAssociationResource = new(
+        "Ed-Fi",
+        "StudentSectionAssociation"
+    );
+
+    public static readonly QualifiedResourceName ProgramResource = new("Ed-Fi", "Program");
+
+    public static readonly QualifiedResourceName ProgramTypeDescriptorResource = new(
+        "Ed-Fi",
+        "ProgramTypeDescriptor"
+    );
+
+    public static readonly QualifiedResourceName SchoolResource = _schoolResource;
+
+    public static readonly QualifiedResourceName EducationOrganizationResource =
+        _educationOrganizationResource;
+
+    public static readonly QualifiedResourceName SchoolTypeDescriptorResource = _schoolTypeDescriptorResource;
+
+    public static readonly QualifiedResourceName AllScalarKindsResource = new(
+        "Ed-Fi",
+        "AllScalarKindsResource"
+    );
+
+    /// <summary>
+    /// A mapping set carrying compiled natural-key probe metadata, including a populated
+    /// <see cref="DescriptorProbeTarget.DiscriminatorLiteralByResource"/>. The default
+    /// <see cref="MappingSet.DescriptorProbeTarget"/> is non-null but has an EMPTY literal map, so a
+    /// fixture that forgets to populate it emits descriptor predicates that silently match nothing.
+    /// </summary>
+    public static MappingSet CreateNaturalKeyProbeMappingSet() =>
+        CreateMappingSet(new QualifiedResourceName("Ed-Fi", "Student")) with
+        {
+            NaturalKeyProbeTargets = new Dictionary<QualifiedResourceName, NaturalKeyProbeTarget>
+            {
+                [SchoolResource] = CreateSchoolProbeTarget(),
+                [StudentSectionAssociationResource] = CreateStudentSectionAssociationProbeTarget(),
+                [ProgramResource] = CreateProgramProbeTarget(),
+                [EducationOrganizationResource] = CreateEducationOrganizationProbeTarget(),
+                [AllScalarKindsResource] = CreateAllScalarKindsProbeTarget(),
+            },
+            DescriptorProbeTarget = new DescriptorProbeTarget(
+                new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+                DescriptorProbeColumns.UriLowered,
+                new DbColumnName("Discriminator"),
+                new Dictionary<QualifiedResourceName, string>
+                {
+                    [ProgramTypeDescriptorResource] = ProgramTypeDescriptorResource.ResourceName,
+                    [SchoolTypeDescriptorResource] = SchoolTypeDescriptorResource.ResourceName,
+                }
+            ),
+        };
+
+    /// <summary>Single Int32 probe column on the concrete root table.</summary>
+    public static NaturalKeyProbeTarget CreateSchoolProbeTarget() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new DbColumnName("DocumentId"),
+            IsAbstract: false,
+            [CreateProbeColumn("SchoolId", "$.schoolId", ScalarKind.Int32)]
+        );
+
+    /// <summary>The seven-column RefKey shape — the widest realistic probe in DS 5.2.</summary>
+    public static NaturalKeyProbeTarget CreateStudentSectionAssociationProbeTarget() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "StudentSectionAssociation"),
+            new DbColumnName("DocumentId"),
+            IsAbstract: false,
+            [
+                CreateProbeColumn("BeginDate", "$.beginDate", ScalarKind.Date),
+                CreateProbeColumn(
+                    "Section_LocalCourseCode",
+                    "$.sectionReference.localCourseCode",
+                    ScalarKind.String,
+                    maxLength: 60
+                ),
+                CreateProbeColumn("Section_SchoolId", "$.sectionReference.schoolId", ScalarKind.Int64),
+                CreateProbeColumn("Section_SchoolYear", "$.sectionReference.schoolYear", ScalarKind.Int32),
+                CreateProbeColumn(
+                    "Section_SectionIdentifier",
+                    "$.sectionReference.sectionIdentifier",
+                    ScalarKind.String,
+                    maxLength: 255
+                ),
+                CreateProbeColumn(
+                    "Section_SessionName",
+                    "$.sectionReference.sessionName",
+                    ScalarKind.String,
+                    maxLength: 60
+                ),
+                CreateProbeColumn(
+                    "Student_StudentUniqueId",
+                    "$.studentReference.studentUniqueId",
+                    ScalarKind.String,
+                    maxLength: 32
+                ),
+            ]
+        );
+
+    /// <summary>A probe with a descriptor-valued identity part, resolved inline through dms.Descriptor.</summary>
+    public static NaturalKeyProbeTarget CreateProgramProbeTarget() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "Program"),
+            new DbColumnName("DocumentId"),
+            IsAbstract: false,
+            [
+                CreateProbeColumn(
+                    "EducationOrganization_EducationOrganizationId",
+                    "$.educationOrganizationReference.educationOrganizationId",
+                    ScalarKind.Int64
+                ),
+                CreateProbeColumn("ProgramName", "$.programName", ScalarKind.String, maxLength: 60),
+                CreateProbeColumn(
+                    "ProgramTypeDescriptor_DescriptorId",
+                    "$.programTypeDescriptor",
+                    ScalarKind.Int64,
+                    descriptorResource: ProgramTypeDescriptorResource
+                ),
+            ]
+        );
+
+    /// <summary>An abstract target: the {Abstract}Identity table, never the union view.</summary>
+    public static NaturalKeyProbeTarget CreateEducationOrganizationProbeTarget() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "EducationOrganizationIdentity"),
+            new DbColumnName("DocumentId"),
+            IsAbstract: true,
+            [CreateProbeColumn("EducationOrganizationId", "$.educationOrganizationId", ScalarKind.Int64)]
+        );
+
+    /// <summary>One probe column per <see cref="ScalarKind"/>, for provider type-mapping coverage.</summary>
+    public static NaturalKeyProbeTarget CreateAllScalarKindsProbeTarget() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "AllScalarKindsResource"),
+            new DbColumnName("DocumentId"),
+            IsAbstract: false,
+            [
+                CreateProbeColumn("StringKey", "$.stringKey", ScalarKind.String, maxLength: 50),
+                CreateProbeColumn("Int32Key", "$.int32Key", ScalarKind.Int32),
+                CreateProbeColumn("Int64Key", "$.int64Key", ScalarKind.Int64),
+                CreateProbeColumn(
+                    "DecimalKey",
+                    "$.decimalKey",
+                    ScalarKind.Decimal,
+                    decimalPrecisionScale: (9, 2)
+                ),
+                CreateProbeColumn("BooleanKey", "$.booleanKey", ScalarKind.Boolean),
+                CreateProbeColumn("DateKey", "$.dateKey", ScalarKind.Date),
+                CreateProbeColumn("DateTimeKey", "$.dateTimeKey", ScalarKind.DateTime),
+                CreateProbeColumn("TimeKey", "$.timeKey", ScalarKind.Time),
+            ]
+        );
+
+    /// <summary>The eight values matching <see cref="CreateAllScalarKindsProbeTarget"/>, in column order.</summary>
+    public static IReadOnlyList<object> CreateAllScalarKindsValues() =>
+        [
+            "alpha",
+            2026,
+            9_000_000_000L,
+            1.5m,
+            true,
+            new DateOnly(2026, 3, 5),
+            new DateTime(2026, 3, 5, 13, 30, 45, DateTimeKind.Utc),
+            new TimeOnly(13, 30, 45),
+        ];
+
+    /// <summary>Builds a group's entries, stamping the required one-based ordinals.</summary>
+    public static IReadOnlyList<NaturalKeyLookupEntry> CreateNaturalKeyEntries(
+        IEnumerable<IReadOnlyList<object>> valueRows
+    ) => [.. valueRows.Select((values, index) => new NaturalKeyLookupEntry(index + 1, values))];
+
+    /// <summary>Builds <paramref name="entryCount"/> distinct entries of <paramref name="columnCount"/> Int64 values.</summary>
+    public static IReadOnlyList<NaturalKeyLookupEntry> CreateSyntheticNaturalKeyEntries(
+        int entryCount,
+        int columnCount
+    ) =>
+        CreateNaturalKeyEntries(
+            Enumerable
+                .Range(0, entryCount)
+                .Select(entryIndex =>
+                    (IReadOnlyList<object>)
+                        [
+                            .. Enumerable
+                                .Range(0, columnCount)
+                                .Select(columnIndex => (object)(long)((entryIndex * 100) + columnIndex)),
+                        ]
+                )
+        );
+
+    /// <summary>A synthetic all-Int64 probe target of the requested width, for chunking-guard coverage.</summary>
+    public static NaturalKeyProbeTarget CreateSyntheticProbeTarget(int columnCount) =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "SyntheticTarget"),
+            new DbColumnName("DocumentId"),
+            IsAbstract: false,
+            [
+                .. Enumerable
+                    .Range(0, columnCount)
+                    .Select(columnIndex =>
+                        CreateProbeColumn(
+                            string.Create(CultureInfo.InvariantCulture, $"Key{columnIndex}"),
+                            string.Create(CultureInfo.InvariantCulture, $"$.key{columnIndex}"),
+                            ScalarKind.Int64
+                        )
+                    ),
+            ]
+        );
+
+    private static NaturalKeyProbeColumn CreateProbeColumn(
+        string columnName,
+        string identityJsonPath,
+        ScalarKind scalarKind,
+        int? maxLength = null,
+        (int Precision, int Scale)? decimalPrecisionScale = null,
+        QualifiedResourceName? descriptorResource = null
+    ) =>
+        new(
+            new DbColumnName(columnName),
+            new JsonPathExpression(identityJsonPath, []),
+            new RelationalScalarType(scalarKind, maxLength, decimalPrecisionScale),
+            descriptorResource
+        );
+
     public static DocumentReference CreateDocumentReference(ReferentialId referentialId, string path) =>
         new(
             ResourceInfo: new BaseResourceInfo(
