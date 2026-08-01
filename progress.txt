@@ -92,3 +92,8 @@ Completed online-rebuild task for reference/design/backend-redesign/epics/18-doc
 Key decisions: added OnlineCacheRebuild preflight admitted only Tracking/Resetting/Rebuilding with clear latch; workflow composes runner, bounded cache-only clearing, baseline seeding, command-owned drain, and guarded Rebuilding->Tracking. Rebuilding resume skips cache clearing.
 Files changed: DocumentCachePreflightClassifier.cs/tests; DocumentCacheOnlineCacheRebuild.cs; ReferenceResolverServiceCollectionExtensions.cs; PG/MSSQL OnlineCacheRebuild integration tests; provider registration tests; tasks.json; progress.txt.
 Blockers/notes: none. Next likely offline-activation or offline-deactivation with downstream proof/offline admission.
+
+Completed offline-activation task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added OfflineActivation workflow over shared runner; command-time preflight validates activation prerequisites and internal-only downstream proof; Disabled path clears cache+work with offline admission before Rebuilding; Rebuilding resume skips destructive clearing and drains/seeds to Tracking.
+Files changed: DocumentCacheOfflineActivation.cs; DocumentCachePreflightClassifier.cs/tests; ReferenceResolverServiceCollectionExtensions.cs; provider service-registration tests; PG/MSSQL OfflineActivation integration tests; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin config unreachable in this shell; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Next likely offline-deactivation.

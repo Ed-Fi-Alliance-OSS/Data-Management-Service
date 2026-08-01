@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -92,6 +93,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.TryAdd(
             ServiceDescriptor.Singleton<
+                IDocumentCacheDownstreamPublicationHistoryProvider,
+                DocumentCacheUnknownDownstreamPublicationHistoryProvider
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
                 DocumentCacheProjectionObservationStore,
                 DocumentCacheProjectionObservationStore
             >()
@@ -137,6 +144,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Singleton<
                 IDocumentCacheGuardedNewEmptyActivationCommand,
                 DocumentCacheGuardedNewEmptyActivationCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheOfflineActivationCommand,
+                DocumentCacheOfflineActivationCommand
             >()
         );
         services.TryAdd(

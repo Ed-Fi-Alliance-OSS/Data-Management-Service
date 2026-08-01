@@ -237,12 +237,9 @@ public static class DocumentCachePreflightClassifier
             return commonRejection;
         }
 
-        DocumentCacheAdministrativeCommandResult? lifecycleRejection = ClassifyRequiredLifecycle(
-            DocumentCacheAdministrativeCommand.OfflineActivation,
+        DocumentCacheAdministrativeCommandResult? lifecycleRejection = ClassifyOfflineActivationLifecycle(
             request.TargetKey,
-            targetObservation!,
-            requiredLifecycle: DocumentCacheLifecycleState.Disabled,
-            rejectCacheAheadLatch: true
+            targetObservation!
         );
         if (lifecycleRejection is not null)
         {
@@ -742,6 +739,51 @@ public static class DocumentCachePreflightClassifier
 
         return Rejected(
             DocumentCacheAdministrativeCommand.OfflineDeactivation,
+            targetKey,
+            targetObservation,
+            DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+            DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
+            "DocumentCache lifecycle does not match the command preflight requirement."
+        );
+    }
+
+    private static DocumentCacheAdministrativeCommandResult? ClassifyOfflineActivationLifecycle(
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheTargetObservation targetObservation
+    )
+    {
+        DocumentCacheLifecycleObservation lifecycle = targetObservation.Lifecycle!;
+        if (lifecycle.CacheAheadRecoveryRequired)
+        {
+            return Rejected(
+                DocumentCacheAdministrativeCommand.OfflineActivation,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+                DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
+                "DocumentCache cache-ahead recovery latch is set."
+            );
+        }
+
+        if (lifecycle.State == DocumentCacheLifecycleState.Resetting)
+        {
+            return Rejected(
+                DocumentCacheAdministrativeCommand.OfflineActivation,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
+                DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
+                "DocumentCache target is already Resetting and requires explicit operator recovery."
+            );
+        }
+
+        if (lifecycle.State is DocumentCacheLifecycleState.Disabled or DocumentCacheLifecycleState.Rebuilding)
+        {
+            return null;
+        }
+
+        return Rejected(
+            DocumentCacheAdministrativeCommand.OfflineActivation,
             targetKey,
             targetObservation,
             DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,

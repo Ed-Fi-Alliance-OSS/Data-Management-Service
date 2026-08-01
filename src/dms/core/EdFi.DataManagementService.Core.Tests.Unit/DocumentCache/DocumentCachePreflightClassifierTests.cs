@@ -281,12 +281,16 @@ public class DocumentCachePreflightClassifierTests
     public class Given_Offline_Activation : DocumentCachePreflightClassifierTests
     {
         [Test]
-        public void It_should_classify_disabled_internal_only_targets_as_eligible()
+        [TestCase(DocumentCacheLifecycleState.Disabled)]
+        [TestCase(DocumentCacheLifecycleState.Rebuilding)]
+        public void It_should_classify_disabled_or_rebuilding_internal_only_targets_as_eligible(
+            DocumentCacheLifecycleState lifecycleState
+        )
         {
             DocumentCacheAdministrativeCommandResult result =
                 DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(),
-                    EligibleObservation(DocumentCacheLifecycleState.Disabled),
+                    EligibleObservation(lifecycleState),
                     OfflineActivationFacts(
                         DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
                     )
@@ -297,7 +301,7 @@ public class DocumentCachePreflightClassifierTests
             result
                 .DownstreamPublicationStatus.Should()
                 .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
-            result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Disabled);
+            result.ObservedLifecycle.Should().Be(lifecycleState);
         }
 
         [Test]
