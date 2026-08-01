@@ -2066,33 +2066,41 @@ $script:PostgresUnquotedIdentifierTrimCharacter = [char[]]@(
     [char]0x20, [char]0x09, [char]0x0A, [char]0x0D, [char]0x0C
 )
 
-# The characters SQL Server's own database-name comparison ignores at the END of a name, and nothing
-# else. Measured against the pinned mcr.microsoft.com/mssql/server:2025-latest image under its default
-# server collation (SQL_Latin1_General_CP1_CI_AS) with edfi_configurationservice present, confirmed two
-# independent ways for each candidate - CREATE DATABASE (error 1801 = duplicate) and DB_ID():
+# The SQL Server reserved-name rule is a two-part, fail-closed admissibility contract, measured against
+# the pinned mcr.microsoft.com/mssql/server:2025-latest image under its default server collation
+# (SQL_Latin1_General_CP1_CI_AS). It is deliberately NOT an emulation of that collation.
 #
-#   space (0x20), one or several - the SAME database. sys.databases stores the trailing spaces (name hex
-#     ends 0020 0020), so this is COMPARISON semantics rather than storage trimming: under this collation
-#     N'a' = N'a ' is TRUE.
-#   ideographic space (0x3000) - also the SAME database; the collation's code page folds it onto a space.
-#   tab (0x09), LF (0x0A), CR (0x0D), vertical tab (0x0B), form feed (0x0C), no-break space (0xA0) - each
-#     CREATED a genuinely DISTINCT database and DB_ID() did not match.
+# Part 1 - the admissible universe: only a name made entirely of printable ASCII (0x20..0x7E) is
+# compared at all. Within that universe the collation was measured EXHAUSTIVELY: the only equal pairs
+# are the 26 letter case pairs, no character is ignorable or folds onto a space, and nothing expands to
+# or from a digraph of the reserved name's alphabet. OUTSIDE the universe the equivalence class is
+# open-ended - measured names that all resolve to the physical edfi_configurationservice include
+# full-width letterforms (0xFF45 for 'e', 0xFF3F for '_'), the 0xFB01 ligature expanding to "fi", and
+# zero-weight characters anywhere in the name (0x200D, 0x2060, 0xFEFF, a trailing U+1F600; 19,178 code
+# points in the scanned BMP range are zero-weight) - and no in-process comparer reproduces that class,
+# so every such name is REFUSED as not provably distinct. The asymmetry is intended: a false positive
+# costs a rename, a false negative silently lands the datastore in the dedicated CMS database.
 #
-# LEADING whitespace is significant on this engine and is therefore never trimmed: DB_ID() does not match
-# and CREATE DATABASE fails with error 1802.
-#
-# Hence TrimEnd with this explicit set, and never TrimEnd() with no argument: .NET would also strip the
-# six characters measured as distinct, trading one fixed false negative for six new false positives.
-# 0x3000 is a property of this collation rather than of SQL Server generally; treating it as equivalent
-# errs toward refusing a name, which is the safe direction for a switch whose whole promise is two
-# physically distinct databases.
-$script:MssqlTrailingNameTrimCharacter = [char[]]@([char]0x20, [char]0x3000)
+# Part 2 - inside the universe: TrimEnd with exactly the space character, then OrdinalIgnoreCase.
+# Trailing spaces are comparison semantics on this engine (sys.databases stores them; N'a' = N'a ' is
+# TRUE), leading spaces are significant and stay meaningful, and case folds. Never TrimEnd() with no
+# argument: the space is the only .NET whitespace inside the universe, and the explicit set keeps that
+# true by inspection instead of by coincidence.
+$script:MssqlTrailingNameTrimCharacter = [char[]]@([char]0x20)
+
+# Part 1's universe check, over UTF-16 code units - a surrogate half, and therefore any
+# supplementary-plane character, is outside 0x20..0x7E and is refused. Anchored \A and \z ON PURPOSE:
+# .NET '$' and '\Z' also match immediately BEFORE a final line feed (measured:
+# ('safe_name' + [char]0x0A) -match '^[\x20-\x7e]*$' is True), which would readmit exactly the
+# trailing-line-feed names this rule fails closed. Do not "simplify" the anchors.
+$script:MssqlPrintableAsciiNamePattern = '\A[\x20-\x7E]*\z'
 
 function Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase {
     <#
     .SYNOPSIS
-        True when SQL Server would resolve a database name to the SAME physical database as the dedicated
-        'edfi_configurationservice'.
+        True when a SQL Server datastore name must be refused against the dedicated
+        'edfi_configurationservice': it either measurably denotes that same physical database, or it
+        cannot be proven distinct from it without the server.
 
     .DESCRIPTION
         The single SQL Server physical-name authority, shared by BOTH MSSQL collision paths - MSSQL_DB_NAME
@@ -2101,12 +2109,17 @@ function Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase {
         quoting decides nothing here: the identifier is bracket-quoted on either path, and the server
         matches the name under its collation regardless.
 
+        The verdict is fail-closed rather than an emulation of the server collation: a name made only of
+        printable ASCII is judged by the measured rule (trailing spaces ignored, then case-insensitive),
+        and every other name is refused because its distinctness cannot be proven offline - the measured
+        equivalence class under the default collation reaches width variants, ligature expansions and
+        zero-weight characters, and no in-process comparison reproduces it. See
+        $script:MssqlTrailingNameTrimCharacter and $script:MssqlPrintableAsciiNamePattern for what was
+        measured, what the universe admits, and why the regex anchors are load-bearing.
+
         Narrow on purpose. It is a SQL-Server-only rule and must not be reused for PostgreSQL, whose two
         paths disagree with each other and with this one; and it is not a general name comparison - the
         resolved CMS connection-string check keeps its own semantics.
-
-        See $script:MssqlTrailingNameTrimCharacter for exactly what was measured, what was excluded, and
-        why leading whitespace is left alone.
 
     .PARAMETER DatabaseName
         A database name already reduced to what SQL Server will look up: the resolved datastore-name
@@ -2118,6 +2131,11 @@ function Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase {
     )
 
     if ([string]::IsNullOrWhiteSpace($DatabaseName)) { return $false }
+
+    # Fail closed outside the measured universe. For some names refusal is also the measured truth of
+    # "the same database" (a trailing ideographic space, an embedded zero-width joiner); for the rest it
+    # means exactly what it says: not provably distinct.
+    if ($DatabaseName -notmatch $script:MssqlPrintableAsciiNamePattern) { return $true }
 
     return [string]::Equals(
         $DatabaseName.TrimEnd($script:MssqlTrailingNameTrimCharacter),
@@ -2147,12 +2165,13 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         characters deliberately excluded - and then ignores case.
 
         SQL Server: the identifier is bracket-quoted, so it does not fold - but quoting is not what decides
-        identity there. The server matches the name under its collation, which is both case-insensitive and
-        trailing-space-insensitive by default, so that answer is owned by
-        Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and shared with the registered path. The
-        two engines' normalizations are measured separately and are not interchangeable: PostgreSQL ignores
-        whitespace at BOTH ends and over a wider character set, SQL Server only at the end and over a
-        narrower one.
+        identity there. The server matches the name under its collation, whose equivalences reach far past
+        letter case and trailing spaces, so that answer is owned by
+        Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and shared with the registered path: a
+        name made only of printable ASCII is judged by the measured rule, and every other name is refused
+        fail-closed as not provably distinct. The two engines' rules are measured separately and are not
+        interchangeable: PostgreSQL's is an exact model of its lexer, SQL Server's is a deliberately
+        conservative admissibility contract.
 
         -DatabaseEngine is mandatory. The engine selects a physical creation mechanism and the mechanisms
         answer differently; an engine-neutral answer covering both call sites is what previously accepted a
@@ -2265,8 +2284,10 @@ function Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase {
 
         SQL Server: quoting does not decide identity at all; the server matches database names under its
         collation. That rule is owned by Test-MssqlPhysicalDatabaseNameMatchesReservedCmsDatabase and
-        shared with the initialized path, because both MSSQL inputs reach the same server lookup. Sharing
-        it with the other MSSQL path is safe; sharing anything with the PostgreSQL paths is not.
+        shared with the initialized path, because both MSSQL inputs reach the same server lookup - here it
+        judges the PARSED database value, and it is fail-closed: a printable-ASCII name gets the measured
+        comparison, every other name is refused as not provably distinct. Sharing it with the other MSSQL
+        path is safe; sharing anything with the PostgreSQL paths is not.
 
         -DatabaseEngine is mandatory: on this path the two engines genuinely disagree, so there is no
         engine-neutral answer to give.
@@ -2880,16 +2901,18 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # override that collides is caught too.
         $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         if (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $datastoreDatabaseName) {
-            # Engine-specific, because the two mechanisms collide for different reasons and a single
+            # Engine-specific, because the two mechanisms refuse for different reasons and a single
             # sentence covering both is what made this check look interchangeable with the other one.
+            # The MSSQL sentence deliberately claims a POLICY, not collation emulation: refusal there
+            # covers both a measured collision and a name that merely cannot be proven distinct.
             $collisionReason =
                 if ($DatabaseEngine -eq "mssql") {
-                    "SQL Server matches database names under its default collation, which ignores both letter case and trailing spaces"
+                    "SQL Server matches database names under its server collation, whose equivalences reach far beyond letter case and trailing spaces - measured examples include full-width letterforms, ligature expansions, and characters with no collation weight at all. A name made only of printable ASCII is judged by the measured rule, case-insensitive with trailing spaces ignored; any other name is refused because its distinctness cannot be proven without the server"
                 }
                 else {
                     "postgresql-init.sh creates that database with an unquoted CREATE DATABASE, and PostgreSQL discards the whitespace around an unquoted identifier and folds it to lower case"
                 }
-            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that denotes the same physical database as the dedicated 'edfi_configurationservice' ($collisionReason). The resolved value is withheld. Rename the datastore database or use shared mode."
+            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to a name that cannot be a separate DMS datastore alongside the dedicated 'edfi_configurationservice' ($collisionReason). The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
 

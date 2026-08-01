@@ -339,10 +339,19 @@ one differing only by surrounding whitespace, is a genuinely separate database y
 exception is a trailing newline, which connection-string parsing drops; such a name is rejected because
 the server really would receive the reserved database.
 
-On SQL Server, quoting decides nothing: the server matches database names under its collation, which
-ignores letter case **and trailing spaces**. So `EDFI_ConfigurationService`,
-`'edfi_configurationservice '` and `'EDFI_ConfigurationService  '` are all the reserved database and all
-rejected, for either input. A *leading* space is significant there and stays allowed.
+On SQL Server, quoting decides nothing: the server matches database names under its collation, and
+that collation's equivalences reach far beyond letter case and trailing spaces — measured examples
+that all resolve to the reserved database include full-width letterforms, the `fi` ligature, and
+characters with no collation weight at all. The guard therefore does not try to emulate the
+collation; it applies a deliberate fail-closed policy instead. A datastore name made only of
+printable ASCII is judged by the measured rule: `EDFI_ConfigurationService`,
+`'edfi_configurationservice '` and `'EDFI_ConfigurationService  '` are all the reserved database and
+all rejected, for either input, while a *leading* space is significant and stays allowed. Any name
+containing characters outside printable ASCII is rejected conservatively — not necessarily the
+reserved database, but not provably distinct from it without asking the server — and the remedy is
+renaming the datastore to a printable-ASCII name. The trade is intentional: a rejection costs a
+rename, while an admitted look-alike would silently re-share the one database the switch exists to
+split.
 
 Shared-mode environment files on non-CMS shapes keep today's shared-database check unchanged. That
 check asserts a shared-mode invariant, so it does not apply to a configuration that has declared

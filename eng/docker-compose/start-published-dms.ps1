@@ -299,15 +299,17 @@ if (-not $d) {
     $dataStoreRegistrationRuns = -not ($InfraOnly -or $DmsOnly -or $DbOnly -or $NoDataStore)
     if ($SeparateConfigDatabase -and $dataStoreRegistrationRuns -and
         (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $DataStoreDatabaseName)) {
-        # Names the parameter and the reserved literal only - never the caller's own value.
+        # Names the parameter and the reserved literal only - never the caller's own value. The MSSQL
+        # sentence states a fail-closed POLICY, not collation emulation: refusal covers both a measured
+        # collision and a name that merely cannot be proven distinct offline.
         $collisionRule =
             if ($DatabaseEngine -eq "mssql") {
-                "SQL Server matches database names under its default collation, which ignores letter case and trailing spaces, so those variants of that name are the same database."
+                "SQL Server matches database names under its server collation, which equates far more than letter case and trailing spaces - full-width forms, ligature expansions, and zero-weight characters were all measured equal to the reserved name. A -DataStoreDatabaseName made only of printable ASCII is judged by the measured rule; any other name is refused because it cannot be proven distinct from the reserved database offline. Rename the datastore to a distinct printable-ASCII name."
             }
             else {
                 "On PostgreSQL the name is compared as the provider parses it - SchemaTools creates it with a quoted identifier, so nothing folds; only a name that parses back to that reserved name collides, and the measured non-exact case is a trailing line feed, which connection-string parsing removes."
             }
-        throw "-DataStoreDatabaseName cannot be 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. $collisionRule"
+        throw "-DataStoreDatabaseName must be provably distinct from 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and pointing the DMS datastore at it would reintroduce the shared topology the switch opts out of. $collisionRule"
     }
 
     # Resolved once with Compose precedence and reused by the data-store creation below, so the
