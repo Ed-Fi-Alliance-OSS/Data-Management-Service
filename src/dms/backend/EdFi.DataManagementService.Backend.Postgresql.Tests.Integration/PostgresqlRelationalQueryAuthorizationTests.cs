@@ -1245,7 +1245,11 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     {
         var command = GetPostCreateRelationshipAuthorizationCommand();
 
-        command.Should().Contain("= ANY(@ClaimEducationOrganizationIds) OR EXISTS");
+        // The claim parameter carries the composite allocator's statement-ordinal suffix now that the
+        // proposed check is a co-batched statement rather than a prefix on the insert, so the direct-claim
+        // comparison and the hierarchy-edge fallback are matched without pinning the issued name.
+        command.Should().Contain("= ANY(@ClaimEducationOrganizationIds");
+        command.Should().Contain(") OR EXISTS");
         command.Should().Contain("\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"");
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
@@ -1288,7 +1292,13 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .Distinct()
             .Should()
             .ContainSingle();
-        peopleAuthorizationCommands[0].command.CommandText.Should().Contain("@DocumentId");
+        // The stored check is co-batched behind the capture in the first-phase command, so it consumes the
+        // provider carrier's captured document id rather than binding one; the proposed check is the one that
+        // binds values extracted from the finalized root row.
+        peopleAuthorizationCommands[0]
+            .command.CommandText.Should()
+            .Contain("current_setting('dms.composite_target_documentid', true)");
+        peopleAuthorizationCommands[0].command.CommandText.Should().NotContain("@relationshipAuthorization_");
         peopleAuthorizationCommands[1].command.CommandText.Should().Contain("@relationshipAuthorization_");
         peopleAuthorizationCommands[0].index.Should().BeLessThan(peopleAuthorizationCommands[1].index);
     }

@@ -657,7 +657,13 @@ Live verification after adoption:
    unaffected. This is the bounded dependency case's one extra command, not one per table.
 3. **A relationship check that cannot co-batch runs its ordered segment before the DML statements are
    built.** SQL Server structured claims are the case that reaches it. Authorization therefore still
-   strictly precedes any created artifact, at the cost of one more command on that path.
+   strictly precedes any created artifact, at the cost of one more command on that path. This is a real
+   count change for that path specifically: a POST create previously carried the check as a raw prefix on
+   the `dms.Document` insert, which needed no parameter renaming and so tolerated a table-valued parameter.
+   Co-batching renames parameters, and the composite rewriter cannot rename a table-valued one, so the
+   check becomes its own segment. The `MssqlRelationalPostAuthorizationTests` structured-claim test now
+   pins that shape — the authorization command precedes the document-insert command on the same session —
+   rather than pinning both into one command.
 4. **The proposed relationship `AUTH1` is its own statement rather than a prefix on the `dms.Document`
    insert.** With both checks co-batched ahead of the insert in the same command, the prefix form is
    redundant; the ordering invariant it existed to satisfy is now satisfied by statement position.

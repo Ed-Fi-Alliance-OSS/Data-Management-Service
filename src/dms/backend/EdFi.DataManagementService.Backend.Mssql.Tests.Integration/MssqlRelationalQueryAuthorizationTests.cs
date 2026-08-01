@@ -1700,7 +1700,11 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     {
         var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
 
-        command.Should().Contain("IN (@ClaimEducationOrganizationIds_0) OR EXISTS");
+        // The claim parameter carries the composite allocator's statement-ordinal suffix now that the
+        // proposed check is a co-batched statement rather than a prefix on the insert, so the direct-claim
+        // comparison and the hierarchy-edge fallback are matched without pinning the issued name.
+        command.Should().Contain("IN (@ClaimEducationOrganizationIds_0");
+        command.Should().Contain(") OR EXISTS");
         command.Should().Contain("[auth].[EducationOrganizationIdToEducationOrganizationId]");
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
@@ -1743,7 +1747,13 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .Distinct()
             .Should()
             .ContainSingle();
-        peopleAuthorizationCommands[0].command.CommandText.Should().Contain("@DocumentId");
+        // The stored check is co-batched behind the capture in the first-phase command, so it consumes the
+        // provider carrier's captured document id rather than binding one; the proposed check is the one that
+        // binds values extracted from the finalized root row.
+        peopleAuthorizationCommands[0]
+            .command.CommandText.Should()
+            .Contain("@dms_composite_target_documentid");
+        peopleAuthorizationCommands[0].command.CommandText.Should().NotContain("@relationshipAuthorization_");
         peopleAuthorizationCommands[1].command.CommandText.Should().Contain("@relationshipAuthorization_");
         peopleAuthorizationCommands[0].index.Should().BeLessThan(peopleAuthorizationCommands[1].index);
     }
@@ -1757,12 +1767,34 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         command.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
     }
 
+    /// <summary>
+    /// A table-valued claim list cannot be renamed into a co-batched statement, so the proposed check runs as
+    /// its own ordered segment ahead of the command that inserts the document rather than as a statement
+    /// inside it. Authorization therefore still strictly precedes the created artifact, on the same session
+    /// and transaction, at the cost of one more command on this path.
+    /// </summary>
     public void AssertPostCreateRelationshipAuthorizationUsesStructuredClaimParameter()
     {
-        var command = GetRequiredPostCreateRelationshipAuthorizationCommand();
+        var recorded = _writeSessionRecorder.Commands.Select((command, index) => (command, index)).ToArray();
+        var structured = recorded
+            .Should()
+            .ContainSingle(item =>
+                item.command.CommandText.Contains(
+                    "SELECT [Id] FROM @ClaimEducationOrganizationIds",
+                    StringComparison.Ordinal
+                )
+            )
+            .Which;
+        var documentInsert = recorded
+            .Should()
+            .ContainSingle(item =>
+                item.command.CommandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+            )
+            .Which;
 
-        command.Should().Contain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
-        command.Should().NotContain("@ClaimEducationOrganizationIds_0");
+        structured.command.CommandText.Should().NotContain("@ClaimEducationOrganizationIds_0");
+        structured.index.Should().BeLessThan(documentInsert.index);
+        structured.command.SessionId.Should().Be(documentInsert.command.SessionId);
     }
 
     public void AssertUpdateRelationshipAuthorizationUsesScalarClaimParameters(int expectedCount)

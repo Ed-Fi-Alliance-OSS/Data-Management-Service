@@ -737,15 +737,14 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             ? new RelationalWriteRootDocumentIdSource.Bound(existing.DocumentId)
             : new RelationalWriteRootDocumentIdSource.Derived(ProbeDocumentIdExpression);
         var parametersPerRow = DropUnreferencedParameters(
-                RelationalWriteRowStatements.BuildRowCommand(
-                    statement.TableWritePlan,
-                    statement.SingleRowSql,
-                    statement.Rows[0],
-                    probeSource,
-                    collectionItemIdBindings
-                )
+            RelationalWriteRowStatements.BuildRowCommand(
+                statement.TableWritePlan,
+                statement.SingleRowSql,
+                statement.Rows[0],
+                probeSource,
+                collectionItemIdBindings
             )
-            .Parameters.Count;
+        ).Parameters.Count;
 
         if (HasMixedCollectionKeyInlining(statement, collectionItemIdBindings))
         {
@@ -776,8 +775,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         return statement.Rows.Any(row => IsInlinedKey(row) != inlinedInFirstRow);
 
         bool IsInlinedKey(RelationalWriteMergedTableRow row) =>
-            row.Values[preallocationPlan.BindingIndex]
-                is FlattenedWriteValue.UnresolvedCollectionItemId token
+            row.Values[preallocationPlan.BindingIndex] is FlattenedWriteValue.UnresolvedCollectionItemId token
             && collectionItemIdBindings.IsInlined(token);
     }
 
