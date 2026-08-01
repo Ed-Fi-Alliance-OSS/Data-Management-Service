@@ -239,48 +239,6 @@ public class Given_CdcProviderManifest_Setup_Service
         result.ManifestPayload.Should().BeNull();
     }
 
-    [Test]
-    public async Task It_should_generate_manifest_from_aggregated_observed_result_instead_of_provider_json()
-    {
-        var service = new CdcProviderSetupService([
-            new TestProvider(
-                CdcProvider.Postgresql,
-                [
-                    new CdcProviderSetupStep(
-                        CdcProviderArtifactKind.PostgresqlPublication,
-                        new CdcSafeName("dms_binding_publication"),
-                        canCreateInInitialSetup: true,
-                        (_, _) =>
-                            Task.FromResult(
-                                new CdcProviderSetupStepResult(
-                                    artifactInventory:
-                                    [
-                                        new CdcProviderArtifactObservation(
-                                            CdcProviderArtifactKind.PostgresqlPublication,
-                                            new CdcSafeName("observed_publication"),
-                                            CdcProviderArtifactState.Matched,
-                                            new Dictionary<string, string> { ["tables"] = "3" }
-                                        ),
-                                    ],
-                                    manifestPayload: new CdcProviderManifestPayload(
-                                        new CdcSafeName("unsafe.json"),
-                                        """{"provider":"provider-supplied"}"""
-                                    )
-                                )
-                            )
-                    ),
-                ]
-            ),
-        ]);
-
-        var result = await service.SetupAsync(CdcProviderSetupContractTestData.BuildPostgresqlRequest());
-
-        result.ManifestPayload.Should().NotBeNull();
-        result.ManifestPayload!.FileName.Value.Should().Be("cdc-provider.pgsql.manifest.json");
-        result.ManifestPayload.Json.Should().Contain("observed_publication");
-        result.ManifestPayload.Json.Should().NotContain("provider-supplied");
-    }
-
     private static CdcProviderSetupStep BuildObservedProviderStateStep() =>
         new(
             CdcProviderArtifactKind.PostgresqlPublication,

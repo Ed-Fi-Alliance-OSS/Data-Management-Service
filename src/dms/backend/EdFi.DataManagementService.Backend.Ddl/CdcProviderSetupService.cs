@@ -76,7 +76,6 @@ internal sealed record CdcProviderSetupStepResult
         IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
         CdcHeartbeatActionQuery? heartbeatActionQuery = null,
         IReadOnlyList<CdcProviderHistoryObservation>? providerHistoryObservations = null,
-        CdcProviderManifestPayload? manifestPayload = null,
         IReadOnlyList<CdcProviderDiagnostic>? diagnostics = null
     )
     {
@@ -87,7 +86,6 @@ internal sealed record CdcProviderSetupStepResult
         ExpectedMessageKeyColumns = expectedMessageKeyColumns ?? [];
         HeartbeatActionQuery = heartbeatActionQuery;
         ProviderHistoryObservations = providerHistoryObservations ?? [];
-        ManifestPayload = manifestPayload;
         Diagnostics = diagnostics ?? [];
     }
 
@@ -104,8 +102,6 @@ internal sealed record CdcProviderSetupStepResult
     public CdcHeartbeatActionQuery? HeartbeatActionQuery { get; }
 
     public IReadOnlyList<CdcProviderHistoryObservation> ProviderHistoryObservations { get; }
-
-    public CdcProviderManifestPayload? ManifestPayload { get; }
 
     public IReadOnlyList<CdcProviderDiagnostic> Diagnostics { get; }
 }

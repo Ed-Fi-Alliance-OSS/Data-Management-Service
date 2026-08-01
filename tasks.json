@@ -681,6 +681,6 @@
       "Review CdcProviderSetupService.AddStepResult to confirm manifest payloads cannot be supplied by provider step results.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest"
     ],
-    "completed": false
+    "completed": true
   }
 ]
