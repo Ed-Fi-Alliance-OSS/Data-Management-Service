@@ -43,8 +43,9 @@ public sealed record NaturalKeyLookupRow(
 /// </summary>
 /// <remarks>
 /// The counterpart of <see cref="IReferenceResolverAdapter" /> for the natural-key resolver. One call is
-/// one logical round trip: the PostgreSQL adapter always issues exactly one command, and the SQL Server
-/// adapter issues one command per parameter-budget slice of the batch.
+/// one round trip on both dialects: each adapter issues exactly one command, because neither binds a
+/// parameter per entry — PostgreSQL passes one array parameter per probe column and SQL Server passes one
+/// JSON payload per group.
 /// </remarks>
 public interface INaturalKeyLookupAdapter
 {
