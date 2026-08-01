@@ -3018,6 +3018,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ?? CdcProviderRetryContinuityClassification.None;
 
         return new CdcProviderSetupStepResult(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _databaseCdcSafeName,
+                    CdcProviderArtifactState.Matched,
+                    observedValues
+                ),
+            ],
             providerHistoryObservations:
             [
                 new CdcProviderHistoryObservation(

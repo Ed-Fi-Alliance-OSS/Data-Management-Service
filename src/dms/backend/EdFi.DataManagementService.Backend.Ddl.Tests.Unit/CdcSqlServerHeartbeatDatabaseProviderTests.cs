@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -48,6 +49,34 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && observation.SafeObservedValues["capture_instance_count"] == "3"
                 && observation.SafeObservedValues["capture_job_present"] == "True"
                 && observation.SafeObservedValues["cleanup_job_present"] == "True"
+            );
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["database_cdc_enabled"] == "True"
+                && observation.SafeObservedValues["capture_instance_count"] == "3"
+                && observation.SafeObservedValues["capture_job_present"] == "True"
+                && observation.SafeObservedValues["cleanup_job_present"] == "True"
+            );
+
+        using var manifestDocument = JsonDocument.Parse(_result.ManifestPayload!.Json);
+        manifestDocument
+            .RootElement.GetProperty("provider_artifacts")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(artifact =>
+                artifact.GetProperty("artifact_kind").GetString() == "provider_history"
+                && artifact.GetProperty("artifact_name").GetString() == "sqlserver_database_cdc"
+                && artifact.GetProperty("state").GetString() == "created"
+                && artifact.GetProperty("observed_values").GetProperty("capture_instance_count").GetString()
+                    == "3"
+                && artifact.GetProperty("observed_values").GetProperty("capture_job_present").GetString()
+                    == "True"
+                && artifact.GetProperty("observed_values").GetProperty("cleanup_job_present").GetString()
+                    == "True"
             );
     }
 

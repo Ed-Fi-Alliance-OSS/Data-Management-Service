@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -333,6 +334,17 @@ public class Given_MssqlCdcProviderArtifacts
                     == "not_evaluated_without_committed_offset"
             );
         result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["database_cdc_enabled"] == "True"
+                && observation.SafeObservedValues["capture_instance_count"] == "3"
+                && observation.SafeObservedValues["retained_lsn_gap_evaluation"]
+                    == "not_evaluated_without_committed_offset"
+            );
+        result
             .ProviderHistoryObservations.Should()
             .Contain(observation =>
                 observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
@@ -359,6 +371,21 @@ public class Given_MssqlCdcProviderArtifacts
         result.ManifestPayload.Json.Should().NotContain("ResourceKeySeedHash");
         result.ManifestPayload.Json.Should().NotContain("RelationalMappingVersion");
         result.ManifestPayload.Json.Should().NotContain("DocumentProjectionWork");
+
+        using var manifestDocument = JsonDocument.Parse(result.ManifestPayload.Json);
+        manifestDocument
+            .RootElement.GetProperty("provider_artifacts")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(artifact =>
+                artifact.GetProperty("artifact_kind").GetString() == "provider_history"
+                && artifact.GetProperty("artifact_name").GetString() == "sqlserver_database_cdc"
+                && artifact.GetProperty("state").GetString() == "created"
+                && artifact.GetProperty("observed_values").GetProperty("capture_instance_count").GetString()
+                    == "3"
+                && artifact.GetProperty("observed_values").GetProperty("database_cdc_enabled").GetString()
+                    == "True"
+            );
     }
 
     private static async Task<string> ReadDataStoreIdentityAsync(SqlConnection connection)
