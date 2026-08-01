@@ -89,6 +89,23 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheWriterTelemetry, DocumentCacheWriterTelemetry>()
         );
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                DocumentCacheProjectionObservationStore,
+                DocumentCacheProjectionObservationStore
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionObservationProvider>(static serviceProvider =>
+                serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionObservationSink>(static serviceProvider =>
+                serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>()
+            )
+        );
         services.TryAdd(
             ServiceDescriptor.Scoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>()
         );
