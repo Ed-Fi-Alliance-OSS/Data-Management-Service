@@ -1,0 +1,539 @@
+[
+  {
+    "category": "configuration",
+    "description": "Add the server-owned Administration workflow timeout to the existing strongly typed DocumentCache options surface. Keep it under DataManagement:DocumentCache:Administration:WorkflowTimeout, default it to 24 hours, validate it as a positive duration, include it in startup/effective-settings diagnostics, and make the effective value available to 18-04 command execution without introducing a second administration-specific options binder.",
+    "acceptance-criteria": [
+      "DocumentCacheOptions exposes an Administration options object with WorkflowTimeout defaulting to 24 hours.",
+      "Options validation rejects null administration options and nonpositive WorkflowTimeout values.",
+      "Effective DocumentCache diagnostics include the workflow timeout without connection strings, credentials, or physical identifiers.",
+      "Existing Projector BaselineHighWaterMark remains the single effective high-water setting consumed by 18-04."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheOptions\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "contracts",
+    "description": "Extend the JSON-facing administrative command contract models consumed from 18-01 with the 18-04-added commands and one shared result envelope. Add onlineCacheRebuild, explicitIntegrityScrub, and internalOnlyCacheAheadRecovery command values while mapping the 18-01-owned guardedNewEmptyActivation, offlineActivation, and offlineDeactivation contracts into the same envelope; use the existing nested lower-camel targetKey shape; include optional expectedPhysicalSourceFingerprint where required; and model operation-specific offlineWriterAdmission tokens for offline activation, offline deactivation, and internal-only cache-ahead recovery.",
+    "acceptance-criteria": [
+      "All command requests and results serialize with System.Text.Json lower-camel property names and lower-camel enum values.",
+      "18-04 command additions are strictly additive to the 18-01 DTO style and do not introduce a second wire result shape for guarded activation or offline activation/deactivation.",
+      "The administrative command services and JSON-facing contracts do not add a new public Resources API endpoint.",
+      "The shared result envelope contains command, targetKey, status, classification, mutated, targetGeneration, physicalSourceFingerprint, lifecycle, cacheAheadRecoveryRequired, phaseDiagnostics, accepted offline admission token when applicable, and elapsed command time when available.",
+      "offlineWriterAdmission requires confirmed true and the command-specific confirmation token; missing, false, unknown, or mismatched tokens fail closed before destructive mutation.",
+      "The command phase names are limited to the pinned design list, including resolveTarget, acquireMutex, preflight, enterResetting, clearCache, clearWork, enterRebuilding, captureBoundary, seedBaseline, drainWork, enterTracking, enterDisabled, scrubScan, setCacheAheadLatch, and complete."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdmin\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "observability",
+    "description": "Add the internal process-local DocumentCache projection observation provider contract that 18-06 will consume. Model immutable snapshots keyed by normalized target key and target-context generation, plus separate active command snapshots keyed by command execution id. Include running, active, gated, backoff, cancellation, last success, page/drain throughput, administrative phase, lifecycle/latch fence observations, bounded failure diagnostics, noncurrent-generation command diagnostics, and bounded last-ended diagnostics.",
+    "acceptance-criteria": [
+      "Current target health snapshots are keyed by normalized target key plus current target generation and never report old-generation evidence as current health.",
+      "Active administrative command snapshots remain visible for command-owned noncurrent generations and include isCurrentGeneration false plus the replacement/current generation when known.",
+      "Per-document diagnostic lists are capped at the effective Projector:PageSize and are not used as metric labels.",
+      "Only the current generation snapshot and one bounded last-ended diagnostic snapshot per target are retained."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionObservation\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "runtime",
+    "description": "Implement the hosted DocumentCache projection supervisor and target-context lifecycle. On startup, CMS refresh notification, and Projector:PollInterval supervisor ticks, refresh the explicit DocumentCache:Targets snapshot, create isolated target contexts for resolved eligible targets, keep current generations on transient refresh failures, cancel and replace generations when execution metadata changes, and record diagnostics for unresolved or provider-ineligible targets without affecting peer targets or canonical API routing.",
+    "acceptance-criteria": [
+      "A process with no configured targets starts no projection workers.",
+      "Each resolved target context contains the 18-01 target context, provider adapters, materializer, shared writer, local cursor, failure/backoff state, and observation sink.",
+      "Transient refresh failure for an already resolved target keeps the current target-context generation and attaches sanitized diagnostics.",
+      "Successful refresh that proves removal or replacement cancels the old generation after the current item or short transaction boundary and creates a fresh generation when replacement metadata is available.",
+      "Initialization failures from inventory, provider metadata, source fingerprint, provider mismatch, or SQL Server prerequisites make only that target generation projection-ineligible."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionSupervisor\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "scheduling",
+    "description": "Implement deterministic target scheduling with Projector:MaxConcurrentTargets as the only ordinary worker concurrency gate. Maintain a stable round-robin order by normalized target key and target-context generation, process at most one durable-work page per gate acquisition, release the gate before poll or backoff sleeps, and serialize each target's item-processing path through a per-target drain executor that administrative drain can exclusively own.",
+    "acceptance-criteria": [
+      "Ready targets are selected in deterministic round-robin order and return to the end of the ready rotation after one page.",
+      "Unresolved, ineligible, backoff-sleeping, poll-sleeping, command-owned, or cancellation-pending targets do not consume a global concurrency slot.",
+      "Within one process, at most one ordinary drain loop runs per target context.",
+      "Administrative drain-to-empty can own the per-target drain executor so the ordinary scheduled loop cannot introduce a second local item path.",
+      "The global gate is held only while actively paging and processing a durable-work page or command-owned drain slice.",
+      "No per-document leases, claims, ownership columns, attempt counters, dead-letter rows, or item-concurrency setting are introduced."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionScheduler\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-paging",
+    "description": "Add provider-specific durable work paging adapters for PostgreSQL and SQL Server. Page only from dms.DocumentProjectionWork in (FirstEnqueuedAt, DocumentId) order using Projector:PageSize, use a process-local keyset cursor with provider-appropriate predicates, wrap by clearing the cursor after an empty non-null cursor page, and never join dms.Document, dms.DocumentCache, or resource tables for ordinary backlog discovery.",
+    "acceptance-criteria": [
+      "PostgreSQL paging uses tuple comparison after the last seen FirstEnqueuedAt and DocumentId.",
+      "SQL Server paging uses the equivalent OR predicate with ORDER BY FirstEnqueuedAt, DocumentId OFFSET 0 ROWS FETCH NEXT @PageSize ROWS ONLY.",
+      "Empty page after a non-null cursor clears the cursor and retries from the beginning; a second empty page reports no eligible durable work.",
+      "Restart begins with a null cursor and reads durable work without scanning dms.Document.",
+      "Paging captures only DocumentId, RequiredContentVersion, and bounded enqueue diagnostics.",
+      "Paging statements do not acquire a work-row lock intended to survive materialization, cache writing, backoff, or external I/O."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentProjectionWorkPaging\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentProjectionWorkPaging\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentProjectionWorkPaging\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "poison-backoff",
+    "description": "Implement bounded process-local per-document failure and retry state for each target-context generation. Cap entries exactly at the effective Projector:PageSize, use deterministic target-local eviction of the least-recently observed failure with DocumentId tie-break, calculate nextRetryAt from the injected clock plus Projector:FailureBackoff without jitter, skip suppressed failed rows while advancing the cursor, and sleep only after a wrapped cursor pass proves no eligible row was processed.",
+    "acceptance-criteria": [
+      "Failure state never grows beyond Projector:PageSize per target-context generation.",
+      "Eviction permits earlier retry for the evicted document but does not delete durable work or block later rows.",
+      "Skipped locally suppressed rows emit bounded poison-traversal telemetry and do not prevent later eligible rows in the page from processing.",
+      "After a cursor pass wraps without processing an eligible row, the worker sleeps until the earlier of the next retry time or Projector:PollInterval.",
+      "Observation snapshots expose bounded failure count, earliest retry time, eviction count, and capped diagnostic document ids."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionFailureBackoff\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "item-processing",
+    "description": "Implement the ordinary per-item durable work processing flow that composes the 18-03 cache writer and 18-02 materializer. For each selected work row, call the writer first with candidate null and purpose DurableWorkProjection, materialize only when the writer returns NeedsMaterialization, call the writer again with the candidate, and handle each writer and materializer outcome according to the 18-04 orchestration boundary.",
+    "acceptance-criteria": [
+      "AlreadyCurrentAcknowledged and CandidateWrittenAcknowledged clear local failure state for that document.",
+      "Materializer source-missing and source-changed outcomes produce no candidate, perform no projector acknowledgement or repair, and leave durable state visible for the next poll, delete cascade, later enqueue, or writer fast path.",
+      "SourceMissingOrDeleted, StaleCandidateSuppressed, CacheAheadDisappeared, and RacingWriterLost record bounded outcome telemetry and continue without projector repair.",
+      "WorkAnomaly leaves work visible and applies local per-document backoff.",
+      "LifecycleOrLatchFenced pauses ordinary processing until a supervisor lifecycle/latch observation shows Tracking or Rebuilding with a clear latch as allowed for ordinary workers.",
+      "LifecycleOrLatchFenced does not cause the ordinary worker to acquire the administrative mutex to investigate durable state.",
+      "CacheAheadLatchSet marks the target non-operational for projection work and never clears the latch.",
+      "RetryBudgetExhausted, CallerAbortedRetry, and provider/runtime failures are classified as document-scoped or target-scoped and apply the corresponding per-document or target FailureBackoff.",
+      "Deterministic materializer or writer invariant failures pause projection eligibility for that target-context generation until process restart or replacement execution metadata creates a new generation."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionItemProcessor\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "lifecycle-fence",
+    "description": "Add lightweight lifecycle/latch observation to the supervisor for ordinary-processing fence recovery. On target-context startup and Projector:PollInterval ticks, observe the current generation's DocumentCacheState without running full target refresh or source/cache scans; resume ordinary processing only when lifecycle is Tracking or Rebuilding as allowed for workers and CacheAheadRecoveryRequired is false.",
+    "acceptance-criteria": [
+      "LifecycleOrLatchFenced pauses are refreshed without requiring a later writer attempt.",
+      "Tracking with clear latch resumes ordinary processing for eligible targets.",
+      "Rebuilding with clear latch is eligible for ordinary work processing but does not report operational-health or caught-up success.",
+      "Disabled, Resetting, a set latch, missing state, unreadable state, or unsupported state keep ordinary processing paused with sanitized diagnostics.",
+      "The observation performs no source/cache relationship scan."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheLifecycleFence\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "shutdown",
+    "description": "Implement cancellation and graceful shutdown behavior for ordinary projection loops. Observe cancellation while waiting for the global gate, between pages, between items, before materialization, and before starting new work; avoid interrupting a started short writer transaction; and discard process-local cursors and failure state on restart while resuming from durable DocumentProjectionWork.",
+    "acceptance-criteria": [
+      "Graceful shutdown starts no new page or item after cancellation is requested.",
+      "Cancellation during materialization or before a writer call leaves durable work visible.",
+      "A started cache-writer database transaction is allowed to commit or roll back within provider command timeout and writer retry rules.",
+      "Restart creates a fresh null cursor and empty process-local failure state.",
+      "Cancellation of one target does not stop peer target processing."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionShutdown\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-mutex",
+    "description": "Implement one shared provider administrative mutex adapter for 18-04 administrative commands and later 18-08 restamp work. The adapter must acquire the exact PostgreSQL advisory-lock identity and exact SQL Server sp_getapplock identity, hold a dedicated physical connection for the complete multi-transaction workflow, execute every coordinator-issued database mutation on that session, release normally on completion, and abort without reconnecting if the session is lost.",
+    "acceptance-criteria": [
+      "PostgreSQL uses pg_advisory_lock((811646948::bigint << 32) | currentDatabaseOid::bigint) and releases the same key.",
+      "SQL Server uses sp_getapplock resource EdFi.DMS.DocumentProjection.Administration.v1 with Exclusive mode, LockOwner Session, DbPrincipal public, and @LockTimeout = -1, and releases the same resource.",
+      "Mutex acquisition is blocking subject only to caller cancellation and provider command timeout, and the workflow timeout budget has not started while acquisition is pending.",
+      "The mutex key is derived only from the ADR-defined database-scoped provider identity, never from the logical target key, connection-string text, or connection metadata display values.",
+      "Aliases of one physical database contend for the same mutex while independent databases on one server or cluster can be administered concurrently.",
+      "SQL Server mutex exclusion uses the common public application-lock scope across eligible caller principals.",
+      "The mutex-owning connection never returns to the pool while ownership is held.",
+      "Connection loss releases ownership, aborts the coordinator, and prevents later lifecycle, clear, seed, scrub, drain, or restamp DML on a replacement connection."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeMutex\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeMutex\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "session-bound-writer",
+    "description": "Add a session-bound cache-writer execution path or adapter for command-owned drain. It must reuse the 18-03 classification, monotonic cache-write, acknowledgement, latch, and retry semantics while ensuring all command-issued cache/work/latch mutations execute on the administrative mutex-owning physical session. Ordinary projector workers and direct fill must continue using ordinary target connections and must never acquire the administrative mutex.",
+    "acceptance-criteria": [
+      "Command-owned drain invokes shared writer logic on the mutex-owning physical session for all mutation statements.",
+      "Materializer source reads during command-owned drain may use ordinary read connections from the pinned target context, but they do not re-resolve or retarget the command.",
+      "Retryable provider errors replay the complete writer transaction only on the same valid mutex-owning session.",
+      "Session loss returns sessionLossNoMutation or sessionLossAfterMutation according to the current command execution's mutated flag and does not reconnect under presumed ownership.",
+      "Ordinary writer and direct-fill paths remain unchanged with respect to connection ownership and mutex usage."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheSessionBoundWriter\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheSessionBoundWriter\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheSessionBoundWriter\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-runner",
+    "description": "Implement the shared synchronous administrative command runner. Resolve the configured target, verify current target-context generation, and verify any supplied expected physical-source fingerprint before acquiring the mutex; start the WorkflowTimeout budget only after successful mutex acquisition; pin the target context, generation, physical-source fingerprint, and mutex-owning session for the complete command; run live command preflight on the mutex session using 18-01 classifiers; track mutated state; persist no command execution or idempotency record; and return the shared envelope with phase diagnostics for success, no-mutation rejection, no-mutation failure, and incomplete retryable outcomes.",
+    "acceptance-criteria": [
+      "Target removal, unresolved target, replacement before mutex acquisition, provider ineligibility, and fingerprint mismatch return no-mutation results outside the WorkflowTimeout budget.",
+      "A CMS refresh that later proves removal or replacement marks the pinned generation as command-owned/noncurrent until the command completes or aborts but does not retarget the command.",
+      "A pinned command that reaches its durable success condition returns completed with classification succeeded even when the pinned generation became noncurrent after acquisition, with bounded noncurrent-generation diagnostics.",
+      "WorkflowTimeout applies after mutex acquisition to clear, seed, scrub, drain, baseline backpressure, and poison waits without replacing provider command timeouts, mutex acquisition cancellation/timeout, or caller cancellation.",
+      "WorkflowTimeout expiration before durable lifecycle, latch, cache, or work mutation returns failedNoMutation with classification workflowTimeout and mutated false.",
+      "WorkflowTimeout expiration after durable mutation returns incompleteRetryable with classification workflowTimeout, mutated true, bounded phase diagnostics, and guidance to reissue the same explicit command.",
+      "If WorkflowTimeout expires while a short provider transaction is already started, that transaction is allowed to commit or roll back within provider command timeout before the command result is classified.",
+      "The current command execution's mutated flag is true for any lifecycle, latch, cache, or work mutation, including bounded clear, baseline or scrub work repair, latch set or clear, command-owned drain cache writes, and command-owned drain acknowledgements.",
+      "A reissued command resolves the current target and reruns live preflight; it resumes only from that command's supported durable resume states and never from persisted command history.",
+      "Caller cancellation, provider command timeout, mutex acquisition failure/cancellation, session loss, and persistent poison are classified distinctly from workflowTimeout."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-primitives",
+    "description": "Implement provider primitives for command preflight and durable lifecycle state transitions on the mutex-owning session. Include exclusive DocumentCacheState row locks, shared state observation, guarded transition helpers, provider prerequisite revalidation for activation, current lifecycle/latch empty-state checks, and the writer-blocking dms.Document lock required by guarded new-empty activation.",
+    "acceptance-criteria": [
+      "Guarded activation preflight can take PostgreSQL LOCK TABLE dms.Document IN SHARE MODE and SQL Server TABLOCK, HOLDLOCK over dms.Document inside the activation transaction.",
+      "Exclusive state-row transitions verify the expected lifecycle and latch state in the same short transaction that performs the transition.",
+      "Provider prerequisite validation for SQL Server activation runs immediately before activation mutation and leaves lifecycle, cache, and work unchanged on failure.",
+      "Preflight helpers use the 18-01 classifier/result contracts rather than inventing a second result shape.",
+      "All primitives execute on the mutex-owning physical session and are safe across separate short transactions."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativePrimitives\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "bounded-clearing",
+    "description": "Implement provider-equivalent bounded cache and work clearing operations for administrative workflows. Use Projector:PageSize as the v1 clear batch size, order batches by DocumentId, commit each bounded page in a short transaction on the mutex-owning session, verify emptiness where required, and avoid ad hoc truncation, direct work DML outside the command adapters, a new clear-batch setting, or one unbounded delete.",
+    "acceptance-criteria": [
+      "Cache-only clear preserves DocumentProjectionWork for online rebuild.",
+      "Cache-and-work clear is available only to workflows that require the external offline writer-admission precondition and internal-only proof where applicable.",
+      "Each clear batch is ordered by DocumentId, bounded by Projector:PageSize, and committed in a short transaction.",
+      "Clear operations honor WorkflowTimeout, caller cancellation between transactions, provider command timeouts for started transactions, and session-loss classification.",
+      "Post-clear verification uses provider-consistent empty observations rather than exact routine backlog counts."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeClear\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeClear\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "baseline-seeding",
+    "description": "Implement the shared baseline and rebuild seeding routine. After entering Rebuilding, capture a maximum DocumentId boundary, scan canonical dms.Document keys less than or equal to that boundary in Projector:PageSize pages, apply high-water-mark backpressure using the effective BaselineHighWaterMark with a bounded high-water-plus-one work observation, insert current W=S for missing work, conditionally repair mismatched existing work in the current page, and restart from the beginning with a newly captured boundary after interruption or replacement ownership.",
+    "acceptance-criteria": [
+      "V1 persists no baseline cursor and ordinary restart never scans dms.Document for backlog discovery.",
+      "Seeding preserves FirstEnqueuedAt for existing work and updates LastEnqueuedAt only when the repair advances the requirement.",
+      "Lowering W>S to current S is guarded by unchanged source ContentVersion and unchanged observed work requirement and preserves LastEnqueuedAt.",
+      "A guarded repair or insert that loses a race rereads the bounded page from the last committed key rather than forcing stale repair.",
+      "A page invalidated by concurrent delete rolls back, rereads from the last committed key, lets deleted rows disappear through cascade, and seeds survivors.",
+      "Backpressure waits with bounded diagnostics instead of creating unbounded baseline-generated work.",
+      "Poison or long-running work that keeps the queue at the high-water mark is bounded by WorkflowTimeout and returns the appropriate retryable command diagnostic rather than amplifying backlog."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheBaselineSeeding\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheBaselineSeeding\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheBaselineSeeding\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-drain",
+    "description": "Implement command-owned drain-to-empty using the same target work gate, per-target drain executor, item processor, process-local failure/backoff state, and session-bound writer path. Complete only from durable NOT EXISTS work observation. Classify persistent poison only after a command-owned pass from the beginning through wrap proves durable work remains visible, no row was acknowledged or removed, and every attempted eligible row produced document-scoped failure/backoff or WorkAnomaly again after retry time was due.",
+    "acceptance-criteria": [
+      "Command-owned drain reuses the target generation's existing per-document failure/backoff state and does not create command-local failure state.",
+      "Peer projectors remain duplicate-safe but are not the command's completion mechanism.",
+      "Equal-version S=C=W work acknowledges through the writer fast path without rematerializing JSON.",
+      "Target-fatal outcomes, lifecycle/latch fence, cancellation, session loss, provider command timeout, and workflow deadline expiration use their own classifications and are not mislabeled persistentPoison.",
+      "Persistent poison leaves the command incomplete in Rebuilding with bounded diagnostics and never forces Tracking."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeDrain\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "guarded-activation",
+    "description": "Implement guarded new-empty Disabled to Tracking activation through the shared command runner and mutex adapter. The command has no offlineWriterAdmission token in v1. Under the mutex, run one short activation transaction that takes the provider-specific writer-blocking dms.Document lock, exclusively locks the state row, verifies Disabled, clear latch, empty dms.Document, empty dms.DocumentCache, empty dms.DocumentProjectionWork, revalidates SQL Server prerequisites, and transitions directly to Tracking.",
+    "acceptance-criteria": [
+      "Nonempty canonical, cache, or work state rejects with no lifecycle, cache, work, or latch mutation.",
+      "SQL Server prerequisite failure rejects with lifecycle, cache, and work unchanged and can be retried after correction.",
+      "A racing canonical insert that commits before activation makes activation reject as nonempty.",
+      "A racing canonical insert blocked by the activation lock commits only after Tracking and enqueues work transactionally.",
+      "The result uses command guardedNewEmptyActivation, phases resolveTarget, acquireMutex, preflight, enterTracking, and complete."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~GuardedNewEmptyActivation\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~GuardedNewEmptyActivation\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "offline-activation",
+    "description": "Implement offline read-acceleration activation through the shared command runner. Require trusted internal-only downstream-publication proof and the offlineActivationWritersClosedAndDrained offlineWriterAdmission token. Admit Disabled with a clear latch for a fresh start, or Rebuilding with a clear latch to resume seeding/drain without repeating destructive clearing. Clear residual cache and work in bounded batches for the fresh path, verify both empty, enter Rebuilding, run baseline seeding, drain work, then enter Tracking.",
+    "acceptance-criteria": [
+      "Missing or mismatched offlineWriterAdmission, non-internal-only downstream proof, fingerprint mismatch, provider ineligibility, lifecycle mismatch, or set latch rejects before destructive mutation when no resume state was admitted.",
+      "Fresh Disabled activation clears cache and work before entering Rebuilding and does not establish CDC readiness.",
+      "Rebuilding resume does not repeat destructive cache/work clearing and resumes baseline seeding/drain from supported durable state.",
+      "Provider prerequisite validation failure leaves lifecycle, cache, and work unchanged and returns the correct no-mutation classification.",
+      "Completed activation transitions to Tracking only after baseline seeding finishes and durable work is empty."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OfflineActivation\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~OfflineActivation\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "online-rebuild",
+    "description": "Implement online cache rebuild through the shared command runner. Admit Tracking with a clear latch for a fresh start, Resetting with a clear latch to resume cache-only clearing, and Rebuilding with a clear latch to resume baseline seeding and drain without repeating cache clearing. Reject a set latch before lifecycle, cache, work, or latch mutation. For the fresh path, enter Resetting, clear only DocumentCache in bounded batches while preserving pending work and ongoing enqueue, verify cache empty, enter Rebuilding, run baseline seeding and command-owned drain, then enter Tracking.",
+    "acceptance-criteria": [
+      "A set cache-ahead latch rejects online rebuild with lifecycle, cache, work, and latch state unchanged and directs the operator to cache-ahead recovery or containment.",
+      "Online rebuild preserves existing DocumentProjectionWork during cache clearing.",
+      "Canonical enqueue remains enabled while cache writes and acknowledgements are fenced by Resetting.",
+      "Resetting resume repeats or completes cache-only clearing without clearing work.",
+      "Rebuilding resume restarts baseline seeding and drains work before entering Tracking."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OnlineCacheRebuild\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~OnlineCacheRebuild\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "offline-deactivation",
+    "description": "Implement offline deactivation through the shared command runner. Require trusted internal-only downstream-publication proof and the offlineDeactivationWritersClosedAndDrained offlineWriterAdmission token. Admit Tracking or Rebuilding with a clear latch for a normal start, or Resetting with a clear latch to resume cache/work clearing and final Disabled transition. Enter Resetting when needed, clear cache and work in bounded batches, verify both empty, and enter Disabled.",
+    "acceptance-criteria": [
+      "Missing or mismatched offlineWriterAdmission, non-internal-only downstream proof, active/historical/possible/unknown downstream publication, set latch, or unsupported lifecycle rejects without changing durable state unless the command is already in an admitted mutated resume path.",
+      "Normal deactivation enters Resetting before clearing cache and work.",
+      "Resetting resume clears or verifies cache and work, then transitions to Disabled only after both are empty.",
+      "The command never clears the latch unless the admitted internal-only recovery workflow owns that transition.",
+      "Simple activation/deactivation toggles are rejected for active or historical CDC binding/consumer state."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OfflineDeactivation\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~OfflineDeactivation\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "cache-ahead-recovery",
+    "description": "Implement internal-only cache-ahead recovery through the shared command runner. Require trusted internal-only downstream-publication proof and the internalOnlyCacheAheadRecoveryWritersClosedAndDrained offlineWriterAdmission token. Admit Tracking or Rebuilding with a set latch for a normal start, Resetting with a set latch to resume clearing, and Rebuilding with a clear latch to resume baseline seeding/drain after the final latch-clearing transition. Clear both cache and work under offline writer fencing, enter Rebuilding and clear the latch in the same final exclusive state-row transaction, then seed, drain, and enter Tracking only after durable work is empty.",
+    "acceptance-criteria": [
+      "Recovery is rejected when downstream publication is possible, active, historical, or uncertain, preserving cache, work, lifecycle, and latch evidence.",
+      "Resetting keeps the cache-ahead latch set while cache and work are cleared.",
+      "The final transition to Rebuilding clears the latch only after Resetting, latch set, and both cache and work empty are verified.",
+      "Stale pre-recovery work cannot later be acknowledged after recovery because work is cleared before fresh baseline seeding.",
+      "Rebuilding with clear latch is treated as the supported resume state after the latch-clearing transition.",
+      "Completed recovery transitions to Tracking only after baseline seeding finishes and durable work is empty."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~CacheAheadRecovery\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~CacheAheadRecovery\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "scrub",
+    "description": "Implement explicit integrity scrub through the shared command runner. Admit only Tracking with a clear cache-ahead latch after mutex acquisition. Capture a maximum DocumentId boundary after admission, scan canonical/cache/work relationships through that boundary in Projector:PageSize pages, conditionally insert missing W=S, conditionally repair mismatched work to current S, and set CacheAheadRecoveryRequired only after confirming current C>S inside the page transaction. Scrub must never clear the latch and must not be treated as health, caught-up, or readiness evidence.",
+    "acceptance-criteria": [
+      "Disabled, Resetting, Rebuilding, and pre-existing set latch reject before the O(N) scan with lifecycle, cache, work, and latch unchanged.",
+      "New canonical inserts above the captured boundary are ignored by scrub and rely on transactional enqueue.",
+      "Concurrent update, enqueue, work-row change, or delete invalidating an observed page rolls back and rereads from the last committed key.",
+      "Repeated page invalidation until caller cancellation, provider command timeout, or WorkflowTimeout returns the corresponding incomplete/retryable result without forcing stale repair.",
+      "Confirmed current cache-ahead C>S sets the latch through a bounded latch path, records capped diagnostics, and stops the scrub without cache repair.",
+      "A scrub that scans without changing latch or work state returns completed with mutated false."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~ExplicitIntegrityScrub\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~ExplicitIntegrityScrub\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "sql-server-prerequisites",
+    "description": "Implement and verify the 18-04 SQL Server prerequisite retry and unsupported-incident behavior at target-context initialization and command preflight. A prerequisite failure observed while lifecycle is Disabled remains eligible for normal startup, CMS-refresh, or supervisor-tick initialization retry after correction. The same failure outside Disabled classifies the target generation as an unsupported incident and does not rerun prerequisite validation or report renewed projection health for that generation until process restart or replacement execution metadata creates a new generation.",
+    "acceptance-criteria": [
+      "Disabled lifecycle prerequisite failure keeps lifecycle-specific 18-01 classification and can recover on a later generation initialization after correction.",
+      "Non-Disabled prerequisite failure pauses the target generation as unsupported and does not retry prerequisite validation on ordinary refresh or supervisor tick for that generation.",
+      "Refresh after non-Disabled failure updates target-resolution diagnostics only and does not report renewed health for the same generation.",
+      "A process restart or replacement execution metadata creates a new generation that may validate prerequisites again.",
+      "Activation-preflight prerequisite failure remains command-local and returns no-mutation results without changing lifecycle, cache, or work."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~SqlServerDocumentCachePrerequisite\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~SqlServerDocumentCachePrerequisite\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "telemetry",
+    "description": "Add sanitized logs and metrics for ordinary projection and administrative workflows. Cover target running/active/gated/backoff/cancellation state, page and drain throughput, poison traversal, writer/materializer outcomes, target fatal pauses, administrative mutex outcomes, command phase progress, workflow timeout, clear/seed/scrub/drain mutations, and bounded diagnostics while restricting metric labels and log fields to provider, normalized target key, bounded outcome/category, lifecycle, command, and phase.",
+    "acceptance-criteria": [
+      "Logs and metrics never label with DocumentId, DocumentUuid, document JSON, request bodies, connection strings, credentials, tenant display names, or unsanitized physical identifiers.",
+      "Status diagnostics may identify at most Projector:PageSize affected DocumentId values.",
+      "Administrative diagnostics include effective WorkflowTimeout, elapsed command time after mutex acquisition, current phase, last completed phase, retryability, diagnostic category, and current-execution mutated flag.",
+      "Enqueue failures remain diagnostically distinct from projector-processing failures.",
+      "Telemetry records bounded poison traversal and failure-backoff state without treating local state as completeness evidence."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheProjectionTelemetry\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "dependency-injection",
+    "description": "Wire the 18-04 runtime, provider adapters, administrative command services, session-bound writer path, observation provider, and hosted service into the existing DMS dependency-injection and startup composition. Ensure provider-specific registrations resolve the correct PostgreSQL or SQL Server implementations and that no target configuration mutates database lifecycle during startup.",
+    "acceptance-criteria": [
+      "The hosted projection service is registered once and starts only when the host starts.",
+      "PostgreSQL and SQL Server provider registrations expose their paging, lifecycle observation, administrative mutex, clear, seed, scrub, and session-bound writer adapters.",
+      "Application startup fails only for malformed local DocumentCache options or other process-wide configuration errors, not for unresolved configured targets.",
+      "Runtime target configuration never activates, deactivates, clears, seeds, or scrubs a database.",
+      "Existing materializer and writer services remain shared with 18-02, 18-03, and future 18-05 direct fill consumers."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheServiceRegistration\"",
+      "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCache\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-tests",
+    "description": "Add focused PostgreSQL provider integration tests for ordinary projection behavior owned by 18-04. Cover fair oldest-work paging, cursor wraparound, duplicate-replica safety through shared writer outcomes, restart from durable work with no source scan, long-outage backlog drain, lifecycle/latch fencing and resumption, poison traversal, bounded failure-state eviction, cancellation boundaries, and deterministic target fairness.",
+    "acceptance-criteria": [
+      "Tests prove paging uses DocumentProjectionWork ordering and does not join or scan canonical source tables for ordinary backlog discovery.",
+      "Multiple ordinary workers or replicas can process duplicate visible work safely without leases, claims, attempts, or dead-letter rows.",
+      "Poison rows remain visible, are retried after FailureBackoff, and do not starve later work.",
+      "Long-outage backlog drains in bounded pages without unbounded page memory.",
+      "Lifecycle Rebuilding with clear latch allows ordinary work processing but does not complete administrative lifecycle by itself."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheProjector\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-tests",
+    "description": "Add focused SQL Server provider integration tests for ordinary projection behavior owned by 18-04. Cover fair oldest-work paging with the SQL Server keyset predicate, cursor wraparound, duplicate-replica safety through shared writer outcomes, restart from durable work with no source scan, long-outage backlog drain, lifecycle/latch fencing and resumption, poison traversal, bounded failure-state eviction, cancellation boundaries, deterministic target fairness, and prerequisite-failure generation behavior.",
+    "acceptance-criteria": [
+      "Tests prove SQL Server paging uses ORDER BY FirstEnqueuedAt, DocumentId with OFFSET 0 ROWS FETCH NEXT @PageSize ROWS ONLY and the correct keyset predicate.",
+      "Multiple ordinary workers or replicas can process duplicate visible work safely without leases, claims, attempts, or dead-letter rows.",
+      "Poison rows remain visible, are retried after FailureBackoff, and do not starve later work.",
+      "Long-outage backlog drains in bounded pages without unbounded page memory.",
+      "Disabled prerequisite failures can recover on later initialization after correction, while non-Disabled failures remain unsupported for the same generation."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheProjector\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-tests",
+    "description": "Add cross-provider administrative workflow tests that exercise the full command runner, mutex session behavior, lifecycle transitions, timeout and cancellation classification, resume states, noncurrent pinned generation diagnostics, and operation-specific mutation boundaries for guarded activation, offline activation, online rebuild, offline deactivation, internal-only cache-ahead recovery, and explicit scrub.",
+    "acceptance-criteria": [
+      "Tests cover workflowTimeout before first durable mutation and after durable mutation, with status and mutated values matching the shared envelope rules.",
+      "Tests cover workflowTimeout firing after a short provider transaction has started and verify the transaction commits or rolls back within provider command timeout before result classification.",
+      "Tests cover session loss after mutation, Resetting crash/reissue behavior, Rebuilding restart from the beginning, and no durable command idempotency persistence.",
+      "Tests prove online rebuild rejects a set latch with lifecycle, cache, work, and latch unchanged.",
+      "Tests prove offline activation/deactivation enforce internal-only proof and offline writer admission tokens and reject active, historical, possible, or unknown downstream-publication state.",
+      "Tests prove internal-only recovery preserves evidence when publication is possible or uncertain and clears stale work only in admitted internal-only recovery.",
+      "Tests prove scrub admits only clear-latch Tracking, sets latch only for current cache-ahead state, and never clears it."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministration\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheAdministration\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "query-plan-tests",
+    "description": "Add query-plan and scale-oriented evidence for the 18-04 provider queries. Verify ordinary queue paging, caught-up drain checks, backpressure high-water-plus-one observations, bounded clear batches, baseline page scans, and scrub page scans use the intended indexes and bounded access patterns, and verify no ordinary startup, restart, steady-state, or health-adjacent path performs a source/cache relationship scan.",
+    "acceptance-criteria": [
+      "Ordinary queue paging uses the DocumentProjectionWork oldest-work index.",
+      "Durable empty-work observations use provider-consistent NOT EXISTS or equivalent indexed checks.",
+      "Baseline and scrub are the only 18-04 paths that intentionally scan canonical DocumentId ranges.",
+      "Backpressure uses high-water-plus-one observation and never routine exact backlog count.",
+      "Scale fixtures demonstrate bounded memory and page counts independent of total document cardinality for ordinary projection."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheQueryPlan\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheQueryPlan\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "verification",
+    "description": "Run the final focused build, formatting, and regression verification for the 18-04 task set after the implementation tasks are complete. Keep verification limited to DocumentCache projector, administrative command, and touched integration surfaces rather than full E18/E19 qualification, which remains assigned to 18-07 and later epics.",
+    "acceptance-criteria": [
+      "All touched source and test directories are formatted with csharpier.",
+      "Core and backend unit tests for DocumentCache options, contracts, scheduler, item processing, observation, and administrative command runner pass.",
+      "PostgreSQL and SQL Server focused provider integration tests for DocumentCache projection and administration pass or document environment-specific skips.",
+      "A solution or project build covering src/dms succeeds without introducing Newtonsoft.Json or non-.NET-10 style regressions.",
+      "No production or test code outside the 18-04 scope is changed except where necessary to wire consumed 18-01, 18-02, or 18-03 seams."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/core src/dms/backend src/dms/frontend",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCache\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCache\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCache\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCache\"",
+      "dotnet build src/dms/backend/EdFi.DataManagementService.Backend/EdFi.DataManagementService.Backend.csproj"
+    ],
+    "completed": false
+  }
+]

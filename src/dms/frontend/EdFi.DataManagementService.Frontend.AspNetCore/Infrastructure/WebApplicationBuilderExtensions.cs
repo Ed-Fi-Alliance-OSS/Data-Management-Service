@@ -212,6 +212,13 @@ public static class WebApplicationBuilderExtensions
             DocumentCacheTargetContextBuilder
         >();
         webAppBuilder.Services.AddSingleton<IDocumentCacheTargetRegistry, DocumentCacheTargetRegistry>();
+        webAppBuilder.Services.AddSingleton<DocumentCacheProjectionSupervisor>();
+        webAppBuilder.Services.AddSingleton<IDocumentCacheProjectionSupervisor>(serviceProvider =>
+            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
+        );
+        webAppBuilder.Services.AddHostedService(serviceProvider =>
+            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
+        );
         webAppBuilder.Services.AddSingleton<
             IDocumentCacheDiagnosticSnapshotProvider,
             DocumentCacheDiagnosticSnapshotProvider

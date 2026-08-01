@@ -1,0 +1,19 @@
+Completed configuration task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added Administration under existing DocumentCacheOptions binder; WorkflowTimeout defaults 24h and validates positive; surfaced through sanitized effective settings and startup diagnostics. Left Projector.BaselineHighWaterMark as only high-water setting.
+Files changed: DocumentCacheOptions.cs; DocumentCacheTargetContracts.cs; DocumentCacheStartupDiagnostics.cs; focused core/frontend option, effective-settings, diagnostic tests; tasks.json.
+Blockers/notes: none. Next likely contracts task before runtime/provider integration.
+
+Completed contracts task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: replaced old offline read-acceleration command value with pinned offlineActivation; evolved admin result JSON to shared status/classification/mutated/phaseDiagnostics envelope while keeping classifier aliases for current call sites; offlineWriterAdmission DTOs fail closed in required command constructors.
+Files changed: DocumentCacheAdministrativeContracts.cs; DocumentCachePreflightClassifier.cs; DocumentCacheDownstreamPublicationHistory.cs; focused admin/preflight/downstream/registry tests; tasks.json.
+Blockers/notes: none. Next likely observability contract before hosted runtime/scheduler work.
+
+Completed observability task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added backend process-local observation store with read provider and write sink; snapshots are immutable and keyed by target+generation or command execution id; store replaces current generation without carrying old health forward, keeps active noncurrent commands with current generation marker, and caps document diagnostics by effective Projector:PageSize.
+Files changed: DocumentCacheProjectionObservation.cs; ReferenceResolverServiceCollectionExtensions.cs; DocumentCacheProjectionObservationTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely runtime supervisor can publish target/context observations into the sink.
+
+Completed runtime task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added hosted projection supervisor over existing target registry; runtime contexts wrap 18-01 execution context plus scoped provider adapters/materializer/writer, local cursor/failure state, cancellation, and observation sink; refresh reconciliation preserves same generation, cancels removed/replaced/ineligible generations, and observes active health.
+Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionSupervisorTests.cs; ReferenceResolverServiceCollectionExtensions.cs; WebApplicationBuilderExtensions.cs; Backend csproj/package locks; tasks.json.
+Blockers/notes: none. Scheduling, paging, item processing, and lifecycle fence refresh remain separate tasks.

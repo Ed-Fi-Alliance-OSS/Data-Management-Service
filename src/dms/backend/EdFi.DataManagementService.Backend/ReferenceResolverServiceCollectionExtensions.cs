@@ -107,6 +107,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             )
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProjectionTargetRuntimeContextFactory,
+                DocumentCacheProjectionTargetRuntimeContextFactory
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>()
         );
         services.TryAdd(
