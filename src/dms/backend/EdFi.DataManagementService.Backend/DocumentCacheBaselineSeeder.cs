@@ -182,7 +182,7 @@ internal sealed class DocumentCacheBaselineSeeder(
             if (highWater.IsAtOrAboveHighWater)
             {
                 context.AddPhaseDiagnostic(
-                    DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison,
+                    DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
                     highWater.Message,
                     retryable: true,
                     highWater.DiagnosticDocumentIds.Take(pageSize).ToImmutableArray()

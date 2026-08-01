@@ -186,6 +186,51 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
     }
 
     [Test]
+    public async Task It_reports_baseline_high_water_backpressure_when_workflow_timeout_fires_during_rebuild_seed()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        IReadOnlyList<SourceDocument> sources = await InsertProjectedRowsAsync(documentCount: 1);
+        DocumentCacheOnlineCacheRebuildCommand command = CreateOnlineCacheRebuildCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            workflowTimeout: TimeSpan.FromMilliseconds(250),
+            projectorBaselineHighWaterMark: 1,
+            baselineSeedDelay: new CancellationOnlyBaselineSeedDelay()
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.Mutated.Should().BeTrue();
+        result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SeedBaseline
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure
+                && diagnostic.Retryable
+                && diagnostic.AffectedDocumentIds.SequenceEqual(new[] { sources.Single().DocumentId })
+            );
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SeedBaseline
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+                && diagnostic.Retryable
+            );
+        result
+            .PhaseDiagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.DiagnosticCategory
+                == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+            );
+    }
+
+    [Test]
     public async Task It_rolls_back_a_started_short_transaction_when_workflow_timeout_fires_before_commit()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
@@ -574,12 +619,14 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
 
     private DocumentCacheAdministrativeCommandRunner CreateRunner(
         DocumentCacheLifecycleObservation lifecycle,
-        TimeSpan? workflowTimeout = null
+        TimeSpan? workflowTimeout = null,
+        int projectorBaselineHighWaterMark = 1000
     )
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
             lifecycle,
-            workflowTimeout: workflowTimeout
+            workflowTimeout: workflowTimeout,
+            projectorBaselineHighWaterMark: projectorBaselineHighWaterMark
         );
         return CreateRunner(executionContext, new RecordingObservationSink());
     }
@@ -629,8 +676,16 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         );
 
     private DocumentCacheOnlineCacheRebuildCommand CreateOnlineCacheRebuildCommand(
-        DocumentCacheLifecycleObservation lifecycle
-    ) => new(CreateRunner(lifecycle), CreateBaselineSeeder(), CreateDrainer(new RecordingObservationSink()));
+        DocumentCacheLifecycleObservation lifecycle,
+        TimeSpan? workflowTimeout = null,
+        int projectorBaselineHighWaterMark = 1000,
+        IDocumentCacheBaselineSeedDelay? baselineSeedDelay = null
+    ) =>
+        new(
+            CreateRunner(lifecycle, workflowTimeout, projectorBaselineHighWaterMark),
+            CreateBaselineSeeder(baselineSeedDelay),
+            CreateDrainer(new RecordingObservationSink())
+        );
 
     private DocumentCacheInternalOnlyCacheAheadRecoveryCommand CreateCacheAheadRecoveryCommand(
         DocumentCacheLifecycleObservation lifecycle,
@@ -663,9 +718,11 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             NullLogger<PostgresqlDocumentCacheWriter>.Instance
         );
 
-    private static DocumentCacheBaselineSeeder CreateBaselineSeeder() =>
+    private static DocumentCacheBaselineSeeder CreateBaselineSeeder(
+        IDocumentCacheBaselineSeedDelay? delay = null
+    ) =>
         new(
-            new DocumentCacheBaselineSeedDelay(),
+            delay ?? new DocumentCacheBaselineSeedDelay(),
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheBaselineSeeder>.Instance
         );
@@ -708,12 +765,13 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
     private DocumentCacheTargetExecutionContext ExecutionContext(
         DocumentCacheLifecycleObservation lifecycle,
         long generation = 1,
-        TimeSpan? workflowTimeout = null
+        TimeSpan? workflowTimeout = null,
+        int projectorBaselineHighWaterMark = 1000
     ) =>
         new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(generation),
-            EffectiveSettings(workflowTimeout ?? TimeSpan.FromSeconds(30)),
+            EffectiveSettings(workflowTimeout ?? TimeSpan.FromSeconds(30), projectorBaselineHighWaterMark),
             new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, "postgresql"),
             new DocumentCacheTargetConnectionInput(
                 RelationalProviderToken.Postgresql,
@@ -732,7 +790,10 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
         );
 
-    private static DocumentCacheTargetEffectiveSettings EffectiveSettings(TimeSpan workflowTimeout) =>
+    private static DocumentCacheTargetEffectiveSettings EffectiveSettings(
+        TimeSpan workflowTimeout,
+        int projectorBaselineHighWaterMark = 1000
+    ) =>
         new(
             readAccelerationEnabled: true,
             directFillTimeout: TimeSpan.FromMilliseconds(250),
@@ -740,7 +801,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             projectorPageSize: 3,
             projectorMaxConcurrentTargets: 1,
             projectorFailureBackoff: TimeSpan.FromSeconds(1),
-            projectorBaselineHighWaterMark: 1000,
+            projectorBaselineHighWaterMark: projectorBaselineHighWaterMark,
             administrationWorkflowTimeout: workflowTimeout
         );
 
@@ -1050,6 +1111,15 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             DocumentCacheAdministrativeCommandExecutionContext context,
             CancellationToken cancellationToken
         ) => execute(context, cancellationToken);
+    }
+
+    private sealed class CancellationOnlyBaselineSeedDelay : IDocumentCacheBaselineSeedDelay
+    {
+        public Task DelayAsync(
+            TimeSpan delay,
+            TimeProvider timeProvider,
+            CancellationToken cancellationToken
+        ) => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
     }
 
     private sealed class StubProjectionSupervisor(

@@ -286,6 +286,66 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
+    public async Task It_preserves_baseline_high_water_context_when_workflow_timeout_expires()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            workflowTimeout: TimeSpan.FromMilliseconds(30)
+        );
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([runtimeContext]),
+            new RecordingAdministrativeMutex()
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: static async (context, cancellationToken) =>
+            {
+                context.EnterPhase(DocumentCacheAdministrativeCommandPhase.SeedBaseline);
+                context.AddPhaseDiagnostic(
+                    DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure,
+                    "DocumentProjectionWork is at or above the baseline high-water mark.",
+                    retryable: true,
+                    affectedDocumentIds: [10, 11, 12]
+                );
+
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.Mutated.Should().BeFalse();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SeedBaseline
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure
+                && diagnostic.Retryable
+                && diagnostic.AffectedDocumentIds.SequenceEqual(new long[] { 10L, 11L, 12L })
+            );
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SeedBaseline
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+                && !diagnostic.Retryable
+            );
+        result
+            .PhaseDiagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.DiagnosticCategory
+                == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+            );
+    }
+
+    [Test]
     public async Task It_keeps_active_command_observation_for_a_noncurrent_pinned_generation()
     {
         DocumentCacheTargetExecutionContext firstGeneration = ExecutionContext(generation: 1);

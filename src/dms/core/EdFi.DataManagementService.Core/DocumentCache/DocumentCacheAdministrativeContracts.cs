@@ -122,6 +122,7 @@ public enum DocumentCacheAdministrativeDiagnosticCategory
     WorkflowTimeout,
     ProviderCommandTimeout,
     WriterRetryBudgetExhausted,
+    BaselineHighWaterBackpressure,
     SessionLoss,
     PersistentPoison,
     UnexpectedProviderFailure,

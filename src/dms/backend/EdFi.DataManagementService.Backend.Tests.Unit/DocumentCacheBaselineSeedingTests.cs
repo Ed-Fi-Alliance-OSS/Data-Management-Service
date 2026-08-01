@@ -173,7 +173,7 @@ public class Given_DocumentCacheBaselineSeeding
             new DocumentCacheAdministrativeWorkHighWaterObservationResult(
                 highWaterMark: 2,
                 observedWorkRows: 3,
-                diagnosticDocumentIds: [7, 9],
+                diagnosticDocumentIds: [7, 9, 11],
                 "at high-water"
             ),
             HighWaterBelow()
@@ -204,9 +204,15 @@ public class Given_DocumentCacheBaselineSeeding
             .PhaseDiagnostics.Should()
             .Contain(diagnostic =>
                 diagnostic.DiagnosticCategory
-                    == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+                    == DocumentCacheAdministrativeDiagnosticCategory.BaselineHighWaterBackpressure
                 && diagnostic.Retryable
                 && diagnostic.AffectedDocumentIds.SequenceEqual(new long[] { 7L, 9L })
+            );
+        context
+            .PhaseDiagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.DiagnosticCategory
+                == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
             );
     }
 
