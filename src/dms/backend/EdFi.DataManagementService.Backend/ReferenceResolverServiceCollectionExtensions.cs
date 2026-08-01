@@ -128,6 +128,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Singleton<IDocumentCacheProjectionScheduler, DocumentCacheProjectionScheduler>()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheAdministrativeCommandRunner,
+                DocumentCacheAdministrativeCommandRunner
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>()
         );
         services.TryAdd(

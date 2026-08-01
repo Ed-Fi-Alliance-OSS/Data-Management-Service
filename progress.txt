@@ -62,3 +62,8 @@ Completed session-bound-writer task for reference/design/backend-redesign/epics/
 Key decisions: added internal session-bound writer contract/result mapping; refactored PG/MSSQL writers so ordinary path opens normal connections while command-owned path gets every retry/cache-ahead transaction from the mutex lease; session loss/provider timeout/writer retry budget map to admin classifications using current command mutated flag.
 Files changed: DocumentCacheSessionBoundWriter.cs; PostgresqlDocumentCacheWriter.cs; MssqlDocumentCacheWriter.cs; provider DI registrations; unit and provider integration writer tests; tasks.json; progress.txt.
 Blockers/notes: default MSSQL env unset/stale; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Next likely administrative-runner or bounded-clearing.
+
+Completed administrative-runner task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added backend shared synchronous runner with pre-mutex target/generation/fingerprint rejection, mutex acquisition before WorkflowTimeout starts, pinned runtime/mutex context, live lifecycle preflight hook, local command ownership, mutation-aware timeout/cancellation/session/provider classifications, and active-command observation/noncurrent diagnostics.
+Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheProjectionScheduler.cs; ReferenceResolverServiceCollectionExtensions.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely bounded-clearing, then baseline-seeding/drain workflows can plug into runner.

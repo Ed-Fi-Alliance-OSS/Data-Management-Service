@@ -326,15 +326,20 @@ public sealed class DocumentCacheProjectionTargetDrainExecutor
     public async Task<DocumentCacheProjectionDrainPageResult> RunAdministrativeDrainSliceAsync(
         Func<CancellationToken, Task<DocumentCacheProjectionDrainPageResult>> drainSlice,
         CancellationToken cancellationToken = default
+    ) => await RunAdministrativeCommandAsync(drainSlice, cancellationToken).ConfigureAwait(false);
+
+    public async Task<T> RunAdministrativeCommandAsync<T>(
+        Func<CancellationToken, Task<T>> command,
+        CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(drainSlice);
+        ArgumentNullException.ThrowIfNull(command);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         Volatile.Write(ref _owner, (int)DocumentCacheProjectionDrainInvocationKind.Administrative);
         try
         {
-            return await drainSlice(cancellationToken).ConfigureAwait(false);
+            return await command(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
