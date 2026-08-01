@@ -715,7 +715,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcHeartbeatPublication",
       "With ConnectionStrings__DatabaseConnection pointing at a logical-replication-enabled PostgreSQL instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "docs",

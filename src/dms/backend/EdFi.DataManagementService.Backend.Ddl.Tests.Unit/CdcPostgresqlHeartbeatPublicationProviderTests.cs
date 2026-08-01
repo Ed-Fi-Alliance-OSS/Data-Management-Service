@@ -187,6 +187,62 @@ public class Given_PostgresqlCdcHeartbeatPublication_ValidateOnly
         executor.ExecutedSql.Should().BeEmpty();
     }
 
+    [TestCase(
+        "singleton_check",
+        false,
+        true,
+        TestName = "It_should_fail_closed_when_the_singleton_constraint_contains_the_expected_fragment_but_allows_other_ids"
+    )]
+    [TestCase(
+        "sequence_check",
+        true,
+        false,
+        TestName = "It_should_fail_closed_when_the_sequence_constraint_contains_the_expected_fragment_but_allows_negative_sequences"
+    )]
+    public async Task It_should_fail_closed_for_malformed_heartbeat_constraints(
+        string mismatchedShapeKey,
+        bool singletonCheckMatches,
+        bool sequenceCheckMatches
+    )
+    {
+        var executor = new RecordingPostgresqlCdcExecutor(
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            heartbeatSingletonCheckMatches: singletonCheckMatches,
+            heartbeatSequenceCheckMatches: sequenceCheckMatches
+        );
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildPostgresqlRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues[mismatchedShapeKey] == "mismatched"
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+
+        var heartbeatShapeSql = executor.QueriedSql.Single(sql =>
+            sql.Contains("cdc:postgresql:heartbeat-shape")
+        );
+        heartbeatShapeSql.Should().Contain("pg_catalog.pg_get_expr");
+        heartbeatShapeSql.Should().NotContain("LIKE");
+    }
+
     [Test]
     public async Task It_should_fail_closed_when_an_existing_publication_captures_the_work_table()
     {
@@ -847,10 +903,16 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     private readonly string _sourceIdentity;
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
+    private readonly bool? _heartbeatPrimaryKeyMatches;
+    private readonly bool? _heartbeatSingletonCheckMatches;
+    private readonly bool? _heartbeatSequenceCheckMatches;
 
     public RecordingPostgresqlCdcExecutor(
         bool heartbeatTableExists = false,
         bool heartbeatSingletonExists = false,
+        bool? heartbeatPrimaryKeyMatches = null,
+        bool? heartbeatSingletonCheckMatches = null,
+        bool? heartbeatSequenceCheckMatches = null,
         bool documentReplicaIdentityFull = false,
         bool publicationExists = false,
         bool publicationCapturesWorkTable = false,
@@ -891,6 +953,9 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     {
         _heartbeatTableExists = heartbeatTableExists;
         _heartbeatSingletonExists = heartbeatSingletonExists;
+        _heartbeatPrimaryKeyMatches = heartbeatPrimaryKeyMatches;
+        _heartbeatSingletonCheckMatches = heartbeatSingletonCheckMatches;
+        _heartbeatSequenceCheckMatches = heartbeatSequenceCheckMatches;
         _documentReplicaIdentityFull = documentReplicaIdentityFull;
         _publicationExists = publicationExists;
         _publicationCapturesWorkTable = publicationCapturesWorkTable;
@@ -936,6 +1001,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
     }
 
     public List<string> ExecutedSql { get; } = [];
+
+    public List<string> QueriedSql { get; } = [];
 
     public static RecordingPostgresqlCdcExecutor WithExistingProviderArtifacts(
         bool slotExists = true,
@@ -1024,6 +1091,8 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
         CancellationToken cancellationToken
     )
     {
+        QueriedSql.Add(sql);
+
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
         {
             var text when text.Contains("cdc:postgresql:source-fingerprint") =>
@@ -1037,9 +1106,15 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
             var text when text.Contains("cdc:postgresql:heartbeat-shape") =>
             [
                 Row(
-                    ("primary_key_matches", _heartbeatTableExists.ToString()),
-                    ("singleton_check_matches", _heartbeatTableExists.ToString()),
-                    ("sequence_check_matches", _heartbeatTableExists.ToString())
+                    ("primary_key_matches", HeartbeatShapeMatches(_heartbeatPrimaryKeyMatches).ToString()),
+                    (
+                        "singleton_check_matches",
+                        HeartbeatShapeMatches(_heartbeatSingletonCheckMatches).ToString()
+                    ),
+                    (
+                        "sequence_check_matches",
+                        HeartbeatShapeMatches(_heartbeatSequenceCheckMatches).ToString()
+                    )
                 ),
             ],
             var text when text.Contains("cdc:postgresql:heartbeat-singleton") =>
@@ -1124,6 +1199,9 @@ internal sealed class RecordingPostgresqlCdcExecutor : ICdcProviderDatabaseExecu
 
         return Task.FromResult(rows);
     }
+
+    private bool HeartbeatShapeMatches(bool? explicitShapeMatch) =>
+        explicitShapeMatch ?? _heartbeatTableExists;
 
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> SourceInventoryRows()
     {

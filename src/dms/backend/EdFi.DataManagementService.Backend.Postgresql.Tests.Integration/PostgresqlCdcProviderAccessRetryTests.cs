@@ -241,6 +241,48 @@ public class Given_PostgresqlCdcProviderAccessRetry
         (await ReadReplicationSlotSnapshotAsync(connection)).Should().BeNull();
     }
 
+    [TestCase(
+        MalformedHeartbeatConstraint.Singleton,
+        "singleton_check",
+        TestName = "It_should_fail_closed_when_the_singleton_constraint_contains_the_expected_fragment_but_allows_other_ids"
+    )]
+    [TestCase(
+        MalformedHeartbeatConstraint.Sequence,
+        "sequence_check",
+        TestName = "It_should_fail_closed_when_the_sequence_constraint_contains_the_expected_fragment_but_allows_negative_sequences"
+    )]
+    public async Task It_should_fail_closed_on_malformed_heartbeat_constraints_without_repairing_them(
+        MalformedHeartbeatConstraint malformedConstraint,
+        string mismatchedShapeKey
+    )
+    {
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CreateMalformedHeartbeatTableAsync(connection, malformedConstraint);
+
+        var result = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues[mismatchedShapeKey] == "mismatched"
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+            );
+        (await ReadHeartbeatCheckDefinitionAsync(connection, malformedConstraint))
+            .Should()
+            .Contain(malformedConstraint == MalformedHeartbeatConstraint.Singleton ? " OR " : " < 0");
+        (await PublicationExistsAsync(connection)).Should().BeFalse();
+        (await ReadReplicationSlotSnapshotAsync(connection)).Should().BeNull();
+    }
+
     [Test]
     public async Task It_should_report_missing_slot_in_validate_only_without_recreating_retained_history()
     {
@@ -595,6 +637,65 @@ public class Given_PostgresqlCdcProviderAccessRetry
             WITH (publish = 'insert, update, delete', publish_via_partition_root = false);
             """
         );
+    }
+
+    private static async Task CreateMalformedHeartbeatTableAsync(
+        NpgsqlConnection connection,
+        MalformedHeartbeatConstraint malformedConstraint
+    )
+    {
+        var singletonConstraint =
+            malformedConstraint == MalformedHeartbeatConstraint.Singleton
+                ? "\"HeartbeatId\" = 1 OR \"HeartbeatId\" = 2"
+                : "\"HeartbeatId\" = 1";
+        var sequenceConstraint =
+            malformedConstraint == MalformedHeartbeatConstraint.Sequence
+                ? "\"HeartbeatSequence\" >= 0 OR \"HeartbeatSequence\" < 0"
+                : "\"HeartbeatSequence\" >= 0";
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            CREATE TABLE "dms"."CdcHeartbeat"
+            (
+                "HeartbeatId" smallint NOT NULL,
+                "HeartbeatSequence" bigint NOT NULL,
+                "HeartbeatAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "PK_CdcHeartbeat" PRIMARY KEY ("HeartbeatId"),
+                CONSTRAINT "CK_CdcHeartbeat_Singleton" CHECK ({singletonConstraint}),
+                CONSTRAINT "CK_CdcHeartbeat_Sequence" CHECK ({sequenceConstraint})
+            );
+
+            INSERT INTO "dms"."CdcHeartbeat" ("HeartbeatId", "HeartbeatSequence", "HeartbeatAt")
+            VALUES (1, 0, now());
+            """
+        );
+    }
+
+    private static async Task<string> ReadHeartbeatCheckDefinitionAsync(
+        NpgsqlConnection connection,
+        MalformedHeartbeatConstraint malformedConstraint
+    )
+    {
+        var constraintName =
+            malformedConstraint == MalformedHeartbeatConstraint.Singleton
+                ? "CK_CdcHeartbeat_Singleton"
+                : "CK_CdcHeartbeat_Sequence";
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT pg_catalog.pg_get_constraintdef(constraint_info.oid)
+            FROM pg_catalog.pg_constraint constraint_info
+            INNER JOIN pg_catalog.pg_class table_info
+                ON table_info.oid = constraint_info.conrelid
+            INNER JOIN pg_catalog.pg_namespace namespace_info
+                ON namespace_info.oid = table_info.relnamespace
+            WHERE namespace_info.nspname = 'dms'
+            AND table_info.relname = 'CdcHeartbeat'
+            AND constraint_info.conname = @constraint_name;
+            """;
+        command.Parameters.AddWithValue("constraint_name", constraintName);
+        return (await command.ExecuteScalarAsync())!.ToString()!;
     }
 
     private static void AssumePostgresqlLogicalReplicationAvailable()
@@ -959,6 +1060,12 @@ public class Given_PostgresqlCdcProviderAccessRetry
     private static string QuoteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";
 
     private sealed record HeartbeatSnapshot(short HeartbeatId, long HeartbeatSequence);
+
+    public enum MalformedHeartbeatConstraint
+    {
+        Singleton,
+        Sequence,
+    }
 
     private sealed record ReplicationSlotSnapshot(
         string Plugin,

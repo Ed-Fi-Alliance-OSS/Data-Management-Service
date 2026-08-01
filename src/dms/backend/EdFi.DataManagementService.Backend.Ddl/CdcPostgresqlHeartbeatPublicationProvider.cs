@@ -948,7 +948,10 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 AND table_info.relname = 'CdcHeartbeat'
                 AND constraint_info.conname = 'CK_CdcHeartbeat_Singleton'
                 AND constraint_info.contype = 'c'
-                AND pg_catalog.pg_get_constraintdef(constraint_info.oid) LIKE '%"HeartbeatId" = 1%'
+                AND constraint_info.convalidated
+                AND COALESCE((to_jsonb(constraint_info)->>'conenforced')::boolean, true)
+                AND pg_catalog.pg_get_expr(constraint_info.conbin, constraint_info.conrelid)
+                    = '("HeartbeatId" = 1)'
             )::text AS singleton_check_matches,
             EXISTS (
                 SELECT 1
@@ -961,7 +964,10 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 AND table_info.relname = 'CdcHeartbeat'
                 AND constraint_info.conname = 'CK_CdcHeartbeat_Sequence'
                 AND constraint_info.contype = 'c'
-                AND pg_catalog.pg_get_constraintdef(constraint_info.oid) LIKE '%"HeartbeatSequence" >= 0%'
+                AND constraint_info.convalidated
+                AND COALESCE((to_jsonb(constraint_info)->>'conenforced')::boolean, true)
+                AND pg_catalog.pg_get_expr(constraint_info.conbin, constraint_info.conrelid)
+                    = '("HeartbeatSequence" >= 0)'
             )::text AS sequence_check_matches;
         """;
 
