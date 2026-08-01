@@ -132,3 +132,8 @@ Completed query-plan-tests task for reference/design/backend-redesign/epics/18-d
 Key decisions: added PG/MSSQL DocumentCacheQueryPlan integration evidence over real pager SQL and primitive command text; asserted oldest-work index plans, bounded high-water-plus-one, NOT EXISTS emptiness, bounded clear batches, and DocumentId-window-only source scans for baseline/scrub. SQL Server uses STATISTICS XML because SHOWPLAN returned no rows through local SqlClient path.
 Files changed: PostgresqlDocumentCacheQueryPlanTests.cs; MssqlDocumentCacheQueryPlanTests.cs; tasks.json; progress.txt.
 Blockers/notes: default MSSQL config unreachable; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Remaining likely PG/MSSQL provider-tests, administrative-tests, final verification.
+
+Completed PostgreSQL provider-tests task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added focused DocumentCacheProjector PG integration fixture over real pager/writer/scheduler with deterministic candidate materializer; covered bounded backlog restart, cursor wrap, duplicate replica visible work, cancellation before acknowledgement, poison retry/eviction, latch fence resume, Rebuilding processing, target-key fairness, and no lease/claim/dead-letter work shape.
+Files changed: PostgresqlDocumentCacheProjectorTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely SQL Server provider-tests, then administrative-tests/final verification.

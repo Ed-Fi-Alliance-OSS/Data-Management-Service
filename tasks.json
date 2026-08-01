@@ -462,7 +462,7 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DocumentCacheProjector\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "provider-tests",
