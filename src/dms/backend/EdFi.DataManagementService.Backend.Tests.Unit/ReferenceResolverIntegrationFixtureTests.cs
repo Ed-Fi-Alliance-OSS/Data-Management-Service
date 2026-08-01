@@ -37,14 +37,21 @@ public class Given_ReferenceResolverIntegrationFixture
                 "dms.ReferentialIdentity",
                 "edfi.School",
                 "edfi.LocalEducationAgency",
+                "edfi.EducationOrganizationIdentity",
+                "edfi.WideIdentityResource",
                 "dms.Descriptor"
             );
 
-        _seedBatches.Single(batch => batch.Table.Name == "ResourceKey").Rows.Should().HaveCount(6);
-        _seedBatches.Single(batch => batch.Table.Name == "Document").Rows.Should().HaveCount(4);
-        _seedBatches.Single(batch => batch.Table.Name == "ReferentialIdentity").Rows.Should().HaveCount(5);
+        _seedBatches.Single(batch => batch.Table.Name == "ResourceKey").Rows.Should().HaveCount(7);
+        _seedBatches.Single(batch => batch.Table.Name == "Document").Rows.Should().HaveCount(5);
+        _seedBatches.Single(batch => batch.Table.Name == "ReferentialIdentity").Rows.Should().HaveCount(6);
         _seedBatches.Single(batch => batch.Table.Name == "School").Rows.Should().HaveCount(1);
         _seedBatches.Single(batch => batch.Table.Name == "LocalEducationAgency").Rows.Should().HaveCount(1);
+        _seedBatches
+            .Single(batch => batch.Table.Name == "EducationOrganizationIdentity")
+            .Rows.Should()
+            .HaveCount(1);
+        _seedBatches.Single(batch => batch.Table.Name == "WideIdentityResource").Rows.Should().HaveCount(1);
         _seedBatches.Single(batch => batch.Table.Name == "Descriptor").Rows.Should().HaveCount(2);
 
         _fixture
@@ -73,6 +80,79 @@ public class Given_ReferenceResolverIntegrationFixture
             .UnionArmsInOrder.SelectMany(arm => arm.ProjectionExpressionsInSelectOrder)
             .Should()
             .AllBeOfType<AbstractUnionViewProjectionExpression.SourceColumn>();
+    }
+
+    [Test]
+    public void It_describes_the_natural_key_probe_surface_the_new_resolver_seeks()
+    {
+        var mappingSet = _fixture.CreateMappingSet(
+            EdFi.DataManagementService.Backend.External.SqlDialect.Pgsql
+        );
+
+        mappingSet
+            .NaturalKeyProbeTargets.Keys.Select(resource => resource.ResourceName)
+            .Should()
+            .BeEquivalentTo(
+                "School",
+                "LocalEducationAgency",
+                "EducationOrganization",
+                "WideIdentityResource"
+            );
+
+        var educationOrganizationProbe = mappingSet.NaturalKeyProbeTargets[
+            _fixture.EducationOrganizationResource
+        ];
+        educationOrganizationProbe.IsAbstract.Should().BeTrue();
+        educationOrganizationProbe
+            .ProbeTable.Name.Should()
+            .Be("EducationOrganizationIdentity", "abstract probes seek the identity table, not the view");
+
+        mappingSet
+            .NaturalKeyProbeTargets[_fixture.WideIdentityResource]
+            .Columns.Select(column => (column.StorageColumn.Value, column.ScalarType.Kind))
+            .Should()
+            .Equal(
+                ("Int64Key", ScalarKind.Int64),
+                ("DecimalKey", ScalarKind.Decimal),
+                ("DateKey", ScalarKind.Date),
+                ("DateTimeKey", ScalarKind.DateTime),
+                ("BooleanKey", ScalarKind.Boolean),
+                ("StringKey", ScalarKind.String)
+            );
+
+        mappingSet
+            .DescriptorProbeTarget.DiscriminatorLiteralByResource.Should()
+            .ContainKey(_fixture.SchoolTypeDescriptorResource)
+            .WhoseValue.Should()
+            .Be("SchoolTypeDescriptor");
+    }
+
+    [Test]
+    public void It_declares_a_reference_key_unique_constraint_for_every_probe_target()
+    {
+        var mappingSet = _fixture.CreateMappingSet(
+            EdFi.DataManagementService.Backend.External.SqlDialect.Pgsql
+        );
+
+        foreach (var (resource, probe) in mappingSet.NaturalKeyProbeTargets)
+        {
+            var tableModel = mappingSet
+                .Model.ConcreteResourcesInNameOrder.Select(concrete => concrete.RelationalModel.Root)
+                .Concat(mappingSet.Model.AbstractIdentityTablesInNameOrder.Select(table => table.TableModel))
+                .Single(table => table.Table == probe.ProbeTable);
+
+            tableModel
+                .Constraints.OfType<TableConstraint.Unique>()
+                .Select(unique => unique.Columns.Select(column => column.Value).ToArray())
+                .Should()
+                .ContainEquivalentOf(
+                    probe
+                        .Columns.Select(column => column.StorageColumn.Value)
+                        .Append(probe.DocumentIdColumn.Value)
+                        .ToArray(),
+                    because: $"the probe for '{resource.ResourceName}' must have an index to seek"
+                );
+        }
     }
 
     [Test]

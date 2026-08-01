@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
@@ -12,6 +13,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 public sealed class ReferenceResolverIntegrationFixture
 {
     private static readonly DbSchemaName _edFiSchema = new("edfi");
+    private static readonly DbColumnName _documentIdColumn = new("DocumentId");
 
     private ReferenceResolverIntegrationFixture(
         ReferenceResolverSeedData seedData,
@@ -53,6 +55,56 @@ public sealed class ReferenceResolverIntegrationFixture
     }
 
     public ReferenceResolverSeedData SeedData { get; }
+
+    /// <summary>
+    /// The synthetic wide-identity resource: one identity column per scalar kind the natural-key probe has
+    /// to type (Int64, Decimal, Date, DateTime, Boolean, String). It replaces the canonicalization canary
+    /// the corruption check used to provide — a formatting disagreement between Core and SQL now surfaces
+    /// as a silent miss, so each kind needs a resolution assertion of its own.
+    /// </summary>
+    public QualifiedResourceName WideIdentityResource { get; private init; }
+
+    public ReferentialId WideIdentityReferentialId { get; private init; }
+
+    public ReferentialId MissingWideIdentityReferentialId { get; private init; }
+
+    /// <summary>
+    /// A wide-identity reference whose only difference from the seeded row is the case of its string
+    /// identity part. Deliberately resolved differently per dialect: PostgreSQL compares strings
+    /// case-sensitively and misses, SQL Server's default CI collation matches.
+    /// </summary>
+    public ReferentialId CaseVariantWideIdentityReferentialId { get; private init; }
+
+    public ReferentialId MissingEducationOrganizationReferentialId { get; private init; }
+
+    public ReferentialId MissingLocalEducationAgencyReferentialId { get; private init; }
+
+    public const long SchoolIdentityValue = 255901;
+
+    public const long LocalEducationAgencyIdentityValue = 255901;
+
+    public const long MissingEducationOrganizationIdentityValue = 999901;
+
+    public const long WideIdentityInt64Value = 9007199254740993;
+
+    public const string WideIdentityDecimalLiteral = "12.5";
+
+    public const decimal WideIdentityDecimalValue = 12.50m;
+
+    public const string WideIdentityDateLiteral = "2024-03-05";
+
+    public const string WideIdentityDateTimeLiteral = "2024-03-05T13:45:30Z";
+
+    public const string WideIdentityBooleanLiteral = "true";
+
+    public const string WideIdentityStringValue = "Alpha-Beta";
+
+    /// <summary>The same string identity part with a different case; see <see cref="CaseVariantWideIdentityReferentialId"/>.</summary>
+    public const string WideIdentityCaseVariantStringValue = "alpha-beta";
+
+    public static readonly DateOnly WideIdentityDateValue = new(2024, 3, 5);
+
+    public static readonly DateTime WideIdentityDateTimeValue = new(2024, 3, 5, 13, 45, 30, DateTimeKind.Utc);
 
     public QualifiedResourceName RequestResource { get; }
 
@@ -97,6 +149,19 @@ public sealed class ReferenceResolverIntegrationFixture
             "Ed-Fi",
             "AcademicSubjectDescriptor"
         );
+        var wideIdentityResource = new QualifiedResourceName("Ed-Fi", "WideIdentityResource");
+
+        var wideIdentityReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000888");
+        var missingWideIdentityReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000999");
+        var caseVariantWideIdentityReferentialId = CreateReferentialId(
+            "00000000-0000-0000-0000-000000000aaa"
+        );
+        var missingEducationOrganizationReferentialId = CreateReferentialId(
+            "00000000-0000-0000-0000-000000000bbb"
+        );
+        var missingLocalEducationAgencyReferentialId = CreateReferentialId(
+            "00000000-0000-0000-0000-000000000ccc"
+        );
 
         var schoolReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000111");
         var educationOrganizationAliasReferentialId = CreateReferentialId(
@@ -125,6 +190,7 @@ public sealed class ReferenceResolverIntegrationFixture
                     new ReferenceResolverResourceKeySeed(12, localEducationAgencyResource, "1.0", false),
                     new ReferenceResolverResourceKeySeed(13, schoolTypeDescriptorResource, "1.0", false),
                     new ReferenceResolverResourceKeySeed(14, academicSubjectDescriptorResource, "1.0", false),
+                    new ReferenceResolverResourceKeySeed(15, wideIdentityResource, "1.0", false),
                     new ReferenceResolverResourceKeySeed(30, educationOrganizationResource, "1.0", true),
                 ],
                 Documents:
@@ -149,6 +215,11 @@ public sealed class ReferenceResolverIntegrationFixture
                         Guid.Parse("40000000-0000-0000-0000-000000000404"),
                         14
                     ),
+                    new ReferenceResolverDocumentSeed(
+                        550,
+                        Guid.Parse("55000000-0000-0000-0000-000000000550"),
+                        15
+                    ),
                 ],
                 ReferentialIdentities:
                 [
@@ -165,9 +236,13 @@ public sealed class ReferenceResolverIntegrationFixture
                         404,
                         14
                     ),
+                    new ReferenceResolverReferentialIdentitySeed(wideIdentityReferentialId, 550, 15),
                 ],
-                Schools: [new ReferenceResolverSchoolSeed(101, 255901)],
-                LocalEducationAgencies: [new ReferenceResolverLocalEducationAgencySeed(202, 255901)],
+                Schools: [new ReferenceResolverSchoolSeed(101, SchoolIdentityValue)],
+                LocalEducationAgencies:
+                [
+                    new ReferenceResolverLocalEducationAgencySeed(202, LocalEducationAgencyIdentityValue),
+                ],
                 Descriptors:
                 [
                     new ReferenceResolverDescriptorSeed(
@@ -187,7 +262,28 @@ public sealed class ReferenceResolverIntegrationFixture
                         AcademicSubjectDescriptorUri
                     ),
                 ]
-            ),
+            )
+            {
+                // Only the School member is seeded: the fixture deliberately reuses 255901 for both the
+                // School and the LocalEducationAgency identity values, and an abstract identity table
+                // enforces one row per EducationOrganizationId.
+                EducationOrganizationIdentities =
+                [
+                    new ReferenceResolverAbstractIdentitySeed(101, SchoolIdentityValue, "Ed-Fi:School"),
+                ],
+                WideIdentities =
+                [
+                    new ReferenceResolverWideIdentitySeed(
+                        550,
+                        WideIdentityInt64Value,
+                        WideIdentityDecimalValue,
+                        WideIdentityDateValue,
+                        WideIdentityDateTimeValue,
+                        BooleanKey: true,
+                        WideIdentityStringValue
+                    ),
+                ],
+            },
             requestResource,
             schoolResource,
             localEducationAgencyResource,
@@ -204,7 +300,15 @@ public sealed class ReferenceResolverIntegrationFixture
             SchoolTypeDescriptorUri,
             AcademicSubjectDescriptorUri,
             MissingSchoolTypeDescriptorUri
-        );
+        )
+        {
+            WideIdentityResource = wideIdentityResource,
+            WideIdentityReferentialId = wideIdentityReferentialId,
+            MissingWideIdentityReferentialId = missingWideIdentityReferentialId,
+            CaseVariantWideIdentityReferentialId = caseVariantWideIdentityReferentialId,
+            MissingEducationOrganizationReferentialId = missingEducationOrganizationReferentialId,
+            MissingLocalEducationAgencyReferentialId = missingLocalEducationAgencyReferentialId,
+        };
     }
 
     public MappingSet CreateMappingSet(SqlDialect dialect)
@@ -230,6 +334,7 @@ public sealed class ReferenceResolverIntegrationFixture
         var localEducationAgencyKey = resourceKeyById[12];
         var schoolTypeDescriptorKey = resourceKeyById[13];
         var academicSubjectDescriptorKey = resourceKeyById[14];
+        var wideIdentityKey = resourceKeyById[15];
         var educationOrganizationKey = resourceKeyById[30];
         var requestResourceKey = resourceKeyById[1];
 
@@ -262,8 +367,17 @@ public sealed class ReferenceResolverIntegrationFixture
                     "Descriptor",
                     ResourceStorageKind.SharedDescriptorTable
                 ),
+                CreateConcreteResource(wideIdentityKey, "WideIdentityResource"),
             ],
-            AbstractIdentityTablesInNameOrder: [],
+            // The abstract identity TABLE is what the natural-key probe seeks; the union view below stays
+            // for the hash resolver's verification projection, so both resolvers see their own source.
+            AbstractIdentityTablesInNameOrder:
+            [
+                new AbstractIdentityTableInfo(
+                    educationOrganizationKey,
+                    CreateEducationOrganizationIdentityTable()
+                ),
+            ],
             AbstractUnionViewsInNameOrder:
             [
                 new AbstractUnionViewInfo(
@@ -311,15 +425,126 @@ public sealed class ReferenceResolverIntegrationFixture
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
+        )
+        {
+            NaturalKeyProbeTargets = CreateNaturalKeyProbeTargets(),
+            DescriptorProbeTarget = CreateDescriptorProbeTarget(),
+        };
+    }
+
+    /// <summary>
+    /// The compiled probe metadata the natural-key resolver consumes. Hand-built rather than compiled,
+    /// because the fixture's model set is itself hand-built (no <c>IdentityJsonPaths</c> to derive from) —
+    /// the compiler's derivation is pinned against authoritative mapping sets by
+    /// <c>Given_NaturalKeyProbes_Over_Authoritative_MappingSets</c>.
+    /// </summary>
+    private IReadOnlyDictionary<QualifiedResourceName, NaturalKeyProbeTarget> CreateNaturalKeyProbeTargets()
+    {
+        return new Dictionary<QualifiedResourceName, NaturalKeyProbeTarget>
+        {
+            [SchoolResource] = new(
+                new DbTableName(_edFiSchema, "School"),
+                _documentIdColumn,
+                IsAbstract: false,
+                [CreateProbeColumn("SchoolId", "$.schoolId", ScalarKind.Int64)]
+            ),
+            [LocalEducationAgencyResource] = new(
+                new DbTableName(_edFiSchema, "LocalEducationAgency"),
+                _documentIdColumn,
+                IsAbstract: false,
+                [CreateProbeColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int64)]
+            ),
+            [EducationOrganizationResource] = new(
+                new DbTableName(_edFiSchema, "EducationOrganizationIdentity"),
+                _documentIdColumn,
+                IsAbstract: true,
+                [CreateProbeColumn("EducationOrganizationId", "$.educationOrganizationId", ScalarKind.Int64)]
+            ),
+            [WideIdentityResource] = new(
+                new DbTableName(_edFiSchema, "WideIdentityResource"),
+                _documentIdColumn,
+                IsAbstract: false,
+                [.. WideIdentityColumns.Select(column => column.ProbeColumn)]
+            ),
+        };
+    }
+
+    private DescriptorProbeTarget CreateDescriptorProbeTarget()
+    {
+        return new(
+            new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+            DescriptorProbeColumns.UriLowered,
+            new DbColumnName("Discriminator"),
+            new Dictionary<QualifiedResourceName, string>
+            {
+                [SchoolTypeDescriptorResource] = SchoolTypeDescriptorResource.ResourceName,
+                [AcademicSubjectDescriptorResource] = AcademicSubjectDescriptorResource.ResourceName,
+            }
         );
     }
 
-    public DocumentReference CreateSchoolReference(string path, ReferentialId? referentialId = null)
+    private static DbTableModel CreateEducationOrganizationIdentityTable()
+    {
+        return new DbTableModel(
+            Table: new DbTableName(_edFiSchema, "EducationOrganizationIdentity"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                "PK_EducationOrganizationIdentity",
+                [new DbKeyColumn(_documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    _documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                CreateIdentityColumn(
+                    "EducationOrganizationId",
+                    "$.educationOrganizationId",
+                    ScalarKind.Int64
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Discriminator"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 256),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints:
+            [
+                new TableConstraint.Unique(
+                    "UX_EducationOrganizationIdentity_NK",
+                    [new DbColumnName("EducationOrganizationId")]
+                ),
+                new TableConstraint.Unique(
+                    "UX_EducationOrganizationIdentity_RefKey",
+                    [new DbColumnName("EducationOrganizationId"), _documentIdColumn]
+                ),
+            ]
+        );
+    }
+
+    /// <summary>
+    /// A School reference. <paramref name="schoolId"/> is additive for differential coverage: the hash
+    /// resolver misses on an unseeded referential id alone, but the natural-key resolver only misses when
+    /// the identity VALUE is absent, so a differential "missing" case must vary both.
+    /// </summary>
+    public DocumentReference CreateSchoolReference(
+        string path,
+        ReferentialId? referentialId = null,
+        long? schoolId = null
+    )
     {
         return CreateDocumentReference(
             SchoolResource,
             new JsonPath("$.schoolId"),
-            "255901",
+            (schoolId ?? SchoolIdentityValue).ToString(CultureInfo.InvariantCulture),
             referentialId ?? SchoolReferentialId,
             path
         );
@@ -327,13 +552,14 @@ public sealed class ReferenceResolverIntegrationFixture
 
     public DocumentReference CreateEducationOrganizationReference(
         string path,
-        ReferentialId? referentialId = null
+        ReferentialId? referentialId = null,
+        long? educationOrganizationId = null
     )
     {
         return CreateDocumentReference(
             EducationOrganizationResource,
             new JsonPath("$.educationOrganizationId"),
-            "255901",
+            (educationOrganizationId ?? SchoolIdentityValue).ToString(CultureInfo.InvariantCulture),
             referentialId ?? EducationOrganizationAliasReferentialId,
             path
         );
@@ -341,15 +567,68 @@ public sealed class ReferenceResolverIntegrationFixture
 
     public DocumentReference CreateLocalEducationAgencyReference(
         string path,
-        ReferentialId? referentialId = null
+        ReferentialId? referentialId = null,
+        long? localEducationAgencyId = null
     )
     {
         return CreateDocumentReference(
             LocalEducationAgencyResource,
             new JsonPath("$.localEducationAgencyId"),
-            "255901",
+            (localEducationAgencyId ?? LocalEducationAgencyIdentityValue).ToString(
+                CultureInfo.InvariantCulture
+            ),
             referentialId ?? LocalEducationAgencyReferentialId,
             path
+        );
+    }
+
+    /// <summary>
+    /// A reference to the synthetic wide-identity resource: one identity element per scalar kind, in the
+    /// probe's column order. Each part can be overridden so a differential test can miss on exactly one
+    /// kind.
+    /// </summary>
+    public DocumentReference CreateWideIdentityReference(
+        string path,
+        ReferentialId? referentialId = null,
+        string? int64Key = null,
+        string? decimalKey = null,
+        string? dateKey = null,
+        string? dateTimeKey = null,
+        string? booleanKey = null,
+        string? stringKey = null
+    )
+    {
+        return new(
+            ResourceInfo: new BaseResourceInfo(
+                new ProjectName(WideIdentityResource.ProjectName),
+                new ResourceName(WideIdentityResource.ResourceName),
+                IsDescriptor: false
+            ),
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(
+                    new JsonPath("$.int64Key"),
+                    int64Key ?? WideIdentityInt64Value.ToString(CultureInfo.InvariantCulture)
+                ),
+                new DocumentIdentityElement(
+                    new JsonPath("$.decimalKey"),
+                    decimalKey ?? WideIdentityDecimalLiteral
+                ),
+                new DocumentIdentityElement(new JsonPath("$.dateKey"), dateKey ?? WideIdentityDateLiteral),
+                new DocumentIdentityElement(
+                    new JsonPath("$.dateTimeKey"),
+                    dateTimeKey ?? WideIdentityDateTimeLiteral
+                ),
+                new DocumentIdentityElement(
+                    new JsonPath("$.booleanKey"),
+                    booleanKey ?? WideIdentityBooleanLiteral
+                ),
+                new DocumentIdentityElement(
+                    new JsonPath("$.stringKey"),
+                    stringKey ?? WideIdentityStringValue
+                ),
+            ]),
+            ReferentialId: referentialId ?? WideIdentityReferentialId,
+            Path: new JsonPath(path)
         );
     }
 
@@ -405,7 +684,7 @@ public sealed class ReferenceResolverIntegrationFixture
         List<DbColumnModel> columns =
         [
             new DbColumnModel(
-                new DbColumnName("DocumentId"),
+                _documentIdColumn,
                 ColumnKind.ParentKeyPart,
                 new RelationalScalarType(ScalarKind.Int64),
                 IsNullable: false,
@@ -419,15 +698,28 @@ public sealed class ReferenceResolverIntegrationFixture
             columns.AddRange(CreateIdentityColumns(resource));
         }
 
+        // The natural-key probe seeks UX_<T>_RefKey: identity storage columns leading, DocumentId
+        // trailing. Without it the synthetic schema would have nothing to seek and the differential tests
+        // would prove nothing about the mechanism they exist to prove.
+        var identityColumns = columns.Skip(1).Select(column => column.ColumnName).ToArray();
+        List<TableConstraint> constraints = [];
+
+        if (identityColumns.Length > 0)
+        {
+            constraints.Add(
+                new TableConstraint.Unique($"UX_{tableName}_RefKey", [.. identityColumns, _documentIdColumn])
+            );
+        }
+
         var rootTable = new DbTableModel(
             Table: new DbTableName(_edFiSchema, tableName),
             JsonScope: new JsonPathExpression("$", []),
             Key: new TableKey(
                 $"PK_{tableName}",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+                [new DbKeyColumn(_documentIdColumn, ColumnKind.ParentKeyPart)]
             ),
             Columns: columns,
-            Constraints: []
+            Constraints: constraints
         );
 
         return new RelationalResourceModel(
@@ -466,6 +758,7 @@ public sealed class ReferenceResolverIntegrationFixture
             [
                 CreateIdentityColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int64),
             ],
+            "WideIdentityResource" => [.. WideIdentityColumns.Select(column => column.Column)],
             _ => [],
         };
     }
@@ -473,16 +766,67 @@ public sealed class ReferenceResolverIntegrationFixture
     private static DbColumnModel CreateIdentityColumn(
         string columnName,
         string jsonPath,
-        ScalarKind scalarKind
+        ScalarKind scalarKind,
+        RelationalScalarType? scalarType = null
     ) =>
         new(
             new DbColumnName(columnName),
             ColumnKind.Scalar,
-            new RelationalScalarType(scalarKind),
+            scalarType ?? new RelationalScalarType(scalarKind),
             IsNullable: false,
             SourceJsonPath: new JsonPathExpression(jsonPath, []),
             TargetResource: null
         );
+
+    private static NaturalKeyProbeColumn CreateProbeColumn(
+        string columnName,
+        string jsonPath,
+        ScalarKind scalarKind,
+        RelationalScalarType? scalarType = null
+    ) =>
+        new(
+            new DbColumnName(columnName),
+            new JsonPathExpression(jsonPath, []),
+            scalarType ?? new RelationalScalarType(scalarKind),
+            DescriptorResource: null
+        );
+
+    /// <summary>
+    /// The wide-identity resource's identity columns, paired with the probe columns that must bind them —
+    /// declared once so the DDL and the compiled probe cannot drift apart.
+    /// </summary>
+    private static readonly IReadOnlyList<WideIdentityColumn> WideIdentityColumns =
+    [
+        CreateWideIdentityColumn("Int64Key", "$.int64Key", ScalarKind.Int64),
+        CreateWideIdentityColumn(
+            "DecimalKey",
+            "$.decimalKey",
+            ScalarKind.Decimal,
+            new RelationalScalarType(ScalarKind.Decimal, Decimal: (9, 2))
+        ),
+        CreateWideIdentityColumn("DateKey", "$.dateKey", ScalarKind.Date),
+        CreateWideIdentityColumn("DateTimeKey", "$.dateTimeKey", ScalarKind.DateTime),
+        CreateWideIdentityColumn("BooleanKey", "$.booleanKey", ScalarKind.Boolean),
+        CreateWideIdentityColumn(
+            "StringKey",
+            "$.stringKey",
+            ScalarKind.String,
+            new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+        ),
+    ];
+
+    private static WideIdentityColumn CreateWideIdentityColumn(
+        string columnName,
+        string jsonPath,
+        ScalarKind scalarKind,
+        RelationalScalarType? scalarType = null
+    ) =>
+        new(
+            CreateIdentityColumn(columnName, jsonPath, scalarKind, scalarType),
+            CreateProbeColumn(columnName, jsonPath, scalarKind, scalarType)
+        );
+
+    private sealed record WideIdentityColumn(DbColumnModel Column, NaturalKeyProbeColumn ProbeColumn);
 
     private static DocumentReference CreateDocumentReference(
         QualifiedResourceName targetResource,
@@ -537,6 +881,16 @@ public sealed record ReferenceResolverSeedData(
     IReadOnlyList<ReferenceResolverDescriptorSeed> Descriptors
 )
 {
+    /// <summary>
+    /// Rows for the <c>edfi.EducationOrganizationIdentity</c> abstract identity table. Init-only rather
+    /// than positional so existing seed builders keep compiling.
+    /// </summary>
+    public IReadOnlyList<ReferenceResolverAbstractIdentitySeed> EducationOrganizationIdentities { get; init; } =
+    [];
+
+    /// <summary>Rows for the synthetic wide-identity resource, one column per scalar kind.</summary>
+    public IReadOnlyList<ReferenceResolverWideIdentitySeed> WideIdentities { get; init; } = [];
+
     public IReadOnlyList<ReferenceResolverSeedTableBatch> CreateTableBatches()
     {
         return
@@ -611,6 +965,46 @@ public sealed record ReferenceResolverSeedData(
                     .ToArray()
             ),
             new(
+                new DbTableName(new DbSchemaName("edfi"), "EducationOrganizationIdentity"),
+                [
+                    new DbColumnName("DocumentId"),
+                    new DbColumnName("EducationOrganizationId"),
+                    new DbColumnName("Discriminator"),
+                ],
+                EducationOrganizationIdentities
+                    .Select(identity =>
+                        (IReadOnlyList<object?>)
+                            [identity.DocumentId, identity.EducationOrganizationId, identity.Discriminator]
+                    )
+                    .ToArray()
+            ),
+            new(
+                new DbTableName(new DbSchemaName("edfi"), "WideIdentityResource"),
+                [
+                    new DbColumnName("DocumentId"),
+                    new DbColumnName("Int64Key"),
+                    new DbColumnName("DecimalKey"),
+                    new DbColumnName("DateKey"),
+                    new DbColumnName("DateTimeKey"),
+                    new DbColumnName("BooleanKey"),
+                    new DbColumnName("StringKey"),
+                ],
+                WideIdentities
+                    .Select(wideIdentity =>
+                        (IReadOnlyList<object?>)
+                            [
+                                wideIdentity.DocumentId,
+                                wideIdentity.Int64Key,
+                                wideIdentity.DecimalKey,
+                                wideIdentity.DateKey,
+                                wideIdentity.DateTimeKey,
+                                wideIdentity.BooleanKey,
+                                wideIdentity.StringKey,
+                            ]
+                    )
+                    .ToArray()
+            ),
+            new(
                 new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                 [
                     new DbColumnName("DocumentId"),
@@ -660,6 +1054,22 @@ public sealed record ReferenceResolverReferentialIdentitySeed(
 );
 
 public sealed record ReferenceResolverSchoolSeed(long DocumentId, long SchoolId);
+
+public sealed record ReferenceResolverAbstractIdentitySeed(
+    long DocumentId,
+    long EducationOrganizationId,
+    string Discriminator
+);
+
+public sealed record ReferenceResolverWideIdentitySeed(
+    long DocumentId,
+    long Int64Key,
+    decimal DecimalKey,
+    DateOnly DateKey,
+    DateTime DateTimeKey,
+    bool BooleanKey,
+    string StringKey
+);
 
 public sealed record ReferenceResolverLocalEducationAgencySeed(long DocumentId, long LocalEducationAgencyId);
 

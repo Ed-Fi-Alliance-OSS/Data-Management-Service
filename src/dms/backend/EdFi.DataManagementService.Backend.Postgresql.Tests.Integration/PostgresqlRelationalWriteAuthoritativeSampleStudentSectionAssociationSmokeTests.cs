@@ -29,7 +29,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
 {
     public const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
 
-    public static ServiceProvider CreateServiceProvider()
+    public static ServiceProvider CreateServiceProvider(bool useNaturalKeyResolver = false)
     {
         ServiceCollection services = [];
 
@@ -40,7 +40,15 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+
+        if (useNaturalKeyResolver)
+        {
+            services.AddPostgresqlNaturalKeyReferenceResolver();
+        }
+        else
+        {
+            services.AddPostgresqlReferenceResolver();
+        }
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -538,6 +546,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
+    private ServiceProvider _naturalKeyResolverServiceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
     private ResourceInfo _extensionResourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
@@ -562,6 +571,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider =
             AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.CreateServiceProvider();
+        _naturalKeyResolverServiceProvider =
+            AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.CreateServiceProvider(
+                useNaturalKeyResolver: true
+            );
         _relatedGeneralStudentProgramAssociationsTable =
             PostgresqlGeneratedDdlModelLookup.RequireTableByScopeAndColumns(
                 _fixture.ModelSet,
@@ -640,6 +653,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+        }
+
+        if (_naturalKeyResolverServiceProvider is not null)
+        {
+            await _naturalKeyResolverServiceProvider.DisposeAsync();
         }
 
         if (_database is not null)
@@ -807,6 +825,163 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             .ExistingDocumentUuid.Should()
             .Be(StudentSectionAssociationDocumentUuid);
         _stateAfterNoOpUpdate.Should().BeEquivalentTo(_stateAfterChangedUpdate);
+    }
+
+    /// <summary>
+    /// Old-vs-new resolver equivalence on the authoritative sample DDL, where the shared synthetic fixture
+    /// cannot reach: a wide seven-column RefKey (StudentSectionAssociation), a key-unified RefKey column
+    /// (Section's <c>SchoolId_Unified</c>, which four <c>courseOfferingReference</c> identity paths collapse
+    /// onto), and a descriptor-bearing identity (Program's <c>ProgramTypeDescriptor_DescriptorId</c>,
+    /// resolved from the URI inline).
+    /// </summary>
+    [Test]
+    public async Task It_resolves_wide_unified_and_descriptor_bearing_identities_identically_through_both_resolvers()
+    {
+        var requestBody = JsonNode.Parse(ChangedUpdateRequestBodyJson)!;
+        var documentInfo =
+            AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.CreateDocumentInfo(
+                requestBody,
+                _resourceInfo,
+                _baseResourceSchema,
+                _extensionResourceInfo,
+                _extensionResourceSchema,
+                _mappingSet
+            );
+
+        // The persisted StudentSectionAssociation, referenced by its own seven-part natural key.
+        var studentSectionAssociationReference = new DocumentReference(
+            new BaseResourceInfo(_resourceInfo.ProjectName, _resourceInfo.ResourceName, IsDescriptor: false),
+            documentInfo.DocumentIdentity,
+            documentInfo.ReferentialId,
+            new JsonPath("$.studentSectionAssociationReference")
+        );
+
+        // The seeded Section, whose RefKey binds the unified SchoolId_Unified column.
+        var (baseDocumentReferences, _) = _baseResourceSchema.ExtractReferences(
+            JsonNode.Parse(CreateRequestBodyJson)!,
+            NullLogger.Instance
+        );
+        var sectionReference = baseDocumentReferences.Single(reference =>
+            reference.Path == new JsonPath("$.sectionReference")
+        );
+
+        // The seeded Program, whose identity carries a descriptor URI.
+        var programReference = new DocumentReference(
+            new BaseResourceInfo(new ProjectName("Ed-Fi"), new ResourceName("Program"), false),
+            new DocumentIdentity([
+                new DocumentIdentityElement(
+                    new JsonPath("$.educationOrganizationReference.educationOrganizationId"),
+                    SchoolId.ToString(CultureInfo.InvariantCulture)
+                ),
+                new DocumentIdentityElement(new JsonPath("$.programName"), RoboticsClubProgramName),
+                new DocumentIdentityElement(
+                    new JsonPath("$.programTypeDescriptor"),
+                    ProgramTypeDescriptorUri.ToLowerInvariant()
+                ),
+            ]),
+            CreateReferentialId(
+                ("Ed-Fi", "Program", false),
+                (
+                    "$.educationOrganizationReference.educationOrganizationId",
+                    SchoolId.ToString(CultureInfo.InvariantCulture)
+                ),
+                ("$.programName", RoboticsClubProgramName),
+                ("$.programTypeDescriptor", ProgramTypeDescriptorUri.ToLowerInvariant())
+            ),
+            new JsonPath("$.programReference")
+        );
+
+        DocumentReference[] documentReferences =
+        [
+            studentSectionAssociationReference,
+            sectionReference,
+            programReference,
+        ];
+        DescriptorReference[] descriptorReferences =
+        [
+            new(
+                new BaseResourceInfo(
+                    new ProjectName("Ed-Fi"),
+                    new ResourceName("ProgramTypeDescriptor"),
+                    IsDescriptor: true
+                ),
+                new DocumentIdentity([
+                    new DocumentIdentityElement(
+                        DocumentIdentity.DescriptorIdentityJsonPath,
+                        ProgramTypeDescriptorUri.ToLowerInvariant()
+                    ),
+                ]),
+                CreateDescriptorReferentialId("Ed-Fi", "ProgramTypeDescriptor", ProgramTypeDescriptorUri),
+                new JsonPath("$.programTypeDescriptor")
+            ),
+        ];
+
+        var hashResult = await ResolveReferencesAsync(
+            _serviceProvider,
+            documentReferences,
+            descriptorReferences
+        );
+        var naturalKeyResult = await ResolveReferencesAsync(
+            _naturalKeyResolverServiceProvider,
+            documentReferences,
+            descriptorReferences
+        );
+
+        naturalKeyResult.ShouldResolveIdenticallyTo(
+            hashResult,
+            "authoritative wide RefKey / key unification / descriptor-bearing identity"
+        );
+
+        naturalKeyResult
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.studentSectionAssociationReference")]
+            .DocumentId.Should()
+            .Be(_stateAfterNoOpUpdate.Document.DocumentId);
+        naturalKeyResult
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.sectionReference")]
+            .DocumentId.Should()
+            .Be(_seedData.SectionDocumentId, "the Section probe must bind the unified SchoolId column");
+        naturalKeyResult
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.programReference")]
+            .Should()
+            .NotBeNull();
+        naturalKeyResult
+            .SuccessfulDescriptorReferencesByPath[new JsonPath("$.programTypeDescriptor")]
+            .DocumentId.Should()
+            .Be(_seedData.ProgramTypeDescriptorDocumentId);
+        naturalKeyResult.InvalidDocumentReferences.Should().BeEmpty();
+        naturalKeyResult.InvalidDescriptorReferences.Should().BeEmpty();
+    }
+
+    private async Task<ResolvedReferenceSet> ResolveReferencesAsync(
+        ServiceProvider serviceProvider,
+        IReadOnlyList<DocumentReference> documentReferences,
+        IReadOnlyList<DescriptorReference> descriptorReferences
+    )
+    {
+        await using var scope = serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
+                    Id: 1,
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociation",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<IReferenceResolver>()
+            .ResolveAsync(
+                new ReferenceResolverRequest(
+                    MappingSet: _mappingSet,
+                    RequestResource: new QualifiedResourceName("Ed-Fi", "StudentSectionAssociation"),
+                    DocumentReferences: documentReferences,
+                    DescriptorReferences: descriptorReferences
+                )
+            );
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync()
@@ -996,7 +1171,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var termDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("44444444-dddd-dddd-dddd-dddddddddddd"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
+            // The bare resource name, matching what DescriptorWriteBodyExtractor persists (and what the
+            // compiled descriptor probe binds); the "{Project}:{Resource}" form belongs to abstract
+            // identity tables, not dms.Descriptor.
+            "TermDescriptor",
             TermDescriptorUri,
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
@@ -1011,7 +1189,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var programTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("55555555-eeee-eeee-eeee-eeeeeeeeeeee"),
             programTypeDescriptorResourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
+            "ProgramTypeDescriptor",
             ProgramTypeDescriptorUri,
             "uri://ed-fi.org/ProgramTypeDescriptor",
             "Extracurricular",
