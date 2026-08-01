@@ -49,7 +49,11 @@ public class Given_PostgresqlNaturalKeyLookupCommandBuilder
             );
         command
             .CommandText.Should()
-            .Contain("SELECT input.\"Ordinal\" AS \"Ordinal\", t.\"DocumentId\" AS \"DocumentId\"");
+            .Contain(
+                "SELECT CAST(input.\"Ordinal\" AS integer) AS \"Ordinal\", t.\"DocumentId\" AS \"DocumentId\"",
+                "WITH ORDINALITY yields bigint, but SQL Server's ordinal literal is a 4-byte int, so the "
+                    + "shared reader needs both dialects to project int32"
+            );
         command
             .CommandText.Should()
             .NotContain(
@@ -241,6 +245,12 @@ public class Given_PostgresqlNaturalKeyLookupCommandBuilder
         command.CommandText.Should().Contain("descriptor.\"Discriminator\" AS \"Discriminator\"");
         command.CommandText.Should().Contain("descriptor.\"ResourceKeyId\" AS \"ResourceKeyId\"");
         command.CommandText.Should().Contain("@g0c0::varchar[]");
+        command
+            .CommandText.Should()
+            .Contain(
+                "SELECT CAST(input.\"Ordinal\" AS integer) AS \"Ordinal\"",
+                "the descriptor-target group narrows the ordinal to int32 exactly like a probe group"
+            );
     }
 
     [Test]
@@ -271,7 +281,7 @@ public class Given_PostgresqlNaturalKeyLookupCommandBuilder
             )
         );
 
-        CountOccurrences(command.CommandText, "SELECT input.\"Ordinal\"")
+        CountOccurrences(command.CommandText, "SELECT CAST(input.\"Ordinal\" AS integer)")
             .Should()
             .Be(3, "each group is one statement and therefore one result set");
         command

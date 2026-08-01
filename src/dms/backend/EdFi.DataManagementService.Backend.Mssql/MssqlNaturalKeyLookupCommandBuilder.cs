@@ -44,6 +44,18 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
     /// </remarks>
     internal const int MssqlParameterBudget = 2000;
 
+    /// <summary>
+    /// The largest number of parameters one command may bind: SQL Server's 2100-parameter ceiling less the
+    /// two that <c>sp_executesql</c> consumes for the statement text and the parameter declaration.
+    /// </summary>
+    /// <remarks>
+    /// Chunking cannot enforce this — the ceiling applies to the command, not to each statement — so the
+    /// batch itself has to be small enough. The caller sizes batches with
+    /// <see cref="TotalParameterCount(NaturalKeyLookupBatch)"/>; this guard is the backstop that turns an
+    /// oversized batch into a diagnosable build-time failure instead of a driver error at execution.
+    /// </remarks>
+    internal const int MssqlMaxCommandParameters = 2098;
+
     private static readonly ConditionalWeakTable<
         MappingSet,
         ConcurrentDictionary<string, string>
@@ -53,6 +65,7 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
     {
         ArgumentNullException.ThrowIfNull(batch);
         NaturalKeyLookupCommandSupport.ValidateBatch(batch);
+        EnsureSupportedParameterCount(batch);
 
         return new RelationalCommand(BuildCommandText(batch), BuildParameters(batch));
     }
@@ -62,6 +75,45 @@ internal static class MssqlNaturalKeyLookupCommandBuilder
     /// </summary>
     internal static int ChunkEntryCount(int probeValueCount) =>
         Math.Max(1, MssqlParameterBudget / probeValueCount);
+
+    /// <summary>
+    /// The number of parameters <paramref name="batch"/> would bind — the sum, over every group, of its
+    /// entry count times its probe width. Chunking does not change this total.
+    /// </summary>
+    /// <remarks>
+    /// Callers building a batch should keep this at or below <see cref="MssqlMaxCommandParameters"/>,
+    /// splitting into additional batches when a group set would exceed it.
+    /// </remarks>
+    internal static int TotalParameterCount(NaturalKeyLookupBatch batch)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+
+        long totalParameterCount = 0;
+
+        foreach (var group in batch.Groups)
+        {
+            totalParameterCount +=
+                (long)group.Entries.Count * NaturalKeyLookupCommandSupport.ProbeValueCount(group);
+        }
+
+        return (int)Math.Min(totalParameterCount, int.MaxValue);
+    }
+
+    private static void EnsureSupportedParameterCount(NaturalKeyLookupBatch batch)
+    {
+        var totalParameterCount = TotalParameterCount(batch);
+
+        if (totalParameterCount <= MssqlMaxCommandParameters)
+        {
+            return;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            nameof(batch),
+            totalParameterCount,
+            $"SQL Server natural-key lookup supports at most {MssqlMaxCommandParameters} bound parameters per command. Split the batch into smaller batches."
+        );
+    }
 
     private static string BuildCommandText(NaturalKeyLookupBatch batch)
     {

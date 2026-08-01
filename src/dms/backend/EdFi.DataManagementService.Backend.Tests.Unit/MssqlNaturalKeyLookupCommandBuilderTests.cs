@@ -219,7 +219,9 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
     [Test]
     public void It_chunks_a_wide_probe_into_additional_values_clauses_with_continuous_ordinals()
     {
-        const int EntryCount = 300;
+        // 290 x 7 = 2030 parameters: over the 2000 per-chunk budget so the group chunks, but under the
+        // 2098 per-command ceiling so the command is one SQL Server would actually accept.
+        const int EntryCount = 290;
         const int ColumnCount = 7;
         var chunkEntryCount = ParameterBudget / ColumnCount;
 
@@ -259,6 +261,71 @@ public class Given_MssqlNaturalKeyLookupCommandBuilder
         (chunkEntryCount * ColumnCount)
             .Should()
             .BeLessThanOrEqualTo(ParameterBudget, "each VALUES chunk stays inside the parameter budget");
+        MssqlNaturalKeyLookupCommandBuilder
+            .TotalParameterCount(
+                CreateBatch(
+                    new NaturalKeyProbeLookupGroup(
+                        RelationalAccessTestData.StudentSectionAssociationResource,
+                        RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
+                        CreateStudentSectionAssociationEntries(EntryCount)
+                    )
+                )
+            )
+            .Should()
+            .Be(
+                command.Parameters.Count,
+                "callers size batches with TotalParameterCount, so it must agree with what Build binds"
+            );
+        command
+            .Parameters.Count.Should()
+            .BeLessThanOrEqualTo(
+                MssqlNaturalKeyLookupCommandBuilder.MssqlMaxCommandParameters,
+                "chunking never rescues a command from the driver ceiling, so this batch must fit under it"
+            );
+    }
+
+    [Test]
+    public void It_rejects_a_batch_that_exceeds_the_command_parameter_ceiling()
+    {
+        // 300 x 7 = 2100 bound parameters. Chunking splits the VALUES clauses but the 2100-parameter limit
+        // applies to the whole command, so SQL Server would refuse this at execution time.
+        const int EntryCount = 300;
+
+        var act = () =>
+            MssqlNaturalKeyLookupCommandBuilder.Build(
+                CreateBatch(
+                    new NaturalKeyProbeLookupGroup(
+                        RelationalAccessTestData.StudentSectionAssociationResource,
+                        RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
+                        CreateStudentSectionAssociationEntries(EntryCount)
+                    )
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*at most 2098 bound parameters per command*");
+    }
+
+    [Test]
+    public void It_counts_parameters_across_every_group_so_callers_can_size_a_batch()
+    {
+        var batch = CreateBatch(
+            new NaturalKeyProbeLookupGroup(
+                RelationalAccessTestData.StudentSectionAssociationResource,
+                RelationalAccessTestData.CreateStudentSectionAssociationProbeTarget(),
+                CreateStudentSectionAssociationEntries(10)
+            ),
+            new DescriptorLookupGroup(
+                RelationalAccessTestData.SchoolTypeDescriptorResource,
+                RelationalAccessTestData.CreateNaturalKeyEntries([
+                    ["uri://ed-fi.org/schooltypedescriptor#alternative"],
+                ])
+            )
+        );
+
+        MssqlNaturalKeyLookupCommandBuilder.TotalParameterCount(batch).Should().Be((10 * 7) + 1);
+        MssqlNaturalKeyLookupCommandBuilder.Build(batch).Parameters.Should().HaveCount((10 * 7) + 1);
     }
 
     [Test]
