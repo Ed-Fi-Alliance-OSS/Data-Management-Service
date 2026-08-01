@@ -113,6 +113,26 @@ public sealed record ConcreteResourceModel(
     /// query field paths against schema metadata.
     /// </summary>
     public QualifiedResourceName? SuperclassResource { get; init; }
+
+    /// <summary>
+    /// The resource's <c>identityJsonPaths</c> in ApiSchema order, extracted during model build.
+    /// Empty for resources whose schema declares no identity paths.
+    /// </summary>
+    /// <remarks>
+    /// This is the runtime-visible identity *ordering* contract. Every derivation that produces an
+    /// identity-shaped column list — the root <c>UX_&lt;R&gt;_NK</c> constraint, the target
+    /// <c>UX_&lt;T&gt;_RefKey</c> constraint, the identity element mappings — walks this list in order,
+    /// and that order cannot be recovered from the emitted constraint inventory afterwards:
+    /// <c>TableConstraint.Unique</c> carries no semantic role and constraint names are hash-truncated by
+    /// the dialect identifier-shortening pass. Promoting the paths here is what lets natural-key probe
+    /// compilation reproduce those derivations without reading the <c>ReferentialIdentity</c> trigger
+    /// parameter block.
+    ///
+    /// Not serialized: the manifest emitters are hand-written allow-lists, so this member (like
+    /// <see cref="SecurableElements"/>, <see cref="QueryFieldMappingsByQueryField"/>, and
+    /// <see cref="SuperclassResource"/>) moves no golden bytes.
+    /// </remarks>
+    public IReadOnlyList<JsonPathExpression> IdentityJsonPaths { get; init; } = [];
 }
 
 /// <summary>

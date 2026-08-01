@@ -72,6 +72,43 @@ public sealed record MappingSet(
 #pragma warning restore IDE0055
 
     /// <summary>
+    /// Compiled natural-key probe descriptors keyed by reference-target resource name. Concrete
+    /// relational-table resources resolve to their root table; abstract resource keys resolve to their
+    /// <c>{Abstract}Identity</c> table. Descriptor resources are not present — they probe
+    /// <see cref="DescriptorProbeTarget"/> instead.
+    /// </summary>
+#pragma warning disable IDE0055
+    public IReadOnlyDictionary<
+        QualifiedResourceName,
+        NaturalKeyProbeTarget
+    > NaturalKeyProbeTargets { get; init; } = new Dictionary<QualifiedResourceName, NaturalKeyProbeTarget>();
+#pragma warning restore IDE0055
+
+    /// <summary>
+    /// Compiled own-identity (<c>UX_&lt;R&gt;_NK</c>) probe descriptors keyed by qualified resource name,
+    /// for relational-table resources only.
+    /// </summary>
+#pragma warning disable IDE0055
+    public IReadOnlyDictionary<
+        QualifiedResourceName,
+        OwnNaturalKeyProbe
+    > OwnNaturalKeyProbesByResource { get; init; } =
+        new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>();
+#pragma warning restore IDE0055
+
+    /// <summary>
+    /// The compiled shared <c>dms.Descriptor</c> probe descriptor, including the per-descriptor-resource
+    /// discriminator literals.
+    /// </summary>
+    public DescriptorProbeTarget DescriptorProbeTarget { get; init; } =
+        new(
+            new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+            new DbColumnName("UriLowered"),
+            new DbColumnName("Discriminator"),
+            new Dictionary<QualifiedResourceName, string>()
+        );
+
+    /// <summary>
     /// Creates a mapping set from an AOT mapping-pack payload.
     /// </summary>
     /// <param name="payload">The decoded mapping-pack payload.</param>

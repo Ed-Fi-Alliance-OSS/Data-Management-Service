@@ -128,71 +128,35 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
         return new RelationalWriteConstraintResolution.Unresolved(constraintName);
     }
 
+    /// <summary>
+    /// Returns the root natural-key column list a <c>UX_&lt;R&gt;_NK</c> violation must match to be
+    /// recognized as a user-facing identity conflict.
+    /// </summary>
+    /// <remarks>
+    /// Reads the compiled <see cref="OwnNaturalKeyProbe"/>. It used to re-derive this list at runtime from
+    /// the <c>ReferentialIdentity</c> trigger's identity-element block — metadata that disappears when the
+    /// trigger is removed, which would have silently broken 409 classification and If-None-Match handling.
+    /// The compile-time probe reproduces <c>RootIdentityConstraintPass.BuildRootIdentityColumns</c>
+    /// directly from the model, so this comparison stays exact.
+    /// </remarks>
     private static IReadOnlyList<DbColumnName> GetRootNaturalKeyColumnsOrThrow(
         RelationalWriteConstraintResolutionRequest request
     )
     {
-        var rootTable = request.WritePlan.Model.Root;
-        var referentialIdentityParameters = RelationalWriteSupport.GetReferentialIdentityParametersOrThrow(
+        var ownNaturalKeyProbe = RelationalWriteSupport.GetOwnNaturalKeyProbeOrThrow(
             request.ReferenceResolutionRequest.MappingSet,
             request.WritePlan.Model.Resource,
-            rootTable.Table
+            request.WritePlan.Model.Root.Table
         );
 
-        Dictionary<string, DocumentReferenceBinding> identityBindingsByPath = new(StringComparer.Ordinal);
-
-        foreach (
-            var binding in request.WritePlan.Model.DocumentReferenceBindings.Where(binding =>
-                binding.IsIdentityComponent && binding.Table.Equals(rootTable.Table)
-            )
-        )
-        {
-            foreach (
-                var canonicalReferencePath in binding.IdentityBindings.Select(referencePath =>
-                    referencePath.ReferenceJsonPath.Canonical
-                )
-            )
-            {
-                if (
-                    !identityBindingsByPath.TryAdd(canonicalReferencePath, binding)
-                    && identityBindingsByPath[canonicalReferencePath].ReferenceObjectPath
-                        != binding.ReferenceObjectPath
-                )
-                {
-                    throw new InvalidOperationException(
-                        $"Resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' contains ambiguous identity reference bindings for path "
-                            + $"'{canonicalReferencePath}'."
-                    );
-                }
-            }
-        }
-
-        HashSet<string> seenColumns = new(StringComparer.Ordinal);
-        List<DbColumnName> rootNaturalKeyColumns = [];
-
-        foreach (var identityElement in referentialIdentityParameters.IdentityElements)
-        {
-            var constraintColumn = identityBindingsByPath.TryGetValue(
-                identityElement.IdentityJsonPath,
-                out var identityBinding
-            )
-                ? identityBinding.FkColumn
-                : identityElement.Column;
-
-            if (seenColumns.Add(constraintColumn.Value))
-            {
-                rootNaturalKeyColumns.Add(constraintColumn);
-            }
-        }
-
-        if (rootNaturalKeyColumns.Count == 0)
+        if (ownNaturalKeyProbe.Columns.Count == 0)
         {
             throw new InvalidOperationException(
-                $"Resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' did not resolve any root natural-key columns from referential-identity metadata."
+                $"Resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' did not resolve any root natural-key columns from compiled natural-key probe metadata."
             );
         }
 
-        return rootNaturalKeyColumns;
+        return ownNaturalKeyProbe.Columns.Select(column => column.ColumnName).ToArray();
     }
 
     private static RelationalWriteConstraintResolution.RequestReference? TryResolveDocumentReference(

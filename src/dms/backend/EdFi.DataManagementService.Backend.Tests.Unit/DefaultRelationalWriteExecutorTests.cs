@@ -7840,7 +7840,41 @@ public class Given_Default_Relational_Write_Executor
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
-        );
+        )
+        {
+            // Compiled own-identity probe metadata, derived from the same identity columns the fixture
+            // feeds the referential-identity trigger. MappingSetCompiler builds this for every
+            // relational-table resource; hand-built mapping sets must declare it explicitly.
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [resource] = new OwnNaturalKeyProbe(
+                    resourceModel.Root.Table,
+                    identityColumns
+                        .Select(columnModel => new OwnNaturalKeyProbeColumn(
+                            columnModel.ColumnName,
+                            columnModel.ScalarType
+                                ?? throw new InvalidOperationException(
+                                    "Expected a root identity scalar type."
+                                ),
+                            columnModel.SourceJsonPath
+                                ?? throw new InvalidOperationException(
+                                    "Expected a root identity source path."
+                                ),
+                            null,
+                            null
+                        ))
+                        .ToArray()
+                )
+                {
+                    IdentityJsonPathsInOrder = identityColumns
+                        .Select(columnModel =>
+                            columnModel.SourceJsonPath
+                            ?? throw new InvalidOperationException("Expected a root identity source path.")
+                        )
+                        .ToArray(),
+                },
+            },
+        };
     }
 
     private static ResourceReadPlan CreateReadPlan(

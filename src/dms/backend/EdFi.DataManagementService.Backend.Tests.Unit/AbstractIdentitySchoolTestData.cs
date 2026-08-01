@@ -292,9 +292,9 @@ internal static class AbstractIdentitySchoolTestData
         BuildSchoolWriteModel(EducationOrganizationIdentityTable());
 
     /// <summary>
-    /// Builds the School write plan and mapping set shared by the abstract-identity tests. The School
-    /// referential-identity trigger is always present so the failure mapper can project the concrete identity
-    /// values; the constraint resolver ignores triggers.
+    /// Builds the School write plan and mapping set shared by the abstract-identity tests. The compiled
+    /// own-identity probe is always present so the failure mapper can project the concrete identity
+    /// values; the constraint resolver ignores it for abstract-identity constraints.
     /// </summary>
     /// <param name="abstractIdentityTable">
     /// The abstract identity table placed in the mapping set's abstract-identity inventory. Tests pass a
@@ -433,7 +433,30 @@ internal static class AbstractIdentitySchoolTestData
                 [abstractResourceKey.ResourceKeyId] = abstractResourceKey,
             },
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
+        )
+        {
+            // Compiled own-identity probe metadata, the failure mapper's duplicateIdentityValues source.
+            // MappingSetCompiler derives this for every relational-table resource; hand-built mapping sets
+            // must declare it explicitly.
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [concreteResource] = new OwnNaturalKeyProbe(
+                    concreteRootTable.Table,
+                    [
+                        new OwnNaturalKeyProbeColumn(
+                            identityColumnName,
+                            new RelationalScalarType(ScalarKind.Int32),
+                            new JsonPathExpression(identityJsonPath, []),
+                            null,
+                            null
+                        ),
+                    ]
+                )
+                {
+                    IdentityJsonPathsInOrder = [new JsonPathExpression(identityJsonPath, [])],
+                },
+            },
+        };
 
         return (writePlan, mappingSet);
     }

@@ -38,6 +38,37 @@ internal static class RelationalWriteSupport
         );
     }
 
+    /// <summary>
+    /// Resolves the compiled own-identity (<c>UX_&lt;R&gt;_NK</c>) probe for a relational-table resource.
+    /// This is the 409 identity-conflict machinery's metadata source; it deliberately does NOT read the
+    /// <c>ReferentialIdentity</c> trigger parameter block, which is being removed.
+    /// </summary>
+    public static OwnNaturalKeyProbe GetOwnNaturalKeyProbeOrThrow(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DbTableName rootTable
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        if (!mappingSet.OwnNaturalKeyProbesByResource.TryGetValue(resource, out var ownNaturalKeyProbe))
+        {
+            throw new InvalidOperationException(
+                BuildMissingNaturalKeyProbeMetadataMessage(mappingSet.Key, resource)
+            );
+        }
+
+        if (!ownNaturalKeyProbe.RootTable.Equals(rootTable))
+        {
+            throw new InvalidOperationException(
+                $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' compiled the natural-key probe for resource '{FormatResource(resource)}' "
+                    + $"against table '{ownNaturalKeyProbe.RootTable}', but the write plan root table is '{rootTable}'."
+            );
+        }
+
+        return ownNaturalKeyProbe;
+    }
+
     public static RelationalWriteTargetContext? TryTranslateTargetContext(
         RelationalWriteTargetLookupResult targetLookupResult
     )
@@ -98,6 +129,13 @@ internal static class RelationalWriteSupport
     ) =>
         $"Mapping set '{FormatMappingSetKey(mappingSetKey)}' "
         + $"is missing referential-identity trigger metadata for resource '{FormatResource(resource)}'.";
+
+    public static string BuildMissingNaturalKeyProbeMetadataMessage(
+        MappingSetKey mappingSetKey,
+        QualifiedResourceName resource
+    ) =>
+        $"Mapping set '{FormatMappingSetKey(mappingSetKey)}' "
+        + $"is missing compiled natural-key probe metadata for resource '{FormatResource(resource)}'.";
 
     public static string FormatMappingSetKey(MappingSetKey key) =>
         $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";

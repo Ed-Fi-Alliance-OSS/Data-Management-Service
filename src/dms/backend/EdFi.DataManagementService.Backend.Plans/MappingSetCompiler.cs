@@ -139,6 +139,8 @@ public sealed class MappingSetCompiler
             }
         }
 
+        var naturalKeyProbes = BuildNaturalKeyProbes(modelSet);
+
         return new MappingSet(
             Key: key,
             Model: modelSet,
@@ -152,7 +154,30 @@ public sealed class MappingSetCompiler
             QueryCapabilitiesByResource = queryCapabilitiesByResource.ToFrozenDictionary(),
             DescriptorQueryCapabilitiesByResource =
                 descriptorQueryCapabilitiesByResource.ToFrozenDictionary(),
+            NaturalKeyProbeTargets = naturalKeyProbes.NaturalKeyProbeTargets,
+            OwnNaturalKeyProbesByResource = naturalKeyProbes.OwnNaturalKeyProbesByResource,
+            DescriptorProbeTarget = naturalKeyProbes.DescriptorProbeTarget,
         };
+    }
+
+    /// <summary>
+    /// Builds the cross-resource natural-key probe metadata: per-target <c>UX_&lt;T&gt;_RefKey</c> probe
+    /// descriptors (concrete roots and <c>{Abstract}Identity</c> tables), per-resource
+    /// <c>UX_&lt;R&gt;_NK</c> own-identity probe descriptors, and the shared <c>dms.Descriptor</c> probe
+    /// target with its per-descriptor-resource discriminator literals.
+    /// </summary>
+    /// <remarks>
+    /// Sibling of <see cref="BuildDocumentReferenceLookupTargets"/> and resolved the same way: facts about
+    /// OTHER resources are collected once from the model set rather than rediscovered per resource.
+    /// <see cref="DocumentReferenceLookupTarget"/> is deliberately not extended — it is a read-path
+    /// link-injection concept whose discriminator literal has different semantics, and it excludes
+    /// descriptors, which the natural-key resolver needs.
+    /// </remarks>
+    internal static NaturalKeyProbeCompilation BuildNaturalKeyProbes(DerivedRelationalModelSet modelSet)
+    {
+        ArgumentNullException.ThrowIfNull(modelSet);
+
+        return NaturalKeyProbeCompiler.Compile(modelSet);
     }
 
     /// <summary>

@@ -111,6 +111,10 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                     SecurableElements = securableElements,
                     QueryFieldMappingsByQueryField = queryFieldMappings,
                     SuperclassResource = superclassResource,
+                    // Promoted out of the build-time-only builder context so runtime plan compilation can
+                    // reproduce identity-ordered derivations (root NK / target RefKey column order) without
+                    // reading the ReferentialIdentity trigger parameter block.
+                    IdentityJsonPaths = builderContext.IdentityJsonPaths,
                 }
             );
             context.RegisterExtensionSitesForResource(resourceKey, result.ExtensionSites);

@@ -565,7 +565,31 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
-        );
+        )
+        {
+            // Compiled own-identity probe metadata, the failure mapper's duplicateIdentityValues source.
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [resource] = new OwnNaturalKeyProbe(
+                    resourceModel.Root.Table,
+                    [
+                        new OwnNaturalKeyProbeColumn(
+                            identityColumn.ColumnName,
+                            identityColumn.ScalarType
+                                ?? throw new InvalidOperationException(
+                                    "Expected the School identity column to have a scalar type."
+                                ),
+                            new JsonPathExpression(identityJsonPath, []),
+                            null,
+                            null
+                        ),
+                    ]
+                )
+                {
+                    IdentityJsonPathsInOrder = [new JsonPathExpression(identityJsonPath, [])],
+                },
+            },
+        };
     }
 
     // Dedicated, isolated builder for the abstract-identity end-to-end tests, parameterized by operation kind

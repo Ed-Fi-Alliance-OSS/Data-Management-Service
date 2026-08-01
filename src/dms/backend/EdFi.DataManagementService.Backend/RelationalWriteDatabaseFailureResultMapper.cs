@@ -223,21 +223,33 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         return result is not null;
     }
 
+    /// <summary>
+    /// Projects the 409 <c>duplicateIdentityValues</c> body: one entry per identity JSONPath, in schema
+    /// order, with values read from the request body.
+    /// </summary>
+    /// <remarks>
+    /// The path list comes from <see cref="OwnNaturalKeyProbe.IdentityJsonPathsInOrder"/> rather than the
+    /// probe's natural-key columns, because reference-sourced identity parts collapse onto a single
+    /// <c>..._DocumentId</c> column in the constraint while the response must still attribute every
+    /// individual identity value. It used to come from the <c>ReferentialIdentity</c> trigger's
+    /// identity-element block, which carried the same ordering and is being removed.
+    /// </remarks>
     private static KeyValuePair<string, string>[] BuildDuplicateIdentityValues(
         RelationalWriteExecutorRequest request
     )
     {
-        var referentialIdentityParameters = GetReferentialIdentityParametersOrThrow(request);
-        return referentialIdentityParameters
-            .IdentityElements.Select(identityElement =>
+        var ownNaturalKeyProbe = GetOwnNaturalKeyProbeOrThrow(request);
+
+        return ownNaturalKeyProbe
+            .IdentityJsonPathsInOrder.Select(identityJsonPath =>
                 TryResolveIdentityValue(
                     request.SelectedBody,
-                    identityElement.IdentityJsonPath,
+                    identityJsonPath.Canonical,
                     out var identityValue
                 )
                     ? new KeyValuePair<string, string>?(
                         new KeyValuePair<string, string>(
-                            GetIdentityElementName(identityElement.IdentityJsonPath),
+                            GetIdentityElementName(identityJsonPath.Canonical),
                             identityValue
                         )
                     )
@@ -247,10 +259,8 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             .ToArray();
     }
 
-    private static TriggerKindParameters.ReferentialIdentityMaintenance GetReferentialIdentityParametersOrThrow(
-        RelationalWriteExecutorRequest request
-    ) =>
-        RelationalWriteSupport.GetReferentialIdentityParametersOrThrow(
+    private static OwnNaturalKeyProbe GetOwnNaturalKeyProbeOrThrow(RelationalWriteExecutorRequest request) =>
+        RelationalWriteSupport.GetOwnNaturalKeyProbeOrThrow(
             request.MappingSet,
             request.WritePlan.Model.Resource,
             request.WritePlan.Model.Root.Table

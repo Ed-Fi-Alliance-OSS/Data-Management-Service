@@ -133,18 +133,18 @@ public class Given_Relational_Write_Constraint_Resolver
     }
 
     [Test]
-    public void It_preserves_the_missing_trigger_metadata_diagnostic_when_identity_trigger_inventory_is_missing()
+    public void It_preserves_the_missing_identity_metadata_diagnostic_when_natural_key_probe_inventory_is_missing()
     {
         var fixture = CreateFixture();
-        var mappingSetWithoutReferentialIdentityTrigger = fixture.ReferenceResolverRequest.MappingSet with
+        var mappingSetWithoutNaturalKeyProbes = fixture.ReferenceResolverRequest.MappingSet with
         {
-            Model = fixture.ReferenceResolverRequest.MappingSet.Model with { TriggersInCreateOrder = [] },
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>(),
         };
         var request = new RelationalWriteConstraintResolutionRequest(
             fixture.WritePlan,
             fixture.ReferenceResolverRequest with
             {
-                MappingSet = mappingSetWithoutReferentialIdentityTrigger,
+                MappingSet = mappingSetWithoutNaturalKeyProbes,
             },
             new RelationalWriteExceptionClassification.UniqueConstraintViolation(
                 fixture.RootNaturalKeyConstraintName
@@ -156,7 +156,7 @@ public class Given_Relational_Write_Constraint_Resolver
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Mapping set 'schema-hash/Pgsql/v1' is missing referential-identity trigger metadata for resource 'Ed-Fi.Section'."
+                "Mapping set 'schema-hash/Pgsql/v1' is missing compiled natural-key probe metadata for resource 'Ed-Fi.Section'."
             );
     }
 
@@ -662,7 +662,60 @@ public class Given_Relational_Write_Constraint_Resolver
                 [descriptorKey.ResourceKeyId] = descriptorKey,
             },
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
+        )
+        {
+            // Compiled own-identity probe metadata: the UX_Section_NK column list the resolver compares a
+            // unique violation against. MappingSetCompiler derives this for every relational-table
+            // resource by replicating RootIdentityConstraintPass — the reference-sourced
+            // $.schoolReference.schoolId identity path collapses onto School_DocumentId.
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [SectionResource] = new OwnNaturalKeyProbe(
+                    sectionRootTable.Table,
+                    [
+                        new OwnNaturalKeyProbeColumn(
+                            new DbColumnName("School_DocumentId"),
+                            new RelationalScalarType(ScalarKind.Int64),
+                            null,
+                            new JsonPathExpression(
+                                "$.schoolReference.schoolId",
+                                [
+                                    new JsonPathSegment.Property("schoolReference"),
+                                    new JsonPathSegment.Property("schoolId"),
+                                ]
+                            ),
+                            null
+                        ),
+                        new OwnNaturalKeyProbeColumn(
+                            new DbColumnName("SectionIdentifier"),
+                            new RelationalScalarType(ScalarKind.String, 50),
+                            new JsonPathExpression(
+                                "$.sectionIdentifier",
+                                [new JsonPathSegment.Property("sectionIdentifier")]
+                            ),
+                            null,
+                            null
+                        ),
+                    ]
+                )
+                {
+                    IdentityJsonPathsInOrder =
+                    [
+                        new JsonPathExpression(
+                            "$.schoolReference.schoolId",
+                            [
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolId"),
+                            ]
+                        ),
+                        new JsonPathExpression(
+                            "$.sectionIdentifier",
+                            [new JsonPathSegment.Property("sectionIdentifier")]
+                        ),
+                    ],
+                },
+            },
+        };
 
         return new ResolverFixture(
             writePlan,
