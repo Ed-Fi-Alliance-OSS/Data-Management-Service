@@ -251,6 +251,59 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
     }
 
     [Test]
+    public void MssqlCdcCaptureInstances_should_emit_per_capture_retained_lsn_metadata()
+    {
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_database_cdc"
+                && observation.SafeObservedValues["retained_min_lsn"] == ""
+                && observation.SafeObservedValues["retained_max_lsn"] == ""
+            );
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_cache"
+                && observation.SafeObservedValues["retained_min_lsn"] == "0x00000000000000000001"
+                && observation.SafeObservedValues["retained_max_lsn"] == "0x00000000000000000010"
+                && observation.SafeObservedValues["retained_lsn_gap_evaluation"]
+                    == "not_evaluated_without_committed_offset"
+            );
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document"
+                && observation.SafeObservedValues["retained_min_lsn"] == "0x00000000000000000002"
+                && observation.SafeObservedValues["retained_max_lsn"] == "0x00000000000000000010"
+            );
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
+                && observation.SafeObservedValues["retained_min_lsn"] == "0x00000000000000000003"
+                && observation.SafeObservedValues["retained_max_lsn"] == "0x00000000000000000010"
+            );
+        _result
+            .ProviderHistoryObservations.Where(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(observation =>
+                observation.SafeObservedValues["retained_min_lsn"].StartsWith("0x", StringComparison.Ordinal)
+                && observation
+                    .SafeObservedValues["retained_max_lsn"]
+                    .StartsWith("0x", StringComparison.Ordinal)
+                && observation.SafeObservedValues["retained_lsn_gap_evaluation"]
+                    == "not_evaluated_without_committed_offset"
+            );
+    }
+
+    [Test]
     public async Task MssqlCdcCaptureInstances_should_exact_match_provider_normal_source_index_and_nonpartitioned_partition_switch()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
@@ -2016,6 +2069,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
                             ("partition_switch", capture.PartitionSwitch.ToString()),
                             ("source_is_partitioned", capture.SourceIsPartitioned.ToString()),
                             ("change_table", $"cdc.{capture.CaptureInstanceName.Value}_CT"),
+                            ("retained_min_lsn", capture.RetainedMinLsn),
+                            ("retained_max_lsn", capture.RetainedMaxLsn),
                             ("column_name", column),
                             ("column_ordinal", (index + 1).ToString())
                         )
@@ -2052,7 +2107,9 @@ internal sealed record RecordingSqlServerCaptureInstance(
     string SourcePrimaryKeyName = "",
     string FilegroupName = "",
     bool PartitionSwitch = false,
-    bool SourceIsPartitioned = false
+    bool SourceIsPartitioned = false,
+    string RetainedMinLsn = "",
+    string RetainedMaxLsn = ""
 )
 {
     public static RecordingSqlServerCaptureInstance Expected(
@@ -2065,7 +2122,9 @@ internal sealed record RecordingSqlServerCaptureInstance(
         string? indexName = null,
         string filegroupName = "",
         bool partitionSwitch = false,
-        bool sourceIsPartitioned = false
+        bool sourceIsPartitioned = false,
+        string? retainedMinLsn = null,
+        string? retainedMaxLsn = null
     )
     {
         var table = CdcProviderSetupContractTestData
@@ -2084,7 +2143,9 @@ internal sealed record RecordingSqlServerCaptureInstance(
             DefaultPrimaryKeyName(tableKind),
             filegroupName,
             partitionSwitch,
-            sourceIsPartitioned
+            sourceIsPartitioned,
+            retainedMinLsn ?? DefaultRetainedMinLsn(tableKind),
+            retainedMaxLsn ?? "0x00000000000000000010"
         );
     }
 
@@ -2173,6 +2234,19 @@ internal sealed record RecordingSqlServerCaptureInstance(
             CdcSourceTableKind.Document => "document",
             CdcSourceTableKind.DocumentCache => "document_cache",
             CdcSourceTableKind.CdcHeartbeat => "cdc_heartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    private static string DefaultRetainedMinLsn(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => "0x00000000000000000001",
+            CdcSourceTableKind.Document => "0x00000000000000000002",
+            CdcSourceTableKind.CdcHeartbeat => "0x00000000000000000003",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(tableKind),
                 tableKind,

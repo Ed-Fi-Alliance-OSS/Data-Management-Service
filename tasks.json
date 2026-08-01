@@ -682,5 +682,90 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcProviderManifest"
     ],
     "completed": true
+  },
+  {
+    "category": "provider-history",
+    "description": "High: Emit SQL Server retained-LSN metadata per expected capture instance instead of relying only on the global cdc.lsn_time_mapping aggregate. This is required provider metadata for 19-00 continuity checks, not a source-history decision, Kafka/Connect integration, binding-state mutation, or repair workflow.",
+    "acceptance-criteria": [
+      "SQL Server capture-instance inspection reads and emits a retained minimum LSN for each expected capture instance using the provider's capture-instance-specific low-endpoint function.",
+      "Provider metadata or provider-history observations expose per-capture retained min/max LSN values for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat, using safe hex strings and capture-instance safe names.",
+      "The existing global retained_lsn_row_count/min/max observations remain only database-level metadata and are not the sole retained-history evidence used for capture-instance continuity.",
+      "The implementation does not compare committed connector offsets unless already supplied through the existing DMS-1320 request contract, does not call Kafka Connect, does not latch source-history status, does not persist binding state, and does not create, drop, recreate, or tune capture instances or CDC jobs.",
+      "Unit coverage proves each expected capture artifact includes per-capture retained LSN metadata and does not satisfy the provider-history contract with only cdc.lsn_time_mapping min/max values."
+    ],
+    "steps-to-verify": [
+      "Review CaptureInstancesSql, ReadExpectedCaptureInstance, CaptureInstanceObservedValues, and DatabaseCdcObservedValues in CdcSqlServerHeartbeatDatabaseProvider.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderArtifacts"
+    ],
+    "completed": true
+  },
+  {
+    "category": "postgresql-heartbeat",
+    "description": "Medium: Exact-match PostgreSQL CdcHeartbeat check-constraint semantics instead of accepting any constraint definition that merely contains the expected text fragment. Keep this limited to the two DMS-created heartbeat constraints; do not build a general PostgreSQL constraint prover or schema-repair path.",
+    "acceptance-criteria": [
+      "PostgreSQL heartbeat shape validation proves CK_CdcHeartbeat_Singleton enforces HeartbeatId = 1 with no extra disjuncts or weakening predicates.",
+      "PostgreSQL heartbeat shape validation proves CK_CdcHeartbeat_Sequence enforces HeartbeatSequence >= 0 with no extra disjuncts or weakening predicates.",
+      "Validation still passes for the heartbeat table and constraints created by the DMS PostgreSQL provider setup path.",
+      "Malformed, disabled, untrusted, differently named, weakened, or logically widened heartbeat constraints fail closed with the existing heartbeat-table mismatch diagnostics; provider setup does not rename, drop, replace, or repair constraints in ValidateOnly.",
+      "Focused unit or integration coverage includes malformed PostgreSQL singleton and sequence constraints that contain the expected text but do not enforce the required invariant, and asserts a safe heartbeat mismatch diagnostic."
+    ],
+    "steps-to-verify": [
+      "Review HeartbeatTableShapeSql and heartbeat shape parsing in CdcPostgresqlHeartbeatPublicationProvider for exact constraint semantics.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcHeartbeatPublication",
+      "With ConnectionStrings__DatabaseConnection pointing at a logical-replication-enabled PostgreSQL instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "docs",
+    "description": "Low: Align the DMS-1320 story and completed task history for SQL Server capture source-index and partition-switch exact-match semantics. This is documentation cleanup only.",
+    "acceptance-criteria": [
+      "reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md explains that setup still calls sp_cdc_enable_table with @index_name = NULL, @filegroup_name = NULL, and @allow_partition_switch = 0, while existing capture exact-match accepts only SQL Server's provider-normal observable metadata for that call.",
+      "The story states the validation boundary for provider-normal metadata, including accepting the source primary key selected by SQL Server for @index_name = NULL and accepting partition_switch only when it does not prove partition switching was enabled for a partitioned source.",
+      "Any stale completed task wording that claims strict no source index and disabled partition switching is clarified or superseded so future reviewers do not reintroduce the self-failing exact-match behavior.",
+      "No provider setup behavior, tests, task completion flags, or design-owned CDC contracts are changed by this documentation cleanup."
+    ],
+    "steps-to-verify": [
+      "Review 01-cdc-ddl-support.md Answers 2 item 4 and the SQL Server capture-instance entries in tasks.json for consistent provider-normal wording.",
+      "Review SourceIndexMatches, PartitionSwitchMatches, and capture-instance observed values in CdcSqlServerHeartbeatDatabaseProvider to confirm the documentation matches current behavior."
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-security",
+    "description": "Medium: Treat SQL Server DENY permissions that remove required CDC connector or gating-role access as fail-closed validation mismatches. Keep this inside existing CDC connector/gating-role access inspection for DMS CDC objects; do not expand into a server-wide permission auditor.",
+    "acceptance-criteria": [
+      "Connector-principal access validation fails closed when any required captured source column on dms.Document, dms.DocumentCache, or dms.CdcHeartbeat has an effective SELECT denial despite a direct table-level SELECT grant.",
+      "Connector-principal access validation still honors DENY precedence for database, schema, object, and column scopes, and reports missing required source SELECT or heartbeat UPDATE access with safe diagnostic values.",
+      "SQL Server CDC gating-role validation fails closed when the binding-derived gating role has DENY permissions on expected CDC change tables or CDC access functions, instead of ignoring DENY rows while allowing expected SELECT grants.",
+      "The existing exact-match case for a DMS-created gating role with only SQL Server-created expected CDC SELECT grants still passes.",
+      "The implementation inspects only the connector principal, public, reachable database roles, the binding-derived gating role, expected CDC source tables, dms.DocumentProjectionWork, unexpected dms-schema base-table SELECT access, and expected cdc-schema objects; it does not add login/user creation, credential rotation, permission repair, non-DMS schema scanning, or server-wide securable auditing.",
+      "Focused unit coverage and at least one SQL Server integration fixture cover column-level source SELECT denial and gating-role CDC-object denial without adding destructive repair."
+    ],
+    "steps-to-verify": [
+      "Review ConnectorPrincipalAccessSql and GatingRolePreCaptureSql in CdcSqlServerHeartbeatDatabaseProvider for DENY handling across source-table columns and expected cdc-schema objects.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcPrincipalAccess",
+      "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter CdcProviderAccessRetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "source-inventory",
+    "description": "Medium: Preserve provider-observed source inventory with sparse catalog ordinals so live source drift returns CDC diagnostics instead of throwing before validation. This is an error-reporting and validation-boundary fix, not schema adaptation or repair.",
+    "acceptance-criteria": [
+      "Observed live source inventory can represent sparse provider ordinals from PostgreSQL information_schema.columns.ordinal_position and SQL Server sys.columns.column_id without CdcSourceTableInventory throwing before validation.",
+      "Expected emitted source inventory still enforces deterministic table-ordinal order, or the contract clearly separates expected emitted inventory from observed provider catalog inventory.",
+      "CdcSourceInventoryValidator reports safe CDC_SOURCE_COLUMN_MISSING, CDC_SOURCE_COLUMN_ORDER_MISMATCH, type, or nullability diagnostics for drifted live catalog rows, including a missing middle SQL Server column that leaves a column_id gap.",
+      "Provider setup still uses the caller-supplied emitted inventory as the source of truth for expected capture shape and does not renumber observed columns, adapt capture to live drift, run schema migration, or change ordinary DDL emit/provision behavior.",
+      "PostgreSQL and SQL Server provider setup return CdcProviderSetupOutcome.Failed with source-inventory diagnostics for sparse or drifted observed rows, with no uncaught ArgumentException from ReadLiveSourceInventoryAsync."
+    ],
+    "steps-to-verify": [
+      "Review CdcSourceTableInventory validation in CdcProviderSetupContracts and the ReadLiveSourceInventoryAsync implementations in CdcPostgresqlHeartbeatPublicationProvider and CdcSqlServerHeartbeatDatabaseProvider.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter CdcSourceInventory",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter PostgresqlCdcHeartbeatPublication",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase"
+    ],
+    "completed": false
   }
 ]

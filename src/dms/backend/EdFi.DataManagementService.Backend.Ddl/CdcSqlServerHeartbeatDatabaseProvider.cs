@@ -2250,6 +2250,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     CAST(NULL AS nvarchar(5)) AS partition_switch,
                     CAST(NULL AS nvarchar(5)) AS source_is_partitioned,
                     CAST(NULL AS nvarchar(260)) AS change_table,
+                    CAST(NULL AS nvarchar(64)) AS retained_min_lsn,
+                    CAST(NULL AS nvarchar(64)) AS retained_max_lsn,
                     CAST(NULL AS nvarchar(128)) AS column_name,
                     CAST(NULL AS nvarchar(20)) AS column_ordinal
                 WHERE 1 = 0;
@@ -2295,6 +2297,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         AND source_index.index_id IN (0, 1)
                     ) THEN 1 ELSE 0 END) AS source_is_partitioned,
                     OBJECT_SCHEMA_NAME(capture_info.object_id) + N'.' + OBJECT_NAME(capture_info.object_id) AS change_table,
+                    COALESCE(sys.fn_varbintohexstr(sys.fn_cdc_get_min_lsn(capture_info.capture_instance)), N'') AS retained_min_lsn,
+                    COALESCE(sys.fn_varbintohexstr(sys.fn_cdc_get_max_lsn()), N'') AS retained_max_lsn,
                     COALESCE(captured_column.column_name, N'') AS column_name,
                     COALESCE(CONVERT(nvarchar(20), captured_column.column_ordinal), N'0') AS column_ordinal
                 FROM cdc.change_tables capture_info
@@ -2370,6 +2374,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         var filegroupName = ReadOptional(first, "filegroup_name");
         var partitionSwitch = ReadBool(first, "partition_switch");
         var sourceIsPartitioned = ReadBool(first, "source_is_partitioned");
+        var retainedMinLsn = ReadOptional(first, "retained_min_lsn");
+        var retainedMaxLsn = ReadOptional(first, "retained_max_lsn");
         var capturedColumns = CapturedColumnNames(rows);
         var expectedColumns = definition
             .ExpectedSourceTable.Columns.Select(column => column.ColumnName.Value)
@@ -2423,6 +2429,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 partitionSwitch,
                 sourceIsPartitioned,
                 ReadOptional(first, "change_table"),
+                retainedMinLsn,
+                retainedMaxLsn,
                 capturedColumns,
                 expectedColumns
             )
@@ -2452,6 +2460,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["partition_switch"] = ReadBool(first, "partition_switch").ToString(),
             ["source_is_partitioned"] = ReadBool(first, "source_is_partitioned").ToString(),
             ["change_table"] = SafeText(ReadOptional(first, "change_table")),
+            ["retained_min_lsn"] = EmptyAsNone(ReadOptional(first, "retained_min_lsn")),
+            ["retained_max_lsn"] = EmptyAsNone(ReadOptional(first, "retained_max_lsn")),
+            ["retained_lsn_gap_evaluation"] = "not_evaluated_without_committed_offset",
             ["captured_columns"] = CsvOrNone(capturedColumns),
         };
 
@@ -2628,6 +2639,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool partitionSwitch,
         bool sourceIsPartitioned,
         string changeTable,
+        string retainedMinLsn,
+        string retainedMaxLsn,
         IReadOnlyList<string> capturedColumns,
         IReadOnlyList<string> expectedColumns
     ) =>
@@ -2653,6 +2666,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["expected_partition_switch"] = "disabled_when_source_partitioned",
             ["source_is_partitioned"] = sourceIsPartitioned.ToString(),
             ["change_table"] = SafeText(changeTable),
+            ["retained_min_lsn"] = EmptyAsNone(retainedMinLsn),
+            ["retained_max_lsn"] = EmptyAsNone(retainedMaxLsn),
+            ["retained_lsn_gap_evaluation"] = "not_evaluated_without_committed_offset",
             ["captured_columns"] = CsvOrNone(capturedColumns),
             ["expected_captured_columns"] = CsvOrNone(expectedColumns),
             ["captured_column_count"] = capturedColumns.Count.ToString(),

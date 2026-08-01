@@ -281,7 +281,15 @@ public class Given_MssqlCdcProviderArtifacts
             )
             .Should()
             .HaveCount(3)
-            .And.OnlyContain(observation => observation.State == CdcProviderArtifactState.Created);
+            .And.OnlyContain(observation =>
+                observation.State == CdcProviderArtifactState.Created
+                && observation
+                    .SafeObservedValues["retained_min_lsn"]
+                    .StartsWith("0x", StringComparison.Ordinal)
+                && IsSafeLsnObservation(observation.SafeObservedValues["retained_max_lsn"])
+                && observation.SafeObservedValues["retained_lsn_gap_evaluation"]
+                    == "not_evaluated_without_committed_offset"
+            );
         result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -385,6 +393,24 @@ public class Given_MssqlCdcProviderArtifacts
                     == "3"
                 && artifact.GetProperty("observed_values").GetProperty("database_cdc_enabled").GetString()
                     == "True"
+            );
+        manifestDocument
+            .RootElement.GetProperty("provider_artifacts")
+            .EnumerateArray()
+            .Where(artifact =>
+                artifact.GetProperty("artifact_kind").GetString() == "sqlserver_capture_instance"
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(artifact =>
+                artifact
+                    .GetProperty("observed_values")
+                    .GetProperty("retained_min_lsn")
+                    .GetString()!
+                    .StartsWith("0x", StringComparison.Ordinal)
+                && IsSafeLsnObservation(
+                    artifact.GetProperty("observed_values").GetProperty("retained_max_lsn").GetString() ?? ""
+                )
             );
     }
 
@@ -712,6 +738,9 @@ public class Given_MssqlCdcProviderArtifacts
 
     private static string EscapeSqlLiteral(string value) =>
         value.Replace("'", "''", StringComparison.Ordinal);
+
+    private static bool IsSafeLsnObservation(string value) =>
+        value == "none" || value.StartsWith("0x", StringComparison.Ordinal);
 
     private static string DescribeDiagnostics(IReadOnlyList<CdcProviderDiagnostic> diagnostics) =>
         string.Join(
