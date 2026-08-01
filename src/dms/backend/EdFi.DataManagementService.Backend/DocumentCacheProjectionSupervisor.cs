@@ -682,18 +682,40 @@ public sealed class DocumentCacheProjectionSupervisor(
         }
 
         await RefreshAsync(DocumentCacheTargetRefreshReason.Startup, stoppingToken).ConfigureAwait(false);
-        await scheduler.RunReadyTargetsOnceAsync(CurrentTargetContexts, stoppingToken).ConfigureAwait(false);
+        await RunReadyTargetsUntilIdleAsync(stoppingToken).ConfigureAwait(false);
 
         using PeriodicTimer timer = new(options.Value.Projector.PollInterval, timeProvider);
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
         {
             await RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered, stoppingToken)
                 .ConfigureAwait(false);
-            await scheduler
-                .RunReadyTargetsOnceAsync(CurrentTargetContexts, stoppingToken)
-                .ConfigureAwait(false);
+            await RunReadyTargetsUntilIdleAsync(stoppingToken).ConfigureAwait(false);
         }
     }
+
+    private async Task RunReadyTargetsUntilIdleAsync(CancellationToken stoppingToken)
+    {
+        while (true)
+        {
+            stoppingToken.ThrowIfCancellationRequested();
+            ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> results = await scheduler
+                .RunReadyTargetsOnceAsync(CurrentTargetContexts, stoppingToken)
+                .ConfigureAwait(false);
+
+            if (!AnyPageProcessed(results))
+            {
+                return;
+            }
+        }
+    }
+
+    private static bool AnyPageProcessed(
+        ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> results
+    ) =>
+        results.Any(result =>
+            result.Status == DocumentCacheProjectionSchedulerDispatchStatus.Dispatched
+            && result.DrainResult?.Outcome == DocumentCacheProjectionDrainPageOutcome.PageProcessed
+        );
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {

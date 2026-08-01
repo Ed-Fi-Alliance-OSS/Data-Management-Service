@@ -426,18 +426,103 @@ public class Given_DocumentCacheProjectionSupervisor
             .Be(peerTarget.TargetKey);
     }
 
+    [Test]
+    public async Task It_reconsiders_ready_targets_immediately_after_a_page_is_processed()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        RecordingProjectionScheduler scheduler = new(
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.PageProcessed(3)),
+            contexts => DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey]),
+            scheduler
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForCallCountAsync(2);
+
+            registry.RefreshReasons.Should().Equal(DocumentCacheTargetRefreshReason.Startup);
+            DocumentCacheProjectionTargetContextKey expectedContextKey = targetContextFactory
+                .CreatedContexts.Single()
+                .ContextKey;
+            scheduler.CallBatches.Should().HaveCount(2);
+            scheduler.CallBatches[0].Should().Equal(expectedContextKey);
+            scheduler.CallBatches[1].Should().Equal(expectedContextKey);
+        }
+        finally
+        {
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
+    public async Task It_waits_for_the_poll_interval_after_all_ready_targets_report_no_work()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            DocumentCacheTargetKey.Create("TenantA", 7),
+            generation: 1
+        );
+        RecordingObservationSink observationSink = new();
+        RecordingTargetContextFactory targetContextFactory = new(observationSink);
+        RecordingTargetRegistry registry = new();
+        registry.QueueRefresh(
+            Snapshot([EligibleObservation(executionContext)]),
+            RuntimeSnapshot([executionContext])
+        );
+        RecordingProjectionScheduler scheduler = new(contexts =>
+            DispatchedResults(contexts, DocumentCacheProjectionDrainPageResult.NoEligibleWork)
+        );
+        DocumentCacheProjectionSupervisor supervisor = CreateSupervisor(
+            registry,
+            targetContextFactory,
+            observationSink,
+            OptionsFor([executionContext.TargetKey]),
+            scheduler
+        );
+
+        try
+        {
+            await supervisor.StartAsync(CancellationToken.None);
+            await scheduler.WaitForCallCountAsync(1);
+
+            scheduler.CallBatches.Should().ContainSingle();
+            registry.RefreshReasons.Should().Equal(DocumentCacheTargetRefreshReason.Startup);
+        }
+        finally
+        {
+            await supervisor.StopAsync(CancellationToken.None);
+        }
+    }
+
     private static DocumentCacheProjectionSupervisor CreateSupervisor(
         IDocumentCacheTargetRegistry registry,
         IDocumentCacheProjectionTargetRuntimeContextFactory targetContextFactory,
         IDocumentCacheProjectionObservationSink observationSink,
-        IOptions<DocumentCacheOptions> options
+        IOptions<DocumentCacheOptions> options,
+        IDocumentCacheProjectionScheduler? scheduler = null
     ) =>
         new(
             registry,
             targetContextFactory,
             observationSink,
             options,
-            new NoOpDocumentCacheProjectionScheduler(),
+            scheduler ?? new NoOpDocumentCacheProjectionScheduler(),
             new StubDocumentCacheLifecycleReader(),
             new FixedTimeProvider(ObservedAt),
             NullLogger<DocumentCacheProjectionSupervisor>.Instance
@@ -704,6 +789,96 @@ public class Given_DocumentCacheProjectionSupervisor
             DocumentCacheProjectionTargetContextKey ContextKey,
             DocumentCacheProjectionTargetEndReason EndReason
         );
+    }
+
+    private static ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult> DispatchedResults(
+        ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> contexts,
+        DocumentCacheProjectionDrainPageResult drainResult
+    ) =>
+        contexts
+            .Select(context =>
+                DocumentCacheProjectionSchedulerDispatchResult.Dispatched(
+                    context,
+                    drainResult,
+                    ObservedAt,
+                    ObservedAt
+                )
+            )
+            .ToImmutableArray();
+
+    private sealed class RecordingProjectionScheduler(
+        params Func<
+            ImmutableArray<DocumentCacheProjectionTargetRuntimeContext>,
+            ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>
+        >[] resultFactories
+    ) : IDocumentCacheProjectionScheduler
+    {
+        private readonly object _sync = new();
+        private readonly Queue<
+            Func<
+                ImmutableArray<DocumentCacheProjectionTargetRuntimeContext>,
+                ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>
+            >
+        > _resultFactories = new(resultFactories);
+        private readonly List<Waiter> _waiters = [];
+
+        public List<ImmutableArray<DocumentCacheProjectionTargetContextKey>> CallBatches { get; } = [];
+
+        public Task<ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>> RunReadyTargetsOnceAsync(
+            IEnumerable<DocumentCacheProjectionTargetRuntimeContext> targetContexts,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> contexts =
+                targetContexts.ToImmutableArray();
+            Func<
+                ImmutableArray<DocumentCacheProjectionTargetRuntimeContext>,
+                ImmutableArray<DocumentCacheProjectionSchedulerDispatchResult>
+            > resultFactory;
+
+            lock (_sync)
+            {
+                CallBatches.Add(contexts.Select(context => context.ContextKey).ToImmutableArray());
+                resultFactory = _resultFactories.Count == 0 ? _ => [] : _resultFactories.Dequeue();
+                CompleteSatisfiedWaiters();
+            }
+
+            return Task.FromResult(resultFactory(contexts));
+        }
+
+        public Task<DocumentCacheProjectionSchedulerDispatchResult> RunAdministrativeDrainSliceAsync(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            CancellationToken cancellationToken = default
+        ) => throw new NotImplementedException();
+
+        public Task WaitForCallCountAsync(int callCount)
+        {
+            lock (_sync)
+            {
+                if (CallBatches.Count >= callCount)
+                {
+                    return Task.CompletedTask;
+                }
+
+                TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add(new Waiter(callCount, completion));
+                return completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        private void CompleteSatisfiedWaiters()
+        {
+            foreach (
+                Waiter waiter in _waiters.Where(waiter => CallBatches.Count >= waiter.CallCount).ToArray()
+            )
+            {
+                waiter.Completion.SetResult();
+                _waiters.Remove(waiter);
+            }
+        }
+
+        private sealed record Waiter(int CallCount, TaskCompletionSource Completion);
     }
 
     private sealed class StubDocumentCacheMaterializer : IDocumentCacheMaterializer
