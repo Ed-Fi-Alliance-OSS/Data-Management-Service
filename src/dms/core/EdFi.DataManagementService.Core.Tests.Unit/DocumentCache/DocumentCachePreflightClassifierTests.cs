@@ -32,6 +32,16 @@ public class DocumentCachePreflightClassifierTests
         "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
     );
 
+    private static readonly DocumentCacheOfflineWriterAdmission _offlineActivationAdmission = new(
+        confirmed: true,
+        DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+    );
+
+    private static readonly DocumentCacheOfflineWriterAdmission _offlineDeactivationAdmission = new(
+        confirmed: true,
+        DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+    );
+
     private static readonly DocumentCacheTargetEffectiveSettings _settings = new(
         readAccelerationEnabled: true,
         directFillTimeout: TimeSpan.FromMilliseconds(250),
@@ -67,7 +77,7 @@ public class DocumentCachePreflightClassifierTests
                     GuardedFacts()
                 );
 
-            result.Classification.Should().Be(DocumentCacheAdministrativePreflightClassification.Eligible);
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation);
             result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Disabled);
             result.CacheAheadRecoveryRequired.Should().BeFalse();
@@ -89,7 +99,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.LifecycleMismatch,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
                 DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
                 lifecycleState
             );
@@ -107,7 +117,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.ResettingRequiresExplicitOperatorRecovery,
+                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
                 DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
                 DocumentCacheLifecycleState.Resetting
             );
@@ -128,7 +138,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.CacheAheadLatchSet,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
                 DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet
             );
         }
@@ -158,7 +168,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.NonemptyGuardedActivationState,
+                DocumentCacheAdministrativeCommandClassification.NonemptyGuardedActivationState,
                 DocumentCacheTargetDiagnosticCategory.NonemptyGuardedActivationState
             );
         }
@@ -180,24 +190,24 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.ProviderPrerequisiteFailed,
+                DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed,
                 DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
             );
         }
 
         [TestCase(
             DocumentCacheLifecycleState.Tracking,
-            DocumentCacheAdministrativePreflightClassification.LifecycleMismatch,
+            DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
             DocumentCacheTargetDiagnosticCategory.LifecycleMismatch
         )]
         [TestCase(
             DocumentCacheLifecycleState.Resetting,
-            DocumentCacheAdministrativePreflightClassification.ResettingRequiresExplicitOperatorRecovery,
+            DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
             DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery
         )]
         public void It_should_reject_lifecycle_state_before_failed_command_time_provider_prerequisites(
             DocumentCacheLifecycleState lifecycleState,
-            DocumentCacheAdministrativePreflightClassification expectedClassification,
+            DocumentCacheAdministrativeCommandClassification expectedClassification,
             DocumentCacheTargetDiagnosticCategory expectedDiagnosticCategory
         )
         {
@@ -226,7 +236,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.CacheAheadLatchSet,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
                 DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet
             );
         }
@@ -243,7 +253,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.ExpectedSourceMismatch,
+                DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch,
                 DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch
             );
         }
@@ -260,7 +270,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.ExpectedSourceMismatch,
+                DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch,
                 DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch
             );
         }
@@ -268,13 +278,13 @@ public class DocumentCachePreflightClassifierTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Offline_Read_Acceleration_Activation : DocumentCachePreflightClassifierTests
+    public class Given_Offline_Activation : DocumentCachePreflightClassifierTests
     {
         [Test]
         public void It_should_classify_disabled_internal_only_targets_as_eligible()
         {
             DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyOfflineReadAccelerationActivation(
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(),
                     EligibleObservation(DocumentCacheLifecycleState.Disabled),
                     OfflineActivationFacts(
@@ -282,8 +292,8 @@ public class DocumentCachePreflightClassifierTests
                     )
                 );
 
-            result.Classification.Should().Be(DocumentCacheAdministrativePreflightClassification.Eligible);
-            result.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation);
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+            result.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineActivation);
             result
                 .DownstreamPublicationStatus.Should()
                 .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
@@ -294,7 +304,7 @@ public class DocumentCachePreflightClassifierTests
         public void It_should_reject_cache_ahead_latch_before_offline_activation()
         {
             DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyOfflineReadAccelerationActivation(
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(),
                     EligibleObservation(
                         DocumentCacheLifecycleState.Disabled,
@@ -307,7 +317,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.CacheAheadLatchSet,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
                 DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet
             );
         }
@@ -321,7 +331,7 @@ public class DocumentCachePreflightClassifierTests
             );
 
             DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyOfflineReadAccelerationActivation(
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(),
                     startupEligibleObservation,
                     OfflineActivationFacts(
@@ -332,29 +342,29 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.ProviderPrerequisiteFailed,
+                DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed,
                 DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
             );
         }
 
         [TestCase(
             DocumentCacheLifecycleState.Tracking,
-            DocumentCacheAdministrativePreflightClassification.LifecycleMismatch,
+            DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
             DocumentCacheTargetDiagnosticCategory.LifecycleMismatch
         )]
         [TestCase(
             DocumentCacheLifecycleState.Resetting,
-            DocumentCacheAdministrativePreflightClassification.ResettingRequiresExplicitOperatorRecovery,
+            DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
             DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery
         )]
         public void It_should_reject_lifecycle_state_before_failed_command_time_provider_prerequisites(
             DocumentCacheLifecycleState lifecycleState,
-            DocumentCacheAdministrativePreflightClassification expectedClassification,
+            DocumentCacheAdministrativeCommandClassification expectedClassification,
             DocumentCacheTargetDiagnosticCategory expectedDiagnosticCategory
         )
         {
             DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyOfflineReadAccelerationActivation(
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(),
                     EligibleObservation(lifecycleState),
                     OfflineActivationFacts(
@@ -370,7 +380,7 @@ public class DocumentCachePreflightClassifierTests
         public void It_should_reject_cache_ahead_latch_before_failed_command_time_provider_prerequisites()
         {
             DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyOfflineReadAccelerationActivation(
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(),
                     EligibleObservation(
                         DocumentCacheLifecycleState.Disabled,
@@ -384,7 +394,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.CacheAheadLatchSet,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
                 DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet
             );
         }
@@ -393,7 +403,7 @@ public class DocumentCachePreflightClassifierTests
         public void It_should_reject_expected_source_mismatch_before_failed_command_time_provider_prerequisites()
         {
             DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyOfflineReadAccelerationActivation(
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(expectedPhysicalSourceFingerprint: _otherFingerprint),
                     EligibleObservation(DocumentCacheLifecycleState.Disabled),
                     OfflineActivationFacts(
@@ -404,7 +414,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.ExpectedSourceMismatch,
+                DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch,
                 DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch
             );
         }
@@ -418,7 +428,7 @@ public class DocumentCachePreflightClassifierTests
         )
         {
             DocumentCacheAdministrativeCommandResult result =
-                DocumentCachePreflightClassifier.ClassifyOfflineReadAccelerationActivation(
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
                     OfflineActivationRequest(),
                     EligibleObservation(DocumentCacheLifecycleState.Disabled),
                     OfflineActivationFacts(DownstreamObservation(status))
@@ -426,7 +436,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.DownstreamHistoryPresentOrUnknown,
+                DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown,
                 DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown
             );
             result.DownstreamPublicationStatus.Should().Be(status);
@@ -452,7 +462,7 @@ public class DocumentCachePreflightClassifierTests
                     )
                 );
 
-            result.Classification.Should().Be(DocumentCacheAdministrativePreflightClassification.Eligible);
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineDeactivation);
             result.ObservedLifecycle.Should().Be(lifecycleState);
             result
@@ -474,7 +484,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.LifecycleMismatch,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
                 DocumentCacheTargetDiagnosticCategory.LifecycleMismatch
             );
         }
@@ -493,7 +503,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.ResettingRequiresExplicitOperatorRecovery,
+                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
                 DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
                 DocumentCacheLifecycleState.Resetting
             );
@@ -513,7 +523,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.DownstreamHistoryPresentOrUnknown,
+                DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown,
                 DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown,
                 DocumentCacheLifecycleState.Tracking
             );
@@ -538,7 +548,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.TargetNotConfigured,
+                DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
                 DocumentCacheTargetDiagnosticCategory.TargetNotConfigured,
                 expectedObservedLifecycle: null
             );
@@ -556,7 +566,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.TargetUnresolved,
+                DocumentCacheAdministrativeCommandClassification.TargetUnresolved,
                 DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
                 expectedObservedLifecycle: null
             );
@@ -574,7 +584,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.TargetReplacedBeforeExecution,
+                DocumentCacheAdministrativeCommandClassification.TargetReplacedBeforeExecution,
                 DocumentCacheTargetDiagnosticCategory.TargetReplaced
             );
         }
@@ -591,7 +601,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.MissingOrInvalidInventory,
+                DocumentCacheAdministrativeCommandClassification.MissingOrInvalidInventory,
                 DocumentCacheTargetDiagnosticCategory.InventoryFailure
             );
         }
@@ -608,7 +618,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.UnsupportedPrerequisiteIncident,
+                DocumentCacheAdministrativeCommandClassification.UnsupportedPrerequisiteIncident,
                 DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
                 expectedObservedLifecycle: DocumentCacheLifecycleState.Tracking
             );
@@ -617,7 +627,7 @@ public class DocumentCachePreflightClassifierTests
         [TestCaseSource(nameof(TargetContextFailureClassifications))]
         public void It_should_preserve_specific_target_context_failure_classifications(
             DocumentCacheTargetDiagnosticCategory diagnosticCategory,
-            DocumentCacheAdministrativePreflightClassification expectedClassification
+            DocumentCacheAdministrativeCommandClassification expectedClassification
         )
         {
             DocumentCacheAdministrativeCommandResult result =
@@ -633,7 +643,11 @@ public class DocumentCachePreflightClassifierTests
                 diagnosticCategory,
                 expectedObservedLifecycle: null
             );
-            result.Diagnostics.Should().ContainSingle().Which.Category.Should().Be(diagnosticCategory);
+            result
+                .Diagnostics.Should()
+                .ContainSingle()
+                .Which.Category.Should()
+                .Be(Enum.Parse<DocumentCacheAdministrativeDiagnosticCategory>(diagnosticCategory.ToString()));
             result.TargetContextGeneration.Should().Be(_generation.Value);
             result.PhysicalSourceFingerprint.Should().BeNull();
         }
@@ -650,7 +664,7 @@ public class DocumentCachePreflightClassifierTests
 
             AssertRejected(
                 result,
-                DocumentCacheAdministrativePreflightClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
                 DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure
             );
             result.Diagnostics.Single().Message.Should().NotContain("\r").And.NotContain("\n");
@@ -660,32 +674,34 @@ public class DocumentCachePreflightClassifierTests
         {
             yield return new TestCaseData(
                 DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
-                DocumentCacheAdministrativePreflightClassification.ProviderMetadataMissing
+                DocumentCacheAdministrativeCommandClassification.ProviderMetadataMissing
             ).SetName("Provider metadata missing");
             yield return new TestCaseData(
                 DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown,
-                DocumentCacheAdministrativePreflightClassification.ProviderMetadataUnknown
+                DocumentCacheAdministrativeCommandClassification.ProviderMetadataUnknown
             ).SetName("Provider metadata unknown");
             yield return new TestCaseData(
                 DocumentCacheTargetDiagnosticCategory.ProviderMismatch,
-                DocumentCacheAdministrativePreflightClassification.ProviderMismatch
+                DocumentCacheAdministrativeCommandClassification.ProviderMismatch
             ).SetName("Provider mismatch");
             yield return new TestCaseData(
                 DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing,
-                DocumentCacheAdministrativePreflightClassification.ConnectionInputMissing
+                DocumentCacheAdministrativeCommandClassification.ConnectionInputMissing
             ).SetName("Connection input missing");
         }
     }
 
     protected static void AssertRejected(
         DocumentCacheAdministrativeCommandResult result,
-        DocumentCacheAdministrativePreflightClassification classification,
+        DocumentCacheAdministrativeCommandClassification classification,
         DocumentCacheTargetDiagnosticCategory category,
         DocumentCacheLifecycleState? expectedObservedLifecycle = DocumentCacheLifecycleState.Disabled
     )
     {
         result.Classification.Should().Be(classification);
-        result.Diagnostics.Should().Contain(diagnostic => diagnostic.Category == category);
+        DocumentCacheAdministrativeDiagnosticCategory expectedCategory =
+            Enum.Parse<DocumentCacheAdministrativeDiagnosticCategory>(category.ToString());
+        result.Diagnostics.Should().Contain(diagnostic => diagnostic.Category == expectedCategory);
         result.NoMutationGuarantee.Should().NotBeNull();
         result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
         result
@@ -704,13 +720,23 @@ public class DocumentCachePreflightClassifierTests
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
     ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
 
-    protected static DocumentCacheOfflineReadAccelerationActivationRequest OfflineActivationRequest(
+    protected static DocumentCacheOfflineActivationRequest OfflineActivationRequest(
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
-    ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
+    ) =>
+        new(
+            _administrativeTargetKey,
+            _offlineActivationAdmission,
+            expectedPhysicalSourceFingerprint ?? _fingerprint
+        );
 
     protected static DocumentCacheOfflineDeactivationRequest OfflineDeactivationRequest(
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
-    ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
+    ) =>
+        new(
+            _administrativeTargetKey,
+            _offlineDeactivationAdmission,
+            expectedPhysicalSourceFingerprint ?? _fingerprint
+        );
 
     protected static DocumentCacheGuardedNewEmptyActivationPreflightFacts GuardedFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
@@ -725,7 +751,7 @@ public class DocumentCachePreflightClassifierTests
             unexpectedProviderFailureMessage
         );
 
-    protected static DocumentCacheOfflineReadAccelerationActivationPreflightFacts OfflineActivationFacts(
+    protected static DocumentCacheOfflineActivationPreflightFacts OfflineActivationFacts(
         DocumentCacheDownstreamPublicationHistoryObservation downstreamPublicationHistory,
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
         DocumentCacheProviderPrerequisiteValidationResult? activationProviderPrerequisites = null,

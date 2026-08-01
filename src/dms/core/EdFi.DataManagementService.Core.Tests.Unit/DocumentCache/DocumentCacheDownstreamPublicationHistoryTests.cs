@@ -131,7 +131,7 @@ public class DocumentCacheDownstreamPublicationHistoryTests
                 );
 
             result.IsAccepted.Should().BeTrue();
-            result.Classification.Should().Be(DocumentCacheAdministrativePreflightClassification.Eligible);
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
             result
                 .DownstreamPublicationStatus.Should()
                 .Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
@@ -161,13 +161,15 @@ public class DocumentCacheDownstreamPublicationHistoryTests
             result.IsAccepted.Should().BeFalse();
             result
                 .Classification.Should()
-                .Be(DocumentCacheAdministrativePreflightClassification.DownstreamHistoryPresentOrUnknown);
+                .Be(DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown);
             result.DownstreamPublicationStatus.Should().Be(status);
             result
                 .Diagnostics.Should()
                 .ContainSingle()
                 .Which.Category.Should()
-                .Be(DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown);
+                .Be(
+                    DocumentCacheAdministrativeDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown
+                );
         }
 
         [Test]
@@ -269,12 +271,12 @@ public class DocumentCacheDownstreamPublicationHistoryTests
             result.IsAccepted.Should().BeFalse();
             result
                 .Classification.Should()
-                .Be(DocumentCacheAdministrativePreflightClassification.ExpectedSourceMismatch);
+                .Be(DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch);
             result
                 .Diagnostics.Should()
                 .ContainSingle()
                 .Which.Category.Should()
-                .Be(DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch);
+                .Be(DocumentCacheAdministrativeDiagnosticCategory.ExpectedSourceMismatch);
         }
     }
 

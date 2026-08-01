@@ -59,9 +59,9 @@ public sealed record DocumentCacheGuardedNewEmptyActivationPreflightFacts
     public string? UnexpectedProviderFailureMessage { get; }
 }
 
-public sealed record DocumentCacheOfflineReadAccelerationActivationPreflightFacts
+public sealed record DocumentCacheOfflineActivationPreflightFacts
 {
-    public DocumentCacheOfflineReadAccelerationActivationPreflightFacts(
+    public DocumentCacheOfflineActivationPreflightFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration,
         DocumentCacheProviderPrerequisiteValidationResult? activationProviderPrerequisites,
         DocumentCacheDownstreamPublicationHistoryObservation? downstreamPublicationHistory,
@@ -173,7 +173,7 @@ public static class DocumentCachePreflightClassifier
                 DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
                 request.TargetKey,
                 targetObservation!,
-                DocumentCacheAdministrativePreflightClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
                 DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
                 "Guarded new-empty activation state observation is required."
             );
@@ -185,7 +185,7 @@ public static class DocumentCachePreflightClassifier
                 DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
                 request.TargetKey,
                 targetObservation!,
-                DocumentCacheAdministrativePreflightClassification.NonemptyGuardedActivationState,
+                DocumentCacheAdministrativeCommandClassification.NonemptyGuardedActivationState,
                 DocumentCacheTargetDiagnosticCategory.NonemptyGuardedActivationState,
                 facts.GuardedNewEmptyState.Message
             );
@@ -198,17 +198,17 @@ public static class DocumentCachePreflightClassifier
         );
     }
 
-    public static DocumentCacheAdministrativeCommandResult ClassifyOfflineReadAccelerationActivation(
-        DocumentCacheOfflineReadAccelerationActivationRequest request,
+    public static DocumentCacheAdministrativeCommandResult ClassifyOfflineActivation(
+        DocumentCacheOfflineActivationRequest request,
         DocumentCacheTargetObservation? targetObservation,
-        DocumentCacheOfflineReadAccelerationActivationPreflightFacts facts
+        DocumentCacheOfflineActivationPreflightFacts facts
     )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(facts);
 
         DocumentCacheAdministrativeCommandResult? commonRejection = ClassifyCommonTargetState(
-            DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+            DocumentCacheAdministrativeCommand.OfflineActivation,
             request.TargetKey,
             targetObservation,
             facts.ExpectedTargetContextGeneration,
@@ -220,7 +220,7 @@ public static class DocumentCachePreflightClassifier
         }
 
         DocumentCacheAdministrativeCommandResult? lifecycleRejection = ClassifyRequiredLifecycle(
-            DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+            DocumentCacheAdministrativeCommand.OfflineActivation,
             request.TargetKey,
             targetObservation!,
             requiredLifecycle: DocumentCacheLifecycleState.Disabled,
@@ -232,7 +232,7 @@ public static class DocumentCachePreflightClassifier
         }
 
         DocumentCacheAdministrativeCommandResult? expectedSourceRejection = ClassifyExpectedSource(
-            DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+            DocumentCacheAdministrativeCommand.OfflineActivation,
             request.TargetKey,
             targetObservation!,
             request.ExpectedPhysicalSourceFingerprint
@@ -243,7 +243,7 @@ public static class DocumentCachePreflightClassifier
         }
 
         DocumentCacheAdministrativeCommandResult? prerequisiteRejection = ClassifyActivationPrerequisites(
-            DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+            DocumentCacheAdministrativeCommand.OfflineActivation,
             request.TargetKey,
             targetObservation!,
             facts.ActivationProviderPrerequisites
@@ -263,7 +263,7 @@ public static class DocumentCachePreflightClassifier
         if (downstreamProof is { IsAccepted: false })
         {
             return RejectedFromDownstreamProof(
-                DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+                DocumentCacheAdministrativeCommand.OfflineActivation,
                 request.TargetKey,
                 targetObservation!,
                 downstreamProof
@@ -271,7 +271,7 @@ public static class DocumentCachePreflightClassifier
         }
 
         return Eligible(
-            DocumentCacheAdministrativeCommand.OfflineReadAccelerationActivation,
+            DocumentCacheAdministrativeCommand.OfflineActivation,
             request.TargetKey,
             targetObservation!,
             downstreamProof!.DownstreamPublicationStatus
@@ -358,7 +358,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation: null,
-                DocumentCacheAdministrativePreflightClassification.TargetNotConfigured,
+                DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
                 DocumentCacheTargetDiagnosticCategory.TargetNotConfigured,
                 "DocumentCache target is not configured in the current process."
             );
@@ -382,7 +382,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.TargetUnresolved,
+                DocumentCacheAdministrativeCommandClassification.TargetUnresolved,
                 DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
                 "DocumentCache target is not resolved.",
                 ConvertDiagnostics(targetObservation.Diagnostics)
@@ -398,7 +398,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.TargetReplacedBeforeExecution,
+                DocumentCacheAdministrativeCommandClassification.TargetReplacedBeforeExecution,
                 DocumentCacheTargetDiagnosticCategory.TargetReplaced,
                 "DocumentCache target context generation was replaced before execution.",
                 ConvertDiagnostics(targetObservation.Diagnostics)
@@ -421,7 +421,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
                 DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
                 unexpectedProviderFailureMessage
             );
@@ -454,7 +454,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.UnsupportedPrerequisiteIncident,
+                DocumentCacheAdministrativeCommandClassification.UnsupportedPrerequisiteIncident,
                 DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
                 "Provider prerequisite failure was observed outside the supported lifecycle.",
                 diagnostics
@@ -467,7 +467,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.ProviderPrerequisiteFailed,
+                DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed,
                 DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
                 "Provider prerequisite failed for the target context.",
                 diagnostics
@@ -480,7 +480,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.ProviderMetadataMissing,
+                DocumentCacheAdministrativeCommandClassification.ProviderMetadataMissing,
                 DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing,
                 "DocumentCache target is missing relational provider metadata.",
                 diagnostics
@@ -493,7 +493,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.ProviderMetadataUnknown,
+                DocumentCacheAdministrativeCommandClassification.ProviderMetadataUnknown,
                 DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown,
                 "DocumentCache target has unknown relational provider metadata.",
                 diagnostics
@@ -506,7 +506,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.ProviderMismatch,
+                DocumentCacheAdministrativeCommandClassification.ProviderMismatch,
                 DocumentCacheTargetDiagnosticCategory.ProviderMismatch,
                 "DocumentCache target provider does not match this DMS process provider.",
                 diagnostics
@@ -519,7 +519,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.ConnectionInputMissing,
+                DocumentCacheAdministrativeCommandClassification.ConnectionInputMissing,
                 DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing,
                 "DocumentCache target has no usable connection input.",
                 diagnostics
@@ -543,7 +543,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.MissingOrInvalidInventory,
+                DocumentCacheAdministrativeCommandClassification.MissingOrInvalidInventory,
                 DocumentCacheTargetDiagnosticCategory.InventoryFailure,
                 "DocumentCache target inventory is missing or invalid.",
                 diagnostics
@@ -554,7 +554,7 @@ public static class DocumentCachePreflightClassifier
             command,
             targetKey,
             targetObservation,
-            DocumentCacheAdministrativePreflightClassification.UnexpectedProviderFailure,
+            DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
             DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
             "DocumentCache target context is not eligible for command preflight.",
             diagnostics
@@ -574,7 +574,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.UnexpectedProviderFailure,
+                DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
                 DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
                 "Command-time activation provider prerequisite observation is required."
             );
@@ -588,10 +588,10 @@ public static class DocumentCachePreflightClassifier
         DocumentCacheTargetDiagnosticCategory diagnosticCategory =
             activationProviderPrerequisites.FailureCategory
             ?? DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed;
-        DocumentCacheAdministrativePreflightClassification classification =
+        DocumentCacheAdministrativeCommandClassification classification =
             diagnosticCategory == DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident
-                ? DocumentCacheAdministrativePreflightClassification.UnsupportedPrerequisiteIncident
-                : DocumentCacheAdministrativePreflightClassification.ProviderPrerequisiteFailed;
+                ? DocumentCacheAdministrativeCommandClassification.UnsupportedPrerequisiteIncident
+                : DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed;
 
         return Rejected(
             command,
@@ -618,7 +618,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.ResettingRequiresExplicitOperatorRecovery,
+                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
                 DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
                 "DocumentCache target is already Resetting and requires explicit operator recovery."
             );
@@ -630,7 +630,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.LifecycleMismatch,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
                 DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
                 "DocumentCache lifecycle does not match the command preflight requirement."
             );
@@ -642,7 +642,7 @@ public static class DocumentCachePreflightClassifier
                 command,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.CacheAheadLatchSet,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
                 DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
                 "DocumentCache cache-ahead recovery latch is set."
             );
@@ -663,7 +663,7 @@ public static class DocumentCachePreflightClassifier
                 DocumentCacheAdministrativeCommand.OfflineDeactivation,
                 targetKey,
                 targetObservation,
-                DocumentCacheAdministrativePreflightClassification.ResettingRequiresExplicitOperatorRecovery,
+                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
                 DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
                 "DocumentCache target is already Resetting and requires explicit operator recovery."
             );
@@ -678,7 +678,7 @@ public static class DocumentCachePreflightClassifier
             DocumentCacheAdministrativeCommand.OfflineDeactivation,
             targetKey,
             targetObservation,
-            DocumentCacheAdministrativePreflightClassification.LifecycleMismatch,
+            DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
             DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
             "DocumentCache lifecycle does not match the command preflight requirement."
         );
@@ -703,7 +703,7 @@ public static class DocumentCachePreflightClassifier
             command,
             targetKey,
             targetObservation,
-            DocumentCacheAdministrativePreflightClassification.ExpectedSourceMismatch,
+            DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch,
             DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch,
             "Expected physical-source fingerprint does not match the current target observation."
         );
@@ -729,7 +729,7 @@ public static class DocumentCachePreflightClassifier
             );
 
             return DocumentCacheDownstreamPublicationHistoryProofResult.Rejected(
-                DocumentCacheAdministrativePreflightClassification.DownstreamHistoryPresentOrUnknown,
+                DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown,
                 missingObservation,
                 new DocumentCacheAdministrativeDiagnostic(
                     DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown,
@@ -772,7 +772,7 @@ public static class DocumentCachePreflightClassifier
         new(
             command,
             targetKey,
-            DocumentCacheAdministrativePreflightClassification.Eligible,
+            DocumentCacheAdministrativeCommandClassification.Succeeded,
             targetObservation.Lifecycle?.State,
             targetObservation.Lifecycle?.CacheAheadRecoveryRequired,
             targetObservation.PhysicalSourceFingerprint,
@@ -784,8 +784,29 @@ public static class DocumentCachePreflightClassifier
         DocumentCacheAdministrativeCommand command,
         DocumentCacheAdministrativeTargetKey targetKey,
         DocumentCacheTargetObservation? targetObservation,
-        DocumentCacheAdministrativePreflightClassification classification,
+        DocumentCacheAdministrativeCommandClassification classification,
         DocumentCacheTargetDiagnosticCategory category,
+        string message,
+        ImmutableArray<DocumentCacheAdministrativeDiagnostic> diagnostics = default,
+        DocumentCacheDownstreamPublicationStatus? downstreamPublicationStatus = null
+    ) =>
+        Rejected(
+            command,
+            targetKey,
+            targetObservation,
+            classification,
+            new DocumentCacheAdministrativeDiagnostic(category, message).Category,
+            message,
+            diagnostics,
+            downstreamPublicationStatus
+        );
+
+    private static DocumentCacheAdministrativeCommandResult Rejected(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheTargetObservation? targetObservation,
+        DocumentCacheAdministrativeCommandClassification classification,
+        DocumentCacheAdministrativeDiagnosticCategory category,
         string message,
         ImmutableArray<DocumentCacheAdministrativeDiagnostic> diagnostics = default,
         DocumentCacheDownstreamPublicationStatus? downstreamPublicationStatus = null

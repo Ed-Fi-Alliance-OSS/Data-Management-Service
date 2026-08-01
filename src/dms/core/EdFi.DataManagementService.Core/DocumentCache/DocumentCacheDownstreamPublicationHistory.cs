@@ -109,14 +109,14 @@ public sealed record DocumentCacheDownstreamPublicationHistoryProofResult
 {
     private DocumentCacheDownstreamPublicationHistoryProofResult(
         bool isAccepted,
-        DocumentCacheAdministrativePreflightClassification classification,
+        DocumentCacheAdministrativeCommandClassification classification,
         DocumentCacheDownstreamPublicationHistoryObservation observation,
         ImmutableArray<DocumentCacheAdministrativeDiagnostic> diagnostics
     )
     {
         ArgumentNullException.ThrowIfNull(observation);
 
-        if (isAccepted && classification != DocumentCacheAdministrativePreflightClassification.Eligible)
+        if (isAccepted && classification != DocumentCacheAdministrativeCommandClassification.Succeeded)
         {
             throw new ArgumentException(
                 "Accepted downstream publication proof must use the Eligible classification.",
@@ -124,7 +124,7 @@ public sealed record DocumentCacheDownstreamPublicationHistoryProofResult
             );
         }
 
-        if (!isAccepted && classification == DocumentCacheAdministrativePreflightClassification.Eligible)
+        if (!isAccepted && classification == DocumentCacheAdministrativeCommandClassification.Succeeded)
         {
             throw new ArgumentException(
                 "Rejected downstream publication proof must not use the Eligible classification.",
@@ -156,7 +156,7 @@ public sealed record DocumentCacheDownstreamPublicationHistoryProofResult
 
     public bool IsAccepted { get; }
 
-    public DocumentCacheAdministrativePreflightClassification Classification { get; }
+    public DocumentCacheAdministrativeCommandClassification Classification { get; }
 
     public DocumentCacheDownstreamPublicationHistoryObservation Observation { get; }
 
@@ -169,13 +169,13 @@ public sealed record DocumentCacheDownstreamPublicationHistoryProofResult
     ) =>
         new(
             isAccepted: true,
-            DocumentCacheAdministrativePreflightClassification.Eligible,
+            DocumentCacheAdministrativeCommandClassification.Succeeded,
             observation,
             diagnostics: []
         );
 
     public static DocumentCacheDownstreamPublicationHistoryProofResult Rejected(
-        DocumentCacheAdministrativePreflightClassification classification,
+        DocumentCacheAdministrativeCommandClassification classification,
         DocumentCacheDownstreamPublicationHistoryObservation observation,
         DocumentCacheAdministrativeDiagnostic diagnostic
     )
@@ -255,7 +255,7 @@ public static class DocumentCacheDownstreamPublicationHistoryProofEvaluator
         if (observation.Status != DocumentCacheDownstreamPublicationStatus.InternalOnly)
         {
             return DocumentCacheDownstreamPublicationHistoryProofResult.Rejected(
-                DocumentCacheAdministrativePreflightClassification.DownstreamHistoryPresentOrUnknown,
+                DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown,
                 observation,
                 new DocumentCacheAdministrativeDiagnostic(
                     DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown,
@@ -272,7 +272,7 @@ public static class DocumentCacheDownstreamPublicationHistoryProofEvaluator
         string message
     ) =>
         DocumentCacheDownstreamPublicationHistoryProofResult.Rejected(
-            DocumentCacheAdministrativePreflightClassification.ExpectedSourceMismatch,
+            DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch,
             observation,
             new DocumentCacheAdministrativeDiagnostic(
                 DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch,
