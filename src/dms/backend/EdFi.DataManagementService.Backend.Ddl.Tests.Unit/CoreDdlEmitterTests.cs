@@ -269,6 +269,18 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_emit_a_persisted_lower_cased_descriptor_uri_column()
+    {
+        // The descriptor probe seeks lower-cased URIs. lower("Uri") in a predicate is not sargable on
+        // PostgreSQL, so the lower-casing is materialized by the engine into its own stored column.
+        var block = DescriptorTableColumnExtractor.ExtractPgBlock(_ddl);
+
+        block.Should().Contain("\"UriLowered\" varchar(306) GENERATED ALWAYS AS (lower(\"Uri\")) STORED,");
+        // The original-case column is the stored representation and stays exactly as it was.
+        block.Should().Contain("\"Uri\" varchar(306) NOT NULL,");
+    }
+
+    [Test]
     public void It_should_mirror_resource_key_id_on_the_descriptor_row()
     {
         // The project-qualified descriptor type only lived on dms.Document, so descriptor reads rooted on
@@ -449,6 +461,18 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_have_unique_on_descriptor_uri_discriminator()
     {
         _ddl.Should().Contain("\"UX_Descriptor_Uri_Discriminator\" UNIQUE");
+    }
+
+    [Test]
+    public void It_should_have_unique_on_descriptor_uri_lowered_discriminator()
+    {
+        // The probe's seek target. Case-insensitive uniqueness is not new behavior: the UUIDv5
+        // ReferentialId it replaces was hashed over the lower-cased URI, so case-variant URIs
+        // already collapsed onto one document.
+        _ddl.Should()
+            .Contain(
+                "ADD CONSTRAINT \"UX_Descriptor_UriLowered_Discriminator\" UNIQUE (\"UriLowered\", \"Discriminator\");"
+            );
     }
 
     [Test]
@@ -810,6 +834,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
                         + "could never detect a change and must not be emitted"
                 );
         }
+
+        foreach (var computedColumn in DescriptorTableColumnExtractor.EngineComputedColumns)
+        {
+            _ddl.Should()
+                .NotContain(
+                    $"OLD.\"{computedColumn}\" IS DISTINCT FROM NEW.\"{computedColumn}\"",
+                    "this column is derived from another column in the same row, so any change to it is "
+                        + "already detected through its source column"
+                );
+        }
     }
 
     // ── No authorization objects ─────────────────────────────────────
@@ -1102,6 +1136,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_emit_a_persisted_lower_cased_descriptor_uri_column()
+    {
+        // Kept identical in shape to the PostgreSQL sibling so both dialects present the probe the
+        // same column, even though SQL Server's default CI collation would already match case-blind.
+        var block = DescriptorTableColumnExtractor.ExtractMssqlBlock(_ddl);
+
+        block.Should().Contain("[UriLowered] AS (LOWER([Uri])) PERSISTED,");
+        // The original-case column is the stored representation and stays exactly as it was.
+        block.Should().Contain("[Uri] nvarchar(306) NOT NULL,");
+    }
+
+    [Test]
     public void It_should_mirror_resource_key_id_on_the_descriptor_row()
     {
         // The project-qualified descriptor type only lived on dms.Document, so descriptor reads rooted on
@@ -1174,6 +1220,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_unique_on_descriptor_document_uuid()
     {
         _ddl.Should().Contain("ADD CONSTRAINT [UX_Descriptor_DocumentUuid] UNIQUE ([DocumentUuid]);");
+    }
+
+    [Test]
+    public void It_should_have_unique_on_descriptor_uri_lowered_discriminator()
+    {
+        // The probe's seek target. Case-insensitive uniqueness is not new behavior: the UUIDv5
+        // ReferentialId it replaces was hashed over the lower-cased URI, so case-variant URIs
+        // already collapsed onto one document.
+        _ddl.Should()
+            .Contain(
+                "ADD CONSTRAINT [UX_Descriptor_UriLowered_Discriminator] UNIQUE ([UriLowered], [Discriminator]);"
+            );
     }
 
     [Test]
@@ -1541,6 +1599,16 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                     $"i.[{placeholderColumn}] <> del.[{placeholderColumn}]",
                     "this column is a permanently-NULL placeholder no writer ever sets, so diffing it "
                         + "could never detect a change and must not be emitted"
+                );
+        }
+
+        foreach (var computedColumn in DescriptorTableColumnExtractor.EngineComputedColumns)
+        {
+            _ddl.Should()
+                .NotContain(
+                    $"CAST(i.[{computedColumn}] AS varbinary(max)) <> CAST(del.[{computedColumn}] AS varbinary(max))",
+                    "this column is derived from another column in the same row, so any change to it is "
+                        + "already detected through its source column"
                 );
         }
     }

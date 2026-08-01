@@ -116,6 +116,23 @@ public sealed record OwnNaturalKeyProbeColumn(
 );
 
 /// <summary>
+/// The fixed <c>dms.Descriptor</c> column names the descriptor probe binds.
+/// </summary>
+/// <remarks>
+/// These are the single source of the literals: the DDL emitter that creates the column, the compiler that
+/// binds it into a <see cref="DescriptorProbeTarget"/>, and the mapping-set default all read them from
+/// here, so a rename cannot leave the emitted schema and the compiled probe disagreeing.
+/// </remarks>
+public static class DescriptorProbeColumns
+{
+    /// <summary>
+    /// The engine-computed, persisted lower-cased projection of <c>dms.Descriptor.Uri</c> that the probe
+    /// seeks. The original-case <c>Uri</c> column remains the stored representation.
+    /// </summary>
+    public static readonly DbColumnName UriLowered = new("UriLowered");
+}
+
+/// <summary>
 /// Compiled probe descriptor for the shared <c>dms.Descriptor</c> table: how a descriptor URI plus its
 /// owning descriptor resource is resolved to a descriptor document id.
 /// </summary>

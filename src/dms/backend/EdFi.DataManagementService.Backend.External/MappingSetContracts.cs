@@ -103,7 +103,7 @@ public sealed record MappingSet(
     public DescriptorProbeTarget DescriptorProbeTarget { get; init; } =
         new(
             new DbTableName(new DbSchemaName("dms"), "Descriptor"),
-            new DbColumnName("UriLowered"),
+            DescriptorProbeColumns.UriLowered,
             new DbColumnName("Discriminator"),
             new Dictionary<QualifiedResourceName, string>()
         );

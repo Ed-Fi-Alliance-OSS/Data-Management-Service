@@ -48,10 +48,10 @@ internal static class NaturalKeyProbeCompiler
     internal static readonly DbTableName DescriptorTable = new(new DbSchemaName("dms"), "Descriptor");
 
     /// <summary>
-    /// The persisted lower-cased descriptor URI column. Compiled as a constant here; the column itself is
-    /// added to <c>dms.Descriptor</c> by a later step, so nothing may query it yet.
+    /// The persisted lower-cased descriptor URI column, shared with the <c>CoreDdlEmitter</c> that emits it
+    /// onto <c>dms.Descriptor</c>.
     /// </summary>
-    internal static readonly DbColumnName DescriptorUriLoweredColumn = new("UriLowered");
+    internal static readonly DbColumnName DescriptorUriLoweredColumn = DescriptorProbeColumns.UriLowered;
 
     /// <summary>The descriptor discriminator column.</summary>
     internal static readonly DbColumnName DescriptorDiscriminatorColumn = new("Discriminator");

@@ -36,9 +36,18 @@ internal static class DescriptorTableColumnExtractor
     public static readonly string[] PlaceholderColumns = ["CreatedByOwnershipTokenId"];
 
     /// <summary>
+    /// <c>dms.Descriptor</c> columns the storage engine computes from another column in the same row.
+    /// No writer can change one independently, and one cannot change unless its source column changed —
+    /// which the diff already detects through that source column. Diffing it would therefore be pure
+    /// redundancy on a value the trigger has no way to influence.
+    /// </summary>
+    public static readonly string[] EngineComputedColumns = ["UriLowered"];
+
+    /// <summary>
     /// Every <c>dms.Descriptor</c> column excluded from the stamping trigger's no-op change detection.
     /// </summary>
-    public static IEnumerable<string> NonDiffedColumns => TriggerMaintainedColumns.Concat(PlaceholderColumns);
+    public static IEnumerable<string> NonDiffedColumns =>
+        TriggerMaintainedColumns.Concat(PlaceholderColumns).Concat(EngineComputedColumns);
 
     private static readonly Regex _pgColumnLine = new(
         "^\\s+\"(?<name>[A-Za-z][A-Za-z0-9]*)\"\\s+\\S",

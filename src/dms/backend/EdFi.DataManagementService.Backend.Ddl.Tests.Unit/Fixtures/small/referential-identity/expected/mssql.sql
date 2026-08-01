@@ -142,6 +142,7 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [UriLowered] AS (LOWER([Uri])) PERSISTED,
     [DocumentUuid] uniqueidentifier NOT NULL CONSTRAINT [DF_Descriptor_DocumentUuid] DEFAULT newid(),
     [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_IdentityVersion] DEFAULT 0,
     [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
@@ -166,6 +167,13 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[Descriptor]
 ADD CONSTRAINT [UX_Descriptor_Uri_Discriminator] UNIQUE ([Uri], [Discriminator]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = N'UX_Descriptor_UriLowered_Discriminator' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+)
+ALTER TABLE [dms].[Descriptor]
+ADD CONSTRAINT [UX_Descriptor_UriLowered_Discriminator] UNIQUE ([UriLowered], [Discriminator]);
 
 IF OBJECT_ID(N'dms.Document', N'U') IS NULL
 CREATE TABLE [dms].[Document]

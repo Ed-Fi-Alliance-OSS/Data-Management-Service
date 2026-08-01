@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "UriLowered" varchar(306) GENERATED ALWAYS AS (lower("Uri")) STORED,
     "DocumentUuid" uuid NOT NULL DEFAULT gen_random_uuid(),
     "IdentityVersion" bigint NOT NULL DEFAULT 0,
     "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -127,6 +128,19 @@ BEGIN
     THEN
         ALTER TABLE "dms"."Descriptor"
         ADD CONSTRAINT "UX_Descriptor_Uri_Discriminator" UNIQUE ("Uri", "Discriminator");
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'UX_Descriptor_UriLowered_Discriminator'
+        AND conrelid = to_regclass('"dms"."Descriptor"')
+    )
+    THEN
+        ALTER TABLE "dms"."Descriptor"
+        ADD CONSTRAINT "UX_Descriptor_UriLowered_Discriminator" UNIQUE ("UriLowered", "Discriminator");
     END IF;
 END $$;
 

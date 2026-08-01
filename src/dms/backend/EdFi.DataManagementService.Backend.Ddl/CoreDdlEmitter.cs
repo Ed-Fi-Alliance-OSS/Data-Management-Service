@@ -330,6 +330,7 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("Discriminator"), StringType(128), false)},"
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Uri"), StringType(306), false)},");
+            writer.AppendLine($"{RenderDescriptorUriLoweredColumn()},");
             // dms.Document metadata mirrored onto the descriptor row by TR_Descriptor_Stamp_Document.
             // Unlike the root tables (whose PostgreSQL stamping trigger is BEFORE INSERT and can set
             // NEW directly), the descriptor trigger is AFTER INSERT and mirrors through a separate
@@ -386,6 +387,52 @@ public sealed class CoreDdlEmitter
             )
         );
         writer.AppendLine();
+
+        // The seek target for the descriptor reference probe. Two things the DDL cannot state:
+        //
+        // 1. This is not a new uniqueness rule. It matches the effective semantics of the UUIDv5
+        //    ReferentialId path it replaces: that hash was computed over the LOWER-CASED URI, so
+        //    case-variant spellings of the same descriptor URI always resolved to a single document
+        //    and could never coexist. UX_Descriptor_Uri_Discriminator (original case) is retained
+        //    unchanged and is strictly weaker on PostgreSQL — this constraint subsumes it there.
+        // 2. On SQL Server the default CI collation already made the original-case constraint
+        //    case-blind, so this one is redundant there. It is emitted on both dialects anyway so
+        //    the compiled probe binds one column name and one index for every backend.
+        writer.AppendLine(
+            _dialect.AddUniqueConstraint(
+                _descriptorTable,
+                "UX_Descriptor_UriLowered_Discriminator",
+                [Col(DescriptorProbeColumns.UriLowered.Value), Col("Discriminator")]
+            )
+        );
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Renders the <c>dms.Descriptor.UriLowered</c> column definition: an engine-computed, stored
+    /// lower-cased projection of <c>Uri</c>.
+    /// </summary>
+    /// <remarks>
+    /// Descriptor matching is case-insensitive by Ed-Fi contract and Core hands the backend an
+    /// already-lower-cased URI, but <c>Uri</c> stores the original case. Wrapping the probe predicate in
+    /// <c>lower("Uri")</c> would be correct and non-sargable on PostgreSQL, so the lower-casing is
+    /// materialized into its own column and indexed instead. Nothing writes it — the engine computes it
+    /// from <c>Uri</c>, which keeps it out of every INSERT column list and out of the stamping trigger.
+    /// <para>
+    /// Rendered inline rather than through <c>ISqlDialect.RenderComputedColumnDefinition</c>, which only
+    /// projects another column verbatim and cannot apply a function to it.
+    /// </para>
+    /// </remarks>
+    private string RenderDescriptorUriLoweredColumn()
+    {
+        var column = Quote(DescriptorProbeColumns.UriLowered.Value);
+        var source = Quote("Uri");
+
+        // PostgreSQL infers no type for a generated column, so the width is restated; SQL Server infers
+        // nvarchar(306) from LOWER([Uri]) and rejects an explicit type on a computed column.
+        return _dialect.Rules.Dialect == SqlDialect.Pgsql
+            ? $"{column} {StringType(306)} GENERATED ALWAYS AS (lower({source})) STORED"
+            : $"{column} AS (LOWER({source})) PERSISTED";
     }
 
     /// <summary>
