@@ -517,6 +517,64 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_initial_setup_capture_instance_has_drop_pending()
+    {
+        await AssertPendingDropCaptureInstanceFailsClosedAsync(
+            CdcProviderSetupMode.InitialCreateOrExactMatch
+        );
+    }
+
+    [Test]
+    public async Task MssqlCdcCaptureInstances_should_fail_closed_when_validate_only_capture_instance_has_drop_pending()
+    {
+        await AssertPendingDropCaptureInstanceFailsClosedAsync(CdcProviderSetupMode.ValidateOnly);
+    }
+
+    private static async Task AssertPendingDropCaptureInstanceFailsClosedAsync(CdcProviderSetupMode mode)
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances:
+            [
+                RecordingSqlServerCaptureInstance.Expected(
+                    CdcSourceTableKind.DocumentCache,
+                    hasDropPending: true
+                ),
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.Document),
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.CdcHeartbeat),
+            ]
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(mode: mode, databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document_cache"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["has_drop_pending"] == "True"
+                && observation.SafeObservedValues["expected_has_drop_pending"] == "False"
+            );
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_CAPTURE_INSTANCE_DROP_PENDING"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && diagnostic.SafeName.Value == "dms_binding_document_cache"
+                && diagnostic.ExpectedValue == "has_drop_pending=False"
+                && diagnostic.ObservedValue == "has_drop_pending=True"
+            );
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_cdc_disable_table"));
+        executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_cdc_enable_table"));
+    }
+
+    [Test]
     public async Task MssqlCdcCaptureInstances_should_fail_closed_when_capture_instance_uses_source_index_or_partition_switch()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(

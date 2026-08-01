@@ -1867,6 +1867,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         List<CdcProviderArtifactObservation> unexpectedArtifacts = [];
         List<CdcProviderDiagnostic> diagnostics = [];
+        diagnostics.AddRange(expectedInstances.Where(IsDropPending).Select(DropPendingDiagnostic));
+
         foreach (
             var unexpectedRows in rowsByCaptureInstance
                 .Where(group => !expectedCaptureNames.Contains(group.Key))
@@ -1880,6 +1882,24 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return new SqlServerCaptureInstancesInspection(expectedInstances, unexpectedArtifacts, diagnostics);
     }
+
+    private static bool IsDropPending(SqlServerCaptureInstanceInspection capture) =>
+        capture.ObservedValues.TryGetValue("has_drop_pending", out var hasDropPending)
+        && string.Equals(hasDropPending, "True", StringComparison.Ordinal);
+
+    private static CdcProviderDiagnostic DropPendingDiagnostic(SqlServerCaptureInstanceInspection capture) =>
+        new(
+            Code: "CDC_SQLSERVER_CAPTURE_INSTANCE_DROP_PENDING",
+            Category: CdcProviderDiagnosticCategory.ValidationMismatch,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: CdcProviderArtifactKind.SqlServerCaptureInstance,
+            SafeName: capture.CaptureInstanceName,
+            ExpectedValue: "has_drop_pending=False",
+            ObservedValue: "has_drop_pending=True",
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.FailClosed
+        );
 
     private static string CaptureInstancesSql(CdcProviderSetupRequest request)
     {
@@ -1951,7 +1971,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     COALESCE(expected_by_instance.source_name, expected_by_source.source_name, N'') AS expected_source_name,
                     COALESCE(capture_info.role_name, N'') AS role_name,
                     CONVERT(nvarchar(5), capture_info.supports_net_changes) AS supports_net_changes,
-                    N'False' AS has_drop_pending,
+                    CONVERT(nvarchar(5), CASE WHEN capture_info.has_drop_pending = 1 THEN 1 ELSE 0 END) AS has_drop_pending,
                     COALESCE(capture_info.index_name, N'') AS index_name,
                     COALESCE(primary_key_info.name, N'') AS source_primary_key_name,
                     COALESCE(capture_info.filegroup_name, N'') AS filegroup_name,
@@ -2296,6 +2316,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["supports_net_changes"] = supportsNetChanges.ToString(),
             ["expected_supports_net_changes"] = "False",
             ["has_drop_pending"] = hasDropPending.ToString(),
+            ["expected_has_drop_pending"] = "False",
             ["source_index"] = EmptyAsNone(sourceIndex),
             ["source_primary_key"] = EmptyAsNone(sourcePrimaryKeyName),
             ["expected_source_index"] = ExpectedSourceIndex(sourcePrimaryKeyName),
