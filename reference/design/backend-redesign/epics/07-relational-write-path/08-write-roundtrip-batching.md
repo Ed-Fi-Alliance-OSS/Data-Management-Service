@@ -105,8 +105,35 @@ dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integ
   --filter "FullyQualifiedName~Write_Session_Command_Stream"
 ```
 
-Still estimates, because no live command-count characterization covers them yet: DELETE, the guarded
-no-op path, GET-by-id, descriptor writes, most authorization and precondition variants, and the counts
+DELETE is measured separately, because its counts depend on the precondition and on the claim
+parameterization rather than on the collection shape. Measured on both providers through the same
+recorder, against the `synthetic/authorization-query` fixture with a real stored relationship
+authorization:
+
+| Scenario | Session commands | Sequence within the stream |
+| --- | --- | --- |
+| Authorized delete, no precondition | 1 | capture and lock, relationship `AUTH1`, resource root delete, `dms.Document` delete — one command, in that order |
+| Authorized delete, wildcard `If-Match` | 1 | identical; a wildcard is existence-only and the capture already answers existence |
+| Authorized delete, specific-tag `If-Match` | 2 | capture and `AUTH1`, then the deletes on the same transaction once the etag compare passes |
+| Authorized delete, SQL Server structured claims at 2000+ ids | 3 | capture; the relationship check as its own segment; then the deletes |
+
+Every DELETE row above holds one write session and one transaction; a denial or a failed precondition
+rolls that transaction back without reaching a delete statement.
+
+Reproduce with:
+
+```powershell
+# PostgreSQL
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration `
+  --filter "FullyQualifiedName~Given_A_Postgresql_Relational_Delete_Authorization"
+
+# SQL Server 2025, per AGENTS.md
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration `
+  --filter "FullyQualifiedName~Given_A_Mssql_Relational_Delete_Authorization"
+```
+
+Still estimates, because no live command-count characterization covers them yet: the guarded no-op path,
+GET-by-id, descriptor writes, most non-DELETE authorization and precondition variants, and the counts
 that scale with collection-table count. The focused AUTH1 tests below prove precedence, not a complete
 count matrix.
 
@@ -177,14 +204,19 @@ reference lookup, and hydration into one command when the provider shape and par
 
 ### DELETE
 
-`RelationalDocumentStoreRepository.DeleteDocumentByIdAsync`, which does not use the write executor.
+`RelationalDocumentStoreRepository.DeleteDocumentByIdAsync` → `CompositeRelationalDeleteCommand`, which
+does not use the write executor. These counts are **measured on both live providers** (see "Production
+DELETE Adoption"); the "Was" column is the pre-adoption estimate they replace.
 
-| Variant | Commands | Sequence |
-| --- | --- | --- |
-| No authorization, no precondition | 3 | `TryResolveDeleteTargetAsync`; `TryLockDeleteTargetAsync`; combined root and `dms.Document` delete |
-| Stored namespace and relationship authorization | 5 | one command each |
-| Specific-tag `If-Match` | 3 | already a client-side compare against the locked `ContentVersion` |
-| Blocked by an inbound foreign key | 3 | the violation surfaces on the delete command and is mapped by constraint name |
+| Variant | Commands | Was | Sequence |
+| --- | --- | --- | --- |
+| No authorization, no precondition | 1 | 3 | one command: capture and lock; resource root delete; `dms.Document` delete |
+| Stored namespace and relationship authorization | 1 | 5 | the two `AUTH1` statements join that command, between the capture and the deletes |
+| Wildcard `If-Match` | 1 | 3 | the capture already answers existence, so the precondition needs no in-process compare |
+| Specific-tag `If-Match` | 2 | 3 | capture and authorization; then the deletes as an ordered segment once the etag compare passes |
+| SQL Server structured (table-valued) claims | 3 | 5 | capture; the relationship check as its own segment; then the deletes |
+| Authorization that does not fit the command's parameter budget | 2 or 3 | n/a | the check that does not fit takes an ordered segment and the deletes wait for it |
+| Blocked by an inbound foreign key | 1 | 3 | the violation surfaces on the same command and is mapped by constraint name |
 
 ### GET-by-id
 
@@ -676,6 +708,90 @@ Live verification after adoption:
    the hydration batch as the only command touching more than one resource table, a premise co-batching
    removes; it now identifies it as the command that touches them without modifying any of them.
 
+### Production DELETE Adoption
+
+DELETE now issues one command for the ordinary and wildcard cases: target capture and lock, the stored
+namespace `AUTH1`, the stored relationship `AUTH1`, the resource root delete, and the `dms.Document`
+delete, in that order. The root row is deleted before `dms.Document` so the tombstone trigger can still
+read the `DocumentUuid`. Both deletes key on the capture carrier rather than repeating the target
+predicate, which is what makes an absent capture leave them matching nothing and stops a concurrent
+create landing after the capture from being deleted by a request that never locked it.
+
+The stored-authorization co-batching, the carrier substitutions, the parameter accounting, and the
+provider `AUTH1` denial classification are now one implementation shared with the write executor's first
+phase (`RelationalCompositeStoredAuthorization`). Precedence and failure classification therefore cannot
+drift between the two verbs.
+
+Measured after adoption, both providers:
+
+| Variant | Before | After |
+| --- | --- | --- |
+| No authorization, no precondition | 3 | 1 |
+| Stored namespace and relationship authorization | 5 | 1 |
+| Wildcard `If-Match` | 3 | 1 |
+| Specific-tag `If-Match` | 3 | 2 |
+| SQL Server structured claims | 5 | 3 |
+
+Live verification after adoption, on providers recreated after the `origin/main` integration
+(PostgreSQL 16.3; SQL Server 2025 RTM-CU7, `ProductVersion` 17.0.4065.4, both verified from the servers):
+
+- PostgreSQL DELETE authorization and delete-by-id suites: 35 passed, 0 failed.
+- SQL Server DELETE authorization and delete-by-id suites: 36 passed, 0 failed.
+- PostgreSQL `Category=Authorization` regression cluster: 101 passed, 0 failed.
+- SQL Server `Category=Authorization` regression cluster: one environmental failure on this host,
+  `It_returns_deferred_missing_reference_after_proposed_edorg_values_authorize`, reported with a 55-minute
+  duration — it was starved for the whole run rather than executing and asserting. It passes alone in 32
+  seconds, and its whole fixture passes 17 of 17 in 7 minutes 22 seconds. Recorded as environment, not
+  behavior; the cluster provisions a database per fixture and the container was recreated immediately
+  before the run.
+- Backend unit suite: 2317 passed, 0 failed.
+
+#### Deviations Recorded By The DELETE Slice
+
+1. **A specific-tag `If-Match` takes the ordered-segment path: two commands, not one.** The design's
+   sanctioned DELETE fallback is two commands and this is that fallback, taken deliberately. The compare
+   is over a served etag's *string* projection (`{ContentVersion}-{schemaEpoch}` under a variant key), so
+   expressing it as a SQL guard would mean a second implementation of the etag semantics, and the two
+   would be free to diverge. Co-batching the deletes anyway would also let an inbound foreign-key
+   violation preempt the precondition failure the caller must see — a 409 where the contract requires a
+   412. The segment path already has to exist for structured claims, so routing the precondition down it
+   costs nothing new. A wildcard `If-Match` stays on the one-command path, because existence is exactly
+   what the capture already answers.
+2. **A stored relationship check that cannot be co-batched runs as its own segment before any delete.**
+   SQL Server structured claims reach this, as they do on the write path: the composite rewriter cannot
+   rename a table-valued parameter. The measured count is three commands on that path.
+3. **An authorization statement that does not fit the command's parameter budget takes a segment rather
+   than being dropped.** A namespace check that does not fit forces the relationship check onto a segment
+   too, because co-batching the relationship into the opening command would place it ahead of the
+   namespace denial that outranks it. In both cases the deletes are withheld until every required check
+   has run and passed. On SQL Server the namespace-only overflow is not reachable in production — the
+   prefix cap (2000) is below the command budget (2098) — so the branch is covered through the same
+   optional `RelationalCommandBudget` seam the first phase and the second command already carry.
+4. **The lookup-then-lock split no longer exists, so races between them are not expressible.** DELETE
+   previously resolved the target and then locked it. Capture and lock are one statement now, so a target
+   cannot vanish between them; the wildcard-`If-Match`-target-vanishes-before-locking characterization is
+   retired into the unresolvable-target case, which produces the same 412.
+
+### Second-Command Defects Closed By The DELETE Slice
+
+Two ordering defects in the already-adopted write path were found and fixed while the DELETE slice was
+being verified. Both let a data-modifying statement run before an authorization decision was final.
+
+1. **A deferred proposed-relationship denial permitted DML.** `NoClaims` and an unreconcilable proposed
+   relationship plan are both held back until the namespace check has had its chance to outrank them. In
+   authorization-only mode that was correct. In DML mode the same code reserved collection keys and
+   applied the `dms.Document` row and every resource-table statement *first*, then returned the denial —
+   so a constraint violation could preempt the authorization failure, and a denied create could leave a
+   row behind. A deferred denial is now settled before any DML is prepared: the namespace check runs
+   alone when one is configured, and nothing else is sent.
+2. **The DELETE command's parameter-budget fallback was not honored.** Deviation 3 above describes the
+   fixed behavior. Before the fix, both `TryAppend` results were discarded: a namespace check that did
+   not fit was silently omitted while the deletes were co-batched anyway, and a relationship check left
+   with disposition `Emitted` but no ordinal reached `outcomes[-1]` after the deletes had already run.
+
+Both fixes were mutation-verified: restoring the pre-fix condition fails exactly the tests written for
+them and nothing else.
+
 ### Executor Test Removal And Replacement Audit
 
 The executor fixture now uses a sequential first-phase fake to keep later executor orchestration tests
@@ -708,6 +824,119 @@ No retained same-name executor test dropped a caller-visible assertion without a
 tests that stopped inspecting obsolete resolver/freshness calls now assert the same result and ordering
 through the sequential first-phase boundary; the production-first-phase fixture supplies the direct
 replacement for the removed internal-call assertions.
+
+### Repository DELETE Test Removal And Replacement Audit
+
+`RelationalDocumentStoreRepositoryTests` arranged its delete coverage by substituting a
+`SingleRecordRelationshipAuthorizationExecutionResult` or a `NamespaceAuthorizationExecutionResult` on the
+command-executor fake. The composite delete never reaches that seam: it builds raw commands on the write
+session, and a denial arrives as a provider `AUTH1` failure. The repository fixture now drives the real
+path through a command responder that answers on the received SQL, and keeps its own subject — preflight,
+plus session commit and rollback. Namespace denials there are arranged as a genuine `AUTH1` provider
+failure on a SQL Server mapping set, which needs no failure-extractor seam because SQL Server carries the
+payload in the message text. The alternative — a fixture-wide substituted-result seam — was rejected: it
+would have preserved arrangements for a code path that no longer exists.
+
+| Removed test | Disposition | Equivalent coverage |
+| --- | --- | --- |
+| `It_runs_relationship_authorization_for_delete_after_namespace_authorizes` | Replaced | `It_authorizes_the_stored_relationship_after_the_namespace_and_before_deleting` (both dialects), which asserts the order as statement position inside the one command that aborts at its first `AUTH1` |
+| `It_executes_supported_delete_relationship_authorization_under_the_locked_write_session_before_if_match_and_delete` | Replaced | `It_authorizes_the_stored_relationship_before_a_specific_tag_if_match_and_the_delete`, plus the live `AssertDeleteWithIfMatchSharedGuardedSession` on both providers, which pins one session, one lock, and the two-command shape |
+| `It_returns_relationship_not_authorized_before_if_match_and_delete_when_delete_authorization_fails` | Replaced | `It_returns_the_relationship_denial_rather_than_a_stale_if_match_mismatch`, which also asserts no delete statement was emitted |
+| `It_returns_security_configuration_when_delete_relationship_authorization_payload_is_invalid` | Replaced | `It_fails_closed_with_security_configuration_when_the_relationship_auth1_payload_is_malformed`, which drives a real malformed payload through the codec rather than substituting the mapped result |
+| `It_preserves_mixed_auth_object_relationship_failure_details_when_delete_authorization_fails` | Replaced, strengthened | `It_preserves_mixed_auth_object_and_people_subject_details_in_the_relationship_denial` exercises the check-spec → payload → failure chain instead of asserting a fabricated failure reached the result by reference |
+| `It_returns_people_delete_relationship_not_authorized_before_if_match_and_delete` | Folded into the above | The same replacement asserts the person subject's own metadata survives; the payload-level people mapping is separately owned by `Given_RelationshipAuthorizationProviderFailureMapper` |
+| `It_does_not_run_relationship_authorization_for_delete_when_namespace_denies` | Obsolete seam | Its assertion was that a retired executor was not called, which is now vacuous. Namespace-before-relationship is statement order in one command, asserted directly in the delete command's fixture |
+| `It_deletes_the_resource_root_table_before_the_document_row` | Replaced | `It_deletes_the_root_row_then_the_document_row_in_one_command` (both dialects), extended to pin the deleted-id projection and that neither delete binds a document id of its own |
+| `It_returns_relational_delete_failure_etag_mismatch_when_a_wildcard_if_match_target_vanishes_before_locking` | Obsolete race | Capture and lock are one statement, so there is no window between them; the same 412 is covered by the unresolvable-target wildcard test |
+
+## Final Count Matrix
+
+The story's closing count matrix. It supersedes the "Current State" estimate tables above wherever the two
+disagree: every row marked **measured** was observed on live PostgreSQL 16.3 and SQL Server 2025 RTM-CU7
+through the write-session command recorder, and both providers produced the same count unless the row says
+otherwise. BEGIN and COMMIT are excluded, per the counting convention.
+
+| Verb and variant | Before | After | Target | Status |
+| --- | --- | --- | --- | --- |
+| POST create, 2 collection rows | 6 | 2 | 2 | Measured, at target |
+| POST create, N collection tables | 4 + 2 × row groups | 2 | 2 | Measured for N=1; the invariant that the count does not grow with table count is asserted per provider |
+| POST resolving to an existing document | 4 | 2 | 2 | Measured, at target |
+| POST create, SQL Server structured claims | 4 | 3 | 2 | Measured shape — `MssqlRelationalPostAuthorizationTests` pins the authorization command ahead of the document-insert command on one session; deviation 3 of the second-command slice (a TVP cannot be renamed) |
+| PUT changed | 4 | 2 | 2 | Measured, at target |
+| PUT missing target | 1 | 1 | 1 | Measured, at target |
+| PUT/POST with a collection key another table binds | — | 3 | 3 | Estimate. The two second-command commands (shared reservation, then the DML) are asserted at the unit level; no live count characterization covers the aligned-extension-scope shape, so the total including the first phase is inferred |
+| DELETE, no precondition | 3 | 1 | 1 | Measured, at target |
+| DELETE, stored namespace and relationship authorization | 5 | 1 | 1 | Measured, at target |
+| DELETE, wildcard `If-Match` | 3 | 1 | 1 | Measured, at target |
+| DELETE, specific-tag `If-Match` | 3 | 2 | 2 | Measured; the design's sanctioned DELETE fallback, taken for the reason in deviation 1 of the DELETE slice |
+| DELETE, SQL Server structured claims | 5 | 3 | 2 | Measured; same TVP limitation |
+| First phase with a missing array reference | — | 1 | 1 | Measured on PostgreSQL and SQL Server scalar |
+| First phase with a SQL Server TVP reference lookup at 2000 references | — | 2 | 1 | Measured; TVP limitation |
+| Guarded no-op | 1 | 1 | 1 | Estimate; no live count characterization |
+| Authorized GET-by-id | 4 | 5 | 2 | Estimate, recorded as a verification-only deviation above; co-batching it is follow-on work |
+| Descriptor writes | — | — | — | Estimate; a separate path, recorded as verification-only |
+
+Two paths remain above their target, both for the same reason: a SQL Server table-valued parameter cannot
+be renamed by the composite rewriter, so a check or lookup that binds one runs as its own ordered segment.
+That is a provider constraint rather than an unfinished batching step, and it costs one command only on the
+claim and reference shapes large enough to reach the structured threshold.
+
+## Measurement Gate Outcome
+
+The acceptance gate is warm, steady-state, end-to-end write latency on both providers, not command counts.
+It is measured by `Given_A_Postgresql_Warm_Steady_State_Write_Latency_Measurement` and
+`Given_A_Mssql_Warm_Steady_State_Write_Latency_Measurement`: 20 unmeasured warmup iterations, then 100
+timed iterations per scenario, reported as median, p95, and mean. Both fixtures are `[Explicit]` — the
+harness is a measurement, not a regression assertion, and a timing assertion on shared hardware would be
+noise rather than evidence. Warmup exists so the measured window observes prepared statements and a
+populated plan cache, which is exactly the risk the gate was written for: co-batched command text varies
+with per-table row counts, so it could trade saved wire time for repeated planning.
+
+Reproduce with:
+
+```powershell
+# PostgreSQL
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration `
+  --filter "FullyQualifiedName~Given_A_Postgresql_Warm_Steady_State_Write_Latency_Measurement"
+
+# SQL Server 2025, per AGENTS.md
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration `
+  --filter "FullyQualifiedName~Given_A_Mssql_Warm_Steady_State_Write_Latency_Measurement"
+```
+
+#### Outcome: passed on both providers
+
+The baseline is the same harness run against `ec9d00a5a`, the commit immediately before the first-phase
+slice, in a separate worktree on the same host and the same provider containers, with nothing else
+running. Comparing anything else would compare hosts rather than code.
+
+PostgreSQL 16.3, median / p95 milliseconds over 100 warm iterations:
+
+| Scenario | Before | After | Median change |
+| --- | --- | --- | --- |
+| POST create, 2 collection rows | 9.63 / 11.80 | 7.06 / 9.07 | −27% |
+| PUT changed, 2 rows alternating to 3 | 7.96 / 10.36 | 6.83 / 8.46 | −14% |
+| DELETE, no precondition | 6.28 / 7.69 | 5.54 / 7.10 | −12% |
+
+SQL Server 2025 RTM-CU7, median / p95 milliseconds over 100 warm iterations:
+
+| Scenario | Before | After | Median change |
+| --- | --- | --- | --- |
+| POST create, 2 collection rows | 21.82 / 29.10 | 18.74 / 25.20 | −14% |
+| PUT changed, 2 rows alternating to 3 | 19.10 / 25.11 | 16.99 / 20.67 | −11% |
+| DELETE, no precondition | 14.66 / 17.77 | 11.61 / 14.09 | −21% |
+
+Every scenario improved on both providers, at the median and at p95. The gate's specific worry — that
+high-cardinality merged command text would never be prepared, trading saved wire time for repeated
+planning — does not materialize at these row counts: p95 improved by at least as much as the median
+everywhere except PostgreSQL DELETE, where both improved. Deterministic row-count bucketing is therefore
+not needed within this story, and the round-trip saving is not being paid for in planning time.
+
+Two limits worth stating plainly. These are single-host, single-client, sequential measurements: they
+establish that co-batching did not regress per-request latency, not what throughput looks like under
+concurrency. And the improvement is smaller than the round-trip reduction alone would suggest (POST create
+went 6 commands to 2 but 27% faster, not 3× faster), which is consistent with COMMIT being a permanent
+floor of roughly a quarter of session time.
 
 ## Follow-On Work
 

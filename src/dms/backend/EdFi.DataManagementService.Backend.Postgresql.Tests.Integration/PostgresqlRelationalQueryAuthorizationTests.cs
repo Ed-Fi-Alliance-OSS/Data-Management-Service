@@ -228,21 +228,48 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
         commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
 
-        // The target is locked once, up front; authorization then runs against that locked row and the
-        // delete follows — all within the single guarded session. The If-Match precondition composes its
-        // etag from the already-locked ContentVersion, so it issues neither a second lock nor a
-        // state-hydration read.
-        var lockIndex = FindRequiredCommandIndex(commands, IsPostgresqlDocumentLockCommand);
-        var authorizationIndex = FindRequiredCommandIndex(
-            commands,
-            IsPostgresqlRelationshipAuthorizationCommand
-        );
-        var deleteIndex = FindRequiredCommandIndex(commands, IsPostgresqlDocumentDeleteCommand);
+        // A specific-tag If-Match delete is two commands on one guarded session. The capture lock and the
+        // relationship check share the first, in that order; the etag is then composed in process from the
+        // ContentVersion that capture already returned — neither a second lock nor a state-hydration read —
+        // and only once it matches do the deletes run as an ordered segment on the same transaction.
+        commands.Should().HaveCount(2);
 
-        lockIndex.Should().BeLessThan(authorizationIndex);
-        authorizationIndex.Should().BeLessThan(deleteIndex);
+        var openingCommandText = commands[0].CommandText;
+        IsPostgresqlDocumentLockCommand(openingCommandText).Should().BeTrue();
+        IsPostgresqlRelationshipAuthorizationCommand(openingCommandText).Should().BeTrue();
+        openingCommandText
+            .IndexOf("FOR UPDATE", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(openingCommandText.IndexOf("AUTH1", StringComparison.Ordinal));
+        IsPostgresqlDocumentDeleteCommand(openingCommandText).Should().BeFalse();
 
+        IsPostgresqlDocumentDeleteCommand(commands[1].CommandText).Should().BeTrue();
         commands.Count(command => IsPostgresqlDocumentLockCommand(command.CommandText)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Asserts the whole of a delete that needs no in-process decision between observing the target and
+    /// modifying it: one command carrying capture and lock, the relationship check, and both deletes, in
+    /// that order, committed once.
+    /// </summary>
+    public void AssertDeleteIsOneCommittedCommand()
+    {
+        var commands = _writeSessionRecorder.Commands;
+
+        commands.Should().ContainSingle();
+        commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
+
+        var commandText = commands[0].CommandText;
+        var lockIndex = commandText.IndexOf("FOR UPDATE", StringComparison.Ordinal);
+        var authorizationIndex = commandText.IndexOf("AUTH1", StringComparison.Ordinal);
+        var documentDeleteIndex = commandText.IndexOf(
+            "DELETE FROM dms.\"Document\"",
+            StringComparison.Ordinal
+        );
+
+        lockIndex.Should().BePositive();
+        authorizationIndex.Should().BeGreaterThan(lockIndex);
+        documentDeleteIndex.Should().BeGreaterThan(authorizationIndex);
     }
 
     public PageKeysetSpec.Query AssertSingleQueryHydration()
@@ -2110,23 +2137,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private static Dictionary<string, string> CreateHeaders(string? ifMatch) =>
         ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch };
-
-    private static int FindRequiredCommandIndex(
-        IReadOnlyList<PostgresqlRelationalQueryAuthorizationRecordedCommand> commands,
-        Func<string, bool> predicate,
-        int startIndex = 0
-    )
-    {
-        for (var commandIndex = startIndex; commandIndex < commands.Count; commandIndex++)
-        {
-            if (predicate(commands[commandIndex].CommandText))
-            {
-                return commandIndex;
-            }
-        }
-
-        throw new InvalidOperationException("Expected relational write command was not recorded.");
-    }
 
     private static bool IsPostgresqlDocumentLockCommand(string commandText) =>
         commandText.Contains("FOR UPDATE", StringComparison.Ordinal)
