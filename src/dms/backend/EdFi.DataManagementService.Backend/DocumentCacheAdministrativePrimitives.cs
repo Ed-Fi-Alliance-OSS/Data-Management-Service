@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
@@ -135,6 +136,175 @@ internal sealed record DocumentCacheAdministrativeActivationTransitionResult
     public bool Mutated => Transition.Mutated;
 }
 
+internal enum DocumentCacheAdministrativeClearTarget
+{
+    DocumentCache = 1,
+    DocumentProjectionWork = 2,
+}
+
+internal sealed record DocumentCacheAdministrativeClearBatchRequest
+{
+    public DocumentCacheAdministrativeClearBatchRequest(int pageSize)
+    {
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pageSize),
+                pageSize,
+                "DocumentCache administrative clear batch size must be positive."
+            );
+        }
+
+        PageSize = pageSize;
+    }
+
+    public int PageSize { get; }
+}
+
+internal sealed record DocumentCacheAdministrativeClearBatchResult
+{
+    public DocumentCacheAdministrativeClearBatchResult(
+        DocumentCacheAdministrativeClearTarget target,
+        int pageSize,
+        ImmutableArray<long> clearedDocumentIds,
+        string message
+    )
+    {
+        if (!Enum.IsDefined(target))
+        {
+            throw new ArgumentOutOfRangeException(nameof(target), target, "Unsupported clear target.");
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pageSize),
+                pageSize,
+                "DocumentCache administrative clear batch size must be positive."
+            );
+        }
+
+        if (!clearedDocumentIds.IsDefaultOrEmpty && clearedDocumentIds.Length > pageSize)
+        {
+            throw new ArgumentException(
+                "Cleared document diagnostics cannot exceed the bounded clear batch size.",
+                nameof(clearedDocumentIds)
+            );
+        }
+
+        Target = target;
+        PageSize = pageSize;
+        ClearedDocumentIds = clearedDocumentIds.IsDefault ? [] : clearedDocumentIds.Sort();
+        Message = DocumentCacheAdministrativePrimitiveText.Sanitize(message);
+    }
+
+    public DocumentCacheAdministrativeClearTarget Target { get; }
+
+    public int PageSize { get; }
+
+    public ImmutableArray<long> ClearedDocumentIds { get; }
+
+    public int RowsCleared => ClearedDocumentIds.Length;
+
+    public bool Mutated => RowsCleared > 0;
+
+    public bool FilledBatch => RowsCleared == PageSize;
+
+    public string Message { get; }
+}
+
+internal sealed record DocumentCacheAdministrativeProjectedStateEmptinessResult
+{
+    public DocumentCacheAdministrativeProjectedStateEmptinessResult(
+        bool documentCacheEmpty,
+        bool documentProjectionWorkEmpty,
+        string message
+    )
+    {
+        DocumentCacheEmpty = documentCacheEmpty;
+        DocumentProjectionWorkEmpty = documentProjectionWorkEmpty;
+        Message = DocumentCacheAdministrativePrimitiveText.Sanitize(message);
+    }
+
+    public bool DocumentCacheEmpty { get; }
+
+    public bool DocumentProjectionWorkEmpty { get; }
+
+    public bool CacheAndWorkEmpty => DocumentCacheEmpty && DocumentProjectionWorkEmpty;
+
+    public string Message { get; }
+}
+
+internal sealed record DocumentCacheAdministrativeWorkClearance
+{
+    private DocumentCacheAdministrativeWorkClearance(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheDownstreamPublicationStatus downstreamPublicationStatus,
+        DocumentCacheOfflineWriterAdmissionConfirmation offlineWriterAdmissionConfirmation
+    )
+    {
+        Command = command;
+        DownstreamPublicationStatus = downstreamPublicationStatus;
+        OfflineWriterAdmissionConfirmation = offlineWriterAdmissionConfirmation;
+    }
+
+    public DocumentCacheAdministrativeCommand Command { get; }
+
+    public DocumentCacheDownstreamPublicationStatus DownstreamPublicationStatus { get; }
+
+    public DocumentCacheOfflineWriterAdmissionConfirmation OfflineWriterAdmissionConfirmation { get; }
+
+    public static DocumentCacheAdministrativeWorkClearance Require(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheDownstreamPublicationStatus downstreamPublicationStatus,
+        DocumentCacheOfflineWriterAdmissionConfirmation? offlineWriterAdmissionConfirmation
+    )
+    {
+        if (!Enum.IsDefined(command))
+        {
+            throw new ArgumentOutOfRangeException(nameof(command), command, "Unsupported command.");
+        }
+
+        if (!Enum.IsDefined(downstreamPublicationStatus))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(downstreamPublicationStatus),
+                downstreamPublicationStatus,
+                "Unsupported downstream publication status."
+            );
+        }
+
+        if (downstreamPublicationStatus != DocumentCacheDownstreamPublicationStatus.InternalOnly)
+        {
+            throw new InvalidOperationException(
+                "DocumentProjectionWork clearing requires trusted internal-only downstream-publication proof."
+            );
+        }
+
+        DocumentCacheOfflineWriterAdmissionConfirmation expectedConfirmation = command switch
+        {
+            DocumentCacheAdministrativeCommand.OfflineActivation =>
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
+            DocumentCacheAdministrativeCommand.OfflineDeactivation =>
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery =>
+                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
+            _ => throw new InvalidOperationException(
+                "DocumentProjectionWork clearing is available only to offline activation, offline deactivation, and internal-only cache-ahead recovery workflows."
+            ),
+        };
+
+        if (offlineWriterAdmissionConfirmation != expectedConfirmation)
+        {
+            throw new InvalidOperationException(
+                "DocumentProjectionWork clearing requires the command-specific offline writer-admission confirmation."
+            );
+        }
+
+        return new(command, downstreamPublicationStatus, expectedConfirmation);
+    }
+}
+
 internal interface IDocumentCacheAdministrativePrimitives
 {
     RelationalProviderToken ProviderToken { get; }
@@ -171,6 +341,24 @@ internal interface IDocumentCacheAdministrativePrimitives
         DocumentCacheAdministrativeLifecycleTransitionRequest request,
         CancellationToken cancellationToken = default
     );
+
+    Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        DocumentCacheAdministrativeWorkClearance clearance,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed record DocumentCacheAdministrativePrimitiveCommands
@@ -182,6 +370,9 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
         string guardedActivationDocumentLockCommandText,
         string guardedActivationEmptyStateCommandText,
         string transitionLifecycleCommandText,
+        string clearDocumentCacheBatchCommandText,
+        string clearDocumentProjectionWorkBatchCommandText,
+        string projectedStateEmptinessCommandText,
         string? activationPrerequisiteCommandText,
         DocumentCacheLifecycleReaderQuery lifecycleReaderQuery
     )
@@ -207,6 +398,18 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
             transitionLifecycleCommandText,
             nameof(transitionLifecycleCommandText)
         );
+        ClearDocumentCacheBatchCommandText = RequireCommandText(
+            clearDocumentCacheBatchCommandText,
+            nameof(clearDocumentCacheBatchCommandText)
+        );
+        ClearDocumentProjectionWorkBatchCommandText = RequireCommandText(
+            clearDocumentProjectionWorkBatchCommandText,
+            nameof(clearDocumentProjectionWorkBatchCommandText)
+        );
+        ProjectedStateEmptinessCommandText = RequireCommandText(
+            projectedStateEmptinessCommandText,
+            nameof(projectedStateEmptinessCommandText)
+        );
         ActivationPrerequisiteCommandText = activationPrerequisiteCommandText;
         LifecycleReaderQuery =
             lifecycleReaderQuery ?? throw new ArgumentNullException(nameof(lifecycleReaderQuery));
@@ -223,6 +426,12 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
     public string GuardedActivationEmptyStateCommandText { get; }
 
     public string TransitionLifecycleCommandText { get; }
+
+    public string ClearDocumentCacheBatchCommandText { get; }
+
+    public string ClearDocumentProjectionWorkBatchCommandText { get; }
+
+    public string ProjectedStateEmptinessCommandText { get; }
 
     public string? ActivationPrerequisiteCommandText { get; }
 
@@ -252,6 +461,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     private const string CanonicalDocumentsEmptyColumnName = "CanonicalDocumentsEmpty";
     private const string DocumentCacheEmptyColumnName = "DocumentCacheEmpty";
     private const string DocumentProjectionWorkEmptyColumnName = "DocumentProjectionWorkEmpty";
+    private const string ClearedDocumentIdColumnName = "DocumentId";
     private const string ReadCommittedSnapshotColumnName = "ReadCommittedSnapshot";
     private const string NestedTriggersColumnName = "NestedTriggers";
 
@@ -467,6 +677,89 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
         );
     }
 
+    public static Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativePrimitiveCommands commands,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mutexSession);
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ClearBatchAsync(
+            mutexSession.CreateCommandExecutor(),
+            commands.ClearDocumentCacheBatchCommandText,
+            DocumentCacheAdministrativeClearTarget.DocumentCache,
+            request,
+            cancellationToken
+        );
+    }
+
+    public static Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativePrimitiveCommands commands,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        DocumentCacheAdministrativeWorkClearance clearance,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mutexSession);
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(clearance);
+
+        return ClearBatchAsync(
+            mutexSession.CreateCommandExecutor(),
+            commands.ClearDocumentProjectionWorkBatchCommandText,
+            DocumentCacheAdministrativeClearTarget.DocumentProjectionWork,
+            request,
+            cancellationToken
+        );
+    }
+
+    public static async Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativePrimitiveCommands commands,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mutexSession);
+        ArgumentNullException.ThrowIfNull(commands);
+
+        return await mutexSession
+            .CreateCommandExecutor()
+            .ExecuteReaderAsync(
+                new RelationalCommand(commands.ProjectedStateEmptinessCommandText),
+                static async (reader, readerCancellationToken) =>
+                {
+                    if (!await reader.ReadAsync(readerCancellationToken).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException(
+                            "DocumentCache projected-state emptiness observation did not return a row."
+                        );
+                    }
+
+                    bool documentCacheEmpty = ReadRequiredBoolean(reader, DocumentCacheEmptyColumnName);
+                    bool documentProjectionWorkEmpty = ReadRequiredBoolean(
+                        reader,
+                        DocumentProjectionWorkEmptyColumnName
+                    );
+
+                    return new DocumentCacheAdministrativeProjectedStateEmptinessResult(
+                        documentCacheEmpty,
+                        documentProjectionWorkEmpty,
+                        documentCacheEmpty && documentProjectionWorkEmpty
+                            ? "DocumentCache projected state is empty."
+                            : "DocumentCache projected state still has cache or durable-work rows."
+                    );
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         IRelationalCommandExecutor executor,
         DocumentCacheAdministrativePrimitiveCommands commands,
@@ -496,6 +789,46 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
                 "dms.DocumentCacheState is unreadable."
             );
         }
+    }
+
+    private static async Task<DocumentCacheAdministrativeClearBatchResult> ClearBatchAsync(
+        IRelationalCommandExecutor executor,
+        string commandText,
+        DocumentCacheAdministrativeClearTarget target,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        ImmutableArray<long>.Builder clearedDocumentIds = ImmutableArray.CreateBuilder<long>(
+            request.PageSize
+        );
+
+        await executor
+            .ExecuteReaderAsync(
+                new RelationalCommand(commandText, [new RelationalParameter("@pageSize", request.PageSize)]),
+                async (reader, readerCancellationToken) =>
+                {
+                    while (await reader.ReadAsync(readerCancellationToken).ConfigureAwait(false))
+                    {
+                        clearedDocumentIds.Add(ReadRequiredInt64(reader, ClearedDocumentIdColumnName));
+                    }
+
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        ImmutableArray<long> sortedDocumentIds = clearedDocumentIds.ToImmutable().Sort();
+
+        return new DocumentCacheAdministrativeClearBatchResult(
+            target,
+            request.PageSize,
+            sortedDocumentIds,
+            sortedDocumentIds.IsEmpty
+                ? "DocumentCache administrative clear batch found no rows."
+                : "DocumentCache administrative clear batch deleted bounded rows."
+        );
     }
 
     private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
@@ -666,6 +999,18 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             new("@nextCacheAheadRecoveryRequired", request.NextCacheAheadRecoveryRequired),
         ];
 
+    private static long ReadRequiredInt64(IRelationalCommandReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            throw new InvalidOperationException($"Required bigint column '{columnName}' was null.");
+        }
+
+        object value = reader.GetFieldValue<object>(ordinal);
+        return Convert.ToInt64(value, CultureInfo.InvariantCulture);
+    }
+
     private static string? ReadOptionalString(IRelationalCommandReader reader, string columnName)
     {
         int ordinal = reader.GetOrdinal(columnName);
@@ -730,6 +1075,12 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             RenderGuardedActivationDocumentLockCommandText(dialect),
             RenderGuardedActivationEmptyStateCommandText(dialect),
             RenderTransitionLifecycleCommandText(dialect),
+            RenderClearBatchCommandText(dialect, DocumentCacheAdministrativeClearTarget.DocumentCache),
+            RenderClearBatchCommandText(
+                dialect,
+                DocumentCacheAdministrativeClearTarget.DocumentProjectionWork
+            ),
+            RenderProjectedStateEmptinessCommandText(dialect),
             dialect == SqlDialect.Mssql ? RenderSqlServerActivationPrerequisiteCommandText() : null,
             new DocumentCacheLifecycleReaderQuery(
                 ExistsCommandText: string.Empty,
@@ -858,6 +1209,74 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
 
                 SELECT TOP (2) {lifecycleColumn}, {cacheAheadRecoveryRequiredColumn}
                 FROM @transitioned;
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+    }
+
+    private static string RenderClearBatchCommandText(
+        SqlDialect dialect,
+        DocumentCacheAdministrativeClearTarget target
+    )
+    {
+        DbTableName table = target switch
+        {
+            DocumentCacheAdministrativeClearTarget.DocumentCache =>
+                DocumentCacheInventoryDefinition.DocumentCache,
+            DocumentCacheAdministrativeClearTarget.DocumentProjectionWork =>
+                DocumentCacheInventoryDefinition.DocumentProjectionWork,
+            _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Unsupported clear target."),
+        };
+
+        string qualifiedTable = Quote(table, dialect);
+        string documentIdColumn = Quote(DocumentCacheInventoryDefinition.DocumentColumns.DocumentId, dialect);
+        string resultColumn = Quote(new DbColumnName(ClearedDocumentIdColumnName), dialect);
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $"""
+                WITH bounded_rows AS (
+                    SELECT {documentIdColumn}
+                    FROM {qualifiedTable}
+                    ORDER BY {documentIdColumn}
+                    LIMIT @pageSize
+                )
+                DELETE FROM {qualifiedTable} AS target
+                USING bounded_rows
+                WHERE target.{documentIdColumn} = bounded_rows.{documentIdColumn}
+                RETURNING target.{documentIdColumn} AS {resultColumn};
+                """,
+            SqlDialect.Mssql => $"""
+                WITH bounded_rows AS (
+                    SELECT TOP (@pageSize) {documentIdColumn}
+                    FROM {qualifiedTable}
+                    ORDER BY {documentIdColumn}
+                )
+                DELETE target
+                OUTPUT deleted.{documentIdColumn}
+                FROM {qualifiedTable} AS target
+                INNER JOIN bounded_rows ON bounded_rows.{documentIdColumn} = target.{documentIdColumn};
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+    }
+
+    private static string RenderProjectedStateEmptinessCommandText(SqlDialect dialect)
+    {
+        string cacheTable = Quote(DocumentCacheInventoryDefinition.DocumentCache, dialect);
+        string workTable = Quote(DocumentCacheInventoryDefinition.DocumentProjectionWork, dialect);
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $"""
+                SELECT
+                    NOT EXISTS (SELECT 1 FROM {cacheTable} LIMIT 1) AS "{DocumentCacheEmptyColumnName}",
+                    NOT EXISTS (SELECT 1 FROM {workTable} LIMIT 1) AS "{DocumentProjectionWorkEmptyColumnName}";
+                """,
+            SqlDialect.Mssql => $"""
+                SELECT
+                    CAST(CASE WHEN NOT EXISTS (SELECT TOP (1) 1 FROM {cacheTable}) THEN 1 ELSE 0 END AS bit) AS [{DocumentCacheEmptyColumnName}],
+                    CAST(CASE WHEN NOT EXISTS (SELECT TOP (1) 1 FROM {workTable}) THEN 1 ELSE 0 END AS bit) AS [{DocumentProjectionWorkEmptyColumnName}];
                 """,
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };

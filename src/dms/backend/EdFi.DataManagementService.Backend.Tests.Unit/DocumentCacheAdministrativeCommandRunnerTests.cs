@@ -611,6 +611,24 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             DocumentCacheAdministrativeLifecycleTransitionRequest request,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeClearBatchRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeClearBatchRequest request,
+            DocumentCacheAdministrativeWorkClearance clearance,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private sealed class ThrowingDocumentCacheMaterializer : IDocumentCacheMaterializer

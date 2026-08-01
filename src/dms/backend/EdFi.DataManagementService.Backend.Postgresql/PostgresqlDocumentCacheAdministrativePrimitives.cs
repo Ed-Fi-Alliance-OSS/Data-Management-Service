@@ -82,4 +82,40 @@ internal sealed class PostgresqlDocumentCacheAdministrativePrimitives : IDocumen
             request,
             cancellationToken
         );
+
+    public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentCacheBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ClearDocumentCacheBatchAsync(
+            mutexSession,
+            Commands,
+            request,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeClearBatchResult> ClearDocumentProjectionWorkBatchAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeClearBatchRequest request,
+        DocumentCacheAdministrativeWorkClearance clearance,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ClearDocumentProjectionWorkBatchAsync(
+            mutexSession,
+            Commands,
+            request,
+            clearance,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeProjectedStateEmptinessResult> ReadProjectedStateEmptinessAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ReadProjectedStateEmptinessAsync(
+            mutexSession,
+            Commands,
+            cancellationToken
+        );
 }

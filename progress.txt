@@ -67,3 +67,8 @@ Completed administrative-runner task for reference/design/backend-redesign/epics
 Key decisions: added backend shared synchronous runner with pre-mutex target/generation/fingerprint rejection, mutex acquisition before WorkflowTimeout starts, pinned runtime/mutex context, live lifecycle preflight hook, local command ownership, mutation-aware timeout/cancellation/session/provider classifications, and active-command observation/noncurrent diagnostics.
 Files changed: DocumentCacheAdministrativeCommandRunner.cs; DocumentCacheProjectionScheduler.cs; ReferenceResolverServiceCollectionExtensions.cs; DocumentCacheAdministrativeCommandRunnerTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Next likely bounded-clearing, then baseline-seeding/drain workflows can plug into runner.
+
+Completed bounded-clearing task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added shared bounded clear primitives using Projector page size request, DocumentId-ordered provider deletes returning capped affected ids, NOT EXISTS projected-state emptiness, and work-clearance token requiring internal-only proof plus command-specific offline admission.
+Files changed: DocumentCacheAdministrativePrimitives.cs; PG/MSSQL primitive wrappers; focused unit tests; PG/MSSQL DocumentCacheAdministrativeClear integration tests; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset/stale; verified SQL Server with ConnectionStrings__MssqlAdmin override to running SQL Server 2025 container on localhost,14333. Next likely baseline-seeding before administrative-drain/workflows.

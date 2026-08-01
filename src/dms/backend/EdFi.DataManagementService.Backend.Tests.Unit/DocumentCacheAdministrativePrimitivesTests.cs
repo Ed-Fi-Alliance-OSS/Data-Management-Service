@@ -294,6 +294,125 @@ public class Given_DocumentCacheAdministrativePrimitives
         executor.Commands.Should().BeEmpty();
     }
 
+    [Test]
+    public void It_renders_bounded_ordered_clear_commands_without_unbounded_delete_or_truncate()
+    {
+        DocumentCacheAdministrativePrimitiveCommands pgsql =
+            DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql);
+        DocumentCacheAdministrativePrimitiveCommands mssql =
+            DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Mssql);
+
+        pgsql.ClearDocumentCacheBatchCommandText.Should().Contain("ORDER BY \"DocumentId\"");
+        pgsql.ClearDocumentCacheBatchCommandText.Should().Contain("LIMIT @pageSize");
+        pgsql.ClearDocumentCacheBatchCommandText.Should().Contain("DELETE FROM \"dms\".\"DocumentCache\"");
+        pgsql
+            .ClearDocumentProjectionWorkBatchCommandText.Should()
+            .Contain("DELETE FROM \"dms\".\"DocumentProjectionWork\"");
+        pgsql.ClearDocumentCacheBatchCommandText.Should().NotContain("TRUNCATE");
+
+        mssql.ClearDocumentCacheBatchCommandText.Should().Contain("SELECT TOP (@pageSize) [DocumentId]");
+        mssql.ClearDocumentCacheBatchCommandText.Should().Contain("ORDER BY [DocumentId]");
+        mssql.ClearDocumentCacheBatchCommandText.Should().Contain("DELETE target");
+        mssql
+            .ClearDocumentProjectionWorkBatchCommandText.Should()
+            .Contain("FROM [dms].[DocumentProjectionWork] AS target");
+        mssql.ClearDocumentCacheBatchCommandText.Should().NotContain("TRUNCATE");
+    }
+
+    [Test]
+    public async Task It_clears_a_bounded_cache_batch_through_the_mutex_session_executor()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(("DocumentId", 9L)),
+                    RelationalAccessTestData.CreateRow(("DocumentId", 3L))
+                ),
+            ]),
+        ]);
+        var session = new InMemoryAdministrativeSession(executor);
+
+        DocumentCacheAdministrativeClearBatchResult result =
+            await DocumentCacheAdministrativePrimitivesSupport.ClearDocumentCacheBatchAsync(
+                session,
+                DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql),
+                new DocumentCacheAdministrativeClearBatchRequest(pageSize: 2)
+            );
+
+        result.Target.Should().Be(DocumentCacheAdministrativeClearTarget.DocumentCache);
+        result.RowsCleared.Should().Be(2);
+        result.FilledBatch.Should().BeTrue();
+        result.Mutated.Should().BeTrue();
+        result.ClearedDocumentIds.Should().Equal(3L, 9L);
+        executor.Commands.Should().ContainSingle();
+        executor.Commands[0].Parameters.Should().ContainSingle();
+        executor.Commands[0].Parameters[0].Value.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_observes_projected_state_emptiness_without_exact_counts()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentCacheEmpty", false),
+                        ("DocumentProjectionWorkEmpty", true)
+                    )
+                ),
+            ]),
+        ]);
+        var session = new InMemoryAdministrativeSession(executor);
+
+        DocumentCacheAdministrativeProjectedStateEmptinessResult result =
+            await DocumentCacheAdministrativePrimitivesSupport.ReadProjectedStateEmptinessAsync(
+                session,
+                DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Mssql)
+            );
+
+        result.DocumentCacheEmpty.Should().BeFalse();
+        result.DocumentProjectionWorkEmpty.Should().BeTrue();
+        result.CacheAndWorkEmpty.Should().BeFalse();
+        executor.Commands.Should().ContainSingle();
+        executor.Commands[0].CommandText.Should().Contain("NOT EXISTS");
+        executor.Commands[0].CommandText.Should().NotContain("COUNT");
+    }
+
+    [Test]
+    public void It_requires_internal_only_proof_and_matching_offline_admission_before_work_clearing()
+    {
+        DocumentCacheAdministrativeWorkClearance valid = DocumentCacheAdministrativeWorkClearance.Require(
+            DocumentCacheAdministrativeCommand.OfflineDeactivation,
+            DocumentCacheDownstreamPublicationStatus.InternalOnly,
+            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+        );
+
+        valid.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineDeactivation);
+
+        Action activePublication = () =>
+            DocumentCacheAdministrativeWorkClearance.Require(
+                DocumentCacheAdministrativeCommand.OfflineDeactivation,
+                DocumentCacheDownstreamPublicationStatus.Active,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+            );
+        Action wrongConfirmation = () =>
+            DocumentCacheAdministrativeWorkClearance.Require(
+                DocumentCacheAdministrativeCommand.OfflineDeactivation,
+                DocumentCacheDownstreamPublicationStatus.InternalOnly,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+            );
+        Action onlineRebuild = () =>
+            DocumentCacheAdministrativeWorkClearance.Require(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                DocumentCacheDownstreamPublicationStatus.InternalOnly,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+            );
+
+        activePublication.Should().Throw<InvalidOperationException>();
+        wrongConfirmation.Should().Throw<InvalidOperationException>();
+        onlineRebuild.Should().Throw<InvalidOperationException>();
+    }
+
     private sealed class InMemoryAdministrativeSession(IRelationalCommandExecutor executor)
         : IRelationalWriteSession
     {
