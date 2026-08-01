@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
@@ -285,6 +286,34 @@ public class DocumentCachePreflightClassifierTests
     [Parallelizable]
     public class Given_Offline_Activation : DocumentCachePreflightClassifierTests
     {
+        [TestCaseSource(nameof(InvalidOfflineActivationAdmissions))]
+        public void It_should_reject_invalid_offline_writer_admission_before_lifecycle(
+            DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
+            DocumentCacheAdministrativeCommandClassification expectedClassification,
+            DocumentCacheAdministrativeDiagnosticCategory expectedDiagnosticCategory
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyOfflineActivation(
+                    new DocumentCacheOfflineActivationRequest(
+                        _administrativeTargetKey,
+                        offlineWriterAdmission,
+                        _fingerprint
+                    ),
+                    EligibleObservation(DocumentCacheLifecycleState.Tracking),
+                    OfflineActivationFacts(
+                        DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
+                    )
+                );
+
+            AssertOfflineWriterAdmissionRejected(
+                result,
+                expectedClassification,
+                expectedDiagnosticCategory,
+                DocumentCacheLifecycleState.Tracking
+            );
+        }
+
         [Test]
         [TestCase(DocumentCacheLifecycleState.Disabled)]
         [TestCase(DocumentCacheLifecycleState.Rebuilding)]
@@ -450,12 +479,72 @@ public class DocumentCachePreflightClassifierTests
             );
             result.DownstreamPublicationStatus.Should().Be(status);
         }
+
+        private static IEnumerable<TestCaseData> InvalidOfflineActivationAdmissions()
+        {
+            yield return new TestCaseData(
+                null,
+                DocumentCacheAdministrativeCommandClassification.MissingOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.MissingOfflineWriterAdmission
+            ).SetName("Missing admission");
+
+            yield return new TestCaseData(
+                new DocumentCacheOfflineWriterAdmission(
+                    confirmed: false,
+                    DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+                ),
+                DocumentCacheAdministrativeCommandClassification.UnconfirmedOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.UnconfirmedOfflineWriterAdmission
+            ).SetName("Unconfirmed admission");
+
+            yield return new TestCaseData(
+                new DocumentCacheOfflineWriterAdmission(
+                    confirmed: true,
+                    DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+                ),
+                DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
+            ).SetName("Mismatched admission");
+
+            yield return new TestCaseData(
+                UnknownOfflineWriterAdmission(),
+                DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
+            ).SetName("Unknown admission");
+        }
     }
 
     [TestFixture]
     [Parallelizable]
     public class Given_Offline_Deactivation : DocumentCachePreflightClassifierTests
     {
+        [Test]
+        public void It_should_reject_unconfirmed_offline_writer_admission_before_lifecycle()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyOfflineDeactivation(
+                    new DocumentCacheOfflineDeactivationRequest(
+                        _administrativeTargetKey,
+                        new DocumentCacheOfflineWriterAdmission(
+                            confirmed: false,
+                            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+                        ),
+                        _fingerprint
+                    ),
+                    EligibleObservation(DocumentCacheLifecycleState.Disabled),
+                    OfflineDeactivationFacts(
+                        DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
+                    )
+                );
+
+            AssertOfflineWriterAdmissionRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.UnconfirmedOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.UnconfirmedOfflineWriterAdmission,
+                DocumentCacheLifecycleState.Disabled
+            );
+        }
+
         [TestCase(DocumentCacheLifecycleState.Tracking)]
         [TestCase(DocumentCacheLifecycleState.Resetting)]
         [TestCase(DocumentCacheLifecycleState.Rebuilding)]
@@ -730,6 +819,30 @@ public class DocumentCachePreflightClassifierTests
     [Parallelizable]
     public class Given_Internal_Only_Cache_Ahead_Recovery : DocumentCachePreflightClassifierTests
     {
+        [Test]
+        public void It_should_reject_mismatched_offline_writer_admission_before_lifecycle()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyInternalOnlyCacheAheadRecovery(
+                    new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
+                        _administrativeTargetKey,
+                        _offlineActivationAdmission,
+                        _fingerprint
+                    ),
+                    EligibleObservation(DocumentCacheLifecycleState.Disabled),
+                    InternalOnlyCacheAheadRecoveryFacts(
+                        DownstreamObservation(DocumentCacheDownstreamPublicationStatus.InternalOnly)
+                    )
+                );
+
+            AssertOfflineWriterAdmissionRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission,
+                DocumentCacheLifecycleState.Disabled
+            );
+        }
+
         [TestCase(DocumentCacheLifecycleState.Tracking)]
         [TestCase(DocumentCacheLifecycleState.Resetting)]
         [TestCase(DocumentCacheLifecycleState.Rebuilding)]
@@ -1011,6 +1124,30 @@ public class DocumentCachePreflightClassifierTests
         }
     }
 
+    protected static void AssertOfflineWriterAdmissionRejected(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheAdministrativeCommandClassification classification,
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
+        DocumentCacheLifecycleState expectedObservedLifecycle
+    )
+    {
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result.Classification.Should().Be(classification);
+        result.Mutated.Should().BeFalse();
+        result.Diagnostics.Should().Contain(diagnostic => diagnostic.Category == diagnosticCategory);
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.DiagnosticCategory == diagnosticCategory
+            );
+        result.NoMutationGuarantee.Should().NotBeNull();
+        result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
+        result.ObservedLifecycle.Should().Be(expectedObservedLifecycle);
+        result.PhysicalSourceFingerprint.Should().Be(_fingerprint);
+        result.TargetContextGeneration.Should().Be(_generation.Value);
+    }
+
     protected static DocumentCacheGuardedNewEmptyActivationRequest GuardedRequest(
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
     ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
@@ -1049,6 +1186,16 @@ public class DocumentCachePreflightClassifierTests
             _cacheAheadRecoveryAdmission,
             expectedPhysicalSourceFingerprint ?? _fingerprint
         );
+
+    protected static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
+        JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
+            """
+            {
+              "confirmed": true,
+              "confirmation": "unknownWritersClosedAndDrained"
+            }
+            """
+        )!;
 
     protected static DocumentCacheGuardedNewEmptyActivationPreflightFacts GuardedFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,

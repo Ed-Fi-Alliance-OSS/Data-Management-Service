@@ -106,7 +106,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
                 DocumentCacheAdministrativeWorkClearance.Require(
                     context.Request.Command,
                     downstreamProof.DownstreamPublicationStatus,
-                    context.Request.OfflineWriterAdmission
+                    context.Request.AcceptedOfflineWriterAdmissionConfirmation
                 );
 
             DocumentCacheAdministrativeCommandResult? clearFailure = await ClearCacheAndWorkAsync(
@@ -490,10 +490,7 @@ internal sealed class DocumentCacheOfflineActivationCommand(
     ) =>
         new(
             context.Request.TargetKey,
-            new DocumentCacheOfflineWriterAdmission(
-                confirmed: true,
-                confirmation: context.Request.OfflineWriterAdmission
-            ),
+            context.Request.OfflineWriterAdmission,
             context.Request.ExpectedPhysicalSourceFingerprint
         );
 

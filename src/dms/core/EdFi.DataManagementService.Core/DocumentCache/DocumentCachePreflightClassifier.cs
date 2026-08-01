@@ -265,6 +265,18 @@ public static class DocumentCachePreflightClassifier
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(facts);
 
+        DocumentCacheAdministrativeCommandResult? offlineWriterAdmissionRejection =
+            ClassifyOfflineWriterAdmission(
+                DocumentCacheAdministrativeCommand.OfflineActivation,
+                request.TargetKey,
+                request.OfflineWriterAdmission,
+                targetObservation
+            );
+        if (offlineWriterAdmissionRejection is not null)
+        {
+            return offlineWriterAdmissionRejection;
+        }
+
         DocumentCacheAdministrativeCommandResult? commonRejection = ClassifyCommonTargetState(
             DocumentCacheAdministrativeCommand.OfflineActivation,
             request.TargetKey,
@@ -341,6 +353,18 @@ public static class DocumentCachePreflightClassifier
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(facts);
+
+        DocumentCacheAdministrativeCommandResult? offlineWriterAdmissionRejection =
+            ClassifyOfflineWriterAdmission(
+                DocumentCacheAdministrativeCommand.OfflineDeactivation,
+                request.TargetKey,
+                request.OfflineWriterAdmission,
+                targetObservation
+            );
+        if (offlineWriterAdmissionRejection is not null)
+        {
+            return offlineWriterAdmissionRejection;
+        }
 
         DocumentCacheAdministrativeCommandResult? commonRejection = ClassifyCommonTargetState(
             DocumentCacheAdministrativeCommand.OfflineDeactivation,
@@ -456,6 +480,18 @@ public static class DocumentCachePreflightClassifier
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(facts);
 
+        DocumentCacheAdministrativeCommandResult? offlineWriterAdmissionRejection =
+            ClassifyOfflineWriterAdmission(
+                DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+                request.TargetKey,
+                request.OfflineWriterAdmission,
+                targetObservation
+            );
+        if (offlineWriterAdmissionRejection is not null)
+        {
+            return offlineWriterAdmissionRejection;
+        }
+
         DocumentCacheAdministrativeCommandResult? commonRejection = ClassifyCommonTargetState(
             DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
             request.TargetKey,
@@ -562,6 +598,95 @@ public static class DocumentCachePreflightClassifier
         );
     }
 
+    public static DocumentCacheAdministrativeCommandResult? ClassifyOfflineWriterAdmission(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
+        DocumentCacheTargetObservation? targetObservation = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        if (!RequiresOfflineWriterAdmission(command))
+        {
+            return null;
+        }
+
+        if (offlineWriterAdmission is null)
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.MissingOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.MissingOfflineWriterAdmission,
+                "Offline writer admission is required for this command."
+            );
+        }
+
+        if (!offlineWriterAdmission.Confirmed)
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.UnconfirmedOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.UnconfirmedOfflineWriterAdmission,
+                "Offline writer admission must have confirmed true."
+            );
+        }
+
+        if (
+            offlineWriterAdmission.Confirmation is null
+            && !offlineWriterAdmission.HasUnrecognizedConfirmation
+        )
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.MissingOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.MissingOfflineWriterAdmission,
+                "Offline writer admission confirmation is required for this command."
+            );
+        }
+
+        DocumentCacheOfflineWriterAdmissionConfirmation expectedConfirmation =
+            ExpectedOfflineWriterAdmissionConfirmation(command);
+        if (offlineWriterAdmission.Confirmation != expectedConfirmation)
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
+                DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission,
+                "Offline writer admission confirmation must match the command-specific confirmation token."
+            );
+        }
+
+        return null;
+    }
+
+    public static DocumentCacheOfflineWriterAdmissionConfirmation? AcceptedOfflineWriterAdmissionConfirmation(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission
+    )
+    {
+        if (!RequiresOfflineWriterAdmission(command) || offlineWriterAdmission is null)
+        {
+            return null;
+        }
+
+        DocumentCacheOfflineWriterAdmissionConfirmation expectedConfirmation =
+            ExpectedOfflineWriterAdmissionConfirmation(command);
+        return
+            offlineWriterAdmission is { Confirmed: true, Confirmation: var confirmation }
+            && confirmation == expectedConfirmation
+            ? confirmation
+            : null;
+    }
+
     private static DocumentCacheAdministrativeCommandResult? ClassifyCommonTargetState(
         DocumentCacheAdministrativeCommand command,
         DocumentCacheAdministrativeTargetKey targetKey,
@@ -647,6 +772,29 @@ public static class DocumentCachePreflightClassifier
 
         return null;
     }
+
+    private static bool RequiresOfflineWriterAdmission(DocumentCacheAdministrativeCommand command) =>
+        command
+            is DocumentCacheAdministrativeCommand.OfflineActivation
+                or DocumentCacheAdministrativeCommand.OfflineDeactivation
+                or DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery;
+
+    private static DocumentCacheOfflineWriterAdmissionConfirmation ExpectedOfflineWriterAdmissionConfirmation(
+        DocumentCacheAdministrativeCommand command
+    ) =>
+        command switch
+        {
+            DocumentCacheAdministrativeCommand.OfflineActivation =>
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
+            DocumentCacheAdministrativeCommand.OfflineDeactivation =>
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery =>
+                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
+            _ => throw new ArgumentException(
+                "The command does not require offline writer admission.",
+                nameof(command)
+            ),
+        };
 
     private static DocumentCacheAdministrativeCommandResult? ClassifyTargetContextFailure(
         DocumentCacheAdministrativeCommand command,

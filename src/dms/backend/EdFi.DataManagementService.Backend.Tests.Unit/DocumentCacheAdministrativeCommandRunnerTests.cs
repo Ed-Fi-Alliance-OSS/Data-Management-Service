@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
@@ -200,6 +201,47 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         mutex.AcquireCount.Should().Be(0);
     }
 
+    [TestCaseSource(nameof(InvalidOfflineWriterAdmissionRequests))]
+    public async Task It_rejects_invalid_offline_writer_admission_before_acquiring_the_mutex(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
+        DocumentCacheAdministrativeCommandClassification expectedClassification,
+        DocumentCacheAdministrativeDiagnosticCategory expectedDiagnosticCategory
+    )
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(generation: 1);
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandRunnerRequest request = new(
+            command,
+            AdministrativeTargetKey,
+            Fingerprint,
+            offlineWriterAdmission
+        );
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            request,
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result.Classification.Should().Be(expectedClassification);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        result.OfflineWriterAdmission.Should().BeNull();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.DiagnosticCategory == expectedDiagnosticCategory
+            );
+        mutex.AcquireCount.Should().Be(0);
+    }
+
     [Test]
     public async Task It_classifies_workflow_timeout_after_mutation_as_incomplete_retryable()
     {
@@ -363,6 +405,53 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             AdministrativeTargetKey,
             expectedPhysicalSourceFingerprint: Fingerprint
         );
+
+    private static IEnumerable<TestCaseData> InvalidOfflineWriterAdmissionRequests()
+    {
+        yield return new TestCaseData(
+            DocumentCacheAdministrativeCommand.OfflineActivation,
+            null,
+            DocumentCacheAdministrativeCommandClassification.MissingOfflineWriterAdmission,
+            DocumentCacheAdministrativeDiagnosticCategory.MissingOfflineWriterAdmission
+        ).SetName("Missing admission");
+
+        yield return new TestCaseData(
+            DocumentCacheAdministrativeCommand.OfflineDeactivation,
+            new DocumentCacheOfflineWriterAdmission(
+                confirmed: false,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+            ),
+            DocumentCacheAdministrativeCommandClassification.UnconfirmedOfflineWriterAdmission,
+            DocumentCacheAdministrativeDiagnosticCategory.UnconfirmedOfflineWriterAdmission
+        ).SetName("Unconfirmed admission");
+
+        yield return new TestCaseData(
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            new DocumentCacheOfflineWriterAdmission(
+                confirmed: true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+            ),
+            DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
+            DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
+        ).SetName("Mismatched admission");
+
+        yield return new TestCaseData(
+            DocumentCacheAdministrativeCommand.OfflineActivation,
+            UnknownOfflineWriterAdmission(),
+            DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
+            DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
+        ).SetName("Unknown admission");
+    }
+
+    private static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
+        JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
+            """
+            {
+              "confirmed": true,
+              "confirmation": "unknownWritersClosedAndDrained"
+            }
+            """
+        )!;
 
     private static MutableTargetRegistry RegistryFor(DocumentCacheTargetExecutionContext executionContext) =>
         new(Snapshot([EligibleObservation(executionContext)]), RuntimeSnapshot([executionContext]));

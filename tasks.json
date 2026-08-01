@@ -583,7 +583,7 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeContracts|FullyQualifiedName~DocumentCachePreflightClassifier\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DocumentCacheAdministrativeCommandRunner\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "session-bound-writer",

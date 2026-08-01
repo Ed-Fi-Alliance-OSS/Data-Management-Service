@@ -466,16 +466,21 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         offlineActivationResult
             .Classification.Should()
             .Be(DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown);
-        FluentActions
-            .Invoking(() =>
+        DocumentCacheAdministrativeCommandResult invalidOfflineActivationAdmission =
+            await offlineActivation.ExecuteAsync(
                 new DocumentCacheOfflineActivationRequest(
                     AdministrativeTargetKey,
                     OfflineDeactivationAdmission,
                     Fingerprint
                 )
-            )
-            .Should()
-            .Throw<ArgumentException>();
+            );
+
+        invalidOfflineActivationAdmission
+            .Status.Should()
+            .Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        invalidOfflineActivationAdmission
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission);
 
         await SetLifecycleAsync(DocumentCacheLifecycleState.Resetting, cacheAheadRecoveryRequired: false);
         await InsertProjectedRowsAsync(documentCount: 2);
@@ -520,16 +525,22 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         recoveryResult.CacheAheadRecoveryRequired.Should().BeTrue();
         (await ReadCountAsync("DocumentCache")).Should().Be(2);
         (await ReadCountAsync("DocumentProjectionWork")).Should().Be(2);
-        FluentActions
-            .Invoking(() =>
-                new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
-                    AdministrativeTargetKey,
-                    OfflineActivationAdmission,
-                    Fingerprint
-                )
+        DocumentCacheAdministrativeCommandResult invalidRecoveryAdmission = await recovery.ExecuteAsync(
+            new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
+                AdministrativeTargetKey,
+                OfflineActivationAdmission,
+                Fingerprint
             )
-            .Should()
-            .Throw<ArgumentException>();
+        );
+
+        invalidRecoveryAdmission
+            .Status.Should()
+            .Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        invalidRecoveryAdmission
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission);
+        (await ReadCountAsync("DocumentCache")).Should().Be(2);
+        (await ReadCountAsync("DocumentProjectionWork")).Should().Be(2);
 
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
         SourceDocument cacheAhead = await InsertDocumentAsync(contentVersion: 10);

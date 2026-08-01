@@ -162,3 +162,8 @@ Completed scheduling follow-up task for reference/design/backend-redesign/epics/
 Key decisions: supervisor now repeats ordinary ready-target scheduler passes while any dispatch returns PageProcessed; keeps refresh/timer boundary as the no-work/blocking sleep point so long backlogs drain within one poll interval without changing scheduler fairness/gate rules.
 Files changed: DocumentCacheProjectionSupervisor.cs; DocumentCacheProjectionSupervisorTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.
+
+Completed contracts follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: offlineWriterAdmission DTOs now represent missing/null/unconfirmed/mismatched/unknown tokens; shared preflight helper classifies invalid admission as no-mutation envelope; runner rejects invalid admission before target pinning/mutex; valid accepted confirmations still echo through command results/observations.
+Files changed: DocumentCacheAdministrativeContracts.cs; DocumentCachePreflightClassifier.cs; DocumentCacheAdministrativeCommandRunner.cs; offline workflow call sites; focused core/backend tests; PG/MSSQL administration test assertions; tasks.json; progress.txt.
+Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.

@@ -98,8 +98,9 @@ public class DocumentCacheAdministrativeContractsTests
 
             request.TargetKey.TargetKey.Should().Be(DocumentCacheTargetKey.Create("", 1));
             request.ExpectedPhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
+            request.OfflineWriterAdmission.Should().NotBeNull();
             request
-                .OfflineWriterAdmission.Confirmation.Should()
+                .OfflineWriterAdmission!.Confirmation.Should()
                 .Be(
                     DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
                 );
@@ -183,16 +184,49 @@ public class DocumentCacheAdministrativeContractsTests
             ).SetName("Internal-only cache-ahead recovery");
         }
 
-        [TestCase(
-            """
+        [TestCaseSource(nameof(InvalidOfflineAdmissionContracts))]
+        public void It_should_represent_missing_false_unknown_or_mismatched_offline_admission(
+            string json,
+            bool expectedAdmissionPresent,
+            bool expectedConfirmed,
+            DocumentCacheOfflineWriterAdmissionConfirmation? expectedConfirmation,
+            bool expectedUnrecognizedConfirmation
+        )
+        {
+            DocumentCacheOfflineActivationRequest request =
+                JsonSerializer.Deserialize<DocumentCacheOfflineActivationRequest>(json)!;
+
+            if (!expectedAdmissionPresent)
+            {
+                request.OfflineWriterAdmission.Should().BeNull();
+                return;
+            }
+
+            request.OfflineWriterAdmission.Should().NotBeNull();
+            request.OfflineWriterAdmission!.Confirmed.Should().Be(expectedConfirmed);
+            request.OfflineWriterAdmission.Confirmation.Should().Be(expectedConfirmation);
+            request
+                .OfflineWriterAdmission.HasUnrecognizedConfirmation.Should()
+                .Be(expectedUnrecognizedConfirmation);
+        }
+
+        private static IEnumerable<TestCaseData> InvalidOfflineAdmissionContracts()
+        {
+            yield return new TestCaseData(
+                """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
                   "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 }
+                """,
+                false,
+                false,
+                null,
+                false
+            ).SetName("Missing admission");
+
+            yield return new TestCaseData(
                 """
-        )]
-        [TestCase(
-            """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
                   "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -201,10 +235,15 @@ public class DocumentCacheAdministrativeContractsTests
                     "confirmation": "offlineActivationWritersClosedAndDrained"
                   }
                 }
+                """,
+                true,
+                false,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
+                false
+            ).SetName("Unconfirmed admission");
+
+            yield return new TestCaseData(
                 """
-        )]
-        [TestCase(
-            """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
                   "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -213,10 +252,15 @@ public class DocumentCacheAdministrativeContractsTests
                     "confirmation": "offlineDeactivationWritersClosedAndDrained"
                   }
                 }
+                """,
+                true,
+                true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
+                false
+            ).SetName("Mismatched admission");
+
+            yield return new TestCaseData(
                 """
-        )]
-        [TestCase(
-            """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
                   "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -225,15 +269,12 @@ public class DocumentCacheAdministrativeContractsTests
                     "confirmation": "unknownWritersClosedAndDrained"
                   }
                 }
-                """
-        )]
-        public void It_should_fail_closed_for_missing_false_unknown_or_mismatched_offline_admission(
-            string json
-        )
-        {
-            Action act = () => JsonSerializer.Deserialize<DocumentCacheOfflineActivationRequest>(json);
-
-            act.Should().Throw<Exception>();
+                """,
+                true,
+                true,
+                null,
+                true
+            ).SetName("Unknown admission");
         }
     }
 

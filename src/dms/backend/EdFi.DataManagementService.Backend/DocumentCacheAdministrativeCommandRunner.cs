@@ -39,7 +39,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
         DocumentCacheAdministrativeCommand command,
         DocumentCacheAdministrativeTargetKey targetKey,
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
-        DocumentCacheOfflineWriterAdmissionConfirmation? offlineWriterAdmission = null
+        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission = null
     )
     {
         if (!Enum.IsDefined(command))
@@ -63,7 +63,13 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
 
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 
-    public DocumentCacheOfflineWriterAdmissionConfirmation? OfflineWriterAdmission { get; }
+    public DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
+
+    public DocumentCacheOfflineWriterAdmissionConfirmation? AcceptedOfflineWriterAdmissionConfirmation =>
+        DocumentCachePreflightClassifier.AcceptedOfflineWriterAdmissionConfirmation(
+            Command,
+            OfflineWriterAdmission
+        );
 
     public static DocumentCacheAdministrativeCommandRunnerRequest From(
         DocumentCacheGuardedNewEmptyActivationRequest request
@@ -88,7 +94,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
             DocumentCacheAdministrativeCommand.OfflineActivation,
             request.TargetKey,
             request.ExpectedPhysicalSourceFingerprint,
-            request.OfflineWriterAdmission.Confirmation
+            request.OfflineWriterAdmission
         );
     }
 
@@ -102,7 +108,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
             DocumentCacheAdministrativeCommand.OfflineDeactivation,
             request.TargetKey,
             request.ExpectedPhysicalSourceFingerprint,
-            request.OfflineWriterAdmission.Confirmation
+            request.OfflineWriterAdmission
         );
     }
 
@@ -142,7 +148,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
             DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
             request.TargetKey,
             request.ExpectedPhysicalSourceFingerprint,
-            request.OfflineWriterAdmission.Confirmation
+            request.OfflineWriterAdmission
         );
     }
 }
@@ -310,7 +316,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
             ObservedLifecycle?.State,
             ObservedLifecycle?.CacheAheadRecoveryRequired,
             _phaseDiagnostics,
-            Request.OfflineWriterAdmission,
+            Request.AcceptedOfflineWriterAdmissionConfirmation,
             ElapsedCommandTime
         );
     }
@@ -337,7 +343,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
             ObservedLifecycle?.State,
             ObservedLifecycle?.CacheAheadRecoveryRequired,
             _phaseDiagnostics,
-            Request.OfflineWriterAdmission,
+            Request.AcceptedOfflineWriterAdmissionConfirmation,
             ElapsedCommandTime
         );
     }
@@ -368,7 +374,7 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
             TargetContext.TargetExecutionContext.PhysicalSourceFingerprint,
             ObservedLifecycle?.State,
             ObservedLifecycle?.CacheAheadRecoveryRequired,
-            Request.OfflineWriterAdmission,
+            Request.AcceptedOfflineWriterAdmissionConfirmation,
             ElapsedCommandTime,
             _phaseDiagnostics
         );
@@ -408,6 +414,17 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(workflow);
+
+        DocumentCacheAdministrativeCommandResult? offlineWriterAdmissionRejection =
+            DocumentCachePreflightClassifier.ClassifyOfflineWriterAdmission(
+                request.Command,
+                request.TargetKey,
+                request.OfflineWriterAdmission
+            );
+        if (offlineWriterAdmissionRejection is not null)
+        {
+            return RecordAdministrativeCommandResult(offlineWriterAdmissionRejection);
+        }
 
         PinnedTargetResolution pinnedTargetResolution = TryResolvePinnedTarget(request);
         if (pinnedTargetResolution.Rejection is not null)
@@ -923,7 +940,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             commandContext.ObservedLifecycle?.State ?? result.Lifecycle,
             commandContext.ObservedLifecycle?.CacheAheadRecoveryRequired ?? result.CacheAheadRecoveryRequired,
             phaseDiagnostics,
-            commandContext.Request.OfflineWriterAdmission,
+            commandContext.Request.AcceptedOfflineWriterAdmissionConfirmation,
             commandContext.ElapsedCommandTime
         );
     }
@@ -1078,7 +1095,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     message
                 ),
             ],
-            request.OfflineWriterAdmission,
+            request.AcceptedOfflineWriterAdmissionConfirmation,
             elapsedCommandTime: null
         );
 
