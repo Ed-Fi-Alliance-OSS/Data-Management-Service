@@ -296,6 +296,21 @@ public class Given_MssqlCdcProviderArtifacts
                 && grant.Privileges.SequenceEqual(new[] { "MEMBER" })
             );
         result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == GatingRoleName
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["gating_role_exists"] == "True"
+                && observation.SafeObservedValues["gating_role_is_normal_role"] == "True"
+                && observation.SafeObservedValues["gating_role_direct_members"] == _connectorPrincipalName
+                && observation.SafeObservedValues["gating_role_parent_roles"] == "none"
+                && observation.SafeObservedValues["gating_role_owned_objects"] == "none"
+                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "none"
+                && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
+                && observation.SafeObservedValues["unexpected_capture_instances_using_role"] == "none"
+            );
+        result
             .ExpectedMessageKeyColumns.Should()
             .ContainSingle(key =>
                 key.TableKind == CdcSourceTableKind.Document
@@ -332,6 +347,8 @@ public class Given_MssqlCdcProviderArtifacts
         result.ManifestPayload!.FileName.Value.Should().Be("cdc-provider.mssql.manifest.json");
         result.ManifestPayload.Json.Should().Be(await File.ReadAllTextAsync(manifestPath));
         result.ManifestPayload.Json.Should().Contain("\"provider\": \"mssql\"");
+        result.ManifestPayload.Json.Should().Contain("\"artifact_kind\": \"sqlserver_gating_role\"");
+        result.ManifestPayload.Json.Should().Contain($"\"artifact_name\": \"{GatingRoleName}\"");
         result.ManifestPayload.Json.Should().Contain("\"object_name\": \"role.dms_binding_gate\"");
         result.ManifestPayload.Json.Should().Contain("\"artifact_name\": \"dms_binding_document\"");
         result.ManifestPayload.Json.Should().Contain("\"artifact_name\": \"dms_binding_document_cache\"");

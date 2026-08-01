@@ -252,7 +252,7 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             AddDiagnosticForSourceFingerprintMismatch(stepResult.ObservedSourceFingerprint);
         }
 
-        _artifactInventory.AddRange(stepResult.ArtifactInventory);
+        UpsertArtifactObservations(stepResult.ArtifactInventory);
         _grantInventory.AddRange(stepResult.GrantInventory);
         _sourceTableInventory.AddRange(stepResult.SourceTableInventory);
         _expectedMessageKeyColumns.AddRange(stepResult.ExpectedMessageKeyColumns);
@@ -295,6 +295,32 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
                 && existing.SafeArtifactName.Equals(observation.SafeArtifactName)
             );
             _providerHistoryObservations.Add(observation);
+        }
+    }
+
+    private void UpsertArtifactObservations(
+        IReadOnlyList<CdcProviderArtifactObservation> artifactObservations
+    )
+    {
+        foreach (var observation in artifactObservations)
+        {
+            var existingIndex = _artifactInventory.FindIndex(existing =>
+                existing.ArtifactKind == observation.ArtifactKind
+                && existing.SafeArtifactName.Equals(observation.SafeArtifactName)
+            );
+            if (existingIndex < 0)
+            {
+                _artifactInventory.Add(observation);
+                continue;
+            }
+
+            var existing = _artifactInventory[existingIndex];
+            var state =
+                existing.State == CdcProviderArtifactState.Created
+                && observation.State == CdcProviderArtifactState.Matched
+                    ? CdcProviderArtifactState.Created
+                    : observation.State;
+            _artifactInventory[existingIndex] = observation with { State = state };
         }
     }
 
@@ -866,8 +892,12 @@ internal sealed class CdcProviderSetupAggregate(CdcProviderSetupRequest request)
             },
             CdcProvider.SqlServer => new Dictionary<CdcProviderArtifactKind, IReadOnlyList<string>>
             {
+                [CdcProviderArtifactKind.SqlServerGatingRole] =
+                [
+                    request.ArtifactNames.SqlServer!.GatingRoleName.Value,
+                ],
                 [CdcProviderArtifactKind.SqlServerCaptureInstance] = request
-                    .ArtifactNames.SqlServer!.CaptureInstanceNames.OrderBy(pair => pair.Key)
+                    .ArtifactNames.SqlServer.CaptureInstanceNames.OrderBy(pair => pair.Key)
                     .Select(pair => pair.Value.Value)
                     .ToArray(),
             },

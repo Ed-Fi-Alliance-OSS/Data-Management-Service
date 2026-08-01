@@ -398,6 +398,18 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     return CaptureInstancesResult(inspection, createdKinds: []);
                 }
 
+                var gatingRoleCreated = false;
+                if (
+                    !await GatingRoleExistsAsync(executor, context.Request, cancellationToken)
+                        .ConfigureAwait(false)
+                )
+                {
+                    await executor
+                        .ExecuteNonQueryAsync(CreateGatingRoleSql(context.Request), cancellationToken)
+                        .ConfigureAwait(false);
+                    gatingRoleCreated = true;
+                }
+
                 foreach (var tableKind in _captureTableOrder.Where(missingKinds.Contains))
                 {
                     await executor
@@ -410,6 +422,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
                 inspection = await InspectCaptureInstancesAsync(executor, context.Request, cancellationToken)
                     .ConfigureAwait(false);
+
+                return CaptureInstancesResult(
+                    inspection,
+                    missingKinds,
+                    gatingRoleCreated ? context.Request.ArtifactNames.SqlServer!.GatingRoleName : null
+                );
             }
 
             return CaptureInstancesResult(inspection, missingKinds);
@@ -432,6 +450,23 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
     }
 
+    private static async Task<bool> GatingRoleExistsAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CdcProviderSetupRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(GatingRoleExistsSql(request), cancellationToken)
+            .ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("SQL Server CDC gating role state was not returned.");
+        }
+
+        return ReadBool(rows[0], "gating_role_exists");
+    }
+
     private static async Task<CdcProviderSetupStepResult> ExecuteConnectorPrincipalAccessAsync(
         CdcProviderSetupStepContext context,
         CancellationToken cancellationToken
@@ -452,6 +487,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            var gatingRoleWasMissingBeforeGrant = !access.GatingRoleExists;
             var state = CdcProviderArtifactState.Matched;
 
             if (
@@ -474,13 +510,20 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             if (!access.IsExactMatch)
             {
                 return ConnectorPrincipalAccessResult(
-                    connectorPrincipal,
+                    context.Request,
                     CdcProviderArtifactState.Mismatched,
-                    access
+                    access,
+                    gatingRoleWasCreated: false
                 );
             }
 
-            var result = ConnectorPrincipalAccessResult(connectorPrincipal, state, access);
+            var result = ConnectorPrincipalAccessResult(
+                context.Request,
+                state,
+                access,
+                gatingRoleWasCreated: state == CdcProviderArtifactState.Created
+                    && gatingRoleWasMissingBeforeGrant
+            );
 
             if (context.Request.ConnectorPrincipalProbeFactory is null)
             {
@@ -537,6 +580,19 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 IsExactMatch: false,
                 IsGrantableMissingPrivilege: false,
                 ObservedValues: new Dictionary<string, string> { ["connector_access"] = "unavailable" },
+                GatingRoleExists: false,
+                GatingRoleIsExactMatch: false,
+                GatingRoleObservedValues: new Dictionary<string, string>
+                {
+                    ["gating_role_exists"] = "False",
+                    ["gating_role_is_normal_role"] = "False",
+                    ["gating_role_direct_members"] = "none",
+                    ["gating_role_parent_roles"] = "none",
+                    ["gating_role_owned_objects"] = "none",
+                    ["gating_role_explicit_permissions"] = "none",
+                    ["expected_capture_instances_using_role"] = "0",
+                    ["unexpected_capture_instances_using_role"] = "none",
+                },
                 GrantInventory: [],
                 Diagnostics:
                 [
@@ -635,6 +691,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && unexpectedCaptureInstancesUsingRole.Count == 0
             && !hasForbiddenPrivileges
             && missingRequiredPrivileges.Count == 0;
+        var gatingRoleIsExactMatch =
+            gatingRoleExists
+            && gatingRoleIsNormalRole
+            && gatingRoleDirectMembers.SequenceEqual([connectorPrincipal.Value], StringComparer.Ordinal)
+            && gatingRoleParentRoles.Count == 0
+            && gatingRoleOwnedObjects.Count == 0
+            && gatingRoleExplicitPermissions.Count == 0
+            && expectedCaptureInstancesUsingRole == _captureTableOrder.Count
+            && unexpectedCaptureInstancesUsingRole.Count == 0;
 
         var observedValues = new Dictionary<string, string>
         {
@@ -659,6 +724,17 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ["heartbeat_id_update"] = hasHeartbeatIdUpdate.ToString(),
             ["work_table_privileges"] = CsvOrNone(workTablePrivileges),
             ["extra_dms_select_tables"] = CsvOrNone(extraDmsSelectTables),
+        };
+        var gatingRoleObservedValues = new Dictionary<string, string>
+        {
+            ["gating_role_exists"] = gatingRoleExists.ToString(),
+            ["gating_role_is_normal_role"] = gatingRoleIsNormalRole.ToString(),
+            ["gating_role_direct_members"] = CsvOrNone(gatingRoleDirectMembers),
+            ["gating_role_parent_roles"] = CsvOrNone(gatingRoleParentRoles),
+            ["gating_role_owned_objects"] = CsvOrNone(gatingRoleOwnedObjects),
+            ["gating_role_explicit_permissions"] = CsvOrNone(gatingRoleExplicitPermissions),
+            ["expected_capture_instances_using_role"] = expectedCaptureInstancesUsingRole.ToString(),
+            ["unexpected_capture_instances_using_role"] = CsvOrNone(unexpectedCaptureInstancesUsingRole),
         };
 
         var diagnostics = ConnectorPrincipalAccessDiagnostics(
@@ -690,6 +766,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             isExactMatch,
             isGrantableMissingPrivilege,
             observedValues,
+            gatingRoleExists,
+            gatingRoleIsExactMatch,
+            gatingRoleObservedValues,
             ConnectorGrantInventory(
                 request,
                 hasDatabaseConnect,
@@ -1326,6 +1405,33 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             GRANT SELECT ON OBJECT::{documentCache.EmittedQuotedTableName} TO {connectorPrincipal};
             GRANT SELECT ON OBJECT::{heartbeat.EmittedQuotedTableName} TO {connectorPrincipal};
             GRANT UPDATE ({heartbeatSequence.EmittedQuotedColumnName}, {heartbeatAt.EmittedQuotedColumnName}) ON OBJECT::{heartbeat.EmittedQuotedTableName} TO {connectorPrincipal};
+            """;
+    }
+
+    private static string GatingRoleExistsSql(CdcProviderSetupRequest request)
+    {
+        var gatingRoleLiteral = EscapeSqlLiteral(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
+
+        return $"""
+            /* cdc:sqlserver:gating-role-exists */
+            SELECT CONVERT(nvarchar(5), CASE
+                WHEN DATABASE_PRINCIPAL_ID(N'{gatingRoleLiteral}') IS NULL THEN 0
+                ELSE 1
+            END) AS gating_role_exists;
+            """;
+    }
+
+    private static string CreateGatingRoleSql(CdcProviderSetupRequest request)
+    {
+        var gatingRole = _dialect.QuoteIdentifier(request.ArtifactNames.SqlServer!.GatingRoleName.Value);
+        var gatingRoleLiteral = EscapeSqlLiteral(request.ArtifactNames.SqlServer.GatingRoleName.Value);
+
+        return $"""
+            /* cdc:sqlserver:create-gating-role */
+            IF DATABASE_PRINCIPAL_ID(N'{gatingRoleLiteral}') IS NULL
+            BEGIN
+                CREATE ROLE {gatingRole};
+            END;
             """;
     }
 
@@ -2068,7 +2174,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
     private static CdcProviderSetupStepResult CaptureInstancesResult(
         SqlServerCaptureInstancesInspection inspection,
-        IReadOnlyCollection<CdcSourceTableKind> createdKinds
+        IReadOnlyCollection<CdcSourceTableKind> createdKinds,
+        CdcSafeName? createdGatingRoleName = null
     )
     {
         var created = createdKinds.ToHashSet();
@@ -2081,6 +2188,23 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ))
             .Concat(inspection.UnexpectedArtifacts)
             .ToArray();
+        if (createdGatingRoleName is { } roleName)
+        {
+            artifactInventory =
+            [
+                .. artifactInventory,
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.SqlServerGatingRole,
+                    roleName,
+                    CdcProviderArtifactState.Created,
+                    new Dictionary<string, string>
+                    {
+                        ["gating_role_exists"] = "True",
+                        ["gating_role_created_before_capture_instances"] = "True",
+                    }
+                ),
+            ];
+        }
 
         return new CdcProviderSetupStepResult(
             artifactInventory: artifactInventory,
@@ -2359,23 +2483,48 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         ];
 
     private static CdcProviderSetupStepResult ConnectorPrincipalAccessResult(
-        CdcSafeName connectorPrincipal,
+        CdcProviderSetupRequest request,
         CdcProviderArtifactState state,
-        ConnectorPrincipalAccessInspection access
+        ConnectorPrincipalAccessInspection access,
+        bool gatingRoleWasCreated
     ) =>
         new(
             artifactInventory:
             [
                 new CdcProviderArtifactObservation(
                     CdcProviderArtifactKind.Grant,
-                    connectorPrincipal,
+                    request.ConnectorPrincipal.SafePrincipalName,
                     state,
                     access.ObservedValues
+                ),
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.SqlServerGatingRole,
+                    request.ArtifactNames.SqlServer!.GatingRoleName,
+                    GatingRoleArtifactState(access, gatingRoleWasCreated),
+                    access.GatingRoleObservedValues
                 ),
             ],
             grantInventory: access.GrantInventory,
             diagnostics: access.Diagnostics
         );
+
+    private static CdcProviderArtifactState GatingRoleArtifactState(
+        ConnectorPrincipalAccessInspection access,
+        bool gatingRoleWasCreated
+    )
+    {
+        if (!access.GatingRoleExists)
+        {
+            return CdcProviderArtifactState.Missing;
+        }
+
+        if (!access.GatingRoleIsExactMatch)
+        {
+            return CdcProviderArtifactState.Mismatched;
+        }
+
+        return gatingRoleWasCreated ? CdcProviderArtifactState.Created : CdcProviderArtifactState.Matched;
+    }
 
     private static IReadOnlyList<string> MissingRequiredSqlServerConnectorPrivileges(
         bool hasDatabaseConnect,
@@ -3269,6 +3418,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         bool IsExactMatch,
         bool IsGrantableMissingPrivilege,
         IReadOnlyDictionary<string, string> ObservedValues,
+        bool GatingRoleExists,
+        bool GatingRoleIsExactMatch,
+        IReadOnlyDictionary<string, string> GatingRoleObservedValues,
         IReadOnlyList<CdcGrantObservation> GrantInventory,
         IReadOnlyList<CdcProviderDiagnostic> Diagnostics
     );

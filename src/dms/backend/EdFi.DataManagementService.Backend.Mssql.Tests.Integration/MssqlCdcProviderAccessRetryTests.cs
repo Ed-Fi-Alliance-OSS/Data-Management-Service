@@ -100,6 +100,13 @@ public class Given_MssqlCdcProviderAccessRetry
                 observation.ArtifactKind == CdcProviderArtifactKind.Grant
                 && observation.SafeArtifactName.Value == _connectorPrincipalName
                 && observation.State == CdcProviderArtifactState.Created
+            )
+            .And.Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == GatingRoleName
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["gating_role_direct_members"] == _connectorPrincipalName
+                && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
             );
         result
             .ArtifactInventory.Where(observation =>
@@ -592,6 +599,17 @@ public class Given_MssqlCdcProviderAccessRetry
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
                 && diagnostic.SafeName.Value == GatingRoleName
             );
+        validateResult
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == GatingRoleName
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation
+                    .SafeObservedValues["gating_role_direct_members"]
+                    .Contains(extraMember, StringComparison.Ordinal)
+                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "SELECT"
+            );
         (await ReadGatingRoleMembersAsync(connection)).Should().Contain(extraMember);
         (await HasRoleObjectPermissionAsync(connection, GatingRoleName, "Document", "SELECT"))
             .Should()
@@ -785,6 +803,17 @@ public class Given_MssqlCdcProviderAccessRetry
                 && observation.SafeObservedValues["expected_partition_switch"]
                     == "disabled_when_source_partitioned"
                 && observation.SafeObservedValues["source_is_partitioned"] == "False"
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == GatingRoleName
+                && observation.State == CdcProviderArtifactState.Matched
+                && observation.SafeObservedValues["gating_role_exists"] == "True"
+                && observation.SafeObservedValues["gating_role_is_normal_role"] == "True"
+                && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
+                && observation.SafeObservedValues["unexpected_capture_instances_using_role"] == "none"
             );
     }
 

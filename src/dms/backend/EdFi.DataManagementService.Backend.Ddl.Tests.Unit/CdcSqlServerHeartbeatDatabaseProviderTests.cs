@@ -134,6 +134,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
             .ExecutedSql.Where(sql => sql.Contains("cdc:sqlserver:enable-capture-instance"))
             .ToArray();
 
+        _executor.ExecutedSql.Should().ContainSingle(sql => sql.Contains("cdc:sqlserver:create-gating-role"));
         enableCaptureSql.Should().HaveCount(3);
         enableCaptureSql.Should().OnlyContain(sql => !sql.Contains("DocumentProjectionWork"));
         enableCaptureSql
@@ -201,6 +202,23 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && observation.SafeArtifactName.Value == "dms_binding_cdc_heartbeat"
                 && observation.SafeObservedValues["heartbeat_capture_visible"] == "True"
             );
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == "dms_binding_gate"
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["gating_role_exists"] == "True"
+                && observation.SafeObservedValues["gating_role_is_normal_role"] == "True"
+                && observation.SafeObservedValues["gating_role_direct_members"] == "connector_principal"
+                && observation.SafeObservedValues["gating_role_parent_roles"] == "none"
+                && observation.SafeObservedValues["gating_role_owned_objects"] == "none"
+                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "none"
+                && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
+                && observation.SafeObservedValues["unexpected_capture_instances_using_role"] == "none"
+            );
+        _result.ManifestPayload!.Json.Should().Contain("\"artifact_kind\": \"sqlserver_gating_role\"");
+        _result.ManifestPayload.Json.Should().Contain("\"artifact_name\": \"dms_binding_gate\"");
     }
 
     [Test]
@@ -313,6 +331,14 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             .Should()
             .HaveCount(3)
             .And.OnlyContain(observation => observation.State == CdcProviderArtifactState.Matched);
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == "dms_binding_gate"
+                && observation.State == CdcProviderArtifactState.Matched
+                && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
+            );
         executor.ExecutedSql.Should().BeEmpty();
     }
 
@@ -669,6 +695,15 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 && observation.SafeArtifactName.Value == "connector_principal"
                 && observation.State == CdcProviderArtifactState.Created
             );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == "dms_binding_gate"
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["gating_role_direct_members"] == "connector_principal"
+                && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
+            );
 
         var grantSql = executor.ExecutedSql.Single(sql =>
             sql.Contains("cdc:sqlserver:grant-connector-access")
@@ -831,6 +866,17 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
                 && diagnostic.SafeName.Value == "dms_binding_gate"
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.SafeArtifactName.Value == "dms_binding_gate"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["gating_role_direct_members"]
+                    == "connector_principal,extra_reader"
+                && observation.SafeObservedValues["gating_role_owned_objects"] == "schema_dms"
+                && observation.SafeObservedValues["gating_role_explicit_permissions"] == "SELECT"
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
     }
@@ -1233,6 +1279,12 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             _cleanupJobPresent = true;
         }
 
+        if (sql.Contains("cdc:sqlserver:create-gating-role"))
+        {
+            _connectorAccess.GatingRoleExists = true;
+            _connectorAccess.GatingRoleIsNormalRole = true;
+        }
+
         if (sql.Contains("cdc:sqlserver:grant-connector-access"))
         {
             _connectorAccess.GatingRoleExists = true;
@@ -1301,6 +1353,10 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             ],
             var text when text.Contains("cdc:sqlserver:source-inventory") => SourceInventoryRows(),
             var text when text.Contains("cdc:sqlserver:capture-instances") => CaptureInstanceRows(),
+            var text when text.Contains("cdc:sqlserver:gating-role-exists") =>
+            [
+                Row(("gating_role_exists", _connectorAccess.GatingRoleExists.ToString())),
+            ],
             var text when text.Contains("cdc:sqlserver:connector-principal-access") =>
             [
                 ConnectorPrincipalAccessRow(),
