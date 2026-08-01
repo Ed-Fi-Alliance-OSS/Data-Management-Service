@@ -65,6 +65,14 @@ public sealed class DocumentCacheProjectionCursorState
 
 public sealed class DocumentCacheProjectionFailureBackoffState
 {
+    private readonly object _sync = new();
+    private ImmutableDictionary<long, FailureEntry> _entries = ImmutableDictionary<long, FailureEntry>.Empty;
+    private ImmutableArray<long> _lastSuppressedDocumentIds = [];
+    private int _lastSuppressedDocumentCount;
+    private DateTimeOffset? _lastSuppressedEarliestRetryAt;
+    private long _evictionCount;
+    private bool _processedEligibleWorkSinceCursorWrap;
+
     public DocumentCacheProjectionFailureBackoffState(int capacity)
     {
         if (capacity <= 0)
@@ -80,10 +88,222 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
     public int Capacity { get; }
 
-    public int Count { get; }
+    public int Count
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _entries.Count;
+            }
+        }
+    }
 
-    public long EvictionCount { get; }
+    public long EvictionCount
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _evictionCount;
+            }
+        }
+    }
+
+    public void RecordFailure(
+        long documentId,
+        DocumentCacheProjectionDocumentDiagnosticCategory category,
+        string message,
+        DateTimeOffset observedAt,
+        TimeSpan failureBackoff
+    )
+    {
+        if (documentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(documentId), "Document id must be positive.");
+        }
+
+        if (!Enum.IsDefined(category))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(category),
+                category,
+                "Unsupported projection document diagnostic category."
+            );
+        }
+
+        if (failureBackoff <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(failureBackoff),
+                "Failure backoff must be positive."
+            );
+        }
+
+        lock (_sync)
+        {
+            if (!_entries.ContainsKey(documentId) && _entries.Count >= Capacity)
+            {
+                FailureEntry entryToEvict = _entries
+                    .Values.OrderBy(entry => entry.ObservedAt)
+                    .ThenBy(entry => entry.DocumentId)
+                    .First();
+
+                _entries = _entries.Remove(entryToEvict.DocumentId);
+                _evictionCount++;
+            }
+
+            _entries = _entries.SetItem(
+                documentId,
+                new FailureEntry(documentId, category, message, observedAt, observedAt + failureBackoff)
+            );
+        }
+    }
+
+    public bool ClearFailure(long documentId)
+    {
+        if (documentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(documentId), "Document id must be positive.");
+        }
+
+        lock (_sync)
+        {
+            bool removed = _entries.ContainsKey(documentId);
+            _entries = _entries.Remove(documentId);
+            return removed;
+        }
+    }
+
+    public bool IsSuppressed(long documentId, DateTimeOffset observedAt)
+    {
+        if (documentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(documentId), "Document id must be positive.");
+        }
+
+        lock (_sync)
+        {
+            return _entries.TryGetValue(documentId, out FailureEntry? entry)
+                && entry.NextRetryAt > observedAt;
+        }
+    }
+
+    public void RecordEligibleWorkProcessed()
+    {
+        lock (_sync)
+        {
+            _processedEligibleWorkSinceCursorWrap = true;
+        }
+    }
+
+    public void RecordSuppressedTraversal(IEnumerable<long> suppressedDocumentIds, DateTimeOffset observedAt)
+    {
+        ArgumentNullException.ThrowIfNull(suppressedDocumentIds);
+
+        ImmutableArray<long> materializedDocumentIds = suppressedDocumentIds.ToImmutableArray();
+        if (materializedDocumentIds.Any(documentId => documentId <= 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(suppressedDocumentIds),
+                "Document ids must be positive."
+            );
+        }
+
+        lock (_sync)
+        {
+            _lastSuppressedDocumentIds = materializedDocumentIds.Take(Capacity).ToImmutableArray();
+            _lastSuppressedDocumentCount = materializedDocumentIds.Length;
+            _lastSuppressedEarliestRetryAt = materializedDocumentIds
+                .Select(documentId =>
+                    _entries.TryGetValue(documentId, out FailureEntry? entry)
+                    && entry.NextRetryAt > observedAt
+                        ? entry.NextRetryAt
+                        : (DateTimeOffset?)null
+                )
+                .Where(nextRetryAt => nextRetryAt is not null)
+                .Min();
+        }
+    }
+
+    public DocumentCacheProjectionCursorPassCompletion CompleteCursorPass(DateTimeOffset observedAt)
+    {
+        lock (_sync)
+        {
+            DocumentCacheProjectionCursorPassCompletion completion = new(
+                _processedEligibleWorkSinceCursorWrap,
+                EarliestSuppressedRetryAt(observedAt)
+            );
+            _processedEligibleWorkSinceCursorWrap = false;
+            return completion;
+        }
+    }
+
+    public DocumentCacheProjectionFailureDiagnostics CreateFailureDiagnosticsSnapshot()
+    {
+        lock (_sync)
+        {
+            ImmutableArray<FailureEntry> orderedEntries = _entries
+                .Values.OrderBy(entry => entry.ObservedAt)
+                .ThenBy(entry => entry.DocumentId)
+                .ToImmutableArray();
+
+            DateTimeOffset? earliestRetryAt = orderedEntries.IsEmpty
+                ? null
+                : orderedEntries.Min(entry => entry.NextRetryAt);
+
+            return new DocumentCacheProjectionFailureDiagnostics(
+                Capacity,
+                orderedEntries.Length,
+                earliestRetryAt,
+                _evictionCount,
+                orderedEntries.Select(entry => new DocumentCacheProjectionDocumentDiagnostic(
+                    entry.DocumentId,
+                    entry.Category,
+                    entry.Message,
+                    entry.ObservedAt,
+                    entry.NextRetryAt
+                ))
+            );
+        }
+    }
+
+    public DocumentCacheProjectionPoisonTraversalSnapshot CreatePoisonTraversalSnapshot()
+    {
+        lock (_sync)
+        {
+            return new DocumentCacheProjectionPoisonTraversalSnapshot(
+                Capacity,
+                _lastSuppressedDocumentCount,
+                _lastSuppressedEarliestRetryAt,
+                _lastSuppressedDocumentIds
+            );
+        }
+    }
+
+    private DateTimeOffset? EarliestSuppressedRetryAt(DateTimeOffset observedAt)
+    {
+        ImmutableArray<DateTimeOffset> retryTimes = _entries
+            .Values.Where(entry => entry.NextRetryAt > observedAt)
+            .Select(entry => entry.NextRetryAt)
+            .ToImmutableArray();
+
+        return retryTimes.IsEmpty ? null : retryTimes.Min();
+    }
+
+    private sealed record FailureEntry(
+        long DocumentId,
+        DocumentCacheProjectionDocumentDiagnosticCategory Category,
+        string Message,
+        DateTimeOffset ObservedAt,
+        DateTimeOffset NextRetryAt
+    );
 }
+
+public sealed record DocumentCacheProjectionCursorPassCompletion(
+    bool ProcessedEligibleWork,
+    DateTimeOffset? EarliestSuppressedRetryAt
+);
 
 public sealed class DocumentCacheProjectionTargetRuntimeContext : IAsyncDisposable
 {

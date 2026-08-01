@@ -71,7 +71,8 @@ public sealed record DocumentCacheProjectionDrainPageResult
     private DocumentCacheProjectionDrainPageResult(
         DocumentCacheProjectionDrainPageOutcome outcome,
         int processedItemCount,
-        DateTimeOffset? backoffUntil
+        DateTimeOffset? backoffUntil,
+        DateTimeOffset? nextRetryAt
     )
     {
         Outcome = DocumentCacheProjectionSchedulingGuard.RequireDefined(
@@ -93,7 +94,13 @@ public sealed record DocumentCacheProjectionDrainPageResult
             throw new ArgumentException("Only target backoff drain results may carry a backoff boundary.");
         }
 
+        if (outcome != DocumentCacheProjectionDrainPageOutcome.NoEligibleWork && nextRetryAt is not null)
+        {
+            throw new ArgumentException("Only no-work drain results may carry a next retry boundary.");
+        }
+
         BackoffUntil = backoffUntil;
+        NextRetryAt = nextRetryAt;
     }
 
     public DocumentCacheProjectionDrainPageOutcome Outcome { get; }
@@ -102,25 +109,49 @@ public sealed record DocumentCacheProjectionDrainPageResult
 
     public DateTimeOffset? BackoffUntil { get; }
 
+    public DateTimeOffset? NextRetryAt { get; }
+
     public static DocumentCacheProjectionDrainPageResult PageProcessed(int processedItemCount) =>
-        new(DocumentCacheProjectionDrainPageOutcome.PageProcessed, processedItemCount, backoffUntil: null);
+        new(
+            DocumentCacheProjectionDrainPageOutcome.PageProcessed,
+            processedItemCount,
+            backoffUntil: null,
+            nextRetryAt: null
+        );
 
     public static DocumentCacheProjectionDrainPageResult NoEligibleWork { get; } =
         new(
             DocumentCacheProjectionDrainPageOutcome.NoEligibleWork,
             processedItemCount: 0,
-            backoffUntil: null
+            backoffUntil: null,
+            nextRetryAt: null
+        );
+
+    public static DocumentCacheProjectionDrainPageResult NoEligibleWorkWithRetry(
+        DateTimeOffset nextRetryAt
+    ) =>
+        new(
+            DocumentCacheProjectionDrainPageOutcome.NoEligibleWork,
+            processedItemCount: 0,
+            backoffUntil: null,
+            nextRetryAt
         );
 
     public static DocumentCacheProjectionDrainPageResult LifecycleFenced { get; } =
         new(
             DocumentCacheProjectionDrainPageOutcome.LifecycleFenced,
             processedItemCount: 0,
-            backoffUntil: null
+            backoffUntil: null,
+            nextRetryAt: null
         );
 
     public static DocumentCacheProjectionDrainPageResult TargetBackoff(DateTimeOffset backoffUntil) =>
-        new(DocumentCacheProjectionDrainPageOutcome.TargetBackoff, processedItemCount: 0, backoffUntil);
+        new(
+            DocumentCacheProjectionDrainPageOutcome.TargetBackoff,
+            processedItemCount: 0,
+            backoffUntil,
+            nextRetryAt: null
+        );
 }
 
 public enum DocumentCacheProjectionSchedulerDispatchStatus
@@ -408,6 +439,15 @@ public sealed class DocumentCacheProjectionTargetSchedulingState
                     break;
 
                 case DocumentCacheProjectionDrainPageOutcome.NoEligibleWork:
+                    DateTimeOffset noWorkSleepUntil = completedAt + pollInterval;
+                    if (result.NextRetryAt is not null && result.NextRetryAt < noWorkSleepUntil)
+                    {
+                        noWorkSleepUntil = result.NextRetryAt.Value;
+                    }
+
+                    PollSleepUntil = noWorkSleepUntil;
+                    break;
+
                 case DocumentCacheProjectionDrainPageOutcome.LifecycleFenced:
                     PollSleepUntil = completedAt + pollInterval;
                     break;
@@ -901,7 +941,9 @@ internal static class DocumentCacheProjectionTargetHealthSnapshotFactory
             executionState: executionState,
             pageThroughput: context.SchedulingState.OrdinaryPageThroughputSnapshot,
             drainThroughput: context.SchedulingState.AdministrativeDrainThroughputSnapshot,
-            lifecycleFence: CreateLifecycleFenceSnapshot(executionContext.Lifecycle, observedAt)
+            lifecycleFence: CreateLifecycleFenceSnapshot(executionContext.Lifecycle, observedAt),
+            poisonTraversal: context.FailureBackoffState.CreatePoisonTraversalSnapshot(),
+            failureDiagnostics: context.FailureBackoffState.CreateFailureDiagnosticsSnapshot()
         );
     }
 

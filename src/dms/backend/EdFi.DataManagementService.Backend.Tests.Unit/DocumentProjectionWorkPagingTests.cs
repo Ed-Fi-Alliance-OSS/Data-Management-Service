@@ -165,7 +165,12 @@ public class Given_DocumentProjectionWorkPaging
 
     private static DocumentCacheProjectionDrainPageProcessor CreateProcessor(
         IDocumentProjectionWorkPager pager
-    ) => new(pager, NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance);
+    ) =>
+        new(
+            pager,
+            NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+            new FixedTimeProvider(FirstEnqueuedAt)
+        );
 
     private static DocumentProjectionWorkPage Page(params DocumentProjectionWorkPageItem[] items) =>
         new(items, pageSize: 3);
@@ -286,5 +291,10 @@ public class Given_DocumentProjectionWorkPaging
 
         public void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId) =>
             _ = executionId;
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

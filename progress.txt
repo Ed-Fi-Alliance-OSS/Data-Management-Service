@@ -27,3 +27,8 @@ Completed provider-paging task for reference/design/backend-redesign/epics/18-do
 Key decisions: added shared paging contract and paging-backed drain processor; PostgreSQL uses tuple keyset comparison; SQL Server uses equivalent OR predicate with OFFSET/FETCH; processor clears non-null cursor and retries once on empty page. Kept ordinary item handling as later task.
 Files changed: DocumentProjectionWorkPaging.cs; PostgresqlDocumentProjectionWorkPager.cs; MssqlDocumentProjectionWorkPager.cs; provider DI registrations; focused paging unit/integration tests; provider service-registration tests; tasks.json; progress.txt.
 Blockers/notes: SQL Server local default appsettings targets localhost,1433; verified with ConnectionStrings__MssqlAdmin override to existing SQL Server 2025 container on localhost,14333. Next likely poison-backoff or item-processing integration with paged rows.
+
+Completed poison-backoff task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: filled target-generation local failure state with PageSize cap, exact clock+FailureBackoff retry, deterministic oldest-observed then DocumentId eviction, cursor-pass tracking, and bounded poison traversal snapshots; processor skips suppressed rows while advancing cursor and scheduler sleeps no-work pass until earlier retry or poll interval.
+Files changed: DocumentCacheProjectionSupervisor.cs; DocumentProjectionWorkPaging.cs; DocumentCacheProjectionScheduler.cs; DocumentCacheProjectionFailureBackoffTests.cs; DocumentProjectionWorkPagingTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Next likely item-processing to call RecordFailure/ClearFailure from writer/materializer outcomes, then lifecycle-fence refresh.

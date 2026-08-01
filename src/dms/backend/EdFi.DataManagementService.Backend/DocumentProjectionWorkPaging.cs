@@ -106,13 +106,16 @@ internal sealed record DocumentProjectionWorkPage
 
 internal sealed class DocumentCacheProjectionDrainPageProcessor(
     IDocumentProjectionWorkPager workPager,
-    ILogger<DocumentCacheProjectionDrainPageProcessor> logger
+    ILogger<DocumentCacheProjectionDrainPageProcessor> logger,
+    TimeProvider timeProvider
 ) : IDocumentCacheProjectionDrainPageProcessor
 {
     private readonly IDocumentProjectionWorkPager _workPager =
         workPager ?? throw new ArgumentNullException(nameof(workPager));
     private readonly ILogger<DocumentCacheProjectionDrainPageProcessor> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly TimeProvider _timeProvider =
+        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
     public async Task<DocumentCacheProjectionDrainPageResult> ProcessPageAsync(
         DocumentCacheProjectionDrainPageRequest request,
@@ -130,31 +133,62 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             );
         CancellationToken effectiveCancellationToken = linkedCancellationSource.Token;
 
+        DateTimeOffset observedAt = _timeProvider.GetUtcNow();
         DocumentProjectionWorkPage page = await ReadPageAsync(targetContext, effectiveCancellationToken)
             .ConfigureAwait(false);
         if (page.IsEmpty && targetContext.Cursor.HasValue)
         {
+            DocumentCacheProjectionCursorPassCompletion cursorPassCompletion =
+                targetContext.FailureBackoffState.CompleteCursorPass(observedAt);
             targetContext.Cursor.Clear();
+
+            if (
+                !cursorPassCompletion.ProcessedEligibleWork
+                && cursorPassCompletion.EarliestSuppressedRetryAt is not null
+            )
+            {
+                ObserveTarget(targetContext, observedAt);
+                return DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(
+                    cursorPassCompletion.EarliestSuppressedRetryAt.Value
+                );
+            }
+
             page = await ReadPageAsync(targetContext, effectiveCancellationToken).ConfigureAwait(false);
         }
 
         if (page.IsEmpty)
         {
+            targetContext.FailureBackoffState.RecordSuppressedTraversal([], observedAt);
+            ObserveTarget(targetContext, observedAt);
             return DocumentCacheProjectionDrainPageResult.NoEligibleWork;
         }
 
+        List<long> suppressedDocumentIds = [];
+        int processedItemCount = 0;
         foreach (DocumentProjectionWorkPageItem item in page.Items)
         {
             targetContext.Cursor.Advance(item.FirstEnqueuedAt, item.DocumentId);
+            if (targetContext.FailureBackoffState.IsSuppressed(item.DocumentId, observedAt))
+            {
+                suppressedDocumentIds.Add(item.DocumentId);
+                continue;
+            }
+
+            targetContext.FailureBackoffState.RecordEligibleWorkProcessed();
+            processedItemCount++;
         }
 
+        targetContext.FailureBackoffState.RecordSuppressedTraversal(suppressedDocumentIds, observedAt);
+        ObserveTarget(targetContext, observedAt);
+
         _logger.LogDebug(
-            "DocumentCache projection paged {WorkItemCount} durable work rows for target {TargetKey}.",
+            "DocumentCache projection paged {WorkItemCount} durable work rows and selected {SelectedWorkItemCount} eligible rows for target {TargetKey}.",
             page.Items.Length,
+            processedItemCount,
             LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
         );
 
-        return DocumentCacheProjectionDrainPageResult.PageProcessed(page.Items.Length);
+        return DocumentCacheProjectionDrainPageResult.PageProcessed(processedItemCount);
     }
 
     private Task<DocumentProjectionWorkPage> ReadPageAsync(
@@ -177,6 +211,26 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             );
         }
     }
+
+    private static void ObserveTarget(
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        DateTimeOffset observedAt
+    ) =>
+        targetContext.ObservationSink.ObserveTarget(
+            DocumentCacheProjectionTargetHealthSnapshotFactory.Create(
+                targetContext,
+                observedAt,
+                executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                    isRunning: true,
+                    isActivelyProcessing: true,
+                    isWaitingForWorkerGate: false,
+                    isInBackoff: false,
+                    backoffUntil: null,
+                    cancellationRequested: targetContext.CancellationRequested,
+                    cancellationObservedAt: targetContext.CancellationRequested ? observedAt : null
+                )
+            )
+        );
 }
 
 internal static class DocumentProjectionWorkPagingGuards
