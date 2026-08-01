@@ -86,7 +86,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
             return plans.CreateNewProposedRelationshipAuthorization;
         }
 
-        return plans.ExistingResourcePlan.ProposedValues is RelationshipAuthorizationResult.Authorized authorized
+        return
+            plans.ExistingResourcePlan.ProposedValues is RelationshipAuthorizationResult.Authorized authorized
             ? authorized
             : null;
     }

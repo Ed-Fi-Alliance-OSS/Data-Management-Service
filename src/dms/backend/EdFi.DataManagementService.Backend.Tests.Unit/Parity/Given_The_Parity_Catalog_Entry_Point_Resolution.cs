@@ -317,14 +317,6 @@ public class Given_The_Parity_Catalog_Family_Variants_Effective_Entry_Points
             "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
         ),
         (
-            "NoProfileGuardedNoOp/PutCurrentStateRefresh",
-            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        (
-            "NoProfileGuardedNoOp/PostAsUpdateCurrentStateRefresh",
-            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        (
             "NoProfileGuardedNoOp/PutAfterReorder",
             "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedAfterReorder"
         ),
@@ -333,20 +325,12 @@ public class Given_The_Parity_Catalog_Family_Variants_Effective_Entry_Points
             "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedAfterReorder"
         ),
         (
-            "NoProfileGuardedNoOp/StalePut",
-            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+            "NoProfileGuardedNoOp/PutCompetingUncommittedBump",
+            "NoProfileGuardedNoOpScenarios.AssertCaptureBlockedUntilCompetingCommit + NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         (
-            "NoProfileGuardedNoOp/StalePostAsUpdate",
-            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        (
-            "NoProfileGuardedNoOp/PutCommitWindowRace",
-            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
-        ),
-        (
-            "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace",
-            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+            "NoProfileGuardedNoOp/PostAsUpdateCompetingUncommittedBump",
+            "NoProfileGuardedNoOpScenarios.AssertCaptureBlockedUntilCompetingCommit + NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         (
             "NoProfileMultiBatchCollection/Create",
@@ -422,6 +406,6 @@ public class Given_The_Parity_Catalog_Family_Variants_Effective_Entry_Points
     }
 
     [Test]
-    public void It_audits_exactly_the_thirty_one_former_inheritance_variants() =>
-        ExpectedVariantEntryPoints.Should().HaveCount(31);
+    public void It_audits_exactly_the_twenty_seven_former_inheritance_variants() =>
+        ExpectedVariantEntryPoints.Should().HaveCount(27);
 }

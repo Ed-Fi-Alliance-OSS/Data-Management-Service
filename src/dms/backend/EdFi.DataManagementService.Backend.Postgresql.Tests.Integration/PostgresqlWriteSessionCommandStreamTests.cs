@@ -119,10 +119,7 @@ file static class WriteSessionCommandStreamTestSupport
             DocumentUuid: documentUuid
         );
 
-    public static UpsertRequest CreateReferenceUpsertRequest(
-        MappingSet mappingSet,
-        DocumentUuid documentUuid
-    )
+    public static UpsertRequest CreateReferenceUpsertRequest(MappingSet mappingSet, DocumentUuid documentUuid)
     {
         var documentInfo = CreateSchoolDocumentInfo();
         var programResourceInfo = new ResourceInfo(
@@ -139,14 +136,15 @@ file static class WriteSessionCommandStreamTestSupport
             programResourceInfo,
             referencedIdentity,
             ReferentialIdCalculator.ReferentialIdFrom(programResourceInfo, referencedIdentity),
-            new JsonPath(
-                "$._ext.sample.addresses[0]._ext.sample.sponsorReferences[0].programReference"
-            )
+            new JsonPath("$._ext.sample.addresses[0]._ext.sample.sponsorReferences[0].programReference")
         );
 
         return new UpsertRequest(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: documentInfo with { DocumentReferences = [documentReference] },
+            DocumentInfo: documentInfo with
+            {
+                DocumentReferences = [documentReference],
+            },
             MappingSet: mappingSet,
             EdfiDoc: CreateRequestBody(0),
             Headers: [],

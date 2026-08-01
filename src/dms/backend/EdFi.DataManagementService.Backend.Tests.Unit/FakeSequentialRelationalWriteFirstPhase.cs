@@ -110,16 +110,16 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
                     existingTarget,
                     writeSession,
                     cancellationToken
-                )
-                is { } storedAuthorizationResult
+                ) is
+                { } storedAuthorizationResult
             )
             {
                 return RelationalWriteFirstPhaseResolution.Immediate(storedAuthorizationResult);
             }
 
             if (
-                RelationalWriteExecutorResults.BuildMissingExistingDocumentReadPlanResult(executionRequest)
-                is { } missingReadPlanResult
+                RelationalWriteExecutorResults.BuildMissingExistingDocumentReadPlanResult(executionRequest) is
+                { } missingReadPlanResult
             )
             {
                 return RelationalWriteFirstPhaseResolution.Immediate(missingReadPlanResult);

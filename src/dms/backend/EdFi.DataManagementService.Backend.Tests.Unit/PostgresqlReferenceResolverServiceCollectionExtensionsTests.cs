@@ -45,8 +45,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
-        var writeFreshnessChecker =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
         var noProfileMergeSynthesizer =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
         var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
@@ -84,7 +82,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
-        writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
@@ -176,9 +173,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     [Test]
     public void It_builds_an_embeddable_postgresql_reference_lookup_command()
     {
-        var factory = new PostgresqlReferenceResolverAdapterFactory(
-            A.Fake<IRelationalCommandExecutor>()
-        );
+        var factory = new PostgresqlReferenceResolverAdapterFactory(A.Fake<IRelationalCommandExecutor>());
         var request = CreateLookupRequest(3);
 
         var command = factory.TryBuildSessionLookupCommand(request);
@@ -235,9 +230,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
                 .Range(1, count)
                 .Select(index =>
                     RelationalAccessTestData.CreateSchoolLookup(
-                        new ReferentialId(
-                            Guid.ParseExact($"{index:x8}000000000000000000000000", "N")
-                        )
+                        new ReferentialId(Guid.ParseExact($"{index:x8}000000000000000000000000", "N"))
                     )
                 )
                 .ToArray()

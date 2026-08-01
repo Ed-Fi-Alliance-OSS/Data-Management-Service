@@ -260,30 +260,31 @@ public static class NoProfileGuardedNoOpScenarios
     }
 
     /// <summary>
-    /// Asserts the current-state-refresh probe observed exactly one injected content-version bump, one
-    /// current-state load, and a single loaded ContentVersion equal to the pre-update version plus one
-    /// (so the guarded no-op saw the concurrently refreshed state without a repository retry).
+    /// Asserts the write's target capture actually blocked on a competing transaction's uncommitted
+    /// content-version bump rather than racing past it. This is the observable form of the lock proof
+    /// that stands in for the removed freshness re-read: while the competing transaction held its row
+    /// lock the write must not have completed, and it must complete once that transaction commits.
     /// </summary>
-    public static void AssertCurrentStateRefreshObservations(
-        int contentVersionBumpCallCount,
-        int loadCallCount,
-        IReadOnlyList<long> loadedContentVersions,
-        long beforeContentVersion
+    /// <param name="completedBeforeCompetingCommit">
+    /// Whether the write ran to completion while the competing transaction still held its lock. A true
+    /// value means the capture did not take the lock, so the no-op's freshness guarantee is unfounded.
+    /// </param>
+    /// <param name="completedAfterCompetingCommit">
+    /// Whether the write completed once the competing transaction released its lock by committing.
+    /// </param>
+    public static void AssertCaptureBlockedUntilCompetingCommit(
+        bool completedBeforeCompetingCommit,
+        bool completedAfterCompetingCommit
     )
     {
-        contentVersionBumpCallCount.Should().Be(1);
-        loadCallCount.Should().Be(1);
-        loadedContentVersions.Should().Equal(beforeContentVersion + 1);
-    }
-
-    /// <summary>Asserts the commit-window freshness probe observed exactly two calls with results [false, true] (stale, then fresh on retry).</summary>
-    public static void AssertCommitWindowFreshnessObservations(
-        int isCurrentCallCount,
-        IReadOnlyList<bool> freshnessResults
-    )
-    {
-        isCurrentCallCount.Should().Be(2);
-        freshnessResults.Should().Equal(false, true);
+        completedBeforeCompetingCommit
+            .Should()
+            .BeFalse(
+                "the capture statement holds the target row lock, so the write cannot progress while a competing transaction's uncommitted bump holds it"
+            );
+        completedAfterCompetingCommit
+            .Should()
+            .BeTrue("the write must resume once the competing transaction commits and releases the row lock");
     }
 
     private static void GuardFocusedSnapshotIsNonVacuous(PersistedState state)

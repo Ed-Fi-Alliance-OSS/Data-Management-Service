@@ -90,8 +90,6 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
-        var writeFreshnessChecker =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
         var noProfileMergeSynthesizer =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
         var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
@@ -148,7 +146,6 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Should()
             .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
-        writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         writeExceptionClassifier.Should().BeOfType<NoOpRelationalWriteExceptionClassifier>();

@@ -134,9 +134,6 @@ public static class ReferenceResolverServiceCollectionExtensions
             )
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<IRelationalWriteFreshnessChecker, RelationalWriteFreshnessChecker>()
-        );
-        services.TryAdd(
             ServiceDescriptor.Scoped<
                 IRelationalWriteNoProfileMergeSynthesizer,
                 RelationalWriteNoProfileMergeSynthesizer

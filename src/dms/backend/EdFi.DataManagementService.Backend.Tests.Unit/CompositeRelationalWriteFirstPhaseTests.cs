@@ -39,9 +39,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var resolution = await CreateSut().ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
-        resolution.Outcome!.ExecutionRequest.TargetContext.Should().BeOfType<
-            RelationalWriteTargetContext.CreateNew
-        >();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
         resolution.Outcome.LockedTarget.Should().BeNull();
         resolution.Outcome.CurrentState.Should().BeNull();
         session.Commands.Should().ContainSingle();
@@ -61,9 +61,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var resolution = await CreateSut().ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
-        resolution.Outcome!.ExecutionRequest.TargetContext.Should().BeOfType<
-            RelationalWriteTargetContext.ExistingDocument
-        >();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.ExistingDocument>();
         resolution.Outcome.CurrentState!.DocumentMetadata.ContentVersion.Should().Be(44L);
         resolution.Outcome.LockedTarget!.DocumentId.Should().Be(345L);
         resolution.Outcome.LockedTarget.ObservedContentVersion.Should().Be(44L);
@@ -80,9 +80,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
         var resolution = await CreateSut().ResolveAsync(input, session);
 
-        resolution.ImmediateResult.Should().Be(
-            new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
-        );
+        resolution
+            .ImmediateResult.Should()
+            .Be(new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()));
         resolution.Outcome.Should().BeNull();
         session.Commands.Should().ContainSingle();
     }
@@ -132,9 +132,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var resolution = await CreateSut().ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
-        resolution.Outcome!.ExecutionRequest.TargetContext.Should().BeOfType<
-            RelationalWriteTargetContext.ExistingDocument
-        >();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.ExistingDocument>();
         resolution.Outcome.ExecutionRequest.PostRelationshipAuthorizationPlans.Should().BeNull();
         resolution
             .Outcome.ExecutionRequest.StoredRelationshipAuthorization.Should()
@@ -156,9 +156,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var resolution = await CreateSut().ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
-        resolution.Outcome!.ExecutionRequest.TargetContext.Should().BeOfType<
-            RelationalWriteTargetContext.CreateNew
-        >();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
         resolution.Outcome.CurrentState.Should().BeNull();
         session.Commands.Should().ContainSingle();
     }
@@ -215,8 +215,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
 
-        Func<Task> act = async () =>
-            await CreateSut().ResolveAsync(input, session, cancellationSource.Token);
+        Func<Task> act = async () => await CreateSut().ResolveAsync(input, session, cancellationSource.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -244,8 +243,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             new FakeDbException("namespace denial")
         );
 
-        var resolution = await CreateSut(providerFailureExtractor: extractor)
-            .ResolveAsync(input, session);
+        var resolution = await CreateSut(providerFailureExtractor: extractor).ResolveAsync(input, session);
 
         resolution
             .ImmediateResult.Should()
@@ -269,8 +267,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         );
         var session = new ScriptedWriteSession(new FakeDbException("invalid AUTH1 payload"));
 
-        var resolution = await CreateSut(providerFailureExtractor: extractor)
-            .ResolveAsync(input, session);
+        var resolution = await CreateSut(providerFailureExtractor: extractor).ResolveAsync(input, session);
 
         resolution
             .ImmediateResult.Should()
@@ -308,7 +305,8 @@ public class Given_The_Composite_Relational_Write_First_Phase
         resolution.ImmediateResult.Should().BeNull();
         resolution.Outcome!.LockedTarget!.IsHeldBy(session).Should().BeTrue();
         session.Commands.Should().HaveCount(3);
-        session.Commands[1]
+        session
+            .Commands[1]
             .Parameters.Single(parameter =>
                 parameter.Name.Equals("@DocumentId", StringComparison.OrdinalIgnoreCase)
             )
@@ -322,11 +320,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     {
         var session = new ScriptedWriteSession();
         var proof = CreateLockProof(session, documentId: 345L, contentVersion: 44L);
-        var target = new RelationalWriteTargetContext.ExistingDocument(
-            345L,
-            ExistingDocumentUuid,
-            44L
-        );
+        var target = new RelationalWriteTargetContext.ExistingDocument(345L, ExistingDocumentUuid, 44L);
 
         Action act = () =>
             DefaultRelationalWriteExecutor.ValidateGuardedNoOpLockProof(proof, target, session);
@@ -340,18 +334,10 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var originatingSession = new ScriptedWriteSession();
         var currentSession = new ScriptedWriteSession();
         var proof = CreateLockProof(originatingSession, documentId: 345L, contentVersion: 44L);
-        var target = new RelationalWriteTargetContext.ExistingDocument(
-            345L,
-            ExistingDocumentUuid,
-            44L
-        );
+        var target = new RelationalWriteTargetContext.ExistingDocument(345L, ExistingDocumentUuid, 44L);
 
         Action act = () =>
-            DefaultRelationalWriteExecutor.ValidateGuardedNoOpLockProof(
-                proof,
-                target,
-                currentSession
-            );
+            DefaultRelationalWriteExecutor.ValidateGuardedNoOpLockProof(proof, target, currentSession);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*current write session*");
     }
@@ -360,14 +346,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
     public void It_rejects_a_missing_guarded_no_op_lock_proof()
     {
         var session = new ScriptedWriteSession();
-        var target = new RelationalWriteTargetContext.ExistingDocument(
-            345L,
-            ExistingDocumentUuid,
-            44L
-        );
+        var target = new RelationalWriteTargetContext.ExistingDocument(345L, ExistingDocumentUuid, 44L);
 
-        Action act = () =>
-            DefaultRelationalWriteExecutor.ValidateGuardedNoOpLockProof(null, target, session);
+        Action act = () => DefaultRelationalWriteExecutor.ValidateGuardedNoOpLockProof(null, target, session);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*matching capture lock proof*");
     }
@@ -381,11 +362,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     {
         var session = new ScriptedWriteSession();
         var proof = CreateLockProof(session, documentId, contentVersion);
-        var target = new RelationalWriteTargetContext.ExistingDocument(
-            345L,
-            ExistingDocumentUuid,
-            44L
-        );
+        var target = new RelationalWriteTargetContext.ExistingDocument(345L, ExistingDocumentUuid, 44L);
 
         Action act = () =>
             DefaultRelationalWriteExecutor.ValidateGuardedNoOpLockProof(proof, target, session);
@@ -405,22 +382,23 @@ public class Given_The_Composite_Relational_Write_First_Phase
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
         };
         var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
-        var scripts = parameterBudget == 3
-            ? new object[]
-            {
-                CreateReader(
-                    CreateCaptureTable(target),
-                    CreateAuthorizationTable(),
-                    CreateDocumentMetadataTable(target, 44L),
-                    CreateRootTable(target)
-                ),
-            }
-            :
-            [
-                CreateCaptureReader(target),
-                CreateReader(CreateAuthorizationTable()),
-                CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target)),
-            ];
+        var scripts =
+            parameterBudget == 3
+                ? new object[]
+                {
+                    CreateReader(
+                        CreateCaptureTable(target),
+                        CreateAuthorizationTable(),
+                        CreateDocumentMetadataTable(target, 44L),
+                        CreateRootTable(target)
+                    ),
+                }
+                :
+                [
+                    CreateCaptureReader(target),
+                    CreateReader(CreateAuthorizationTable()),
+                    CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target)),
+                ];
         var session = new ScriptedWriteSession(scripts);
         var sut = CreateSut(
             commandBudget: new RelationalCommandBudget(parameterBudget, MaxRowsPerStatement: 1000)
@@ -430,14 +408,16 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().HaveCount(expectedCommandCount);
-        session.Commands[0]
+        session
+            .Commands[0]
             .CommandText.Contains("Namespace", StringComparison.OrdinalIgnoreCase)
             .Should()
             .Be(parameterBudget == 3);
 
         if (parameterBudget == 2)
         {
-            session.Commands[1]
+            session
+                .Commands[1]
                 .Parameters.Single(parameter =>
                     parameter.Name.Equals("@documentId", StringComparison.OrdinalIgnoreCase)
                 )
@@ -453,9 +433,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         bool expectCompositeReferenceLookup
     )
     {
-        var referentialId = new ReferentialId(
-            Guid.Parse("87654321-1111-2222-3333-444444444444")
-        );
+        var referentialId = new ReferentialId(Guid.Parse("87654321-1111-2222-3333-444444444444"));
         var input = CreateInput(
             RelationalWriteOperationKind.Post,
             includeReadPlan: true,
@@ -466,10 +444,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         };
         var lookupCommand = new RelationalCommand(
             "SELECT @lookup0 AS \"LookupMarker0\", @lookup1 AS \"LookupMarker1\" WHERE FALSE",
-            [
-                new RelationalParameter("@lookup0", 1),
-                new RelationalParameter("@lookup1", 2),
-            ]
+            [new RelationalParameter("@lookup0", 1), new RelationalParameter("@lookup1", 2)]
         );
         var factory = new TestReferenceResolverAdapterFactory { EmbeddableCommand = lookupCommand };
         var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
@@ -500,14 +475,16 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().HaveCount(expectCompositeReferenceLookup ? 1 : 3);
-        session.Commands[0]
+        session
+            .Commands[0]
             .CommandText.Contains("LookupMarker", StringComparison.Ordinal)
             .Should()
             .Be(expectCompositeReferenceLookup);
 
         if (!expectCompositeReferenceLookup)
         {
-            session.Commands[1]
+            session
+                .Commands[1]
                 .Parameters.Single(parameter =>
                     parameter.Name.Equals("@documentId", StringComparison.OrdinalIgnoreCase)
                 )
@@ -536,11 +513,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             new RelationalCompositeStatementOutcome(
                 0,
                 "capture-target",
-                new RelationalCompositeCapturedTarget(
-                    documentId,
-                    contentVersion,
-                    ExistingDocumentUuid.Value
-                )
+                new RelationalCompositeCapturedTarget(documentId, contentVersion, ExistingDocumentUuid.Value)
             ),
             session
         );
@@ -579,12 +552,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
             allowIdentityUpdates: false,
             new TraceId("composite-first-phase-test"),
-            new ReferenceResolverRequest(
-                mappingSet,
-                resourceModel.Resource,
-                documentReferences ?? [],
-                []
-            )
+            new ReferenceResolverRequest(mappingSet, resourceModel.Resource, documentReferences ?? [], [])
         );
     }
 
@@ -595,12 +563,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var noAuthorizationRequired = new RelationshipAuthorizationResult.NoAuthorizationRequired([]);
 
         return new PostRelationshipAuthorizationPlans(
-            new RelationshipAuthorizationUpdatePlan(
-                noAuthorizationRequired,
-                noAuthorizationRequired,
-                [],
-                []
-            ),
+            new RelationshipAuthorizationUpdatePlan(noAuthorizationRequired, noAuthorizationRequired, [], []),
             CreateNewProposedRelationshipAuthorization: null,
             createNewImmediateResult
         );
@@ -625,14 +588,8 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
     private static DocumentReference CreateDocumentReference(ReferentialId referentialId) =>
         new(
-            new BaseResourceInfo(
-                new ProjectName("Ed-Fi"),
-                new ResourceName("School"),
-                IsDescriptor: false
-            ),
-            new DocumentIdentity([
-                new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
-            ]),
+            new BaseResourceInfo(new ProjectName("Ed-Fi"), new ResourceName("School"), IsDescriptor: false),
+            new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
             referentialId,
             new JsonPath("$.schoolReference")
         );
@@ -703,10 +660,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         return table;
     }
 
-    private static DataTable CreateDocumentMetadataTable(
-        CapturedTarget? target,
-        long hydratedContentVersion
-    )
+    private static DataTable CreateDocumentMetadataTable(CapturedTarget? target, long hydratedContentVersion)
     {
         var table = new DataTable();
         table.Columns.Add("DocumentId", typeof(long));

@@ -151,7 +151,10 @@ file static class WriteSessionCommandStreamTestSupport
 
         return new UpsertRequest(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: documentInfo with { DocumentReferences = documentReferences },
+            DocumentInfo: documentInfo with
+            {
+                DocumentReferences = documentReferences,
+            },
             MappingSet: mappingSet,
             EdfiDoc: CreateRequestBody(0),
             Headers: [],
@@ -340,7 +343,8 @@ public class Given_A_Mssql_Production_First_Phase_With_A_Tvp_Reference_Lookup
     {
         _result.Should().BeOfType<UpsertResult.UpsertFailureReference>();
         _recorder.ShouldHaveCommandCount(2);
-        _recorder.Commands[0]
+        _recorder
+            .Commands[0]
             .CommandText.Should()
             .Contain("[dms].[ReferentialIdentity]")
             .And.NotContain("JOIN @referentialIds");

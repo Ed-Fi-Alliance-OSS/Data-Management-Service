@@ -573,28 +573,6 @@ public static partial class ParityScenarioCatalog
             ]
         ),
         Profile(
-            "ProfileUnchangedWriteGuardedNoOp/StalePut",
-            "A stale profiled no-op PUT retries and bumps the content version by exactly one.",
-            "ProfileGuardedNoOpTests",
-            "Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Put",
-            "Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put",
-            [
-                "It_retries_and_returns_update_success_after_the_profiled_no_op_compare_goes_stale",
-                "It_bumps_the_content_version_by_exactly_one",
-            ]
-        ),
-        Profile(
-            "ProfileUnchangedWriteGuardedNoOp/StalePostAsUpdate",
-            "A stale profiled no-op POST-as-update retries without inserting the incoming document uuid.",
-            "ProfileGuardedNoOpTests",
-            "Given_A_Postgresql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update",
-            "Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update",
-            [
-                "It_retries_and_returns_update_success_after_the_profiled_no_op_compare_goes_stale",
-                "It_does_not_insert_the_incoming_document_uuid",
-            ]
-        ),
-        Profile(
             "ProfileUnchangedWriteGuardedNoOp/SeparateTablePut",
             "An unchanged profiled PUT with a separate-table shape leaves the extension row contents unchanged.",
             "ProfileGuardedNoOpTests",
