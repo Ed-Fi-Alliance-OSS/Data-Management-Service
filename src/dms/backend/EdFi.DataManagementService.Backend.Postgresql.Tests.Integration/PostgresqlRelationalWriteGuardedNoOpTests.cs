@@ -25,6 +25,33 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
+/// <summary>
+/// The statement these fixtures use to simulate a competing writer's content-stamp bump.
+/// </summary>
+/// <remarks>
+/// A real write bumps <c>dms."Document"."ContentVersion"</c> and mirrors it onto the resource root row
+/// in the same stamping trigger, so the two are always equal. The write path locks and reads the
+/// <em>root</em> row, so a simulation that moved only <c>dms."Document"</c> would be invisible to the
+/// freshness re-check and the races these fixtures exist to prove would stop reproducing. Updating only
+/// the mirror column does not re-enter the stamping trigger — mirror columns are excluded from its
+/// stored-column diff, which is the same exclusion that stops the mirror write from recursing.
+/// </remarks>
+file static class GuardedNoOpContentVersionBump
+{
+    public const string Sql = """
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = "ContentVersion" + 1
+        WHERE "DocumentId" = @documentId;
+
+        UPDATE "edfi"."School"
+        SET "ContentVersion" = "ContentVersion" + 1
+        WHERE "DocumentId" = @documentId;
+        """;
+
+    /// <summary>One document row plus its root mirror row.</summary>
+    public const int ExpectedRowsAffected = 2;
+}
+
 file sealed class GuardedNoOpConcurrentContentVersionBumpFreshnessChecker(
     NpgsqlDataSourceProvider dataSourceProvider
 ) : IRelationalWriteFreshnessChecker
@@ -59,19 +86,15 @@ file sealed class GuardedNoOpConcurrentContentVersionBumpFreshnessChecker(
         );
 
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = "ContentVersion" + 1
-            WHERE "DocumentId" = @documentId;
-            """;
+        command.CommandText = GuardedNoOpContentVersionBump.Sql;
         command.Parameters.Add(new NpgsqlParameter("documentId", documentId));
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
-        if (rowsAffected != 1)
+        if (rowsAffected != GuardedNoOpContentVersionBump.ExpectedRowsAffected)
         {
             throw new InvalidOperationException(
-                $"Expected exactly one document content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+                $"Expected a document and root-mirror content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
             );
         }
     }
@@ -127,19 +150,15 @@ internal sealed class GuardedNoOpCommitWindowCoordinator(NpgsqlDataSourceProvide
 
         await using var command = _connection.CreateCommand();
         command.Transaction = _transaction;
-        command.CommandText = """
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = "ContentVersion" + 1
-            WHERE "DocumentId" = @documentId;
-            """;
+        command.CommandText = GuardedNoOpContentVersionBump.Sql;
         command.Parameters.Add(new NpgsqlParameter("documentId", documentId));
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
-        if (rowsAffected != 1)
+        if (rowsAffected != GuardedNoOpContentVersionBump.ExpectedRowsAffected)
         {
             throw new InvalidOperationException(
-                $"Expected exactly one pending document content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+                $"Expected a pending document and root-mirror content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
             );
         }
 
@@ -298,19 +317,15 @@ file sealed class GuardedNoOpPreLoadContentVersionBumpCurrentStateLoader(
         );
 
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = "ContentVersion" + 1
-            WHERE "DocumentId" = @documentId;
-            """;
+        command.CommandText = GuardedNoOpContentVersionBump.Sql;
         command.Parameters.Add(new NpgsqlParameter("documentId", documentId));
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
-        if (rowsAffected != 1)
+        if (rowsAffected != GuardedNoOpContentVersionBump.ExpectedRowsAffected)
         {
             throw new InvalidOperationException(
-                $"Expected exactly one pre-load document content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+                $"Expected a pre-load document and root-mirror content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
             );
         }
     }

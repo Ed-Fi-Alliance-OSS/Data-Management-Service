@@ -69,7 +69,12 @@ file sealed class MssqlProfileGuardedNoOpConcurrentContentVersionBumpFreshnessCh
         {
             _hasBumpedContentVersion = true;
 
-            await BumpContentVersionAsync(targetContext.DocumentId, cancellationToken).ConfigureAwait(false);
+            await BumpContentVersionAsync(
+                    request.WritePlan.Model.Root.Table,
+                    targetContext.DocumentId,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         return await _innerChecker
@@ -77,23 +82,38 @@ file sealed class MssqlProfileGuardedNoOpConcurrentContentVersionBumpFreshnessCh
             .ConfigureAwait(false);
     }
 
-    private async Task BumpContentVersionAsync(long documentId, CancellationToken cancellationToken)
+    /// <summary>
+    /// A real write bumps <c>[dms].[Document].[ContentVersion]</c> and mirrors it onto the resource
+    /// root row in the same stamping trigger, so the two are always equal. The write path locks and
+    /// reads the <em>root</em> row, so this simulation has to move both or the freshness recheck would
+    /// never see the competing writer. Updating only the mirror column does not re-enter the stamping
+    /// trigger — mirror columns are excluded from its stored-column diff.
+    /// </summary>
+    private async Task BumpContentVersionAsync(
+        DbTableName rootTable,
+        long documentId,
+        CancellationToken cancellationToken
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var rowsAffected = await _database.ExecuteNonQueryAsync(
-            """
+            $"""
             UPDATE [dms].[Document]
+            SET [ContentVersion] = [ContentVersion] + 1
+            WHERE [DocumentId] = @documentId;
+
+            UPDATE {SqlIdentifierQuoter.QuoteTableName(SqlDialect.Mssql, rootTable)}
             SET [ContentVersion] = [ContentVersion] + 1
             WHERE [DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId)
         );
 
-        if (rowsAffected != 1)
+        if (rowsAffected != 2)
         {
             throw new InvalidOperationException(
-                $"Expected exactly one document content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+                $"Expected a document and root-mirror content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
             );
         }
     }

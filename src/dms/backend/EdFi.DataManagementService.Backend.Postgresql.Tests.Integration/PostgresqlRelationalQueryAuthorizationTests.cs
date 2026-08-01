@@ -2115,9 +2115,11 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         throw new InvalidOperationException("Expected relational write command was not recorded.");
     }
 
+    // The DELETE target lock is taken on the resource root row, not on dms."Document" — it is still the
+    // only FOR UPDATE the delete session issues, and it still projects ContentVersion.
     private static bool IsPostgresqlDocumentLockCommand(string commandText) =>
         commandText.Contains("FOR UPDATE", StringComparison.Ordinal)
-        && commandText.Contains("dms.\"Document\"", StringComparison.Ordinal);
+        && commandText.Contains("\"ContentVersion\"", StringComparison.Ordinal);
 
     private static bool IsPostgresqlRelationshipAuthorizationCommand(string commandText) =>
         commandText.Contains("\"AuthorizationResult\"", StringComparison.Ordinal)

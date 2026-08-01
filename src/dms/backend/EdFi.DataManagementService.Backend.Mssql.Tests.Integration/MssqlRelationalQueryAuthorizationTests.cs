@@ -2326,9 +2326,11 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         throw new InvalidOperationException("Expected relational write command was not recorded.");
     }
 
+    // The DELETE target lock is taken on the resource root row, not on [dms].[Document] — it is still
+    // the only UPDLOCK the delete session issues, and it still projects ContentVersion.
     private static bool IsMssqlDocumentLockCommand(string commandText) =>
         commandText.Contains("UPDLOCK", StringComparison.Ordinal)
-        && commandText.Contains("[dms].[Document]", StringComparison.Ordinal);
+        && commandText.Contains("[ContentVersion]", StringComparison.Ordinal);
 
     private static bool IsMssqlRelationshipAuthorizationCommand(string commandText) =>
         commandText.Contains("[AuthorizationResult]", StringComparison.Ordinal)

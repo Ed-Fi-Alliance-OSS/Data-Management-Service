@@ -706,9 +706,14 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             _resourceInfo.ProjectName.Value,
             _resourceInfo.ResourceName.Value
         );
+        // Resolve the target the way the production PUT path does — a root-table uuid probe — so the
+        // harness feeds the precondition checker the same target context the repository would.
         var targetLookupResult = await scope
             .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
-            .ResolveForPutAsync(_mappingSet, resource, StudentSchoolAssociationDocumentUuid);
+            .ResolveForPutByRootTableAsync(
+                _mappingSet.GetWritePlanOrThrow(resource).Model.Root.Table,
+                StudentSchoolAssociationDocumentUuid
+            );
 
         targetLookupResult.Should().BeOfType<RelationalWriteTargetLookupResult.ExistingDocument>();
 
