@@ -156,7 +156,8 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationalWriteOperationKind.Post,
                 new RelationalWriteTargetRequest.Post(
                     upsertRequest.DocumentInfo.ReferentialId,
-                    upsertRequest.DocumentUuid
+                    upsertRequest.DocumentUuid,
+                    upsertRequest.DocumentInfo.DocumentIdentity
                 ),
                 documentReferences,
                 descriptorReferences,
@@ -2226,12 +2227,16 @@ public sealed class RelationalDocumentStoreRepository(
         WritePrecondition writePrecondition
     )
     {
-        var targetLookupResult = targetRequest switch
+        RelationalWriteTargetLookupResult targetLookupResult = targetRequest switch
         {
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
-                await _targetLookupService
-                    .ResolveForPostAsync(mappingSet, resource, referentialId, candidateDocumentUuid)
-                    .ConfigureAwait(false),
+            // POST no longer probes here. Upsert detection is a UX_<R>_NK seek that binds the resolved
+            // reference document ids, which do not exist until reference resolution has run inside the write
+            // transaction, so this pre-session pass can only propose a create. The in-session post-target
+            // re-evaluation (RelationalWriteExecutionStateResolver) is the single place the create-vs-update
+            // decision is made, and it re-runs once per attempt.
+            RelationalWriteTargetRequest.Post post => new RelationalWriteTargetLookupResult.CreateNew(
+                post.CandidateDocumentUuid
+            ),
             RelationalWriteTargetRequest.Put(var documentUuid) => await _targetLookupService
                 .ResolveForPutAsync(mappingSet, resource, documentUuid)
                 .ConfigureAwait(false),

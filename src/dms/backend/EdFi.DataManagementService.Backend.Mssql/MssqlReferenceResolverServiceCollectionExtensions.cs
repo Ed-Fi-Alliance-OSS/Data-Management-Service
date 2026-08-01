@@ -33,6 +33,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
 
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
+            MssqlNaturalKeyLookupAdapterFactory,
             MssqlRelationalCommandExecutor,
             MssqlRelationalWriteSessionFactory,
             MssqlDocumentHydrator,

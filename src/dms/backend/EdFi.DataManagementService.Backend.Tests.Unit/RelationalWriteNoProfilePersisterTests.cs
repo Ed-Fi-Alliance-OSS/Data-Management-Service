@@ -1973,7 +1973,8 @@ public class Given_Relational_Write_No_Profile_Persister
                 )
                 : new RelationalWriteTargetRequest.Post(
                     new ReferentialId(Guid.NewGuid()),
-                    new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                    new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+                    new DocumentIdentity([])
                 ),
             writePlan,
             operationKind == RelationalWriteOperationKind.Put

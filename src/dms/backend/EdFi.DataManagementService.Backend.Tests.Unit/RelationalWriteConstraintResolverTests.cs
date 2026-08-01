@@ -54,6 +54,46 @@ public class Given_Relational_Write_Constraint_Resolver
     }
 
     [Test]
+    public void It_resolves_a_root_unique_constraint_over_the_document_uuid_column_by_its_column_set()
+    {
+        var fixture = CreateFixture();
+        var request = new RelationalWriteConstraintResolutionRequest(
+            fixture.WritePlan,
+            fixture.ReferenceResolverRequest,
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                fixture.DocumentUuidConstraintName
+            )
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(
+                new RelationalWriteConstraintResolution.DocumentUuidUnique(fixture.DocumentUuidConstraintName)
+            );
+    }
+
+    [Test]
+    public void It_leaves_other_root_unique_constraints_unresolved()
+    {
+        var fixture = CreateFixture();
+        var request = new RelationalWriteConstraintResolutionRequest(
+            fixture.WritePlan,
+            fixture.ReferenceResolverRequest,
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                fixture.RootReferenceKeyConstraintName
+            )
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(new RelationalWriteConstraintResolution.Unresolved(fixture.RootReferenceKeyConstraintName));
+    }
+
+    [Test]
     public void It_resolves_known_document_reference_foreign_keys_using_the_compiled_binding_inventory()
     {
         var fixture = CreateFixture();
@@ -431,6 +471,20 @@ public class Given_Relational_Write_Constraint_Resolver
                     "UX_Section_NK_16dd2d8140",
                     [new DbColumnName("School_DocumentId"), new DbColumnName("SectionIdentifier")]
                 ),
+                // The mirrored DocumentUuid uniqueness index. Deliberately named without a
+                // "_DocumentUuid" token so the resolver has to recognize it by its column set - the
+                // dialect identifier-shortening pass truncates long names, so the token is not reliable.
+                new TableConstraint.Unique("UX_Section_9f3b21ac7d", [new DbColumnName("DocumentUuid")]),
+                // The *_RefKey helper: the natural key plus the surrogate DocumentId. Not the natural key
+                // and not the DocumentUuid index, so it must stay unresolved.
+                new TableConstraint.Unique(
+                    "UX_Section_RefKey_7c40aa1b93",
+                    [
+                        new DbColumnName("School_DocumentId"),
+                        new DbColumnName("SectionIdentifier"),
+                        new DbColumnName("DocumentId"),
+                    ]
+                ),
                 new TableConstraint.ForeignKey(
                     "FK_Section_SchoolRef_2ba9f31f84",
                     [new DbColumnName("School_DocumentId"), new DbColumnName("SchoolReference_SchoolId")],
@@ -721,6 +775,8 @@ public class Given_Relational_Write_Constraint_Resolver
             writePlan,
             new ReferenceResolverRequest(mappingSet, SectionResource, [], []),
             RootNaturalKeyConstraintName: "UX_Section_NK_16dd2d8140",
+            DocumentUuidConstraintName: "UX_Section_9f3b21ac7d",
+            RootReferenceKeyConstraintName: "UX_Section_RefKey_7c40aa1b93",
             DocumentReferenceConstraintName: "FK_Section_SchoolRef_2ba9f31f84",
             DescriptorReferenceConstraintName: "FK_Section_SessionType_4a2f508e27",
             StructuralForeignKeyConstraintName: "FK_Section_Document",
@@ -896,6 +952,8 @@ public class Given_Relational_Write_Constraint_Resolver
         ResourceWritePlan WritePlan,
         ReferenceResolverRequest ReferenceResolverRequest,
         string RootNaturalKeyConstraintName,
+        string DocumentUuidConstraintName,
+        string RootReferenceKeyConstraintName,
         string DocumentReferenceConstraintName,
         string DescriptorReferenceConstraintName,
         string StructuralForeignKeyConstraintName,

@@ -89,6 +89,37 @@ internal sealed class BlockingPostTargetLookupResolver(ConcurrentPostCreateRaceC
             cancellationToken
         );
     }
+
+    /// <summary>
+    /// The in-session POST upsert-detection seam the write path actually calls. Gating it holds the first
+    /// racing attempt open inside its transaction after it has decided "create", which is the window the
+    /// create race needs; the coordinator's call counter is shared with
+    /// <see cref="ResolveForPostAsync"/> so "first resolver call" keeps its meaning.
+    /// </summary>
+    public async Task<RelationalWriteTargetLookupResult> TryResolveByNaturalKeyAsync(
+        MappingSet mappingSet,
+        ResourceWritePlan writePlan,
+        DocumentIdentity documentIdentity,
+        DocumentUuid candidateDocumentUuid,
+        ResolvedReferenceSet resolvedReferences,
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _coordinator.WaitForFirstResolverCallWindowAsync(cancellationToken);
+
+        return await _innerResolver.TryResolveByNaturalKeyAsync(
+            mappingSet,
+            writePlan,
+            documentIdentity,
+            candidateDocumentUuid,
+            resolvedReferences,
+            connection,
+            transaction,
+            cancellationToken
+        );
+    }
 }
 
 file static class PostAsUpdateIntegrationTestSupport

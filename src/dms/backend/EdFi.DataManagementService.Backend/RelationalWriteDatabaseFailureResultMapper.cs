@@ -70,6 +70,12 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
         return resolution switch
         {
+            // A losing race on the candidate DocumentUuid says nothing about the request's identity, so it is
+            // never an identity conflict. It is retryable unconditionally — not only under If-None-Match —
+            // because Core regenerates the candidate uuid inside the retried lambda.
+            RelationalWriteConstraintResolution.DocumentUuidUnique => BuildWriteConflictFailureResult(
+                request.OperationKind
+            ),
             // Re-run the whole POST after a guarded create race so the winning representation is
             // resolved and subjected to stored-value authorization before If-None-Match is evaluated.
             RelationalWriteConstraintResolution.RootNaturalKeyUnique when IsIfNoneMatchCreate(request) =>
@@ -95,6 +101,20 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             ),
         };
     }
+
+    private static RelationalWriteExecutorResult BuildWriteConflictFailureResult(
+        RelationalWriteOperationKind operationKind
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureWriteConflict()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
 
     private static bool IsIfNoneMatchCreate(RelationalWriteExecutorRequest request) =>
         request.OperationKind == RelationalWriteOperationKind.Post

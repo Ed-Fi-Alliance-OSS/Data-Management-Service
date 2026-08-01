@@ -290,6 +290,27 @@ public class Given_MssqlRelationalWriteExceptionClassifier
     }
 
     [Test]
+    public void It_classifies_error_2601_with_a_parseable_unique_index_name_as_a_unique_constraint_violation()
+    {
+        // UX_<R>_DocumentUuid is a unique INDEX, not a unique constraint, so SQL Server raises 2601 and
+        // names it as an index. The constraint resolver recognizes it by column set, which only works if
+        // the classifier surfaces the name here rather than falling through to UnrecognizedWriteFailure.
+        var exception = CreateSqlException(
+            2601,
+            "Cannot insert duplicate key row in object 'edfi.School' with unique index 'UX_School_DocumentUuid'. "
+                + "The duplicate key value is (cccccccc-1111-2222-3333-dddddddddddd)."
+        );
+
+        _sut.TryClassify(exception, out var classification).Should().BeTrue();
+        classification
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExceptionClassification.UniqueConstraintViolation("UX_School_DocumentUuid")
+            );
+        _sut.IsUniqueConstraintViolation(exception).Should().BeTrue();
+    }
+
+    [Test]
     public void It_reports_unique_constraint_violation_for_error_2601_when_unique_index_name_cannot_be_parsed()
     {
         var exception = CreateSqlException(

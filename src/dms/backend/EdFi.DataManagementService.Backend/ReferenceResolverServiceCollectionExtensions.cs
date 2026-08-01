@@ -37,18 +37,27 @@ public static class ReferenceResolverServiceCollectionExtensions
 
     internal static IServiceCollection AddReferenceResolver<
         TReferenceResolverAdapterFactory,
+        TNaturalKeyLookupAdapterFactory,
         TRelationalCommandExecutor,
         TRelationalWriteSessionFactory,
         TDocumentHydrator,
         TSessionDocumentHydrator
     >(this IServiceCollection services)
         where TReferenceResolverAdapterFactory : class, IReferenceResolverAdapterFactory
+        where TNaturalKeyLookupAdapterFactory : class, INaturalKeyLookupAdapterFactory
         where TRelationalCommandExecutor : class, IRelationalCommandExecutor
         where TRelationalWriteSessionFactory : class, IRelationalWriteSessionFactory
         where TDocumentHydrator : class, IDocumentHydrator
         where TSessionDocumentHydrator : class, ISessionDocumentHydrator
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        // The write executor resolves references and seeks POST upsert targets by natural key, so the
+        // natural-key adapter factory belongs to the same composition that registers the executor - not
+        // only to the compositions that also swap the query-path IReferenceResolver.
+        services.TryAdd(
+            ServiceDescriptor.Scoped<INaturalKeyLookupAdapterFactory, TNaturalKeyLookupAdapterFactory>()
+        );
 
         services.AddOptions();
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalCommandExecutor, TRelationalCommandExecutor>());

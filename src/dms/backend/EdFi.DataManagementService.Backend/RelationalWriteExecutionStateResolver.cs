@@ -6,7 +6,6 @@
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -62,8 +61,19 @@ internal sealed class RelationalWriteExecutionStateResolver(
             ? EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             : EtagPreconditionEvaluation.BeforeProposedAuthorization;
 
+    /// <summary>
+    /// Resolves the in-session target and current state for one executor attempt.
+    /// </summary>
+    /// <remarks>
+    /// This is the single POST upsert-detection site. The pre-session repository pass always proposes a
+    /// create, so the <c>CreateNew || HasEtagPrecondition</c> gate below is what actually decides
+    /// create-vs-update, by seeking <c>UX_&lt;R&gt;_NK</c> once per attempt. <paramref name="resolvedReferences"/>
+    /// is required because reference-sourced natural-key parts bind resolved reference document ids, which is
+    /// why the executor resolves references before this runs.
+    /// </remarks>
     public async Task<ResolvedExecutionState> ResolveAsync(
         RelationalWriteExecutorRequest request,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         ExecutionStateResolutionOptions options,
         CancellationToken cancellationToken
@@ -74,8 +84,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
         InSessionTargetResolution? inSessionTargetResolution = null;
 
         if (
-            request.TargetRequest
-                is RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid)
+            request.TargetRequest is RelationalWriteTargetRequest.Post postTargetRequest
             && options.AllowPostTargetReevaluation
             && (
                 targetContext is RelationalWriteTargetContext.CreateNew
@@ -85,8 +94,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
         {
             inSessionTargetResolution = await ResolvePostTargetAsync(
                     request,
-                    referentialId,
-                    candidateDocumentUuid,
+                    postTargetRequest,
+                    resolvedReferences,
                     writeSession,
                     options,
                     cancellationToken
@@ -98,6 +107,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
             inSessionTargetResolution = await LoadCurrentStateForExistingTargetAsync(
                     request,
                     existingDocument,
+                    resolvedReferences,
                     writeSession,
                     options,
                     cancellationToken
@@ -218,19 +228,20 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
     private async Task<InSessionTargetResolution> ResolvePostTargetAsync(
         RelationalWriteExecutorRequest request,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
+        RelationalWriteTargetRequest.Post postTargetRequest,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         ExecutionStateResolutionOptions options,
         CancellationToken cancellationToken
     )
     {
         var targetLookupResult = await _targetLookupResolver
-            .ResolveForPostAsync(
+            .TryResolveByNaturalKeyAsync(
                 request.MappingSet,
-                request.WritePlan.Model.Resource,
-                referentialId,
-                candidateDocumentUuid,
+                request.WritePlan,
+                postTargetRequest.DocumentIdentity,
+                postTargetRequest.CandidateDocumentUuid,
+                resolvedReferences,
                 writeSession.Connection,
                 writeSession.Transaction,
                 cancellationToken
@@ -257,6 +268,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     TargetContext = existingTargetContext,
                 },
                 existingTargetContext,
+                resolvedReferences,
                 writeSession,
                 options.SuppressPostTargetReevaluation(),
                 cancellationToken
@@ -267,6 +279,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
     private async Task<InSessionTargetResolution> LoadCurrentStateForExistingTargetAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetContext.ExistingDocument targetContext,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         ExecutionStateResolutionOptions options,
         CancellationToken cancellationToken
@@ -300,6 +313,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
             {
                 return await HandleMissingExistingTargetAsync(
                         request,
+                        resolvedReferences,
                         writeSession,
                         options,
                         cancellationToken
@@ -342,7 +356,13 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 );
             }
 
-            return await HandleMissingExistingTargetAsync(request, writeSession, options, cancellationToken)
+            return await HandleMissingExistingTargetAsync(
+                    request,
+                    resolvedReferences,
+                    writeSession,
+                    options,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
@@ -369,12 +389,19 @@ internal sealed class RelationalWriteExecutionStateResolver(
             );
         }
 
-        return await HandleMissingExistingTargetAsync(request, writeSession, options, cancellationToken)
+        return await HandleMissingExistingTargetAsync(
+                request,
+                resolvedReferences,
+                writeSession,
+                options,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
     private async Task<InSessionTargetResolution> HandleMissingExistingTargetAsync(
         RelationalWriteExecutorRequest request,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         ExecutionStateResolutionOptions options,
         CancellationToken cancellationToken
@@ -395,24 +422,21 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     )
                     : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             ),
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
-                options.AllowPostTargetReevaluation
-                    ? await ResolvePostTargetAsync(
-                            request,
-                            referentialId,
-                            candidateDocumentUuid,
-                            writeSession,
-                            options,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false)
-                    : new InSessionTargetResolution(
-                        null,
-                        null,
-                        new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpsertFailureWriteConflict()
-                        )
-                    ),
+            RelationalWriteTargetRequest.Post postTargetRequest => options.AllowPostTargetReevaluation
+                ? await ResolvePostTargetAsync(
+                        request,
+                        postTargetRequest,
+                        resolvedReferences,
+                        writeSession,
+                        options,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+                : new InSessionTargetResolution(
+                    null,
+                    null,
+                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
+                ),
             _ => throw new InvalidOperationException(
                 $"Relational existing-target recovery does not support target request type '{request.TargetRequest.GetType().Name}'."
             ),

@@ -86,6 +86,57 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             .BeSameAs(request.ReferenceResolutionRequest);
     }
 
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public void It_maps_document_uuid_unique_violations_to_a_retryable_write_conflict(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateRequest(operationKind);
+        var violation = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+            "UX_School_DocumentUuid"
+        );
+        _writeExceptionClassifier.ClassificationToReturn = violation;
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.DocumentUuidUnique(violation.ConstraintName);
+
+        var isMapped = _sut.TryBuild(request, new StubDbException("unique violation"), out var result);
+
+        RelationalWriteExecutorResult expected =
+            operationKind == RelationalWriteOperationKind.Post
+                ? new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
+                : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict());
+
+        isMapped.Should().BeTrue();
+        result.Should().BeEquivalentTo(expected);
+    }
+
+    [Test]
+    public void It_maps_document_uuid_unique_violations_to_a_retryable_write_conflict_without_a_precondition_gate()
+    {
+        // Unlike the natural-key create race, this is never gated on If-None-Match: Core regenerates the
+        // candidate uuid inside the retried lambda, so replaying is always the correct answer.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.None()
+        );
+        var violation = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+            "UX_School_DocumentUuid"
+        );
+        _writeExceptionClassifier.ClassificationToReturn = violation;
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.DocumentUuidUnique(violation.ConstraintName);
+
+        var isMapped = _sut.TryBuild(request, new StubDbException("unique violation"), out var result);
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
+            );
+    }
+
     [Test]
     public void It_does_not_fabricate_reference_failures_without_a_matching_request_reference()
     {
@@ -434,7 +485,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
                     new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                    createDocumentUuid
+                    createDocumentUuid,
+                    new DocumentIdentity([])
                 ),
             resourceWritePlan,
             existingDocumentReadPlan: null,
@@ -611,7 +663,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
                     new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                    createDocumentUuid
+                    createDocumentUuid,
+                    new DocumentIdentity([])
                 ),
             writePlan,
             existingDocumentReadPlan: null,
@@ -638,7 +691,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
                 new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                createDocumentUuid
+                createDocumentUuid,
+                new DocumentIdentity([])
             ),
             writePlan,
             existingDocumentReadPlan: null,
@@ -663,7 +717,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
                 new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                createDocumentUuid
+                createDocumentUuid,
+                new DocumentIdentity([])
             ),
             writePlan,
             existingDocumentReadPlan: null,

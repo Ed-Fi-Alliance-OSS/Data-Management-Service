@@ -55,6 +55,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,
+            TestNaturalKeyLookupAdapterFactory,
             TestRelationalCommandExecutor,
             TestRelationalWriteSessionFactory,
             TestDocumentHydrator,
@@ -164,6 +165,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,
+            TestNaturalKeyLookupAdapterFactory,
             TestRelationalCommandExecutor,
             TestRelationalWriteSessionFactory,
             TestDocumentHydrator,
@@ -204,6 +206,27 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     {
         public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, string discriminator) =>
             throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
+    }
+
+    private sealed class TestNaturalKeyLookupAdapterFactory : INaturalKeyLookupAdapterFactory
+    {
+        public INaturalKeyLookupAdapter CreateAdapter() => new TestNaturalKeyLookupAdapter();
+
+        public INaturalKeyLookupAdapter CreateSessionAdapter(
+            DbConnection connection,
+            DbTransaction transaction
+        ) => new TestNaturalKeyLookupAdapter();
+    }
+
+    private sealed class TestNaturalKeyLookupAdapter : INaturalKeyLookupAdapter
+    {
+        public Task<IReadOnlyList<NaturalKeyLookupRow>> ResolveAsync(
+            NaturalKeyLookupBatch batch,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return Task.FromResult<IReadOnlyList<NaturalKeyLookupRow>>([]);
+        }
     }
 
     private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory

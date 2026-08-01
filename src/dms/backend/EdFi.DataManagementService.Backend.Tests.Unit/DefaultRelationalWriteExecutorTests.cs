@@ -32,7 +32,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Default_Relational_Write_Executor
 {
     private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
-    private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+    private RecordingNaturalKeyLookupAdapterFactory _naturalKeyLookupAdapterFactory = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
     private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
     private RecordingRelationalCurrentEtagPreconditionChecker _currentEtagPreconditionChecker = null!;
@@ -50,7 +50,7 @@ public class Given_Default_Relational_Write_Executor
     public void Setup()
     {
         _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
-        _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+        _naturalKeyLookupAdapterFactory = new RecordingNaturalKeyLookupAdapterFactory();
         _writeFlattener = new RecordingRelationalWriteFlattener();
         _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
         _currentEtagPreconditionChecker = new RecordingRelationalCurrentEtagPreconditionChecker();
@@ -64,7 +64,7 @@ public class Given_Default_Relational_Write_Executor
         _readMaterializer = new RecordingRelationalReadMaterializer();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            _naturalKeyLookupAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
@@ -105,17 +105,12 @@ public class Given_Default_Relational_Write_Executor
                 ),
             ]
         );
-        _referenceResolverAdapterFactory.Adapter.LookupResults =
+        // The first group probes School - both document-reference paths dedupe onto one entry - and the
+        // second group probes SchoolTypeDescriptor, which also projects the matched row's type columns.
+        _naturalKeyLookupAdapterFactory.Adapter.LookupResults =
         [
-            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, false, "$.schoolId=255901"),
-            new ReferenceLookupResult(
-                descriptorReferentialId,
-                202L,
-                13,
-                13,
-                true,
-                "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-            ),
+            new NaturalKeyLookupRow(0, 1, 101L, null, null),
+            new NaturalKeyLookupRow(1, 1, 202L, "SchoolTypeDescriptor", 13),
         ];
 
         var result = await _sut.ExecuteAsync(request);
@@ -133,16 +128,16 @@ public class Given_Default_Relational_Write_Executor
             );
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateAdapterCallCount.Should().Be(0);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory
+        _naturalKeyLookupAdapterFactory.CreateAdapterCallCount.Should().Be(0);
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _naturalKeyLookupAdapterFactory
             .CapturedConnection.Should()
             .BeSameAs(_writeSessionFactory.Session.Connection);
-        _referenceResolverAdapterFactory
+        _naturalKeyLookupAdapterFactory
             .CapturedTransaction.Should()
             .BeSameAs(_writeSessionFactory.Session.Transaction);
-        _referenceResolverAdapterFactory.Adapter.Requests.Should().ContainSingle();
-        _referenceResolverAdapterFactory.Adapter.Requests[0].Lookups.Should().HaveCount(2);
+        _naturalKeyLookupAdapterFactory.Adapter.Requests.Should().ContainSingle();
+        _naturalKeyLookupAdapterFactory.Adapter.Requests[0].Groups.Should().HaveCount(2);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _writeFlattener.CapturedInput.Should().NotBeNull();
         _writeFlattener.CapturedInput!.OperationKind.Should().Be(request.OperationKind);
@@ -272,11 +267,14 @@ public class Given_Default_Relational_Write_Executor
         );
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
-            documentReferences: [documentReference]
+            documentReferences: [documentReference],
+            documentReferenceProbeIsAbstract: true
         );
-        _referenceResolverAdapterFactory.Adapter.LookupResults =
+        // An abstract probe reports the matched row's concrete subtype through its discriminator; a subtype
+        // the requested target does not admit is the non-missing document-reference failure.
+        _naturalKeyLookupAdapterFactory.Adapter.LookupResults =
         [
-            new ReferenceLookupResult(referentialId, 202L, 12, 12, false, "$.schoolId=255901"),
+            new NaturalKeyLookupRow(0, 1, 202L, "Ed-Fi:LocalEducationAgency", null),
         ];
 
         var result = await _sut.ExecuteAsync(request);
@@ -601,7 +599,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_authorizes_stored_relationship_values_for_existing_put_before_reference_resolution()
+    public async Task It_authorizes_stored_relationship_values_for_existing_put_before_reference_failures_surface()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
             new ReferentialId(Guid.NewGuid()),
@@ -632,7 +630,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -645,7 +643,7 @@ public class Given_Default_Relational_Write_Executor
         var parameterConfigurator = new RecordingRelationalParameterConfigurator();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            _naturalKeyLookupAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
@@ -729,7 +727,7 @@ public class Given_Default_Relational_Write_Executor
         );
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            _naturalKeyLookupAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
@@ -770,7 +768,9 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         providerFailureExtractor.ExtractCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -786,7 +786,7 @@ public class Given_Default_Relational_Write_Executor
         var logger = new RecordingLogger<DefaultRelationalWriteExecutor>();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            _naturalKeyLookupAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
@@ -839,7 +839,9 @@ public class Given_Default_Relational_Write_Executor
         logRecord.Message.Should().Contain("ProviderMessageFragment: 2|0|1|0:0:n");
         logRecord.Message.Should().Contain("MappingFailureCategory: PayloadParseFailed");
         providerFailureExtractor.ExtractCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -880,7 +882,9 @@ public class Given_Default_Relational_Write_Executor
             .ContainSingle()
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -914,7 +918,9 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -951,7 +957,9 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
             .Which.RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Stored);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _readMaterializer.MaterializeCallCount.Should().Be(0);
@@ -1016,7 +1024,9 @@ public class Given_Default_Relational_Write_Executor
             .ContainSingle()
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -1027,7 +1037,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_authorizes_stored_relationship_values_for_existing_post_before_reference_resolution()
+    public async Task It_authorizes_stored_relationship_values_for_existing_post_before_reference_failures_surface()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
@@ -1064,7 +1074,7 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -1469,7 +1479,7 @@ public class Given_Default_Relational_Write_Executor
         );
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            _naturalKeyLookupAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
@@ -1518,7 +1528,7 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -1579,7 +1589,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_returns_if_match_failure_for_put_before_reference_resolution_when_the_current_etag_mismatches()
+    public async Task It_returns_if_match_failure_for_put_before_reference_failures_surface_when_the_current_etag_mismatches()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
             new ReferentialId(Guid.NewGuid()),
@@ -1608,7 +1618,9 @@ public class Given_Default_Relational_Write_Executor
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.Concurrency);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -1617,7 +1629,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_returns_if_match_failure_for_post_as_update_before_reference_resolution_when_the_current_etag_mismatches()
+    public async Task It_returns_if_match_failure_for_post_as_update_before_reference_failures_surface_when_the_current_etag_mismatches()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -1648,7 +1660,9 @@ public class Given_Default_Relational_Write_Executor
             );
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -1698,7 +1712,9 @@ public class Given_Default_Relational_Write_Executor
             .CapturedWriteSession!.Transaction.Should()
             .BeSameAs(_writeSessionFactory.Session.Transaction);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -1728,7 +1744,9 @@ public class Given_Default_Relational_Write_Executor
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -1770,7 +1788,7 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer
@@ -3358,7 +3376,7 @@ public class Given_Default_Relational_Write_Executor
                     new UpsertResult.UpsertFailureValidation([validationFailure])
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -3385,7 +3403,7 @@ public class Given_Default_Relational_Write_Executor
                     new UpdateResult.UpdateFailureValidation([validationFailure])
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -3407,7 +3425,8 @@ public class Given_Default_Relational_Write_Executor
                 RelationalWriteOperationKind.Put,
                 new RelationalWriteTargetRequest.Post(
                     new ReferentialId(Guid.NewGuid()),
-                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    CreateOwnDocumentIdentity(resourceModel)
                 ),
                 resourceWritePlan,
                 CreateReadPlan(resourceModel),
@@ -6138,7 +6157,7 @@ public class Given_Default_Relational_Write_Executor
     {
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            _naturalKeyLookupAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
@@ -6549,7 +6568,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_selects_create_new_post_relationship_plan_before_reference_resolution()
+    public async Task It_selects_create_new_post_relationship_plan_before_reference_failures_surface()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
             new ReferentialId(Guid.NewGuid()),
@@ -6576,7 +6595,9 @@ public class Given_Default_Relational_Write_Executor
 
         result.Should().BeSameAs(createNewFailure);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        // Reference resolution now runs first (its resolved document ids feed the UX_<R>_NK upsert
+        // probe), so the session adapter is created before this short-circuit rather than after it.
+        _naturalKeyLookupAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -7669,13 +7690,19 @@ public class Given_Default_Relational_Write_Executor
         TableWritePlan? rootWritePlan = null,
         JsonNode? selectedBody = null,
         SqlDialect dialect = SqlDialect.Pgsql,
-        WritePrecondition? writePrecondition = null
+        WritePrecondition? writePrecondition = null,
+        bool documentReferenceProbeIsAbstract = false
     )
     {
         var resolvedRootWritePlan = rootWritePlan ?? CreateRootPlan();
         var resourceModel = CreateRelationalResourceModel(resolvedRootWritePlan.TableModel);
         var resourceWritePlan = new ResourceWritePlan(resourceModel, [resolvedRootWritePlan]);
-        var mappingSet = CreateMappingSet(resourceModel, [resolvedRootWritePlan], dialect);
+        var mappingSet = CreateMappingSet(
+            resourceModel,
+            [resolvedRootWritePlan],
+            dialect,
+            documentReferenceProbeIsAbstract
+        );
         var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var updateDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var resolvedTargetContext =
@@ -7693,7 +7720,8 @@ public class Given_Default_Relational_Write_Executor
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
                     new ReferentialId(Guid.NewGuid()),
-                    createDocumentUuid
+                    createDocumentUuid,
+                    CreateOwnDocumentIdentity(resourceModel)
                 ),
             resourceWritePlan,
             CreateReadPlan(resourceModel, dialect),
@@ -7739,10 +7767,33 @@ public class Given_Default_Relational_Write_Executor
             )
         );
 
+    /// <summary>
+    /// The document's own natural-key identity, one element per compiled own-natural-key probe path, with a
+    /// value the column's scalar type accepts. The in-session upsert probe binds these.
+    /// </summary>
+    private static DocumentIdentity CreateOwnDocumentIdentity(RelationalResourceModel resourceModel) =>
+        new([
+            .. GetIdentityColumns(resourceModel)
+                .Select(columnModel => new DocumentIdentityElement(
+                    new JsonPath(
+                        columnModel.SourceJsonPath?.Canonical
+                            ?? throw new InvalidOperationException("Expected a root identity source path.")
+                    ),
+                    columnModel.ScalarType?.Kind == ScalarKind.Int32 ? "255901" : "Lincoln High"
+                )),
+        ]);
+
+    private static IReadOnlyList<DbColumnModel> GetIdentityColumns(RelationalResourceModel resourceModel) =>
+        resourceModel
+            .Root.Columns.Where(columnModel => columnModel.Kind == ColumnKind.Scalar)
+            .Take(1)
+            .ToArray();
+
     private static MappingSet CreateMappingSet(
         RelationalResourceModel resourceModel,
         IReadOnlyList<TableWritePlan>? tableWritePlans = null,
-        SqlDialect dialect = SqlDialect.Pgsql
+        SqlDialect dialect = SqlDialect.Pgsql,
+        bool documentReferenceProbeIsAbstract = false
     )
     {
         var resolvedTableWritePlans = tableWritePlans ?? [CreateRootPlan()];
@@ -7750,10 +7801,9 @@ public class Given_Default_Relational_Write_Executor
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
         var descriptorKey = new ResourceKeyEntry(13, descriptorResource, "1.0.0", true);
-        var identityColumns = resourceModel
-            .Root.Columns.Where(columnModel => columnModel.Kind == ColumnKind.Scalar)
-            .Take(1)
-            .ToArray();
+        var identityColumns = GetIdentityColumns(resourceModel);
+        var localEducationAgencyResource = new QualifiedResourceName("Ed-Fi", "LocalEducationAgency");
+        var localEducationAgencyKey = new ResourceKeyEntry(12, localEducationAgencyResource, "1.0.0", false);
 
         return new MappingSet(
             Key: new MappingSetKey("schema-hash", dialect, "v1"),
@@ -7762,13 +7812,13 @@ public class Given_Default_Relational_Write_Executor
                     ApiSchemaFormatVersion: "1.0",
                     RelationalMappingVersion: "v1",
                     EffectiveSchemaHash: "schema-hash",
-                    ResourceKeyCount: 2,
+                    ResourceKeyCount: 3,
                     ResourceKeySeedHash: [1, 2, 3],
                     SchemaComponentsInEndpointOrder:
                     [
                         new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
                     ],
-                    ResourceKeysInIdOrder: [resourceKey, descriptorKey]
+                    ResourceKeysInIdOrder: [resourceKey, localEducationAgencyKey, descriptorKey]
                 ),
                 Dialect: dialect,
                 ProjectSchemasInEndpointOrder:
@@ -7829,11 +7879,13 @@ public class Given_Default_Relational_Write_Executor
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
             {
                 [resource] = resourceKey.ResourceKeyId,
+                [localEducationAgencyResource] = localEducationAgencyKey.ResourceKeyId,
                 [descriptorResource] = descriptorKey.ResourceKeyId,
             },
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKey.ResourceKeyId] = resourceKey,
+                [localEducationAgencyKey.ResourceKeyId] = localEducationAgencyKey,
                 [descriptorKey.ResourceKeyId] = descriptorKey,
             },
             SecurableElementColumnPathsByResource: new Dictionary<
@@ -7842,6 +7894,38 @@ public class Given_Default_Relational_Write_Executor
             >()
         )
         {
+            // Compiled reference-probe metadata for the resource the fixture's document references target
+            // (they all name Ed-Fi.School), plus the shared descriptor probe target. The natural-key
+            // reference resolver reads both; MappingSetCompiler builds them for every compiled mapping set.
+            NaturalKeyProbeTargets = new Dictionary<QualifiedResourceName, NaturalKeyProbeTarget>
+            {
+                // Bound to the identity the fixture's document references actually carry
+                // ($.schoolId = 255901), independent of whichever root write plan the test selected. The
+                // reference-target probe describes the resource being referenced; the own-natural-key probe
+                // below describes the resource being written.
+                [resource] = new NaturalKeyProbeTarget(
+                    resourceModel.Root.Table,
+                    new DbColumnName("DocumentId"),
+                    documentReferenceProbeIsAbstract,
+                    [
+                        new NaturalKeyProbeColumn(
+                            new DbColumnName("SchoolId"),
+                            new JsonPathExpression("$.schoolId", []),
+                            new RelationalScalarType(ScalarKind.Int32),
+                            null
+                        ),
+                    ]
+                ),
+            },
+            DescriptorProbeTarget = new DescriptorProbeTarget(
+                new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+                DescriptorProbeColumns.UriLowered,
+                new DbColumnName("Discriminator"),
+                new Dictionary<QualifiedResourceName, string>
+                {
+                    [descriptorResource] = descriptorResource.ResourceName,
+                }
+            ),
             // Compiled own-identity probe metadata, derived from the same identity columns the fixture
             // feeds the referential-identity trigger. MappingSetCompiler builds this for every
             // relational-table resource; hand-built mapping sets must declare it explicitly.
@@ -8198,9 +8282,9 @@ public class Given_Default_Relational_Write_Executor
     private static string QuoteIdentifier(string identifier, SqlDialect dialect) =>
         dialect == SqlDialect.Mssql ? $"[{identifier}]" : $"\"{identifier}\"";
 
-    private sealed class RecordingReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
+    private sealed class RecordingNaturalKeyLookupAdapterFactory : INaturalKeyLookupAdapterFactory
     {
-        public RecordingReferenceResolverAdapter Adapter { get; } = new();
+        public RecordingNaturalKeyLookupAdapter Adapter { get; } = new();
 
         public DbConnection? CapturedConnection { get; private set; }
 
@@ -8210,13 +8294,13 @@ public class Given_Default_Relational_Write_Executor
 
         public int CreateSessionAdapterCallCount { get; private set; }
 
-        public IReferenceResolverAdapter CreateAdapter()
+        public INaturalKeyLookupAdapter CreateAdapter()
         {
             CreateAdapterCallCount++;
             return Adapter;
         }
 
-        public IReferenceResolverAdapter CreateSessionAdapter(
+        public INaturalKeyLookupAdapter CreateSessionAdapter(
             DbConnection connection,
             DbTransaction transaction
         )
@@ -8287,18 +8371,18 @@ public class Given_Default_Relational_Write_Executor
         }
     }
 
-    private sealed class RecordingReferenceResolverAdapter : IReferenceResolverAdapter
+    private sealed class RecordingNaturalKeyLookupAdapter : INaturalKeyLookupAdapter
     {
-        public List<ReferenceLookupRequest> Requests { get; } = [];
+        public List<NaturalKeyLookupBatch> Requests { get; } = [];
 
-        public IReadOnlyList<ReferenceLookupResult> LookupResults { get; set; } = [];
+        public IReadOnlyList<NaturalKeyLookupRow> LookupResults { get; set; } = [];
 
-        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-            ReferenceLookupRequest request,
+        public Task<IReadOnlyList<NaturalKeyLookupRow>> ResolveAsync(
+            NaturalKeyLookupBatch batch,
             CancellationToken cancellationToken = default
         )
         {
-            Requests.Add(request);
+            Requests.Add(batch);
             return Task.FromResult(LookupResults);
         }
     }
@@ -8347,6 +8431,8 @@ public class Given_Default_Relational_Write_Executor
 
         public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
 
+        public List<ResolvedReferenceSet> CapturedResolvedReferences { get; } = [];
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
@@ -8359,6 +8445,31 @@ public class Given_Default_Relational_Write_Executor
         {
             cancellationToken.ThrowIfCancellationRequested();
             ResolveForPostCallCount++;
+            CapturedWriteSession = new CapturedRelationalWriteSession(connection, transaction);
+
+            return Task.FromResult(
+                PostResults.Count > 0
+                    ? PostResults.Dequeue()
+                    : new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            );
+        }
+
+        // The production POST upsert-detection seam. It shares the counter and the queued results with
+        // ResolveForPostAsync so the existing race/orchestration pins keep their meaning after the cutover.
+        public Task<RelationalWriteTargetLookupResult> TryResolveByNaturalKeyAsync(
+            MappingSet mappingSet,
+            ResourceWritePlan writePlan,
+            DocumentIdentity documentIdentity,
+            DocumentUuid candidateDocumentUuid,
+            ResolvedReferenceSet resolvedReferences,
+            DbConnection connection,
+            DbTransaction transaction,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResolveForPostCallCount++;
+            CapturedResolvedReferences.Add(resolvedReferences);
             CapturedWriteSession = new CapturedRelationalWriteSession(connection, transaction);
 
             return Task.FromResult(

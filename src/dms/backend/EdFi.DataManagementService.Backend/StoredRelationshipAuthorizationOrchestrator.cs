@@ -31,17 +31,31 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
     private readonly ILogger _relationshipAuthorizationLogger =
         relationshipAuthorizationLogger ?? NullLogger.Instance;
 
+    /// <summary>
+    /// Resolves (and locks) the target for stored-value authorization, which is the authorization boundary
+    /// for this attempt.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="resolvedReferences"/> is required because POST target resolution seeks
+    /// <c>UX_&lt;R&gt;_NK</c>, whose reference-sourced parts bind resolved reference document ids. That is why
+    /// the executor resolves references before calling this; the reference-failure gate still runs after
+    /// authorization so error precedence is unchanged.
+    /// </remarks>
     public async Task<StoredRelationshipAuthorizationBoundary> ResolveAsync(
         RelationalWriteExecutorRequest request,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(resolvedReferences);
+
         if (request.PostRelationshipAuthorizationPlans is not null)
         {
             return await ResolvePostRelationshipAuthorizationPlansAsync(
                     request,
                     request.PostRelationshipAuthorizationPlans,
+                    resolvedReferences,
                     writeSession,
                     cancellationToken
                 )
@@ -66,7 +80,12 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
             );
         }
 
-        var targetResolution = await ResolveTargetAsync(request, writeSession, cancellationToken)
+        var targetResolution = await ResolveTargetAsync(
+                request,
+                resolvedReferences,
+                writeSession,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         var postTargetReevaluation =
             request.TargetRequest is RelationalWriteTargetRequest.Post
@@ -123,6 +142,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
     private async Task<StoredRelationshipAuthorizationBoundary> ResolvePostRelationshipAuthorizationPlansAsync(
         RelationalWriteExecutorRequest request,
         PostRelationshipAuthorizationPlans postRelationshipAuthorizationPlans,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -137,6 +157,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         var targetResolution = await ResolvePostTargetAsync(
                 request,
                 postTargetRequest,
+                resolvedReferences,
                 writeSession,
                 cancellationToken
             )
@@ -281,13 +302,20 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
 
     private async Task<StoredRelationshipAuthorizationTargetResolution> ResolveTargetAsync(
         RelationalWriteExecutorRequest request,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
         if (request.TargetRequest is RelationalWriteTargetRequest.Post postTargetRequest)
         {
-            return await ResolvePostTargetAsync(request, postTargetRequest, writeSession, cancellationToken)
+            return await ResolvePostTargetAsync(
+                    request,
+                    postTargetRequest,
+                    resolvedReferences,
+                    writeSession,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
@@ -331,6 +359,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
     private async Task<StoredRelationshipAuthorizationTargetResolution> ResolvePostTargetAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetRequest.Post postTargetRequest,
+        ResolvedReferenceSet resolvedReferences,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -338,11 +367,12 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
         {
             var targetLookupResult = await _targetLookupResolver
-                .ResolveForPostAsync(
+                .TryResolveByNaturalKeyAsync(
                     request.MappingSet,
-                    request.WritePlan.Model.Resource,
-                    postTargetRequest.ReferentialId,
+                    request.WritePlan,
+                    postTargetRequest.DocumentIdentity,
                     postTargetRequest.CandidateDocumentUuid,
+                    resolvedReferences,
                     writeSession.Connection,
                     writeSession.Transaction,
                     cancellationToken

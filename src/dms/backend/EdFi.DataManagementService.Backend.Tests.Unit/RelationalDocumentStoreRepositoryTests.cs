@@ -5229,7 +5229,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
-            .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
+            .BeEquivalentTo(
+                new RelationalWriteTargetRequest.Post(
+                    documentInfo.ReferentialId,
+                    documentUuid,
+                    documentInfo.DocumentIdentity
+                )
+            );
         _capturedExecutorRequest
             .TargetContext.Should()
             .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
@@ -5306,12 +5312,18 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
-            .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
+            .BeEquivalentTo(
+                new RelationalWriteTargetRequest.Post(
+                    documentInfo.ReferentialId,
+                    documentUuid,
+                    documentInfo.DocumentIdentity
+                )
+            );
+        // The pre-session pass proposes a create for every POST; the executor's in-session UX_<R>_NK
+        // re-evaluation is what turns this attempt into an update, and it returns UpdateSuccess above.
         _capturedExecutorRequest
             .TargetContext.Should()
-            .BeEquivalentTo(
-                new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
-            );
+            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
@@ -5575,7 +5587,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(NamespaceAuthorizationCheckValueSource.Proposed);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5701,7 +5715,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Proposed);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5775,7 +5791,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Proposed);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5857,7 +5875,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Which.Column.Should()
             .Be(AuthNames.StudentDocumentId);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5929,7 +5949,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Subject.PersonMetadata!.ProposedAnchor!.Kind.Should()
             .Be(RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -5976,7 +5998,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().BeNull();
         _capturedExecutorRequest.StoredNamespaceAuthorization.Should().BeNull();
         _capturedExecutorRequest.ProposedNamespaceAuthorization.Should().BeNull();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -6035,7 +6059,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
         _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().BeNull();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -6651,17 +6677,23 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .OnlyContain(targetRequest =>
                 targetRequest.Equals(
-                    new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid)
+                    new RelationalWriteTargetRequest.Post(
+                        documentInfo.ReferentialId,
+                        documentUuid,
+                        documentInfo.DocumentIdentity
+                    )
                 )
             );
+        // Both attempts enter the executor proposing a create; the in-session UX_<R>_NK re-evaluation
+        // re-resolves the existing target per attempt, which is what makes the retry read fresh state.
         _capturedExecutorRequests
             .Select(request => request.TargetContext)
             .Should()
             .BeEquivalentTo([
-                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
-                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 45L),
+                new RelationalWriteTargetContext.CreateNew(documentUuid),
+                new RelationalWriteTargetContext.CreateNew(documentUuid),
             ]);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(2);
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -6818,7 +6850,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequests[0].WritePrecondition.Should().Be(writePrecondition);
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -9159,7 +9193,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.UnknownFailure(expectedFailureMessage));
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -9188,7 +9224,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.UnknownFailure(expectedFailureMessage));
         _capturedExecutorRequests.Should().BeEmpty();
-        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        // POST no longer probes before the write session opens: the pre-session pass proposes a create
+        // and the in-session UX_<R>_NK re-evaluation decides create-vs-update.
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)

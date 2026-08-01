@@ -35,6 +35,7 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
 
         return services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,
+            PostgresqlNaturalKeyLookupAdapterFactory,
             PostgresqlRelationalCommandExecutor,
             PostgresqlRelationalWriteSessionFactory,
             PostgresqlDocumentHydrator,

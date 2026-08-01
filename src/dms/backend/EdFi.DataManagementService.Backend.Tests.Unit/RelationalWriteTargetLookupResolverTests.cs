@@ -8,6 +8,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -135,6 +136,369 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
             .Should()
             .Equal(documentUuid.Value, (short)1);
     }
+
+    [TestCase(SqlDialect.Pgsql, "\"edfi\".\"Section\" root", "root.\"School_DocumentId\" = @nk0")]
+    [TestCase(SqlDialect.Mssql, "[edfi].[Section] root", "root.[School_DocumentId] = @nk0")]
+    public async Task It_seeks_the_root_natural_key_index_for_post_upsert_detection(
+        SqlDialect dialect,
+        string expectedTableFragment,
+        string expectedReferencePredicate
+    )
+    {
+        var writeSession = CreateWriteSession(CreateLookupReader());
+        var sut = new RelationalWriteTargetLookupResolver();
+        var fixture = CreateSectionNaturalKeyFixture(dialect);
+
+        var result = await sut.TryResolveByNaturalKeyAsync(
+            fixture.MappingSet,
+            fixture.WritePlan,
+            fixture.DocumentIdentity,
+            fixture.CandidateDocumentUuid,
+            fixture.ResolvedReferences,
+            writeSession.Connection,
+            writeSession.Transaction
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(fixture.CandidateDocumentUuid));
+        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
+
+        var commandText = writeSession.Connection.Command.CommandText;
+        commandText.Should().Contain(expectedTableFragment);
+        commandText.Should().Contain(expectedReferencePredicate);
+        commandText
+            .Should()
+            .Contain(
+                dialect == SqlDialect.Mssql
+                    ? "root.[SectionIdentifier] = @nk1"
+                    : "root.\"SectionIdentifier\" = @nk1"
+            );
+        commandText.Should().NotContain("ReferentialIdentity");
+        commandText
+            .Should()
+            .NotContain(dialect == SqlDialect.Mssql ? "[dms].[Document]" : "\"dms\".\"Document\"");
+        // The returned triple comes from the root row's trigger-maintained document-metadata mirrors.
+        commandText
+            .Should()
+            .Contain(dialect == SqlDialect.Mssql ? "root.[DocumentUuid]" : "root.\"DocumentUuid\"");
+        commandText
+            .Should()
+            .Contain(dialect == SqlDialect.Mssql ? "root.[ContentVersion]" : "root.\"ContentVersion\"");
+
+        // The reference-sourced part binds the resolved reference's DocumentId; the scalar part binds a
+        // value typed from the request identity.
+        writeSession
+            .Connection.Command.Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(101L, "Sec-01");
+    }
+
+    [Test]
+    public async Task It_returns_the_existing_document_when_the_natural_key_seek_matches_a_persisted_row()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.NewGuid());
+        var writeSession = CreateWriteSession(CreateLookupReader((345L, existingDocumentUuid.Value, 44L)));
+        var sut = new RelationalWriteTargetLookupResolver();
+        var fixture = CreateSectionNaturalKeyFixture(SqlDialect.Pgsql);
+
+        var result = await sut.TryResolveByNaturalKeyAsync(
+            fixture.MappingSet,
+            fixture.WritePlan,
+            fixture.DocumentIdentity,
+            fixture.CandidateDocumentUuid,
+            fixture.ResolvedReferences,
+            writeSession.Connection,
+            writeSession.Transaction
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+            );
+    }
+
+    [Test]
+    public async Task It_returns_create_new_without_probing_when_an_identity_reference_did_not_resolve()
+    {
+        var writeSession = CreateWriteSession(CreateLookupReader());
+        var sut = new RelationalWriteTargetLookupResolver();
+        var fixture = CreateSectionNaturalKeyFixture(SqlDialect.Pgsql, resolveSchoolReference: false);
+
+        var result = await sut.TryResolveByNaturalKeyAsync(
+            fixture.MappingSet,
+            fixture.WritePlan,
+            fixture.DocumentIdentity,
+            fixture.CandidateDocumentUuid,
+            fixture.ResolvedReferences,
+            writeSession.Connection,
+            writeSession.Transaction
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(fixture.CandidateDocumentUuid));
+        // An unresolvable natural-key part cannot match any persisted row, so no statement is issued.
+        writeSession.Connection.CreateCommandCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_throws_when_the_natural_key_seek_returns_more_than_one_row()
+    {
+        var writeSession = CreateWriteSession(
+            CreateLookupReader((345L, Guid.NewGuid(), 44L), (346L, Guid.NewGuid(), 45L))
+        );
+        var sut = new RelationalWriteTargetLookupResolver();
+        var fixture = CreateSectionNaturalKeyFixture(SqlDialect.Pgsql);
+
+        var act = async () =>
+            await sut.TryResolveByNaturalKeyAsync(
+                fixture.MappingSet,
+                fixture.WritePlan,
+                fixture.DocumentIdentity,
+                fixture.CandidateDocumentUuid,
+                fixture.ResolvedReferences,
+                writeSession.Connection,
+                writeSession.Transaction
+            );
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*returned multiple rows*Ed-Fi.Section*");
+    }
+
+    [Test]
+    public async Task It_binds_a_descriptor_valued_natural_key_part_from_the_resolved_descriptor_document_id()
+    {
+        var writeSession = CreateWriteSession(CreateLookupReader());
+        var sut = new RelationalWriteTargetLookupResolver();
+        var fixture = CreateSectionNaturalKeyFixture(SqlDialect.Pgsql, includeDescriptorPart: true);
+
+        await sut.TryResolveByNaturalKeyAsync(
+            fixture.MappingSet,
+            fixture.WritePlan,
+            fixture.DocumentIdentity,
+            fixture.CandidateDocumentUuid,
+            fixture.ResolvedReferences,
+            writeSession.Connection,
+            writeSession.Transaction
+        );
+
+        writeSession
+            .Connection.Command.CommandText.Should()
+            .Contain("root.\"SessionType_DescriptorId\" = @nk2");
+        writeSession
+            .Connection.Command.Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(101L, "Sec-01", 707L);
+    }
+
+    private static SectionNaturalKeyFixture CreateSectionNaturalKeyFixture(
+        SqlDialect dialect,
+        bool resolveSchoolReference = true,
+        bool includeDescriptorPart = false
+    )
+    {
+        var sectionResource = new QualifiedResourceName("Ed-Fi", "Section");
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var sessionTypeDescriptorResource = new QualifiedResourceName("Ed-Fi", "SessionTypeDescriptor");
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "Section");
+        var schoolReferencePath = new JsonPathExpression(
+            "$.schoolReference",
+            [new JsonPathSegment.Property("schoolReference")]
+        );
+        var schoolIdentityPath = new JsonPathExpression(
+            "$.schoolReference.schoolId",
+            [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+        );
+        var sectionIdentifierPath = new JsonPathExpression(
+            "$.sectionIdentifier",
+            [new JsonPathSegment.Property("sectionIdentifier")]
+        );
+        var sessionTypeDescriptorPath = new JsonPathExpression(
+            "$.sessionTypeDescriptor",
+            [new JsonPathSegment.Property("sessionTypeDescriptor")]
+        );
+
+        var rootTableModel = new DbTableModel(
+            rootTable,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_Section",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+            ],
+            []
+        );
+        var resourceModel = new RelationalResourceModel(
+            Resource: sectionResource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTableModel,
+            TablesInDependencyOrder: [rootTableModel],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: schoolReferencePath,
+                    Table: rootTable,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: schoolResource,
+                    IdentityBindings: []
+                ),
+            ],
+            DescriptorEdgeSources:
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: true,
+                    DescriptorValuePath: sessionTypeDescriptorPath,
+                    Table: rootTable,
+                    FkColumn: new DbColumnName("SessionType_DescriptorId"),
+                    DescriptorResource: sessionTypeDescriptorResource
+                ),
+            ]
+        );
+
+        List<OwnNaturalKeyProbeColumn> probeColumns =
+        [
+            new OwnNaturalKeyProbeColumn(
+                new DbColumnName("School_DocumentId"),
+                new RelationalScalarType(ScalarKind.Int64),
+                ScalarSourceJsonPath: null,
+                ReferenceIdentityJsonPath: schoolIdentityPath,
+                DescriptorResource: null
+            ),
+            new OwnNaturalKeyProbeColumn(
+                new DbColumnName("SectionIdentifier"),
+                new RelationalScalarType(ScalarKind.String, MaxLength: 255),
+                ScalarSourceJsonPath: sectionIdentifierPath,
+                ReferenceIdentityJsonPath: null,
+                DescriptorResource: null
+            ),
+        ];
+
+        List<DocumentIdentityElement> identityElements =
+        [
+            new DocumentIdentityElement(new JsonPath(schoolIdentityPath.Canonical), "255901"),
+            new DocumentIdentityElement(new JsonPath(sectionIdentifierPath.Canonical), "Sec-01"),
+        ];
+
+        if (includeDescriptorPart)
+        {
+            probeColumns.Add(
+                new OwnNaturalKeyProbeColumn(
+                    new DbColumnName("SessionType_DescriptorId"),
+                    new RelationalScalarType(ScalarKind.Int64),
+                    ScalarSourceJsonPath: sessionTypeDescriptorPath,
+                    ReferenceIdentityJsonPath: null,
+                    DescriptorResource: sessionTypeDescriptorResource
+                )
+            );
+            identityElements.Add(
+                new DocumentIdentityElement(
+                    new JsonPath(sessionTypeDescriptorPath.Canonical),
+                    "uri://ed-fi.org/SessionTypeDescriptor#Fall Semester"
+                )
+            );
+        }
+
+        var baseMappingSet = RelationalAccessTestData.CreateMappingSet(sectionResource);
+        var mappingSet = baseMappingSet with
+        {
+            Key = new MappingSetKey(
+                baseMappingSet.Key.EffectiveSchemaHash,
+                dialect,
+                baseMappingSet.Key.RelationalMappingVersion
+            ),
+            Model = baseMappingSet.Model with { Dialect = dialect },
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [sectionResource] = new OwnNaturalKeyProbe(rootTable, probeColumns),
+            },
+        };
+
+        var schoolReference = new DocumentReference(
+            ResourceInfo: new BaseResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("School"),
+                IsDescriptor: false
+            ),
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+            ]),
+            ReferentialId: new ReferentialId(Guid.NewGuid()),
+            Path: new JsonPath(schoolReferencePath.Canonical)
+        );
+        var sessionTypeDescriptorReference = new DescriptorReference(
+            ResourceInfo: new BaseResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("SessionTypeDescriptor"),
+                IsDescriptor: true
+            ),
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(
+                    DocumentIdentity.DescriptorIdentityJsonPath,
+                    "uri://ed-fi.org/SessionTypeDescriptor#Fall Semester"
+                ),
+            ]),
+            ReferentialId: new ReferentialId(Guid.NewGuid()),
+            Path: new JsonPath(sessionTypeDescriptorPath.Canonical)
+        );
+
+        Dictionary<JsonPath, ResolvedDocumentReference> successfulDocumentReferences = [];
+
+        if (resolveSchoolReference)
+        {
+            successfulDocumentReferences[schoolReference.Path] = new ResolvedDocumentReference(
+                schoolReference,
+                101L,
+                11
+            );
+        }
+
+        var resolvedReferences = new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: successfulDocumentReferences,
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            {
+                [sessionTypeDescriptorReference.Path] = new ResolvedDescriptorReference(
+                    sessionTypeDescriptorReference,
+                    707L,
+                    13
+                ),
+            },
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
+        return new SectionNaturalKeyFixture(
+            mappingSet,
+            new ResourceWritePlan(resourceModel, []),
+            new DocumentIdentity([.. identityElements]),
+            new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+            resolvedReferences
+        );
+    }
+
+    private sealed record SectionNaturalKeyFixture(
+        MappingSet MappingSet,
+        ResourceWritePlan WritePlan,
+        DocumentIdentity DocumentIdentity,
+        DocumentUuid CandidateDocumentUuid,
+        ResolvedReferenceSet ResolvedReferences
+    );
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)
     {

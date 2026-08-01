@@ -104,6 +104,8 @@ public class Given_No_Profile_Relational_Post
     public void It_routes_through_the_executor()
     {
         _result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(_documentUuid, "\"51\""));
+        // POST target resolution moved into the write session, so the pre-session lookup service is never
+        // called. The executor still receives one request carrying the caller-reserved candidate uuid.
         A.CallTo(() =>
                 _targetLookupService.ResolveForPostAsync(
                     A<MappingSet>._,
@@ -113,7 +115,7 @@ public class Given_No_Profile_Relational_Post
                     A<CancellationToken>._
                 )
             )
-            .MustHaveHappenedOnceExactly();
+            .MustNotHaveHappened();
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )

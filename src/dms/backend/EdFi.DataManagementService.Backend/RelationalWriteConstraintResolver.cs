@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -40,6 +41,14 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
             if (!uniqueMatch.Table.Table.Equals(request.WritePlan.Model.Root.Table))
             {
                 return new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);
+            }
+
+            // The root table carries a second unique constraint besides the natural key: the mirrored
+            // DocumentUuid. Recognize it by its COLUMN SET, never by name — ApplyDialectIdentifierShortening
+            // hash-truncates long identifiers, so the "_DocumentUuid" token is not reliably present.
+            if (IsDocumentUuidColumnSet(uniqueMatch.Constraint.Columns))
+            {
+                return new RelationalWriteConstraintResolution.DocumentUuidUnique(violation.ConstraintName);
             }
 
             var rootNaturalKeyColumns = GetRootNaturalKeyColumnsOrThrow(request);
@@ -127,6 +136,12 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
 
         return new RelationalWriteConstraintResolution.Unresolved(constraintName);
     }
+
+    /// <summary>
+    /// Reports whether a root-table unique constraint covers exactly the mirrored <c>DocumentUuid</c> column.
+    /// </summary>
+    private static bool IsDocumentUuidColumnSet(IReadOnlyList<DbColumnName> columns) =>
+        columns.Count == 1 && columns[0].Equals(RelationalNameConventions.DocumentUuidColumnName);
 
     /// <summary>
     /// Returns the root natural-key column list a <c>UX_&lt;R&gt;_NK</c> violation must match to be

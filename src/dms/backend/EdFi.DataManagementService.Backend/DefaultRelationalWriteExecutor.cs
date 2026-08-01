@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteSessionFactory writeSessionFactory,
-    IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
+    INaturalKeyLookupAdapterFactory naturalKeyLookupAdapterFactory,
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
@@ -40,9 +40,13 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
 
-    private readonly IReferenceResolverAdapterFactory _referenceResolverAdapterFactory =
-        referenceResolverAdapterFactory
-        ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory));
+    private readonly INaturalKeyLookupAdapterFactory _naturalKeyLookupAdapterFactory =
+        naturalKeyLookupAdapterFactory
+        ?? throw new ArgumentNullException(nameof(naturalKeyLookupAdapterFactory));
+
+    private readonly ILogger<NaturalKeyReferenceResolver> _naturalKeyReferenceResolverLogger = (
+        loggerFactory ?? NullLoggerFactory.Instance
+    ).CreateLogger<NaturalKeyReferenceResolver>();
 
     private readonly IServedEtagComposer _servedEtagComposer =
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
@@ -115,8 +119,24 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         try
         {
+            // References resolve FIRST because POST upsert detection is now a UX_<R>_NK seek whose
+            // reference-sourced key parts bind the resolved reference document ids, and stored-value
+            // authorization resolves (and locks) that target. Only the resolution moved: the
+            // reference-failure gate still runs after stored authorization, so a request that fails both
+            // authorization and reference resolution still surfaces the authorization failure first.
+            var referenceResolver = new NaturalKeyReferenceResolver(
+                _naturalKeyLookupAdapterFactory.CreateSessionAdapter(
+                    writeSession.Connection,
+                    writeSession.Transaction
+                ),
+                _naturalKeyReferenceResolverLogger
+            );
+            var resolvedReferences = await referenceResolver
+                .ResolveAsync(executionRequest.ReferenceResolutionRequest, cancellationToken)
+                .ConfigureAwait(false);
+
             var storedAuthorizationBoundary = await _storedRelationshipAuthorizationOrchestrator
-                .ResolveAsync(executionRequest, writeSession, cancellationToken)
+                .ResolveAsync(executionRequest, resolvedReferences, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
             if (storedAuthorizationBoundary.ImmediateResult is not null)
@@ -145,6 +165,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 var resolvedExecutionState = await _executionStateResolver
                     .ResolveAsync(
                         executionRequest,
+                        resolvedReferences,
                         writeSession,
                         ExecutionStateResolutionOptions.Standard(postTargetReevaluation),
                         cancellationToken
@@ -174,16 +195,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                     );
                 }
             }
-
-            var referenceResolver = new ReferenceResolver(
-                _referenceResolverAdapterFactory.CreateSessionAdapter(
-                    writeSession.Connection,
-                    writeSession.Transaction
-                )
-            );
-            var resolvedReferences = await referenceResolver
-                .ResolveAsync(executionRequest.ReferenceResolutionRequest, cancellationToken)
-                .ConfigureAwait(false);
 
             var hasMissingDocumentReferenceFailures = HasMissingDocumentReferenceFailures(resolvedReferences);
 
@@ -221,6 +232,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 var resolvedExecutionState = await _executionStateResolver
                     .ResolveAsync(
                         executionRequest,
+                        resolvedReferences,
                         writeSession,
                         executionStateResolutionOptions,
                         cancellationToken

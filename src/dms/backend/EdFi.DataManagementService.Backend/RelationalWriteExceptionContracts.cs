@@ -142,6 +142,17 @@ internal abstract record RelationalWriteConstraintResolution
             : base(constraintName) { }
     }
 
+    /// <summary>
+    /// A root-table unique constraint over exactly the mirrored <c>DocumentUuid</c> column
+    /// (<c>UX_&lt;R&gt;_DocumentUuid</c>). This is a collision on the candidate uuid Core generated, never a
+    /// user-facing identity conflict, so it is always a retryable write conflict.
+    /// </summary>
+    public sealed record DocumentUuidUnique : ConstraintMatch
+    {
+        public DocumentUuidUnique(string constraintName)
+            : base(constraintName) { }
+    }
+
     public sealed record RequestReference : ConstraintMatch
     {
         public RequestReference(
