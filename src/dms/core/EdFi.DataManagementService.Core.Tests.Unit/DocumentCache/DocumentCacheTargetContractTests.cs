@@ -25,7 +25,8 @@ public class DocumentCacheTargetContractTests
             projectorPageSize: 100,
             projectorMaxConcurrentTargets: 2,
             projectorFailureBackoff: TimeSpan.FromSeconds(30),
-            projectorBaselineHighWaterMark: 1000
+            projectorBaselineHighWaterMark: 1000,
+            administrationWorkflowTimeout: TimeSpan.FromHours(24)
         );
 
     private static DocumentCacheInventoryValidationResult SatisfiedInventory =>
@@ -254,6 +255,10 @@ public class DocumentCacheTargetContractTests
                     FailureBackoff = TimeSpan.FromSeconds(15),
                     BaselineHighWaterMark = 250,
                 },
+                Administration = new DocumentCacheAdministrationOptions
+                {
+                    WorkflowTimeout = TimeSpan.FromHours(6),
+                },
             };
 
             DocumentCacheTargetEffectiveSettings settings = DocumentCacheTargetEffectiveSettings.FromOptions(
@@ -267,6 +272,7 @@ public class DocumentCacheTargetContractTests
             settings.ProjectorMaxConcurrentTargets.Should().Be(4);
             settings.ProjectorFailureBackoff.Should().Be(TimeSpan.FromSeconds(15));
             settings.ProjectorBaselineHighWaterMark.Should().Be(250);
+            settings.AdministrationWorkflowTimeout.Should().Be(TimeSpan.FromHours(6));
         }
 
         [TestCase("postgresql", "postgresql")]

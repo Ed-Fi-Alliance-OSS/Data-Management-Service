@@ -15,7 +15,7 @@ internal static class DocumentCacheStartupDiagnostics
         DocumentCacheStartupDiagnosticSnapshot snapshot = CreateSnapshot(options);
 
         logger.LogInformation(
-            "DocumentCache configuration effective settings: TargetCount {TargetCount}, ConfiguredTargets {ConfiguredTargets}, ReadAccelerationEnabled {ReadAccelerationEnabled}, DirectFillTimeout {DirectFillTimeout}, PollInterval {PollInterval}, PageSize {PageSize}, MaxConcurrentTargets {MaxConcurrentTargets}, FailureBackoff {FailureBackoff}, BaselineHighWaterMark {BaselineHighWaterMark}",
+            "DocumentCache configuration effective settings: TargetCount {TargetCount}, ConfiguredTargets {ConfiguredTargets}, ReadAccelerationEnabled {ReadAccelerationEnabled}, DirectFillTimeout {DirectFillTimeout}, PollInterval {PollInterval}, PageSize {PageSize}, MaxConcurrentTargets {MaxConcurrentTargets}, FailureBackoff {FailureBackoff}, BaselineHighWaterMark {BaselineHighWaterMark}, WorkflowTimeout {WorkflowTimeout}",
             snapshot.TargetCount,
             snapshot.ConfiguredTargets,
             snapshot.ReadAccelerationEnabled,
@@ -24,7 +24,8 @@ internal static class DocumentCacheStartupDiagnostics
             snapshot.PageSize,
             snapshot.MaxConcurrentTargets,
             snapshot.FailureBackoff,
-            snapshot.BaselineHighWaterMark
+            snapshot.BaselineHighWaterMark,
+            snapshot.WorkflowTimeout
         );
     }
 
@@ -44,7 +45,8 @@ internal static class DocumentCacheStartupDiagnostics
             options.Projector.PageSize,
             options.Projector.MaxConcurrentTargets,
             options.Projector.FailureBackoff,
-            options.Projector.BaselineHighWaterMark
+            options.Projector.BaselineHighWaterMark,
+            options.Administration.WorkflowTimeout
         );
     }
 }
@@ -58,5 +60,6 @@ internal sealed record DocumentCacheStartupDiagnosticSnapshot(
     int PageSize,
     int MaxConcurrentTargets,
     TimeSpan FailureBackoff,
-    int BaselineHighWaterMark
+    int BaselineHighWaterMark,
+    TimeSpan WorkflowTimeout
 );

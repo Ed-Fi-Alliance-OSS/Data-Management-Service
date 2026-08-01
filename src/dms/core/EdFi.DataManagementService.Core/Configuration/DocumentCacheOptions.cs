@@ -19,6 +19,8 @@ public sealed class DocumentCacheOptions
 
     public DocumentCacheProjectorOptions Projector { get; set; } = new();
 
+    public DocumentCacheAdministrationOptions Administration { get; set; } = new();
+
     public IReadOnlyList<DocumentCacheTargetKey> GetTargetKeys() =>
         Targets
             .Select(target => DocumentCacheTargetKey.Create(target.TenantKey, target.DataStoreId))
@@ -50,6 +52,11 @@ public sealed class DocumentCacheProjectorOptions
     public TimeSpan FailureBackoff { get; set; } = TimeSpan.FromSeconds(30);
 
     public int BaselineHighWaterMark { get; set; } = 1000;
+}
+
+public sealed class DocumentCacheAdministrationOptions
+{
+    public TimeSpan WorkflowTimeout { get; set; } = TimeSpan.FromHours(24);
 }
 
 public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
@@ -171,6 +178,7 @@ public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCac
         ValidateTargets(options, failures);
         ValidateProjector(options, failures);
         ValidateReadAcceleration(options, failures);
+        ValidateAdministration(options, failures);
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
@@ -267,6 +275,22 @@ public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCac
         AddFailureIfNonPositive(
             readAcceleration.DirectFillTimeout,
             $"{nameof(DocumentCacheOptions.ReadAcceleration)}:{nameof(DocumentCacheReadAccelerationOptions.DirectFillTimeout)}",
+            failures
+        );
+    }
+
+    private static void ValidateAdministration(DocumentCacheOptions options, List<string> failures)
+    {
+        DocumentCacheAdministrationOptions? administration = options.Administration;
+        if (administration is null)
+        {
+            failures.Add($"{nameof(DocumentCacheOptions.Administration)} must not be null.");
+            return;
+        }
+
+        AddFailureIfNonPositive(
+            administration.WorkflowTimeout,
+            $"{nameof(DocumentCacheOptions.Administration)}:{nameof(DocumentCacheAdministrationOptions.WorkflowTimeout)}",
             failures
         );
     }

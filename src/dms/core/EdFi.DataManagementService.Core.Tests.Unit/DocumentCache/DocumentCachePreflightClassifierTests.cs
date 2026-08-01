@@ -39,7 +39,8 @@ public class DocumentCachePreflightClassifierTests
         projectorPageSize: 100,
         projectorMaxConcurrentTargets: 2,
         projectorFailureBackoff: TimeSpan.FromSeconds(30),
-        projectorBaselineHighWaterMark: 1000
+        projectorBaselineHighWaterMark: 1000,
+        administrationWorkflowTimeout: TimeSpan.FromHours(24)
     );
 
     private static readonly DocumentCacheInventoryValidationResult _satisfiedInventory = new(

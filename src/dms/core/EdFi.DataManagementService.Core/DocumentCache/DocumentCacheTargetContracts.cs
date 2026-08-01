@@ -205,7 +205,8 @@ public sealed record DocumentCacheTargetEffectiveSettings
         int projectorPageSize,
         int projectorMaxConcurrentTargets,
         TimeSpan projectorFailureBackoff,
-        int projectorBaselineHighWaterMark
+        int projectorBaselineHighWaterMark,
+        TimeSpan administrationWorkflowTimeout
     )
     {
         ReadAccelerationEnabled = readAccelerationEnabled;
@@ -215,6 +216,7 @@ public sealed record DocumentCacheTargetEffectiveSettings
         ProjectorMaxConcurrentTargets = projectorMaxConcurrentTargets;
         ProjectorFailureBackoff = projectorFailureBackoff;
         ProjectorBaselineHighWaterMark = projectorBaselineHighWaterMark;
+        AdministrationWorkflowTimeout = administrationWorkflowTimeout;
     }
 
     public bool ReadAccelerationEnabled { get; }
@@ -231,6 +233,8 @@ public sealed record DocumentCacheTargetEffectiveSettings
 
     public int ProjectorBaselineHighWaterMark { get; }
 
+    public TimeSpan AdministrationWorkflowTimeout { get; }
+
     public static DocumentCacheTargetEffectiveSettings FromOptions(DocumentCacheOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -242,7 +246,8 @@ public sealed record DocumentCacheTargetEffectiveSettings
             options.Projector.PageSize,
             options.Projector.MaxConcurrentTargets,
             options.Projector.FailureBackoff,
-            options.Projector.BaselineHighWaterMark
+            options.Projector.BaselineHighWaterMark,
+            options.Administration.WorkflowTimeout
         );
     }
 }

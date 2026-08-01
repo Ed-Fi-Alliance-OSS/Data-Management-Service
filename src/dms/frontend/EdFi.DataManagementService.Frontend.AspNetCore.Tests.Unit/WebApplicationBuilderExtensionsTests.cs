@@ -127,6 +127,7 @@ public class WebApplicationBuilderExtensionsTests
                     ["DataManagement:DocumentCache:Projector:MaxConcurrentTargets"] = "4",
                     ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
                     ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
+                    ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
                 }
             );
 
@@ -146,6 +147,7 @@ public class WebApplicationBuilderExtensionsTests
                 .Projector.FailureBackoff.Should()
                 .Be(TimeSpan.FromMinutes(1).Add(TimeSpan.FromSeconds(15)));
             options.Projector.BaselineHighWaterMark.Should().Be(2500);
+            options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
         }
 
         [Test]
@@ -190,6 +192,7 @@ public class WebApplicationBuilderExtensionsTests
             snapshot.MaxConcurrentTargets.Should().Be(2);
             snapshot.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             snapshot.BaselineHighWaterMark.Should().Be(1000);
+            snapshot.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
         }
     }
 

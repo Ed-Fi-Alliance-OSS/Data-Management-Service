@@ -54,6 +54,7 @@ public class DocumentCacheOptionsTests
             _options.Projector.MaxConcurrentTargets.Should().Be(2);
             _options.Projector.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             _options.Projector.BaselineHighWaterMark.Should().Be(1000);
+            _options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
         }
 
         [Test]
@@ -85,6 +86,7 @@ public class DocumentCacheOptionsTests
                     ["DataManagement:DocumentCache:Projector:MaxConcurrentTargets"] = "4",
                     ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
                     ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
+                    ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
                 }
             );
             _validationResult = Validate(_options);
@@ -103,6 +105,7 @@ public class DocumentCacheOptionsTests
             _options.Projector.MaxConcurrentTargets.Should().Be(4);
             _options.Projector.FailureBackoff.Should().Be(TimeSpan.FromSeconds(75));
             _options.Projector.BaselineHighWaterMark.Should().Be(2500);
+            _options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
         }
 
         [Test]
@@ -279,6 +282,7 @@ public class DocumentCacheOptionsTests
         [TestCase("Projector:FailureBackoff", "00:00:00", "FailureBackoff")]
         [TestCase("Projector:BaselineHighWaterMark", "0", "BaselineHighWaterMark")]
         [TestCase("ReadAcceleration:DirectFillTimeout", "00:00:00", "DirectFillTimeout")]
+        [TestCase("Administration:WorkflowTimeout", "00:00:00", "WorkflowTimeout")]
         [TestCase("Targets:0:DataStoreId", "0", "DataStoreId")]
         public void It_should_fail_validation(string settingName, string settingValue, string expectedFailure)
         {
@@ -290,6 +294,21 @@ public class DocumentCacheOptionsTests
             );
 
             Validate(options).Failures.Should().Contain(failure => failure.Contains(expectedFailure));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Null_DocumentCache_Option_Groups : DocumentCacheOptionsTests
+    {
+        [Test]
+        public void It_should_reject_null_administration_options()
+        {
+            DocumentCacheOptions options = new() { Administration = null! };
+
+            Validate(options)
+                .Failures.Should()
+                .Contain($"{nameof(DocumentCacheOptions.Administration)} must not be null.");
         }
     }
 
@@ -328,6 +347,7 @@ public class DocumentCacheOptionsTests
             _options.Projector.MaxConcurrentTargets.Should().Be(2);
             _options.Projector.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             _options.Projector.BaselineHighWaterMark.Should().Be(1000);
+            _options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
             _validationResult.Succeeded.Should().BeTrue();
         }
     }
