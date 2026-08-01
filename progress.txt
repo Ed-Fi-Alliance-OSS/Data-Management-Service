@@ -142,3 +142,8 @@ Completed SQL Server provider-tests task for reference/design/backend-redesign/e
 Key decisions: added focused DocumentCacheProjector MSSQL integration fixture over real SQL Server pager/writer/scheduler; asserted OFFSET/FETCH keyset predicate, bounded backlog restart, cursor wrap, duplicate replica writer outcomes, cancellation, poison retry/eviction, latch fence resume, Rebuilding processing, target-key fairness, no lease/claim/dead-letter work shape, and ineligible unsupported prerequisite generation no-dispatch behavior.
 Files changed: MssqlDocumentCacheProjectorTests.cs; tasks.json; progress.txt.
 Blockers/notes: default MSSQL admin env unset/stale; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Next likely administrative-tests, then final verification.
+
+Completed administrative-tests task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: added PG/MSSQL DocumentCacheAdministration integration suites over real mutex sessions; covered workflow timeout before/after mutation, rollback of started short transaction, caller cancellation after mutation, session loss after mutation, noncurrent pinned-generation diagnostics, and compact operation-boundary assertions across all admin commands.
+Files changed: PostgresqlDocumentCacheAdministrationTests.cs; MssqlDocumentCacheAdministrationTests.cs; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Next likely final verification task.
