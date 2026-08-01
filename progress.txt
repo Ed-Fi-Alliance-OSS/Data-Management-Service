@@ -172,3 +172,8 @@ Completed session-bound-writer follow-up task for reference/design/backend-redes
 Key decisions: command-owned DeleteRaceRetryExhausted now maps through session-bound writer as writerRetryBudgetExhausted using current command mutation flag; ordinary projection still records delete-race exhaustion as document-scoped backoff; administrative drain returns the command failure immediately instead of persistent-poison traversal.
 Files changed: DocumentCacheSessionBoundWriter.cs; DocumentCacheSessionBoundWriterTests.cs; DocumentCacheProjectionItemProcessorTests.cs; DocumentCacheAdministrativeDrainTests.cs; tasks.json; progress.txt.
 Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.
+
+Completed provider-writer follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: PG/MSSQL writer rollback cleanup after started transaction uses uncanceled cleanup token; ordinary/session-bound paths keep caller token for begin/read/write/commit; session-bound tests record mutex-session rollback token and verify lease remains reusable after cancellation.
+Files changed: PostgresqlDocumentCacheWriter.cs; MssqlDocumentCacheWriter.cs; PostgresqlDocumentCacheWriterTests.cs; MssqlDocumentCacheWriterTests.cs; tasks.json; progress.txt.
+Blockers/notes: default MSSQL admin env unset; verified with ConnectionStrings__MssqlAdmin override to SQL Server 2025 container on localhost,14333. Remaining follow-up tasks still open in tasks.json.

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
@@ -165,6 +166,99 @@ public class Given_A_Mssql_DocumentCacheWriter
             .GetValue<string>()
             .Should()
             .Be("session-bound");
+    }
+
+    [TestCaseSource(nameof(CancellationRollbackHookCases))]
+    [Category("DocumentCacheWriterCancellation")]
+    public async Task DocumentCacheWriterCancellation_it_rolls_back_started_transactions_after_caller_cancellation(
+        string hookName
+    )
+    {
+        DocumentCacheWriterFaultInjectionHook hook = Enum.Parse<DocumentCacheWriterFaultInjectionHook>(
+            hookName
+        );
+        (SourceDocument source, DocumentCacheMaterializationCandidate? candidate) =
+            await PrepareCancellationRollbackScenarioAsync(hook);
+        using CancellationTokenSource cancellationSource = new();
+        CancellingFaultInjectionObserver observer = new(hook, cancellationSource);
+        MssqlDocumentCacheWriter writer = CreateWriter(observer);
+
+        DocumentCacheWriterResult result = await writer.WriteAsync(
+            CreateRequest(
+                source,
+                candidate,
+                DocumentCacheWriterPurpose.DurableWorkProjection,
+                cancellationSource.Token
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CallerAbortedRetry>()
+            .Which.AttemptCount.Should()
+            .Be(1);
+        observer.Contexts.Should().ContainSingle(context => context.Hook == hook);
+        await AssertCancellationRollbackStateAsync(hook, source);
+    }
+
+    [TestCaseSource(nameof(CancellationRollbackHookCases))]
+    [Category("DocumentCacheSessionBoundWriter")]
+    [Category("DocumentCacheWriterCancellation")]
+    public async Task DocumentCacheSessionBoundWriterCancellation_it_rolls_back_on_the_mutex_session_without_the_canceled_token(
+        string hookName
+    )
+    {
+        DocumentCacheWriterFaultInjectionHook hook = Enum.Parse<DocumentCacheWriterFaultInjectionHook>(
+            hookName
+        );
+        (SourceDocument source, DocumentCacheMaterializationCandidate? candidate) =
+            await PrepareCancellationRollbackScenarioAsync(hook);
+        using CancellationTokenSource cancellationSource = new();
+        CancellingFaultInjectionObserver observer = new(hook, cancellationSource);
+        MssqlDocumentCacheWriter writer = CreateWriter(observer);
+        var mutex = new MssqlDocumentCacheAdministrativeMutex(
+            NullLogger<MssqlDocumentCacheAdministrativeMutex>.Instance
+        );
+
+        await using IDocumentCacheAdministrativeMutexLease realLease = await mutex.AcquireAsync(
+            new DocumentCacheTargetConnectionInput(
+                RelationalProviderToken.SqlServer,
+                _database.ConnectionString
+            )
+        );
+        RecordingAdministrativeMutexLease recordingLease = new(realLease);
+
+        DocumentCacheSessionBoundWriterResult result = await (
+            (IDocumentCacheSessionBoundWriter)writer
+        ).WriteAsync(
+            new DocumentCacheSessionBoundWriterRequest(
+                recordingLease,
+                CreateRequest(
+                    source,
+                    candidate,
+                    DocumentCacheWriterPurpose.DurableWorkProjection,
+                    cancellationSource.Token
+                ),
+                commandExecutionMutated: true
+            )
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation);
+        result.Mutated.Should().BeTrue();
+        result.WriterResult.Should().BeOfType<DocumentCacheWriterResult.CallerAbortedRetry>();
+        recordingLease
+            .RollbackCancellationTokens.Should()
+            .ContainSingle()
+            .Which.IsCancellationRequested.Should()
+            .BeFalse();
+
+        await using IRelationalWriteSession session = await recordingLease.BeginTransactionAsync();
+        await session.CommitAsync(CancellationToken.None);
+
+        await AssertCancellationRollbackStateAsync(hook, source);
     }
 
     [Test]
@@ -1166,7 +1260,8 @@ public class Given_A_Mssql_DocumentCacheWriter
     private DocumentCacheWriterRequest CreateRequest(
         SourceDocument source,
         DocumentCacheMaterializationCandidate? candidate,
-        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection
+        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection,
+        CancellationToken cancellationToken = default
     ) =>
         new(
             CreateTargetContext(),
@@ -1174,7 +1269,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             selectedRequiredContentVersion: source.ContentVersion,
             purpose,
             candidate,
-            CancellationToken.None
+            cancellationToken
         );
 
     private async Task RunCandidateWritePerformanceEvidenceAsync(
@@ -1410,6 +1505,42 @@ public class Given_A_Mssql_DocumentCacheWriter
                 record.Name == RecordingDocumentCacheWriterTelemetry.SameDocumentWait
             )
         );
+    }
+
+    private async Task<(
+        SourceDocument Source,
+        DocumentCacheMaterializationCandidate? Candidate
+    )> PrepareCancellationRollbackScenarioAsync(DocumentCacheWriterFaultInjectionHook hook)
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+
+        if (hook == DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit)
+        {
+            await InsertCacheRowAsync(source, contentVersion: 10);
+            return (source, Candidate: null);
+        }
+
+        return (source, CreateCandidate(source, "candidate-canceled"));
+    }
+
+    private async Task AssertCancellationRollbackStateAsync(
+        DocumentCacheWriterFaultInjectionHook hook,
+        SourceDocument source
+    )
+    {
+        if (hook == DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit)
+        {
+            (await ReadCacheCountAsync(source.DocumentId)).Should().Be(1);
+            (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
+        }
+        else
+        {
+            (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        }
+
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(1);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
     private DocumentCacheMaterializationTargetContext CreateTargetContext() =>
@@ -2209,6 +2340,16 @@ public class Given_A_Mssql_DocumentCacheWriter
         ).SetName("DocumentCacheWriterCrash_Mssql_after_cache_ahead_latch");
     }
 
+    private static IEnumerable<TestCaseData> CancellationRollbackHookCases()
+    {
+        yield return new TestCaseData(
+            nameof(DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement)
+        ).SetName("DocumentCacheWriterCancellation_Mssql_after_cache_dml");
+        yield return new TestCaseData(
+            nameof(DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit)
+        ).SetName("DocumentCacheWriterCancellation_Mssql_after_acknowledgement");
+    }
+
     private enum FaultInjectionInterruption
     {
         CloseConnection = 1,
@@ -2372,6 +2513,82 @@ public class Given_A_Mssql_DocumentCacheWriter
                 ),
                 _ => throw new ArgumentOutOfRangeException(nameof(providerFailure), providerFailure, null),
             };
+    }
+
+    private sealed class CancellingFaultInjectionObserver(
+        DocumentCacheWriterFaultInjectionHook hookToCancel,
+        CancellationTokenSource cancellationSource
+    ) : ITransactionFaultInjectionObserver
+    {
+        public List<DocumentCacheWriterFaultInjectionContext> Contexts { get; } = [];
+
+        public ValueTask ObserveAsync(
+            DocumentCacheWriterFaultInjectionContext context,
+            DocumentCacheWriterFaultInjectionControl control,
+            CancellationToken cancellationToken
+        )
+        {
+            _ = control;
+            Contexts.Add(context);
+
+            if (context.Hook != hookToCancel)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            cancellationSource.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingAdministrativeMutexLease(IDocumentCacheAdministrativeMutexLease innerLease)
+        : IDocumentCacheAdministrativeMutexLease
+    {
+        public List<CancellationToken> RollbackCancellationTokens { get; } = [];
+
+        public RelationalProviderToken ProviderToken => innerLease.ProviderToken;
+
+        public DbConnection Connection => innerLease.Connection;
+
+        public bool IsSessionOpen => innerLease.IsSessionOpen;
+
+        public async Task<IRelationalWriteSession> BeginTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
+            CancellationToken cancellationToken = default
+        )
+        {
+            IRelationalWriteSession session = await innerLease
+                .BeginTransactionAsync(isolationLevel, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new RecordingRelationalWriteSession(session, RollbackCancellationTokens);
+        }
+
+        public ValueTask DisposeAsync() => innerLease.DisposeAsync();
+    }
+
+    private sealed class RecordingRelationalWriteSession(
+        IRelationalWriteSession innerSession,
+        List<CancellationToken> rollbackCancellationTokens
+    ) : IRelationalWriteSession
+    {
+        public DbConnection Connection => innerSession.Connection;
+
+        public DbTransaction Transaction => innerSession.Transaction;
+
+        public DbCommand CreateCommand(RelationalCommand command) => innerSession.CreateCommand(command);
+
+        public Task CommitAsync(CancellationToken cancellationToken = default) =>
+            innerSession.CommitAsync(cancellationToken);
+
+        public async Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            rollbackCancellationTokens.Add(cancellationToken);
+            await innerSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public ValueTask DisposeAsync() => innerSession.DisposeAsync();
     }
 
     private sealed class ThrowOnceMssqlTransientFaultInjectionObserver : ITransactionFaultInjectionObserver

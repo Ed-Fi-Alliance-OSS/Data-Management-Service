@@ -227,7 +227,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -315,7 +315,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             telemetryOutcome = result.Outcome;
             if (result is DocumentCacheWriterResult.RacingWriterLost)
             {
-                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 transactionCompleted = true;
                 return result;
             }
@@ -326,14 +326,12 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
         catch (PostgresException exception) when (IsRetryableDeleteRace(exception))
         {
-            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
-                .ConfigureAwait(false);
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted).ConfigureAwait(false);
             throw new DocumentCacheWriterRetryableDeleteRaceException();
         }
         catch
         {
-            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
-                .ConfigureAwait(false);
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted).ConfigureAwait(false);
             throw;
         }
         finally
@@ -534,7 +532,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
             if (lifecycleFence is not null)
             {
                 telemetryOutcome = lifecycleFence.Outcome;
-                await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await transactionScope.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 transactionCompleted = true;
                 return lifecycleFence;
             }
@@ -598,8 +596,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
         catch
         {
-            await RollbackIfNeededAsync(transactionScope, transactionCompleted, cancellationToken)
-                .ConfigureAwait(false);
+            await RollbackIfNeededAsync(transactionScope, transactionCompleted).ConfigureAwait(false);
             throw;
         }
         finally
@@ -1052,8 +1049,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
     private static async Task RollbackIfNeededAsync(
         PostgresqlDocumentCacheWriterTransaction transactionScope,
-        bool transactionCompleted,
-        CancellationToken cancellationToken
+        bool transactionCompleted
     )
     {
         if (transactionCompleted)
@@ -1063,7 +1059,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
         try
         {
-            await transactionScope.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await transactionScope.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (InvalidOperationException exception)
         {
