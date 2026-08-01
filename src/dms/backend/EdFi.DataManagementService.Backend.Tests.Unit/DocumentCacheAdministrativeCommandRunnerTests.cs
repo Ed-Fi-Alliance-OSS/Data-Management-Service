@@ -629,6 +629,23 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
+            IRelationalWriteSession mutexSession,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeBaselineSeedPageRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private sealed class ThrowingDocumentCacheMaterializer : IDocumentCacheMaterializer

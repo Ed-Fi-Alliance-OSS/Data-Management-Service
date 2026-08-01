@@ -235,6 +235,406 @@ internal sealed record DocumentCacheAdministrativeProjectedStateEmptinessResult
     public string Message { get; }
 }
 
+internal sealed record DocumentCacheAdministrativeBaselineBoundaryResult
+{
+    public DocumentCacheAdministrativeBaselineBoundaryResult(long? boundaryDocumentId, string message)
+    {
+        if (boundaryDocumentId is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(boundaryDocumentId),
+                boundaryDocumentId,
+                "Baseline boundary document id must be positive when present."
+            );
+        }
+
+        BoundaryDocumentId = boundaryDocumentId;
+        Message = DocumentCacheAdministrativePrimitiveText.Sanitize(message);
+    }
+
+    public long? BoundaryDocumentId { get; }
+
+    public bool HasDocuments => BoundaryDocumentId is not null;
+
+    public string Message { get; }
+}
+
+internal sealed record DocumentCacheAdministrativeWorkHighWaterObservationRequest
+{
+    public DocumentCacheAdministrativeWorkHighWaterObservationRequest(
+        int highWaterMark,
+        int diagnosticCapacity
+    )
+    {
+        if (highWaterMark <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(highWaterMark),
+                highWaterMark,
+                "Baseline high-water mark must be positive."
+            );
+        }
+
+        if (diagnosticCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(diagnosticCapacity),
+                diagnosticCapacity,
+                "Baseline high-water diagnostic capacity must be positive."
+            );
+        }
+
+        HighWaterMark = highWaterMark;
+        DiagnosticCapacity = diagnosticCapacity;
+    }
+
+    public int HighWaterMark { get; }
+
+    public int DiagnosticCapacity { get; }
+
+    public int HighWaterPlusOne => checked(HighWaterMark + 1);
+}
+
+internal sealed record DocumentCacheAdministrativeWorkHighWaterObservationResult
+{
+    public DocumentCacheAdministrativeWorkHighWaterObservationResult(
+        int highWaterMark,
+        int observedWorkRows,
+        ImmutableArray<long> diagnosticDocumentIds,
+        string message
+    )
+    {
+        if (highWaterMark <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(highWaterMark),
+                highWaterMark,
+                "Baseline high-water mark must be positive."
+            );
+        }
+
+        if (observedWorkRows < 0 || observedWorkRows > checked(highWaterMark + 1))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(observedWorkRows),
+                observedWorkRows,
+                "Observed durable work rows must be bounded by high-water plus one."
+            );
+        }
+
+        if (!diagnosticDocumentIds.IsDefaultOrEmpty && diagnosticDocumentIds.Any(id => id <= 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(diagnosticDocumentIds),
+                "Diagnostic document ids must be positive."
+            );
+        }
+
+        if (!diagnosticDocumentIds.IsDefaultOrEmpty && diagnosticDocumentIds.Length > observedWorkRows)
+        {
+            throw new ArgumentException(
+                "High-water diagnostics cannot contain more document ids than observed work rows.",
+                nameof(diagnosticDocumentIds)
+            );
+        }
+
+        HighWaterMark = highWaterMark;
+        ObservedWorkRows = observedWorkRows;
+        DiagnosticDocumentIds = diagnosticDocumentIds.IsDefault
+            ? []
+            : diagnosticDocumentIds.Take(observedWorkRows).ToImmutableArray();
+        Message = DocumentCacheAdministrativePrimitiveText.Sanitize(message);
+    }
+
+    public int HighWaterMark { get; }
+
+    public int ObservedWorkRows { get; }
+
+    public ImmutableArray<long> DiagnosticDocumentIds { get; }
+
+    public bool IsAtOrAboveHighWater => ObservedWorkRows >= HighWaterMark;
+
+    public string Message { get; }
+}
+
+internal sealed record DocumentCacheAdministrativeBaselineSeedPageRequest
+{
+    public DocumentCacheAdministrativeBaselineSeedPageRequest(
+        long boundaryDocumentId,
+        long afterDocumentId,
+        int pageSize
+    )
+    {
+        if (boundaryDocumentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(boundaryDocumentId),
+                boundaryDocumentId,
+                "Baseline boundary document id must be positive."
+            );
+        }
+
+        if (afterDocumentId < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(afterDocumentId),
+                afterDocumentId,
+                "Baseline cursor document id cannot be negative."
+            );
+        }
+
+        if (afterDocumentId >= boundaryDocumentId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(afterDocumentId),
+                afterDocumentId,
+                "Baseline cursor document id must be below the captured boundary."
+            );
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pageSize),
+                pageSize,
+                "Baseline seed page size must be positive."
+            );
+        }
+
+        BoundaryDocumentId = boundaryDocumentId;
+        AfterDocumentId = afterDocumentId;
+        PageSize = pageSize;
+    }
+
+    public long BoundaryDocumentId { get; }
+
+    public long AfterDocumentId { get; }
+
+    public int PageSize { get; }
+}
+
+internal enum DocumentCacheAdministrativeBaselineWorkMutationKind
+{
+    None = 1,
+    Inserted = 2,
+    Advanced = 3,
+    Lowered = 4,
+    Retry = 5,
+}
+
+internal sealed record DocumentCacheAdministrativeBaselineSeededDocument
+{
+    public DocumentCacheAdministrativeBaselineSeededDocument(
+        long documentId,
+        long sourceContentVersion,
+        long? previousRequiredContentVersion,
+        DocumentCacheAdministrativeBaselineWorkMutationKind mutationKind
+    )
+    {
+        if (documentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(documentId),
+                documentId,
+                "Baseline seed document id must be positive."
+            );
+        }
+
+        if (sourceContentVersion < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sourceContentVersion),
+                sourceContentVersion,
+                "Source content version cannot be negative."
+            );
+        }
+
+        if (previousRequiredContentVersion is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(previousRequiredContentVersion),
+                previousRequiredContentVersion,
+                "Previous required content version cannot be negative."
+            );
+        }
+
+        if (!Enum.IsDefined(mutationKind))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mutationKind),
+                mutationKind,
+                "Unsupported baseline work mutation kind."
+            );
+        }
+
+        DocumentId = documentId;
+        SourceContentVersion = sourceContentVersion;
+        PreviousRequiredContentVersion = previousRequiredContentVersion;
+        MutationKind = mutationKind;
+    }
+
+    public long DocumentId { get; }
+
+    public long SourceContentVersion { get; }
+
+    public long? PreviousRequiredContentVersion { get; }
+
+    public DocumentCacheAdministrativeBaselineWorkMutationKind MutationKind { get; }
+
+    public bool Mutated =>
+        MutationKind
+            is DocumentCacheAdministrativeBaselineWorkMutationKind.Inserted
+                or DocumentCacheAdministrativeBaselineWorkMutationKind.Advanced
+                or DocumentCacheAdministrativeBaselineWorkMutationKind.Lowered;
+
+    public bool RequiresRetry => MutationKind == DocumentCacheAdministrativeBaselineWorkMutationKind.Retry;
+}
+
+internal enum DocumentCacheAdministrativeBaselineSeedPageStatus
+{
+    PageSeeded = 1,
+    Empty = 2,
+    RetryFromLastCommittedKey = 3,
+}
+
+internal sealed record DocumentCacheAdministrativeBaselineSeedPageResult
+{
+    public DocumentCacheAdministrativeBaselineSeedPageResult(
+        DocumentCacheAdministrativeBaselineSeedPageStatus status,
+        long boundaryDocumentId,
+        long afterDocumentId,
+        int pageSize,
+        ImmutableArray<DocumentCacheAdministrativeBaselineSeededDocument> documents,
+        string message
+    )
+    {
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported seed page status.");
+        }
+
+        if (boundaryDocumentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(boundaryDocumentId),
+                boundaryDocumentId,
+                "Baseline boundary document id must be positive."
+            );
+        }
+
+        if (afterDocumentId < 0 || afterDocumentId >= boundaryDocumentId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(afterDocumentId),
+                afterDocumentId,
+                "Baseline cursor document id must be non-negative and below the captured boundary."
+            );
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pageSize),
+                pageSize,
+                "Baseline seed page size must be positive."
+            );
+        }
+
+        ImmutableArray<DocumentCacheAdministrativeBaselineSeededDocument> materializedDocuments =
+            documents.IsDefault ? [] : documents;
+
+        if (materializedDocuments.Length > pageSize)
+        {
+            throw new ArgumentException("Baseline seed page cannot contain more rows than PageSize.");
+        }
+
+        if (
+            materializedDocuments.Any(document =>
+                document.DocumentId <= afterDocumentId || document.DocumentId > boundaryDocumentId
+            )
+        )
+        {
+            throw new ArgumentException(
+                "Baseline seed page documents must be within the requested keyset boundary.",
+                nameof(documents)
+            );
+        }
+
+        if (
+            !materializedDocuments
+                .Select(document => document.DocumentId)
+                .Order()
+                .SequenceEqual(materializedDocuments.Select(document => document.DocumentId))
+        )
+        {
+            throw new ArgumentException(
+                "Baseline seed page documents must be ordered by DocumentId.",
+                nameof(documents)
+            );
+        }
+
+        if (
+            status == DocumentCacheAdministrativeBaselineSeedPageStatus.Empty
+            && !materializedDocuments.IsEmpty
+        )
+        {
+            throw new ArgumentException("Empty seed page results cannot contain documents.");
+        }
+
+        if (
+            status == DocumentCacheAdministrativeBaselineSeedPageStatus.PageSeeded
+            && materializedDocuments.Any(document => document.RequiresRetry)
+        )
+        {
+            throw new ArgumentException("Seeded page results cannot contain retry documents.");
+        }
+
+        if (
+            status == DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey
+            && !materializedDocuments.Any(document => document.RequiresRetry)
+        )
+        {
+            throw new ArgumentException("Retry seed page results require a retry document.");
+        }
+
+        Status = status;
+        BoundaryDocumentId = boundaryDocumentId;
+        AfterDocumentId = afterDocumentId;
+        PageSize = pageSize;
+        Documents = materializedDocuments;
+        Message = DocumentCacheAdministrativePrimitiveText.Sanitize(message);
+    }
+
+    public DocumentCacheAdministrativeBaselineSeedPageStatus Status { get; }
+
+    public long BoundaryDocumentId { get; }
+
+    public long AfterDocumentId { get; }
+
+    public int PageSize { get; }
+
+    public ImmutableArray<DocumentCacheAdministrativeBaselineSeededDocument> Documents { get; }
+
+    public int RowsVisited => Documents.Length;
+
+    public int WorkMutationCount => Documents.Count(document => document.Mutated);
+
+    public bool Mutated => WorkMutationCount > 0;
+
+    public bool FilledPage => RowsVisited == PageSize;
+
+    public long? LastVisitedDocumentId => Documents.IsEmpty ? null : Documents[^1].DocumentId;
+
+    public ImmutableArray<long> AffectedDocumentIds =>
+        Documents
+            .Where(document => document.Mutated || document.RequiresRetry)
+            .Select(document => document.DocumentId)
+            .Take(PageSize)
+            .ToImmutableArray();
+
+    public string Message { get; }
+}
+
 internal sealed record DocumentCacheAdministrativeWorkClearance
 {
     private DocumentCacheAdministrativeWorkClearance(
@@ -359,6 +759,23 @@ internal interface IDocumentCacheAdministrativePrimitives
         IRelationalWriteSession mutexSession,
         CancellationToken cancellationToken = default
     );
+
+    Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeBaselineSeedPageRequest request,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed record DocumentCacheAdministrativePrimitiveCommands
@@ -373,6 +790,9 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
         string clearDocumentCacheBatchCommandText,
         string clearDocumentProjectionWorkBatchCommandText,
         string projectedStateEmptinessCommandText,
+        string captureBaselineBoundaryCommandText,
+        string observeWorkHighWaterCommandText,
+        string seedBaselinePageCommandText,
         string? activationPrerequisiteCommandText,
         DocumentCacheLifecycleReaderQuery lifecycleReaderQuery
     )
@@ -410,6 +830,18 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
             projectedStateEmptinessCommandText,
             nameof(projectedStateEmptinessCommandText)
         );
+        CaptureBaselineBoundaryCommandText = RequireCommandText(
+            captureBaselineBoundaryCommandText,
+            nameof(captureBaselineBoundaryCommandText)
+        );
+        ObserveWorkHighWaterCommandText = RequireCommandText(
+            observeWorkHighWaterCommandText,
+            nameof(observeWorkHighWaterCommandText)
+        );
+        SeedBaselinePageCommandText = RequireCommandText(
+            seedBaselinePageCommandText,
+            nameof(seedBaselinePageCommandText)
+        );
         ActivationPrerequisiteCommandText = activationPrerequisiteCommandText;
         LifecycleReaderQuery =
             lifecycleReaderQuery ?? throw new ArgumentNullException(nameof(lifecycleReaderQuery));
@@ -432,6 +864,12 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
     public string ClearDocumentProjectionWorkBatchCommandText { get; }
 
     public string ProjectedStateEmptinessCommandText { get; }
+
+    public string CaptureBaselineBoundaryCommandText { get; }
+
+    public string ObserveWorkHighWaterCommandText { get; }
+
+    public string SeedBaselinePageCommandText { get; }
 
     public string? ActivationPrerequisiteCommandText { get; }
 
@@ -462,6 +900,10 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     private const string DocumentCacheEmptyColumnName = "DocumentCacheEmpty";
     private const string DocumentProjectionWorkEmptyColumnName = "DocumentProjectionWorkEmpty";
     private const string ClearedDocumentIdColumnName = "DocumentId";
+    private const string BoundaryDocumentIdColumnName = "BoundaryDocumentId";
+    private const string SourceContentVersionColumnName = "SourceContentVersion";
+    private const string PreviousRequiredContentVersionColumnName = "PreviousRequiredContentVersion";
+    private const string MutationKindColumnName = "MutationKind";
     private const string ReadCommittedSnapshotColumnName = "ReadCommittedSnapshot";
     private const string NestedTriggersColumnName = "NestedTriggers";
 
@@ -760,6 +1202,164 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             .ConfigureAwait(false);
     }
 
+    public static async Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativePrimitiveCommands commands,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mutexSession);
+        ArgumentNullException.ThrowIfNull(commands);
+
+        return await mutexSession
+            .CreateCommandExecutor()
+            .ExecuteReaderAsync(
+                new RelationalCommand(commands.CaptureBaselineBoundaryCommandText),
+                static async (reader, readerCancellationToken) =>
+                {
+                    if (!await reader.ReadAsync(readerCancellationToken).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException(
+                            "DocumentCache baseline boundary observation did not return a row."
+                        );
+                    }
+
+                    long? boundaryDocumentId = ReadOptionalInt64(reader, BoundaryDocumentIdColumnName);
+
+                    return new DocumentCacheAdministrativeBaselineBoundaryResult(
+                        boundaryDocumentId,
+                        boundaryDocumentId is null
+                            ? "DocumentCache baseline boundary found no canonical documents."
+                            : "DocumentCache baseline boundary captured."
+                    );
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public static async Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativePrimitiveCommands commands,
+        DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mutexSession);
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(request);
+
+        ImmutableArray<long>.Builder diagnosticDocumentIds = ImmutableArray.CreateBuilder<long>(
+            Math.Min(request.DiagnosticCapacity, request.HighWaterPlusOne)
+        );
+        var observedRows = 0;
+
+        await mutexSession
+            .CreateCommandExecutor()
+            .ExecuteReaderAsync(
+                new RelationalCommand(
+                    commands.ObserveWorkHighWaterCommandText,
+                    [new RelationalParameter("@highWaterPlusOne", request.HighWaterPlusOne)]
+                ),
+                async (reader, readerCancellationToken) =>
+                {
+                    while (await reader.ReadAsync(readerCancellationToken).ConfigureAwait(false))
+                    {
+                        observedRows++;
+                        if (diagnosticDocumentIds.Count < request.DiagnosticCapacity)
+                        {
+                            diagnosticDocumentIds.Add(ReadRequiredInt64(reader, ClearedDocumentIdColumnName));
+                        }
+                    }
+
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new DocumentCacheAdministrativeWorkHighWaterObservationResult(
+            request.HighWaterMark,
+            observedRows,
+            diagnosticDocumentIds.ToImmutable(),
+            observedRows >= request.HighWaterMark
+                ? "DocumentProjectionWork is at or above the baseline high-water mark."
+                : "DocumentProjectionWork is below the baseline high-water mark."
+        );
+    }
+
+    public static async Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativePrimitiveCommands commands,
+        DocumentCacheAdministrativeBaselineSeedPageRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mutexSession);
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(request);
+
+        ImmutableArray<DocumentCacheAdministrativeBaselineSeededDocument>.Builder documents =
+            ImmutableArray.CreateBuilder<DocumentCacheAdministrativeBaselineSeededDocument>(request.PageSize);
+
+        await mutexSession
+            .CreateCommandExecutor()
+            .ExecuteReaderAsync(
+                new RelationalCommand(
+                    commands.SeedBaselinePageCommandText,
+                    [
+                        new RelationalParameter("@boundaryDocumentId", request.BoundaryDocumentId),
+                        new RelationalParameter("@afterDocumentId", request.AfterDocumentId),
+                        new RelationalParameter("@pageSize", request.PageSize),
+                    ]
+                ),
+                async (reader, readerCancellationToken) =>
+                {
+                    while (await reader.ReadAsync(readerCancellationToken).ConfigureAwait(false))
+                    {
+                        documents.Add(
+                            new DocumentCacheAdministrativeBaselineSeededDocument(
+                                ReadRequiredInt64(reader, ClearedDocumentIdColumnName),
+                                ReadRequiredInt64(reader, SourceContentVersionColumnName),
+                                ReadOptionalInt64(reader, PreviousRequiredContentVersionColumnName),
+                                ReadMutationKind(reader)
+                            )
+                        );
+                    }
+
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        ImmutableArray<DocumentCacheAdministrativeBaselineSeededDocument> seededDocuments =
+            documents.ToImmutable();
+        DocumentCacheAdministrativeBaselineSeedPageStatus status = seededDocuments switch
+        {
+            { IsEmpty: true } => DocumentCacheAdministrativeBaselineSeedPageStatus.Empty,
+            _ when seededDocuments.Any(document => document.RequiresRetry) =>
+                DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey,
+            _ => DocumentCacheAdministrativeBaselineSeedPageStatus.PageSeeded,
+        };
+
+        return new DocumentCacheAdministrativeBaselineSeedPageResult(
+            status,
+            request.BoundaryDocumentId,
+            request.AfterDocumentId,
+            request.PageSize,
+            seededDocuments,
+            status switch
+            {
+                DocumentCacheAdministrativeBaselineSeedPageStatus.Empty =>
+                    "DocumentCache baseline seed page found no canonical rows.",
+                DocumentCacheAdministrativeBaselineSeedPageStatus.RetryFromLastCommittedKey =>
+                    "DocumentCache baseline seed page was invalidated by a concurrent change.",
+                _ => "DocumentCache baseline seed page completed.",
+            }
+        );
+    }
+
     private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         IRelationalCommandExecutor executor,
         DocumentCacheAdministrativePrimitiveCommands commands,
@@ -999,12 +1599,42 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             new("@nextCacheAheadRecoveryRequired", request.NextCacheAheadRecoveryRequired),
         ];
 
+    private static DocumentCacheAdministrativeBaselineWorkMutationKind ReadMutationKind(
+        IRelationalCommandReader reader
+    )
+    {
+        string mutationKind =
+            ReadOptionalString(reader, MutationKindColumnName)
+            ?? throw new InvalidOperationException("Required baseline mutation kind was null.");
+
+        return
+            Enum.TryParse(
+                mutationKind,
+                ignoreCase: false,
+                out DocumentCacheAdministrativeBaselineWorkMutationKind parsed
+            ) && Enum.IsDefined(parsed)
+            ? parsed
+            : throw new InvalidOperationException($"Unsupported baseline mutation kind '{mutationKind}'.");
+    }
+
     private static long ReadRequiredInt64(IRelationalCommandReader reader, string columnName)
     {
         int ordinal = reader.GetOrdinal(columnName);
         if (reader.IsDBNull(ordinal))
         {
             throw new InvalidOperationException($"Required bigint column '{columnName}' was null.");
+        }
+
+        object value = reader.GetFieldValue<object>(ordinal);
+        return Convert.ToInt64(value, CultureInfo.InvariantCulture);
+    }
+
+    private static long? ReadOptionalInt64(IRelationalCommandReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
         }
 
         object value = reader.GetFieldValue<object>(ordinal);
@@ -1081,6 +1711,9 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
                 DocumentCacheAdministrativeClearTarget.DocumentProjectionWork
             ),
             RenderProjectedStateEmptinessCommandText(dialect),
+            RenderCaptureBaselineBoundaryCommandText(dialect),
+            RenderObserveWorkHighWaterCommandText(dialect),
+            RenderSeedBaselinePageCommandText(dialect),
             dialect == SqlDialect.Mssql ? RenderSqlServerActivationPrerequisiteCommandText() : null,
             new DocumentCacheLifecycleReaderQuery(
                 ExistsCommandText: string.Empty,
@@ -1277,6 +1910,241 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
                 SELECT
                     CAST(CASE WHEN NOT EXISTS (SELECT TOP (1) 1 FROM {cacheTable}) THEN 1 ELSE 0 END AS bit) AS [{DocumentCacheEmptyColumnName}],
                     CAST(CASE WHEN NOT EXISTS (SELECT TOP (1) 1 FROM {workTable}) THEN 1 ELSE 0 END AS bit) AS [{DocumentProjectionWorkEmptyColumnName}];
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+    }
+
+    private static string RenderCaptureBaselineBoundaryCommandText(SqlDialect dialect)
+    {
+        string documentTable = Quote(DocumentCacheInventoryDefinition.Document, dialect);
+        string documentIdColumn = Quote(DocumentCacheInventoryDefinition.DocumentColumns.DocumentId, dialect);
+        string boundaryColumn = Quote(new DbColumnName(BoundaryDocumentIdColumnName), dialect);
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $"""
+                SELECT MAX({documentIdColumn}) AS {boundaryColumn}
+                FROM {documentTable};
+                """,
+            SqlDialect.Mssql => $"""
+                SELECT MAX({documentIdColumn}) AS {boundaryColumn}
+                FROM {documentTable};
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+    }
+
+    private static string RenderObserveWorkHighWaterCommandText(SqlDialect dialect)
+    {
+        string workTable = Quote(DocumentCacheInventoryDefinition.DocumentProjectionWork, dialect);
+        string documentIdColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.DocumentId,
+            dialect
+        );
+        string firstEnqueuedAtColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.FirstEnqueuedAt,
+            dialect
+        );
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $"""
+                SELECT {documentIdColumn}
+                FROM {workTable}
+                ORDER BY {firstEnqueuedAtColumn}, {documentIdColumn}
+                LIMIT @highWaterPlusOne;
+                """,
+            SqlDialect.Mssql => $"""
+                SELECT TOP (@highWaterPlusOne) {documentIdColumn}
+                FROM {workTable}
+                ORDER BY {firstEnqueuedAtColumn}, {documentIdColumn};
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+    }
+
+    private static string RenderSeedBaselinePageCommandText(SqlDialect dialect)
+    {
+        string documentTable = Quote(DocumentCacheInventoryDefinition.Document, dialect);
+        string workTable = Quote(DocumentCacheInventoryDefinition.DocumentProjectionWork, dialect);
+        string documentIdColumn = Quote(DocumentCacheInventoryDefinition.DocumentColumns.DocumentId, dialect);
+        string contentVersionColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentColumns.ContentVersion,
+            dialect
+        );
+        string workRequiredContentVersionColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.RequiredContentVersion,
+            dialect
+        );
+        string firstEnqueuedAtColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.FirstEnqueuedAt,
+            dialect
+        );
+        string lastEnqueuedAtColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.LastEnqueuedAt,
+            dialect
+        );
+        string resultDocumentIdColumn = Quote(new DbColumnName(ClearedDocumentIdColumnName), dialect);
+        string sourceContentVersionColumn = Quote(new DbColumnName(SourceContentVersionColumnName), dialect);
+        string previousRequiredContentVersionColumn = Quote(
+            new DbColumnName(PreviousRequiredContentVersionColumnName),
+            dialect
+        );
+        string mutationKindColumn = Quote(new DbColumnName(MutationKindColumnName), dialect);
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $"""
+                WITH bounded_source AS (
+                    SELECT source.{documentIdColumn}, source.{contentVersionColumn}
+                    FROM {documentTable} AS source
+                    WHERE source.{documentIdColumn} > @afterDocumentId
+                      AND source.{documentIdColumn} <= @boundaryDocumentId
+                    ORDER BY source.{documentIdColumn}
+                    LIMIT @pageSize
+                    FOR SHARE
+                ),
+                observed AS (
+                    SELECT
+                        bounded_source.{documentIdColumn},
+                        bounded_source.{contentVersionColumn},
+                        work.{workRequiredContentVersionColumn} AS {previousRequiredContentVersionColumn}
+                    FROM bounded_source
+                    LEFT JOIN {workTable} AS work
+                      ON work.{documentIdColumn} = bounded_source.{documentIdColumn}
+                ),
+                upserted AS (
+                    INSERT INTO {workTable} AS work (
+                        {documentIdColumn},
+                        {workRequiredContentVersionColumn},
+                        {firstEnqueuedAtColumn},
+                        {lastEnqueuedAtColumn}
+                    )
+                    SELECT
+                        observed.{documentIdColumn},
+                        observed.{contentVersionColumn},
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    FROM observed
+                    ON CONFLICT ({documentIdColumn}) DO UPDATE
+                    SET {workRequiredContentVersionColumn} = EXCLUDED.{workRequiredContentVersionColumn},
+                        {lastEnqueuedAtColumn} = CASE
+                            WHEN work.{workRequiredContentVersionColumn} < EXCLUDED.{workRequiredContentVersionColumn}
+                                THEN EXCLUDED.{lastEnqueuedAtColumn}
+                            ELSE work.{lastEnqueuedAtColumn}
+                        END
+                    WHERE work.{workRequiredContentVersionColumn} <> EXCLUDED.{workRequiredContentVersionColumn}
+                    RETURNING work.{documentIdColumn}
+                )
+                SELECT
+                    observed.{documentIdColumn} AS {resultDocumentIdColumn},
+                    observed.{contentVersionColumn} AS {sourceContentVersionColumn},
+                    observed.{previousRequiredContentVersionColumn},
+                    CASE
+                        WHEN upserted.{documentIdColumn} IS NULL THEN 'None'
+                        WHEN observed.{previousRequiredContentVersionColumn} IS NULL THEN 'Inserted'
+                        WHEN observed.{previousRequiredContentVersionColumn} < observed.{contentVersionColumn} THEN 'Advanced'
+                        WHEN observed.{previousRequiredContentVersionColumn} > observed.{contentVersionColumn} THEN 'Lowered'
+                        ELSE 'None'
+                    END AS {mutationKindColumn}
+                FROM observed
+                LEFT JOIN upserted
+                  ON upserted.{documentIdColumn} = observed.{documentIdColumn}
+                ORDER BY observed.{documentIdColumn};
+                """,
+            SqlDialect.Mssql => $"""
+                DECLARE @observed table (
+                    [DocumentId] bigint NOT NULL PRIMARY KEY,
+                    [SourceContentVersion] bigint NOT NULL,
+                    [PreviousRequiredContentVersion] bigint NULL
+                );
+                DECLARE @mutated table (
+                    [DocumentId] bigint NOT NULL PRIMARY KEY
+                );
+                DECLARE @now datetimeoffset = SYSUTCDATETIME();
+
+                INSERT INTO @observed (
+                    [DocumentId],
+                    [SourceContentVersion],
+                    [PreviousRequiredContentVersion]
+                )
+                SELECT TOP (@pageSize)
+                    source.{documentIdColumn},
+                    source.{contentVersionColumn},
+                    work.{workRequiredContentVersionColumn}
+                FROM {documentTable} AS source WITH (HOLDLOCK)
+                LEFT JOIN {workTable} AS work WITH (UPDLOCK, HOLDLOCK)
+                  ON work.{documentIdColumn} = source.{documentIdColumn}
+                WHERE source.{documentIdColumn} > @afterDocumentId
+                  AND source.{documentIdColumn} <= @boundaryDocumentId
+                ORDER BY source.{documentIdColumn};
+
+                UPDATE work
+                SET {workRequiredContentVersionColumn} = observed.[SourceContentVersion],
+                    {lastEnqueuedAtColumn} = CASE
+                        WHEN work.{workRequiredContentVersionColumn} < observed.[SourceContentVersion]
+                            THEN @now
+                        ELSE work.{lastEnqueuedAtColumn}
+                    END
+                OUTPUT inserted.{documentIdColumn} INTO @mutated ([DocumentId])
+                FROM {workTable} AS work
+                INNER JOIN @observed AS observed
+                  ON observed.[DocumentId] = work.{documentIdColumn}
+                INNER JOIN {documentTable} AS source WITH (HOLDLOCK)
+                  ON source.{documentIdColumn} = observed.[DocumentId]
+                 AND source.{contentVersionColumn} = observed.[SourceContentVersion]
+                WHERE observed.[PreviousRequiredContentVersion] IS NOT NULL
+                  AND work.{workRequiredContentVersionColumn} = observed.[PreviousRequiredContentVersion]
+                  AND work.{workRequiredContentVersionColumn} <> observed.[SourceContentVersion];
+
+                INSERT INTO {workTable} (
+                    {documentIdColumn},
+                    {workRequiredContentVersionColumn},
+                    {firstEnqueuedAtColumn},
+                    {lastEnqueuedAtColumn}
+                )
+                OUTPUT inserted.{documentIdColumn} INTO @mutated ([DocumentId])
+                SELECT
+                    observed.[DocumentId],
+                    observed.[SourceContentVersion],
+                    @now,
+                    @now
+                FROM @observed AS observed
+                INNER JOIN {documentTable} AS source WITH (HOLDLOCK)
+                  ON source.{documentIdColumn} = observed.[DocumentId]
+                 AND source.{contentVersionColumn} = observed.[SourceContentVersion]
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM {workTable} AS work WITH (UPDLOCK, HOLDLOCK)
+                    WHERE work.{documentIdColumn} = observed.[DocumentId]
+                );
+
+                SELECT
+                    observed.[DocumentId] AS {resultDocumentIdColumn},
+                    observed.[SourceContentVersion] AS {sourceContentVersionColumn},
+                    observed.[PreviousRequiredContentVersion] AS {previousRequiredContentVersionColumn},
+                    CASE
+                        WHEN current_source.{documentIdColumn} IS NULL THEN 'Retry'
+                        WHEN current_work.{workRequiredContentVersionColumn} = observed.[SourceContentVersion] THEN
+                            CASE
+                                WHEN mutated.[DocumentId] IS NULL THEN 'None'
+                                WHEN observed.[PreviousRequiredContentVersion] IS NULL THEN 'Inserted'
+                                WHEN observed.[PreviousRequiredContentVersion] < observed.[SourceContentVersion] THEN 'Advanced'
+                                WHEN observed.[PreviousRequiredContentVersion] > observed.[SourceContentVersion] THEN 'Lowered'
+                                ELSE 'None'
+                            END
+                        ELSE 'Retry'
+                    END AS {mutationKindColumn}
+                FROM @observed AS observed
+                LEFT JOIN @mutated AS mutated
+                  ON mutated.[DocumentId] = observed.[DocumentId]
+                LEFT JOIN {documentTable} AS current_source WITH (HOLDLOCK)
+                  ON current_source.{documentIdColumn} = observed.[DocumentId]
+                 AND current_source.{contentVersionColumn} = observed.[SourceContentVersion]
+                LEFT JOIN {workTable} AS current_work WITH (HOLDLOCK)
+                  ON current_work.{documentIdColumn} = observed.[DocumentId]
+                ORDER BY observed.[DocumentId];
                 """,
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };

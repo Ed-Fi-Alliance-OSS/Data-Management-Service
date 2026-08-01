@@ -320,6 +320,45 @@ public class Given_DocumentCacheAdministrativePrimitives
     }
 
     [Test]
+    public void It_renders_baseline_boundary_high_water_and_page_seeding_commands()
+    {
+        DocumentCacheAdministrativePrimitiveCommands pgsql =
+            DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql);
+        DocumentCacheAdministrativePrimitiveCommands mssql =
+            DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Mssql);
+
+        pgsql.CaptureBaselineBoundaryCommandText.Should().Contain("MAX(\"DocumentId\")");
+        mssql.CaptureBaselineBoundaryCommandText.Should().Contain("MAX([DocumentId])");
+
+        pgsql.ObserveWorkHighWaterCommandText.Should().Contain("LIMIT @highWaterPlusOne");
+        pgsql
+            .ObserveWorkHighWaterCommandText.Should()
+            .Contain("ORDER BY \"FirstEnqueuedAt\", \"DocumentId\"");
+        mssql.ObserveWorkHighWaterCommandText.Should().Contain("SELECT TOP (@highWaterPlusOne)");
+        mssql.ObserveWorkHighWaterCommandText.Should().Contain("ORDER BY [FirstEnqueuedAt], [DocumentId]");
+        pgsql.ObserveWorkHighWaterCommandText.Should().NotContain("COUNT");
+        mssql.ObserveWorkHighWaterCommandText.Should().NotContain("COUNT");
+
+        pgsql.SeedBaselinePageCommandText.Should().Contain("FOR SHARE");
+        pgsql.SeedBaselinePageCommandText.Should().Contain("ON CONFLICT (\"DocumentId\") DO UPDATE");
+        pgsql
+            .SeedBaselinePageCommandText.Should()
+            .Contain("WHEN work.\"RequiredContentVersion\" < EXCLUDED.\"RequiredContentVersion\"");
+        pgsql.SeedBaselinePageCommandText.Should().Contain("ELSE work.\"LastEnqueuedAt\"");
+        pgsql.SeedBaselinePageCommandText.Should().NotContain("COUNT");
+
+        mssql.SeedBaselinePageCommandText.Should().Contain("FROM [dms].[Document] AS source WITH (HOLDLOCK)");
+        mssql
+            .SeedBaselinePageCommandText.Should()
+            .Contain("LEFT JOIN [dms].[DocumentProjectionWork] AS work WITH (UPDLOCK, HOLDLOCK)");
+        mssql
+            .SeedBaselinePageCommandText.Should()
+            .Contain("work.[RequiredContentVersion] = observed.[PreviousRequiredContentVersion]");
+        mssql.SeedBaselinePageCommandText.Should().Contain("ELSE work.[LastEnqueuedAt]");
+        mssql.SeedBaselinePageCommandText.Should().NotContain("COUNT");
+    }
+
+    [Test]
     public async Task It_clears_a_bounded_cache_batch_through_the_mutex_session_executor()
     {
         var executor = new InMemoryRelationalCommandExecutor([
@@ -347,6 +386,84 @@ public class Given_DocumentCacheAdministrativePrimitives
         executor.Commands.Should().ContainSingle();
         executor.Commands[0].Parameters.Should().ContainSingle();
         executor.Commands[0].Parameters[0].Value.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_reads_baseline_boundary_high_water_and_seed_page_results()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(("BoundaryDocumentId", 25L))
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(("DocumentId", 3L)),
+                    RelationalAccessTestData.CreateRow(("DocumentId", 7L))
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 3L),
+                        ("SourceContentVersion", 10L),
+                        ("PreviousRequiredContentVersion", null),
+                        ("MutationKind", "Inserted")
+                    ),
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 7L),
+                        ("SourceContentVersion", 12L),
+                        ("PreviousRequiredContentVersion", 15L),
+                        ("MutationKind", "Lowered")
+                    )
+                ),
+            ]),
+        ]);
+        var session = new InMemoryAdministrativeSession(executor);
+        DocumentCacheAdministrativePrimitiveCommands commands =
+            DocumentCacheAdministrativePrimitivesSupport.GetCommands(SqlDialect.Pgsql);
+
+        DocumentCacheAdministrativeBaselineBoundaryResult boundary =
+            await DocumentCacheAdministrativePrimitivesSupport.CaptureBaselineBoundaryAsync(
+                session,
+                commands
+            );
+        DocumentCacheAdministrativeWorkHighWaterObservationResult highWater =
+            await DocumentCacheAdministrativePrimitivesSupport.ObserveWorkHighWaterAsync(
+                session,
+                commands,
+                new DocumentCacheAdministrativeWorkHighWaterObservationRequest(
+                    highWaterMark: 2,
+                    diagnosticCapacity: 1
+                )
+            );
+        DocumentCacheAdministrativeBaselineSeedPageResult page =
+            await DocumentCacheAdministrativePrimitivesSupport.SeedBaselinePageAsync(
+                session,
+                commands,
+                new DocumentCacheAdministrativeBaselineSeedPageRequest(
+                    boundaryDocumentId: 25,
+                    afterDocumentId: 0,
+                    pageSize: 2
+                )
+            );
+
+        boundary.BoundaryDocumentId.Should().Be(25);
+        highWater.ObservedWorkRows.Should().Be(2);
+        highWater.IsAtOrAboveHighWater.Should().BeTrue();
+        highWater.DiagnosticDocumentIds.Should().Equal(3L);
+        page.Status.Should().Be(DocumentCacheAdministrativeBaselineSeedPageStatus.PageSeeded);
+        page.Mutated.Should().BeTrue();
+        page.WorkMutationCount.Should().Be(2);
+        page.Documents.Select(document => document.MutationKind)
+            .Should()
+            .Equal(
+                DocumentCacheAdministrativeBaselineWorkMutationKind.Inserted,
+                DocumentCacheAdministrativeBaselineWorkMutationKind.Lowered
+            );
+        executor.Commands[1].Parameters[0].Value.Should().Be(3);
+        executor.Commands[2].Parameters.Select(parameter => parameter.Value).Should().Equal(25L, 0L, 2);
     }
 
     [Test]

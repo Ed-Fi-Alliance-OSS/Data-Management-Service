@@ -118,4 +118,38 @@ internal sealed class PostgresqlDocumentCacheAdministrativePrimitives : IDocumen
             Commands,
             cancellationToken
         );
+
+    public Task<DocumentCacheAdministrativeBaselineBoundaryResult> CaptureBaselineBoundaryAsync(
+        IRelationalWriteSession mutexSession,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.CaptureBaselineBoundaryAsync(
+            mutexSession,
+            Commands,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeWorkHighWaterObservationResult> ObserveWorkHighWaterAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeWorkHighWaterObservationRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ObserveWorkHighWaterAsync(
+            mutexSession,
+            Commands,
+            request,
+            cancellationToken
+        );
+
+    public Task<DocumentCacheAdministrativeBaselineSeedPageResult> SeedBaselinePageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeBaselineSeedPageRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.SeedBaselinePageAsync(
+            mutexSession,
+            Commands,
+            request,
+            cancellationToken
+        );
 }
