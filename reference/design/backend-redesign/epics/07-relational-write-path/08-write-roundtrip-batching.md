@@ -279,7 +279,7 @@ Error and short-circuit paths never execute a normal-path count.
 | Immediate reference-resolution failure | 1 |
 | Race or retry | one attempt's count per attempt; the existing two-attempt loop is unchanged |
 | Parameter overflow | per the packing algorithm below; never a function of table count |
-| Any of the 2-command rows above, where the two proposed statements do not fit one command | 3 — the namespace check, then the relationship check as an ordered segment, then the no-DML resolution needs no further command |
+| Any of the 2-command rows above, where the two proposed statements do not fit one command | 2 or 3 — 3 only when execution reaches the relationship segment; a namespace denial returns from the namespace command and the segment is never sent, leaving 2 |
 
 ### Second-Command Emission Rule
 
@@ -296,8 +296,8 @@ failures, deferred reference failures, and guarded no-ops are all no-DML situati
 is several of them at once still issues one authorization-only command rather than one per condition.
 
 The count that varies is not the number of conditions but the number of *statements that fit one
-command*. Authorization-only mode issues **one command when both proposed statements fit it, and two
-ordered segments when they do not** — the namespace check first, then the relationship check on the same
+command*. Authorization-only mode issues **one command when both proposed statements fit it, and at most
+two ordered segments when they do not** — the namespace check first, then the relationship check on the same
 session and transaction. Two things select the split: a structured (table-valued) claim list, which the
 composite rewriter cannot rename; and a combined parameter count above the command budget, which is
 reachable on SQL Server because a proposed prefix list and a proposed claim list both bind as scalars and
@@ -890,7 +890,7 @@ otherwise. BEGIN and COMMIT are excluded, per the counting convention.
 | POST create, SQL Server structured claims | 4 | 3 | 2 | Measured shape — `MssqlRelationalPostAuthorizationTests` pins the authorization command ahead of the document-insert command on one session; deviation 3 of the second-command slice (a TVP cannot be renamed) |
 | PUT changed | 4 | 2 | 2 | Measured, at target |
 | PUT missing target | 1 | 1 | 1 | Measured, at target |
-| No-DML write whose two proposed checks do not fit one command | — | 3 | 2 | Unit-asserted at an injected budget boundary; reachable on SQL Server with scalar prefix and claim lists that each approach 2000 |
+| No-DML write whose two proposed checks do not fit one command | — | 2 or 3 | 2 | 3 only when execution reaches the relationship segment; a namespace denial returns from the namespace command, leaving 2. Both cases unit-asserted at an injected budget boundary; reachable on SQL Server with scalar prefix and claim lists that each approach 2000 |
 | PUT/POST with a collection key another table binds | — | 3 | 3 | Estimate. The two second-command commands (shared reservation, then the DML) are asserted at the unit level; no live count characterization covers the aligned-extension-scope shape, so the total including the first phase is inferred |
 | DELETE, no precondition | 3 | 1 | 1 | Measured, at target |
 | DELETE, stored namespace and relationship authorization | 5 | 1 | 1 | Measured, at target |
