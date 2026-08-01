@@ -77,12 +77,13 @@ internal sealed record DocumentCacheSessionBoundWriterResult
 
         return writerResult switch
         {
-            DocumentCacheWriterResult.RetryBudgetExhausted result => Failed(
+            DocumentCacheWriterResult.RetryBudgetExhausted result => WriterRetryBudgetExhausted(
                 result,
-                DocumentCacheAdministrativeCommandClassification.WriterRetryBudgetExhausted,
-                DocumentCacheAdministrativeDiagnosticCategory.WriterRetryBudgetExhausted,
-                commandExecutionMutated,
-                "Session-bound DocumentCache writer retry budget was exhausted."
+                commandExecutionMutated
+            ),
+            DocumentCacheWriterResult.DeleteRaceRetryExhausted result => WriterRetryBudgetExhausted(
+                result,
+                commandExecutionMutated
             ),
             DocumentCacheWriterResult.CallerAbortedRetry result => Failed(
                 result,
@@ -103,6 +104,18 @@ internal sealed record DocumentCacheSessionBoundWriterResult
             ),
         };
     }
+
+    private static DocumentCacheSessionBoundWriterResult WriterRetryBudgetExhausted(
+        DocumentCacheWriterResult writerResult,
+        bool commandExecutionMutated
+    ) =>
+        Failed(
+            writerResult,
+            DocumentCacheAdministrativeCommandClassification.WriterRetryBudgetExhausted,
+            DocumentCacheAdministrativeDiagnosticCategory.WriterRetryBudgetExhausted,
+            commandExecutionMutated,
+            "Session-bound DocumentCache writer retry budget was exhausted."
+        );
 
     public static DocumentCacheSessionBoundWriterResult SessionLoss(
         bool commandExecutionMutated,

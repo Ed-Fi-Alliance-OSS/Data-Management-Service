@@ -47,6 +47,43 @@ public class Given_A_DocumentCacheSessionBoundWriterResult
     }
 
     [Test]
+    public void It_maps_delete_race_retry_exhaustion_before_command_mutation_to_failed_no_mutation()
+    {
+        DocumentCacheSessionBoundWriterResult result = DocumentCacheSessionBoundWriterResult.FromWriterResult(
+            new DocumentCacheWriterResult.DeleteRaceRetryExhausted(attemptCount: 3),
+            commandExecutionMutated: false
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.WriterRetryBudgetExhausted);
+        result
+            .DiagnosticCategory.Should()
+            .Be(DocumentCacheAdministrativeDiagnosticCategory.WriterRetryBudgetExhausted);
+        result.Mutated.Should().BeFalse();
+        result.WriterResult.Should().BeOfType<DocumentCacheWriterResult.DeleteRaceRetryExhausted>();
+    }
+
+    [Test]
+    public void It_maps_delete_race_retry_exhaustion_after_command_mutation_to_incomplete_retryable()
+    {
+        DocumentCacheSessionBoundWriterResult result = DocumentCacheSessionBoundWriterResult.FromWriterResult(
+            new DocumentCacheWriterResult.DeleteRaceRetryExhausted(attemptCount: 3),
+            commandExecutionMutated: true
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.WriterRetryBudgetExhausted);
+        result
+            .DiagnosticCategory.Should()
+            .Be(DocumentCacheAdministrativeDiagnosticCategory.WriterRetryBudgetExhausted);
+        result.Mutated.Should().BeTrue();
+    }
+
+    [Test]
     public void It_classifies_session_loss_from_the_current_command_mutation_flag()
     {
         DocumentCacheSessionBoundWriterResult result = DocumentCacheSessionBoundWriterResult.SessionLoss(

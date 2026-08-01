@@ -145,6 +145,74 @@ public class Given_DocumentCacheAdministrativeDrain
     }
 
     [Test]
+    public async Task It_fails_immediately_when_session_bound_writer_delete_race_retry_is_exhausted()
+    {
+        var pager = new RecordingWorkPager(
+            new DocumentProjectionWorkPage([WorkItem(101, requiredContentVersion: 10)], pageSize: 3)
+        );
+        var materializer = new RecordingDocumentCacheMaterializer();
+        var ordinaryWriter = new RecordingDocumentCacheWriter();
+        var sessionBoundWriter = new RecordingSessionBoundWriter(
+            DocumentCacheSessionBoundWriterResult.FromWriterResult(
+                new DocumentCacheWriterResult.DeleteRaceRetryExhausted(attemptCount: 3),
+                commandExecutionMutated: false
+            )
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            materializer,
+            ordinaryWriter,
+            sessionBoundWriter
+        );
+        DocumentCacheAdministrativeCommandExecutionContext context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(),
+            new RecordingMutexLease(),
+            targetContext
+        );
+        DocumentCacheProjectionScheduler scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new DocumentCacheProjectionItemProcessor(
+                    new MutableTimeProvider(ObservedAt),
+                    NullLogger<DocumentCacheProjectionItemProcessor>.Instance
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                new MutableTimeProvider(ObservedAt)
+            )
+        );
+        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(
+            scheduler,
+            new RecordingDrainDelay(new MutableTimeProvider(ObservedAt))
+        );
+
+        DocumentCacheAdministrativeDrainToEmptyResult result =
+            await targetContext.DrainExecutor.RunAdministrativeCommandAsync(async cancellationToken =>
+            {
+                using IDisposable binding = targetContext.BindAdministrativeCommand(context);
+                return await drainer.DrainToEmptyAsync(context, cancellationToken).ConfigureAwait(false);
+            });
+
+        result.Completed.Should().BeFalse();
+        result.DrainSliceCount.Should().Be(1);
+        result.ProcessedItemCount.Should().Be(1);
+        result.DocumentScopedFailureCount.Should().Be(0);
+        result.FailureResult!.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .FailureResult.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.WriterRetryBudgetExhausted);
+        result
+            .FailureResult.PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.WriterRetryBudgetExhausted
+                && diagnostic.AffectedDocumentIds.SequenceEqual(new long[] { 101L })
+            );
+        result.FailureResult.Mutated.Should().BeFalse();
+        targetContext.FailureBackoffState.Count.Should().Be(0);
+        ordinaryWriter.Calls.Should().BeEmpty();
+        materializer.Calls.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_classifies_persistent_poison_after_a_retry_due_pass_repeats_document_failures()
     {
         MutableTimeProvider timeProvider = new(ObservedAt);

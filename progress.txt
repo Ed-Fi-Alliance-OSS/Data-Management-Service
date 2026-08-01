@@ -167,3 +167,8 @@ Completed contracts follow-up task for reference/design/backend-redesign/epics/1
 Key decisions: offlineWriterAdmission DTOs now represent missing/null/unconfirmed/mismatched/unknown tokens; shared preflight helper classifies invalid admission as no-mutation envelope; runner rejects invalid admission before target pinning/mutex; valid accepted confirmations still echo through command results/observations.
 Files changed: DocumentCacheAdministrativeContracts.cs; DocumentCachePreflightClassifier.cs; DocumentCacheAdministrativeCommandRunner.cs; offline workflow call sites; focused core/backend tests; PG/MSSQL administration test assertions; tasks.json; progress.txt.
 Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.
+
+Completed session-bound-writer follow-up task for reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md.
+Key decisions: command-owned DeleteRaceRetryExhausted now maps through session-bound writer as writerRetryBudgetExhausted using current command mutation flag; ordinary projection still records delete-race exhaustion as document-scoped backoff; administrative drain returns the command failure immediately instead of persistent-poison traversal.
+Files changed: DocumentCacheSessionBoundWriter.cs; DocumentCacheSessionBoundWriterTests.cs; DocumentCacheProjectionItemProcessorTests.cs; DocumentCacheAdministrativeDrainTests.cs; tasks.json; progress.txt.
+Blockers/notes: none. Remaining follow-up tasks still open in tasks.json.

@@ -162,10 +162,12 @@ public class Given_DocumentCacheProjectionItemProcessor
         diagnostic.NextRetryAt.Should().Be(ObservedAt.AddSeconds(10));
     }
 
-    [Test]
-    public async Task It_records_writer_retry_exhaustion_as_document_backoff_and_continues()
+    [TestCaseSource(nameof(RetryExhaustionWriterOutcomes))]
+    public async Task It_records_writer_retry_exhaustion_as_document_backoff_and_continues(
+        DocumentCacheWriterResult writerResult
+    )
     {
-        RecordingDocumentCacheWriter writer = new(new DocumentCacheWriterResult.RetryBudgetExhausted(3));
+        RecordingDocumentCacheWriter writer = new(writerResult);
         DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
             new RecordingDocumentCacheMaterializer(),
             writer
@@ -324,6 +326,16 @@ public class Given_DocumentCacheProjectionItemProcessor
         );
         yield return new TestCaseData(DocumentCacheWriterResult.RacingWriterLost.Instance).SetName(
             "RacingWriterLost"
+        );
+    }
+
+    private static IEnumerable<TestCaseData> RetryExhaustionWriterOutcomes()
+    {
+        yield return new TestCaseData(new DocumentCacheWriterResult.RetryBudgetExhausted(3)).SetName(
+            "RetryBudgetExhausted"
+        );
+        yield return new TestCaseData(new DocumentCacheWriterResult.DeleteRaceRetryExhausted(3)).SetName(
+            "DeleteRaceRetryExhausted"
         );
     }
 
