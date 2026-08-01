@@ -2725,6 +2725,33 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
     private const string HeartbeatTableShapeSql = """
         /* cdc:sqlserver:heartbeat-shape */
+        ;WITH normalized_check_constraints AS (
+            SELECT
+                constraint_info.name,
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(constraint_info.definition, N' ', N''),
+                            NCHAR(9),
+                            N''
+                        ),
+                        NCHAR(10),
+                        N''
+                    ),
+                    NCHAR(13),
+                    N''
+                ) AS normalized_definition,
+                constraint_info.is_disabled,
+                constraint_info.is_not_trusted,
+                constraint_info.is_not_for_replication
+            FROM sys.check_constraints constraint_info
+            INNER JOIN sys.tables table_info
+                ON table_info.object_id = constraint_info.parent_object_id
+            INNER JOIN sys.schemas schema_info
+                ON schema_info.schema_id = table_info.schema_id
+            WHERE schema_info.name = N'dms'
+            AND table_info.name = N'CdcHeartbeat'
+        )
         SELECT
             CONVERT(nvarchar(5), CASE WHEN EXISTS (
                 SELECT 1
@@ -2749,29 +2776,21 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ) THEN 1 ELSE 0 END) AS primary_key_matches,
             CONVERT(nvarchar(5), CASE WHEN EXISTS (
                 SELECT 1
-                FROM sys.check_constraints constraint_info
-                INNER JOIN sys.tables table_info
-                    ON table_info.object_id = constraint_info.parent_object_id
-                INNER JOIN sys.schemas schema_info
-                    ON schema_info.schema_id = table_info.schema_id
-                WHERE schema_info.name = N'dms'
-                AND table_info.name = N'CdcHeartbeat'
-                AND constraint_info.name = N'CK_CdcHeartbeat_Singleton'
-                AND CHARINDEX(N'[HeartbeatId]', constraint_info.definition) > 0
-                AND CHARINDEX(N'(1)', constraint_info.definition) > 0
+                FROM normalized_check_constraints constraint_info
+                WHERE constraint_info.name = N'CK_CdcHeartbeat_Singleton'
+                AND constraint_info.normalized_definition = N'([HeartbeatId]=(1))'
+                AND constraint_info.is_disabled = 0
+                AND constraint_info.is_not_trusted = 0
+                AND constraint_info.is_not_for_replication = 0
             ) THEN 1 ELSE 0 END) AS singleton_check_matches,
             CONVERT(nvarchar(5), CASE WHEN EXISTS (
                 SELECT 1
-                FROM sys.check_constraints constraint_info
-                INNER JOIN sys.tables table_info
-                    ON table_info.object_id = constraint_info.parent_object_id
-                INNER JOIN sys.schemas schema_info
-                    ON schema_info.schema_id = table_info.schema_id
-                WHERE schema_info.name = N'dms'
-                AND table_info.name = N'CdcHeartbeat'
-                AND constraint_info.name = N'CK_CdcHeartbeat_Sequence'
-                AND CHARINDEX(N'[HeartbeatSequence]', constraint_info.definition) > 0
-                AND CHARINDEX(N'(0)', constraint_info.definition) > 0
+                FROM normalized_check_constraints constraint_info
+                WHERE constraint_info.name = N'CK_CdcHeartbeat_Sequence'
+                AND constraint_info.normalized_definition = N'([HeartbeatSequence]>=(0))'
+                AND constraint_info.is_disabled = 0
+                AND constraint_info.is_not_trusted = 0
+                AND constraint_info.is_not_for_replication = 0
             ) THEN 1 ELSE 0 END) AS sequence_check_matches;
         """;
 

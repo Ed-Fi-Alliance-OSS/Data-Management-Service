@@ -615,7 +615,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter MssqlCdcHeartbeatDatabase",
       "With ConnectionStrings__MssqlAdmin pointing at a disposable SQL Server 2025 instance, run dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter MssqlCdcHeartbeatDatabase"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "provider-history",

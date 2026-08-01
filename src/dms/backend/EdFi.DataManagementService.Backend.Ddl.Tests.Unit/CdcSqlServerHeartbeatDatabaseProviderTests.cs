@@ -372,6 +372,50 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     }
 
     [Test]
+    public async Task It_should_fail_closed_when_singleton_check_constraint_has_wrong_operator()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            heartbeatSingletonCheckDefinition: "([HeartbeatId]<=(1))"
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        AssertHeartbeatConstraintMismatch(result, "singleton_check");
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_should_fail_closed_when_sequence_check_constraint_has_wrong_operator()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            heartbeatSequenceCheckDefinition: "([HeartbeatSequence]<=(0))"
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        AssertHeartbeatConstraintMismatch(result, "sequence_check");
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_should_fail_closed_when_existing_table_cdc_has_missing_required_jobs()
     {
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(captureInstanceCount: 3);
@@ -783,6 +827,30 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_cdc_disable_table"));
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_cdc_enable_table"));
+    }
+
+    private static void AssertHeartbeatConstraintMismatch(
+        CdcProviderSetupResult result,
+        string mismatchedCheckKey
+    )
+    {
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+                && observation.SafeArtifactName.Value == "dms.CdcHeartbeat"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["primary_key"] == "matched"
+                && observation.SafeObservedValues[mismatchedCheckKey] == "mismatched"
+            );
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+                && diagnostic.SafeName.Value == "dms.CdcHeartbeat"
+            );
     }
 
     [Test]
@@ -1467,9 +1535,14 @@ internal sealed class RecordingSqlServerConnectorAccess
 
 internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecutor
 {
+    private const string ExpectedHeartbeatSingletonCheckDefinition = "([HeartbeatId]=(1))";
+    private const string ExpectedHeartbeatSequenceCheckDefinition = "([HeartbeatSequence]>=(0))";
+
     private bool _databaseCdcEnabled;
     private bool _heartbeatTableExists;
     private bool _heartbeatSingletonExists;
+    private string _heartbeatSingletonCheckDefinition;
+    private string _heartbeatSequenceCheckDefinition;
     private readonly bool _readCommittedSnapshotOn;
     private readonly string _nestedTriggersValue;
     private int _captureInstanceCount;
@@ -1492,6 +1565,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         bool databaseCdcEnabled = false,
         bool heartbeatTableExists = false,
         bool heartbeatSingletonExists = false,
+        string heartbeatSingletonCheckDefinition = ExpectedHeartbeatSingletonCheckDefinition,
+        string heartbeatSequenceCheckDefinition = ExpectedHeartbeatSequenceCheckDefinition,
         bool readCommittedSnapshotOn = true,
         string nestedTriggersValue = "1",
         int captureInstanceCount = 0,
@@ -1513,6 +1588,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _databaseCdcEnabled = databaseCdcEnabled;
         _heartbeatTableExists = heartbeatTableExists;
         _heartbeatSingletonExists = heartbeatSingletonExists;
+        _heartbeatSingletonCheckDefinition = heartbeatSingletonCheckDefinition;
+        _heartbeatSequenceCheckDefinition = heartbeatSequenceCheckDefinition;
         _readCommittedSnapshotOn = readCommittedSnapshotOn;
         _nestedTriggersValue = nestedTriggersValue;
         _captureInstances = (captureInstances ?? []).ToDictionary(
@@ -1551,12 +1628,16 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         bool failFinalProviderMetadataRefresh = false,
         bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
-        RecordingSqlServerConnectorAccess? connectorAccess = null
+        RecordingSqlServerConnectorAccess? connectorAccess = null,
+        string heartbeatSingletonCheckDefinition = ExpectedHeartbeatSingletonCheckDefinition,
+        string heartbeatSequenceCheckDefinition = ExpectedHeartbeatSequenceCheckDefinition
     ) =>
         new(
             databaseCdcEnabled: true,
             heartbeatTableExists: true,
             heartbeatSingletonExists: true,
+            heartbeatSingletonCheckDefinition: heartbeatSingletonCheckDefinition,
+            heartbeatSequenceCheckDefinition: heartbeatSequenceCheckDefinition,
             readCommittedSnapshotOn: readCommittedSnapshotOn,
             nestedTriggersValue: nestedTriggersValue,
             captureInstanceCount: captureInstanceCount,
@@ -1587,6 +1668,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         {
             _heartbeatTableExists = true;
             _heartbeatSingletonExists = true;
+            _heartbeatSingletonCheckDefinition = ExpectedHeartbeatSingletonCheckDefinition;
+            _heartbeatSequenceCheckDefinition = ExpectedHeartbeatSequenceCheckDefinition;
         }
 
         if (sql.Contains("INSERT INTO [dms].[CdcHeartbeat]"))
@@ -1655,8 +1738,26 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             [
                 Row(
                     ("primary_key_matches", _heartbeatTableExists.ToString()),
-                    ("singleton_check_matches", _heartbeatTableExists.ToString()),
-                    ("sequence_check_matches", _heartbeatTableExists.ToString())
+                    (
+                        "singleton_check_matches",
+                        (
+                            _heartbeatTableExists
+                            && MatchesExpectedCheckDefinition(
+                                _heartbeatSingletonCheckDefinition,
+                                ExpectedHeartbeatSingletonCheckDefinition
+                            )
+                        ).ToString()
+                    ),
+                    (
+                        "sequence_check_matches",
+                        (
+                            _heartbeatTableExists
+                            && MatchesExpectedCheckDefinition(
+                                _heartbeatSequenceCheckDefinition,
+                                ExpectedHeartbeatSequenceCheckDefinition
+                            )
+                        ).ToString()
+                    )
                 ),
             ],
             var text when text.Contains("cdc:sqlserver:heartbeat-singleton") =>
@@ -1927,6 +2028,14 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
 
     private static IReadOnlyDictionary<string, string?> Row(params (string Key, string? Value)[] values) =>
         values.ToDictionary(value => value.Key, value => value.Value);
+
+    private static bool MatchesExpectedCheckDefinition(
+        string observedDefinition,
+        string expectedDefinition
+    ) => StripSqlWhitespace(observedDefinition).Equals(expectedDefinition, StringComparison.Ordinal);
+
+    private static string StripSqlWhitespace(string value) =>
+        new(value.Where(character => !char.IsWhiteSpace(character)).ToArray());
 
     private static string Csv(IEnumerable<string> values) => string.Join(",", values);
 }

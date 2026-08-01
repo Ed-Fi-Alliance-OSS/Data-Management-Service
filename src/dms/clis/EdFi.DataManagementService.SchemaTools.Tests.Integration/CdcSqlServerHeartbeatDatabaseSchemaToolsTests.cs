@@ -833,9 +833,14 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
+            DECLARE @Inserted TABLE ([DocumentId] bigint NOT NULL);
+
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId]
+            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
             VALUES (@documentUuid, 1);
+
+            SELECT [DocumentId]
+            FROM @Inserted;
             """;
         command.Parameters.AddWithValue("documentUuid", Guid.NewGuid());
 
