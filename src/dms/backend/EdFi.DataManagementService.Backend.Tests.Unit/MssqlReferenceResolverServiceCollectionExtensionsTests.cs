@@ -77,6 +77,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheOnlineCacheRebuildCommand>();
         var documentCacheInternalOnlyCacheAheadRecoveryCommand =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheInternalOnlyCacheAheadRecoveryCommand>();
+        var documentCacheExplicitIntegrityScrubCommand =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheExplicitIntegrityScrubCommand>();
         var documentCacheProjectionDrainPageProcessor =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
         var readTargetLookupService =
@@ -122,6 +124,9 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         documentCacheInternalOnlyCacheAheadRecoveryCommand
             .Should()
             .BeOfType<DocumentCacheInternalOnlyCacheAheadRecoveryCommand>();
+        documentCacheExplicitIntegrityScrubCommand
+            .Should()
+            .BeOfType<DocumentCacheExplicitIntegrityScrubCommand>();
         documentCacheProjectionDrainPageProcessor
             .Should()
             .BeOfType<DocumentCacheProjectionDrainPageProcessor>();

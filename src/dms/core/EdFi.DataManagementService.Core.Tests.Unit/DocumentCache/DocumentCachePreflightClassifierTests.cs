@@ -630,6 +630,104 @@ public class DocumentCachePreflightClassifierTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Explicit_Integrity_Scrub : DocumentCachePreflightClassifierTests
+    {
+        [Test]
+        public void It_should_classify_tracking_clear_latch_targets_as_eligible()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyExplicitIntegrityScrub(
+                    ExplicitIntegrityScrubRequest(),
+                    EligibleObservation(DocumentCacheLifecycleState.Tracking),
+                    ExplicitIntegrityScrubFacts()
+                );
+
+            result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+            result.Command.Should().Be(DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub);
+            result.ObservedLifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
+            result.CacheAheadRecoveryRequired.Should().BeFalse();
+            result.NoMutationGuarantee.Should().BeNull();
+        }
+
+        [TestCase(DocumentCacheLifecycleState.Disabled)]
+        [TestCase(DocumentCacheLifecycleState.Rebuilding)]
+        public void It_should_reject_lifecycle_mismatches(DocumentCacheLifecycleState lifecycleState)
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyExplicitIntegrityScrub(
+                    ExplicitIntegrityScrubRequest(),
+                    EligibleObservation(lifecycleState),
+                    ExplicitIntegrityScrubFacts()
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.LifecycleMismatch,
+                DocumentCacheTargetDiagnosticCategory.LifecycleMismatch,
+                lifecycleState
+            );
+        }
+
+        [Test]
+        public void It_should_reject_resetting_as_explicit_operator_recovery()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyExplicitIntegrityScrub(
+                    ExplicitIntegrityScrubRequest(),
+                    EligibleObservation(DocumentCacheLifecycleState.Resetting),
+                    ExplicitIntegrityScrubFacts()
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.ResettingRequiresExplicitOperatorRecovery,
+                DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery,
+                DocumentCacheLifecycleState.Resetting
+            );
+        }
+
+        [Test]
+        public void It_should_reject_a_set_cache_ahead_latch()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyExplicitIntegrityScrub(
+                    ExplicitIntegrityScrubRequest(),
+                    EligibleObservation(
+                        DocumentCacheLifecycleState.Tracking,
+                        cacheAheadRecoveryRequired: true
+                    ),
+                    ExplicitIntegrityScrubFacts()
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.CacheAheadLatchSet,
+                DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet,
+                DocumentCacheLifecycleState.Tracking
+            );
+        }
+
+        [Test]
+        public void It_should_reject_expected_source_mismatch()
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyExplicitIntegrityScrub(
+                    ExplicitIntegrityScrubRequest(expectedPhysicalSourceFingerprint: _otherFingerprint),
+                    EligibleObservation(DocumentCacheLifecycleState.Tracking),
+                    ExplicitIntegrityScrubFacts()
+                );
+
+            AssertRejected(
+                result,
+                DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch,
+                DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch,
+                DocumentCacheLifecycleState.Tracking
+            );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Internal_Only_Cache_Ahead_Recovery : DocumentCachePreflightClassifierTests
     {
         [TestCase(DocumentCacheLifecycleState.Tracking)]
@@ -939,6 +1037,10 @@ public class DocumentCachePreflightClassifierTests
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
     ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
 
+    protected static DocumentCacheExplicitIntegrityScrubRequest ExplicitIntegrityScrubRequest(
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+    ) => new(_administrativeTargetKey, expectedPhysicalSourceFingerprint ?? _fingerprint);
+
     protected static DocumentCacheInternalOnlyCacheAheadRecoveryRequest InternalOnlyCacheAheadRecoveryRequest(
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
     ) =>
@@ -986,6 +1088,11 @@ public class DocumentCachePreflightClassifierTests
         );
 
     protected static DocumentCacheOnlineCacheRebuildPreflightFacts OnlineCacheRebuildFacts(
+        DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
+        string? unexpectedProviderFailureMessage = null
+    ) => new(expectedTargetContextGeneration ?? _generation, unexpectedProviderFailureMessage);
+
+    protected static DocumentCacheExplicitIntegrityScrubPreflightFacts ExplicitIntegrityScrubFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
         string? unexpectedProviderFailureMessage = null
     ) => new(expectedTargetContextGeneration ?? _generation, unexpectedProviderFailureMessage);

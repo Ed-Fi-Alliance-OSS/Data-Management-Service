@@ -396,7 +396,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~ExplicitIntegrityScrub\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~ExplicitIntegrityScrub\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sql-server-prerequisites",

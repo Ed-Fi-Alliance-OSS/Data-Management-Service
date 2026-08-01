@@ -166,6 +166,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<
+                IDocumentCacheExplicitIntegrityScrubCommand,
+                DocumentCacheExplicitIntegrityScrubCommand
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
                 IDocumentCacheInternalOnlyCacheAheadRecoveryCommand,
                 DocumentCacheInternalOnlyCacheAheadRecoveryCommand
             >()

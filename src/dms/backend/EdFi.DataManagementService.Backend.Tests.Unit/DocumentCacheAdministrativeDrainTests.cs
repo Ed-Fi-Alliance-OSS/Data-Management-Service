@@ -527,6 +527,12 @@ public class Given_DocumentCacheAdministrativeDrain
             DocumentCacheAdministrativeBaselineSeedPageRequest request,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
+
+        public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+            IRelationalWriteSession mutexSession,
+            DocumentCacheAdministrativeScrubPageRequest request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
     }
 
     private sealed class RecordingMutexLease : IDocumentCacheAdministrativeMutexLease

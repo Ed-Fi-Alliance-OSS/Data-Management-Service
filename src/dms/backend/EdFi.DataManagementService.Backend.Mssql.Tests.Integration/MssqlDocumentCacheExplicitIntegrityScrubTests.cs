@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using System.Data;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
@@ -21,14 +22,16 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[Category("GuardedNewEmptyActivation")]
+[Category("ExplicitIntegrityScrub")]
 [Category(MssqlCiShards.Shard4)]
-public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
+public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
 
     private static readonly DateTime ObservedAt = new(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTimeOffset ObservedAtOffset = new(ObservedAt);
+    private static readonly DateTimeOffset FirstEnqueuedAt = ObservedAtOffset.AddMinutes(-5);
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
@@ -51,7 +54,7 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _baseline = await MssqlGeneratedDdlBaselineDatabaseFactory.CreateAsync(
-            $"{nameof(Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command)}:{_fixture.MappingSet.Key.EffectiveSchemaHash}",
+            $"{nameof(Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command)}:{_fixture.MappingSet.Key.EffectiveSchemaHash}",
             _fixture.GeneratedDdl
         );
     }
@@ -65,7 +68,7 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
 
         if (!await NestedTriggersEnabledAsync())
         {
-            Assert.Ignore("SQL Server guarded activation tests require nested triggers to be enabled.");
+            Assert.Ignore("SQL Server explicit integrity scrub tests require nested triggers to be enabled.");
         }
     }
 
@@ -93,151 +96,161 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
     }
 
     [Test]
-    public async Task It_transitions_empty_disabled_state_to_tracking_through_the_command_runner()
+    public async Task It_repairs_missing_and_mismatched_work_without_changing_lifecycle_or_cache()
     {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument missingWork = await InsertDocumentAsync(contentVersion: 10);
+        SourceDocument staleWork = await InsertDocumentAsync(contentVersion: 20);
+        SourceDocument aheadWork = await InsertDocumentAsync(contentVersion: 30);
+        await ClearProjectionWorkAsync();
+        await InsertProjectionWorkAsync(staleWork, requiredContentVersion: 15);
+        await InsertProjectionWorkAsync(aheadWork, requiredContentVersion: 35);
         RecordingObservationSink observationSink = new();
-        DocumentCacheGuardedNewEmptyActivationCommand command = CreateCommand(
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Disabled,
-                CacheAheadRecoveryRequired: false
-            ),
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
             observationSink
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
         );
 
-        result.Command.Should().Be(DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation);
+        result.Command.Should().Be(DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub);
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
         result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
         result.Mutated.Should().BeTrue();
         result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
-        result.OfflineWriterAdmission.Should().BeNull();
+        result.CacheAheadRecoveryRequired.Should().BeFalse();
 
-        DocumentCacheLifecycleObservation lifecycle = await ReadLifecycleAsync();
-        lifecycle
+        IReadOnlyDictionary<long, long> workRows = await ReadWorkVersionsByDocumentIdAsync();
+        workRows[missingWork.DocumentId].Should().Be(10);
+        workRows[staleWork.DocumentId].Should().Be(20);
+        workRows[aheadWork.DocumentId].Should().Be(30);
+        (await ReadCountAsync("DocumentCache")).Should().Be(0);
+        (await ReadLifecycleAsync())
             .Should()
             .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false));
 
         observationSink
             .AdministrativeCommandSnapshots.Should()
             .Contain(snapshot =>
-                snapshot.Command == DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation
-                && snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.EnterTracking
+                snapshot.Command == DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub
+                && snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
                 && snapshot.Mutated
             );
-        observationSink.EndedAdministrativeCommandIds.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_rejects_nonempty_canonical_state_without_mutation()
+    public async Task It_ignores_canonical_rows_inserted_above_the_captured_boundary()
     {
-        await InsertDocumentAsync(contentVersion: 10);
-        DocumentCacheGuardedNewEmptyActivationCommand command = CreateCommand(
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Disabled,
-                CacheAheadRecoveryRequired: false
-            ),
-            new RecordingObservationSink()
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument existing = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        SourceDocument? insertedAfterBoundary = null;
+        var primitives = new BeforeFirstScrubPagePrimitives(
+            new MssqlDocumentCacheAdministrativePrimitives(),
+            async () =>
+            {
+                insertedAfterBoundary = await InsertDocumentAsync(contentVersion: 99);
+                await SetWorkRequiredContentVersionAsync(insertedAfterBoundary.DocumentId, 1);
+            }
         );
-
-        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
-        );
-
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
-        result
-            .Classification.Should()
-            .Be(DocumentCacheAdministrativeCommandClassification.NonemptyGuardedActivationState);
-        result.Mutated.Should().BeFalse();
-        result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Disabled);
-
-        (await ReadCountAsync("Document")).Should().Be(1);
-        DocumentCacheLifecycleObservation lifecycle = await ReadLifecycleAsync();
-        lifecycle
-            .Should()
-            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Disabled, false));
-    }
-
-    [Test]
-    public async Task It_revalidates_provider_prerequisites_before_tracking_mutation()
-    {
-        DocumentCacheGuardedNewEmptyActivationCommand command = CreateCommand(
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Disabled,
-                CacheAheadRecoveryRequired: false
-            ),
-            new RecordingObservationSink()
-        );
-        await SetReadCommittedSnapshotAsync(_database.DatabaseName, enabled: false);
-
-        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
-        );
-
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
-        result
-            .Classification.Should()
-            .Be(DocumentCacheAdministrativeCommandClassification.ProviderPrerequisiteFailed);
-        result.Mutated.Should().BeFalse();
-
-        DocumentCacheLifecycleObservation lifecycle = await ReadLifecycleAsync();
-        lifecycle
-            .Should()
-            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Disabled, false));
-        (await ReadCountAsync("DocumentCache")).Should().Be(0);
-        (await ReadCountAsync("DocumentProjectionWork")).Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_blocks_racing_canonical_insert_until_after_tracking()
-    {
-        TaskCompletionSource lockAcquired = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource releaseLock = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        DocumentCacheGuardedNewEmptyActivationCommand command = CreateCommand(
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Disabled,
-                CacheAheadRecoveryRequired: false
-            ),
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
             new RecordingObservationSink(),
-            new DelayingGuardedActivationPrimitives(
-                new MssqlDocumentCacheAdministrativePrimitives(),
-                lockAcquired,
-                releaseLock
-            )
+            primitives
         );
 
-        Task<DocumentCacheAdministrativeCommandResult> commandTask = command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
         );
 
-        await lockAcquired.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Task insertTask = InsertDocumentAsync(contentVersion: 20);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Mutated.Should().BeTrue();
+        insertedAfterBoundary.Should().NotBeNull();
 
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(200));
-            insertTask.IsCompleted.Should().BeFalse();
-
-            releaseLock.SetResult();
-
-            DocumentCacheAdministrativeCommandResult result = await commandTask.WaitAsync(
-                TimeSpan.FromSeconds(5)
-            );
-            await insertTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-            result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
-            result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
-            (await ReadCountAsync("DocumentProjectionWork")).Should().Be(1);
-        }
-        finally
-        {
-            releaseLock.TrySetResult();
-        }
+        IReadOnlyDictionary<long, long> workRows = await ReadWorkVersionsByDocumentIdAsync();
+        workRows[existing.DocumentId].Should().Be(10);
+        workRows[insertedAfterBoundary!.DocumentId].Should().Be(1);
     }
 
-    private DocumentCacheGuardedNewEmptyActivationCommand CreateCommand(
+    [Test]
+    public async Task It_sets_the_cache_ahead_latch_and_stops_without_repairing_that_work_row()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        await InsertProjectionWorkAsync(source, requiredContentVersion: 5);
+        await InsertCacheRowAsync(source, cacheContentVersion: 11);
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new RecordingObservationSink()
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().BeTrue();
+        result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
+        result.CacheAheadRecoveryRequired.Should().BeTrue();
+        result
+            .PhaseDiagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SetCacheAheadLatch
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet
+                && diagnostic.AffectedDocumentIds.Contains(source.DocumentId)
+            );
+
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, true));
+        (await ReadWorkVersionsByDocumentIdAsync())[source.DocumentId].Should().Be(5);
+    }
+
+    [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+    [TestCase(DocumentCacheLifecycleState.Resetting, false)]
+    [TestCase(DocumentCacheLifecycleState.Rebuilding, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, true)]
+    public async Task It_rejects_before_scan_when_lifecycle_or_latch_is_not_admitted(
+        DocumentCacheLifecycleState lifecycle,
+        bool cacheAheadRecoveryRequired
+    )
+    {
+        await SetLifecycleAsync(lifecycle, cacheAheadRecoveryRequired);
+        SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        RecordingObservationSink observationSink = new();
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(lifecycle, cacheAheadRecoveryRequired),
+            observationSink
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result.Mutated.Should().BeFalse();
+        result.Lifecycle.Should().Be(lifecycle);
+        result.CacheAheadRecoveryRequired.Should().Be(cacheAheadRecoveryRequired);
+        (await ReadWorkVersionsByDocumentIdAsync()).Should().BeEmpty();
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(lifecycle, cacheAheadRecoveryRequired));
+        observationSink
+            .AdministrativeCommandSnapshots.Should()
+            .NotContain(snapshot =>
+                snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+                || snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
+            );
+        source.DocumentId.Should().BePositive();
+    }
+
+    private DocumentCacheExplicitIntegrityScrubCommand CreateCommand(
         DocumentCacheLifecycleObservation lifecycle,
         RecordingObservationSink observationSink,
         IDocumentCacheAdministrativePrimitives? primitives = null
@@ -248,9 +261,9 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
         var registry = new StubTargetRegistry(
             new DocumentCacheTargetRegistrySnapshot(
                 [EligibleObservation(executionContext)],
-                DateTimeOffset.UtcNow
+                ObservedAtOffset
             ),
-            new DocumentCacheTargetRuntimeSnapshot([executionContext], DateTimeOffset.UtcNow)
+            new DocumentCacheTargetRuntimeSnapshot([executionContext], ObservedAtOffset)
         );
         var runner = new DocumentCacheAdministrativeCommandRunner(
             new StubProjectionSupervisor([runtimeContext]),
@@ -260,11 +273,11 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
             ),
             primitives ?? new MssqlDocumentCacheAdministrativePrimitives(),
             observationSink,
-            new FixedTimeProvider(new DateTimeOffset(ObservedAt)),
+            new FixedTimeProvider(ObservedAtOffset),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 
-        return new DocumentCacheGuardedNewEmptyActivationCommand(runner);
+        return new(runner);
     }
 
     private DocumentCacheTargetExecutionContext ExecutionContext(
@@ -296,7 +309,7 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
         new(
             readAccelerationEnabled: true,
             directFillTimeout: TimeSpan.FromMilliseconds(250),
-            projectorPollInterval: TimeSpan.FromMilliseconds(250),
+            projectorPollInterval: TimeSpan.FromMilliseconds(10),
             projectorPageSize: 3,
             projectorMaxConcurrentTargets: 1,
             projectorFailureBackoff: TimeSpan.FromSeconds(1),
@@ -352,31 +365,149 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
                 new ThrowingDocumentCacheMaterializer(),
                 new ThrowingDocumentCacheWriter()
             ),
-            new DocumentCacheProjectionObservationStore(new FixedTimeProvider(new DateTimeOffset(ObservedAt)))
+            new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ObservedAtOffset))
         );
 
-    private async Task InsertDocumentAsync(long contentVersion)
+    private async Task<SourceDocument> InsertDocumentAsync(long contentVersion)
     {
         short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
-        await _database.ExecuteNonQueryAsync(
+        Guid documentUuid = Guid.NewGuid();
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
             """
+            DECLARE @inserted TABLE ([DocumentId] bigint);
+
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
                 [ContentVersion],
                 [ContentLastModifiedAt]
             )
+            OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
                 @contentVersion,
                 @lastModifiedAt
             );
+
+            SELECT [DocumentId] FROM @inserted;
             """,
-            new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = Guid.NewGuid() },
+            new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = documentUuid },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
             new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = ObservedAt }
+        );
+
+        return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);
+    }
+
+    private Task SetLifecycleAsync(DocumentCacheLifecycleState lifecycle, bool cacheAheadRecoveryRequired) =>
+        _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [dms].[DocumentCacheState]
+            SET
+                [ProjectionLifecycleState] = @lifecycle,
+                [CacheAheadRecoveryRequired] = @cacheAheadRecoveryRequired
+            WHERE [StateId] = 1;
+            """,
+            new SqlParameter("@lifecycle", SqlDbType.VarChar, 32) { Value = lifecycle.ToString() },
+            new SqlParameter("@cacheAheadRecoveryRequired", SqlDbType.Bit)
+            {
+                Value = cacheAheadRecoveryRequired,
+            }
+        );
+
+    private Task ClearProjectionWorkAsync() =>
+        _database.ExecuteNonQueryAsync("""DELETE FROM [dms].[DocumentProjectionWork];""");
+
+    private Task InsertProjectionWorkAsync(SourceDocument source, long requiredContentVersion) =>
+        _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [dms].[DocumentProjectionWork] (
+                [DocumentId],
+                [RequiredContentVersion],
+                [FirstEnqueuedAt],
+                [LastEnqueuedAt]
+            )
+            VALUES (
+                @documentId,
+                @requiredContentVersion,
+                @firstEnqueuedAt,
+                @lastEnqueuedAt
+            );
+            """,
+            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = source.DocumentId },
+            new SqlParameter("@requiredContentVersion", SqlDbType.BigInt) { Value = requiredContentVersion },
+            new SqlParameter("@firstEnqueuedAt", SqlDbType.DateTime2) { Value = FirstEnqueuedAt.UtcDateTime },
+            new SqlParameter("@lastEnqueuedAt", SqlDbType.DateTime2) { Value = ObservedAt }
+        );
+
+    private Task SetWorkRequiredContentVersionAsync(long documentId, long requiredContentVersion) =>
+        _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [dms].[DocumentProjectionWork]
+            SET [RequiredContentVersion] = @requiredContentVersion
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId },
+            new SqlParameter("@requiredContentVersion", SqlDbType.BigInt) { Value = requiredContentVersion }
+        );
+
+    private async Task InsertCacheRowAsync(SourceDocument source, long cacheContentVersion)
+    {
+        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[
+            _fixture.MappingSet.ResourceKeyIdByResource[PersonResource]
+        ];
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [dms].[DocumentCache] (
+                [DocumentId],
+                [DocumentUuid],
+                [ProjectName],
+                [ResourceName],
+                [ResourceVersion],
+                [ContentVersion],
+                [StreamEtag],
+                [LastModifiedAt],
+                [DocumentJson],
+                [ComputedAt]
+            )
+            VALUES (
+                @documentId,
+                @documentUuid,
+                @projectName,
+                @resourceName,
+                @resourceVersion,
+                @contentVersion,
+                @streamEtag,
+                @lastModifiedAt,
+                @documentJson,
+                @computedAt
+            );
+            """,
+            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = source.DocumentId },
+            new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = source.DocumentUuid },
+            new SqlParameter("@projectName", SqlDbType.VarChar, 256)
+            {
+                Value = resourceKey.Resource.ProjectName,
+            },
+            new SqlParameter("@resourceName", SqlDbType.VarChar, 256)
+            {
+                Value = resourceKey.Resource.ResourceName,
+            },
+            new SqlParameter("@resourceVersion", SqlDbType.VarChar, 32)
+            {
+                Value = resourceKey.ResourceVersion,
+            },
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = cacheContentVersion },
+            new SqlParameter("@streamEtag", SqlDbType.VarChar, 64) { Value = $"etag-{cacheContentVersion}" },
+            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = ObservedAt },
+            new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
+            {
+                Value = new JsonObject { ["value"] = $"cache-{source.DocumentId}" }.ToJsonString(),
+            },
+            new SqlParameter("@computedAt", SqlDbType.DateTime2) { Value = ObservedAt.AddMinutes(1) }
         );
     }
 
@@ -394,6 +525,22 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
         return new(
             Enum.Parse<DocumentCacheLifecycleState>((string)row["ProjectionLifecycleState"]!),
             Convert.ToBoolean(row["CacheAheadRecoveryRequired"])
+        );
+    }
+
+    private async Task<IReadOnlyDictionary<long, long>> ReadWorkVersionsByDocumentIdAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            SELECT [DocumentId], [RequiredContentVersion]
+            FROM [dms].[DocumentProjectionWork]
+            ORDER BY [DocumentId];
+            """
+        );
+
+        return rows.ToDictionary(
+            row => Convert.ToInt64(row["DocumentId"]),
+            row => Convert.ToInt64(row["RequiredContentVersion"])
         );
     }
 
@@ -466,9 +613,6 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
         public List<DocumentCacheAdministrativeCommandObservationSnapshot> AdministrativeCommandSnapshots { get; } =
         [];
 
-        public List<DocumentCacheAdministrativeCommandExecutionId> EndedAdministrativeCommandIds { get; } =
-        [];
-
         public void ObserveTarget(DocumentCacheProjectionTargetHealthSnapshot snapshot) => _ = snapshot;
 
         public void EndTargetContext(
@@ -482,15 +626,16 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
         ) => AdministrativeCommandSnapshots.Add(snapshot);
 
         public void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId) =>
-            EndedAdministrativeCommandIds.Add(executionId);
+            _ = executionId;
     }
 
-    private sealed class DelayingGuardedActivationPrimitives(
+    private sealed class BeforeFirstScrubPagePrimitives(
         IDocumentCacheAdministrativePrimitives inner,
-        TaskCompletionSource lockAcquired,
-        TaskCompletionSource releaseLock
+        Func<Task> beforeFirstScrubPage
     ) : IDocumentCacheAdministrativePrimitives
     {
+        private int _called;
+
         public RelationalProviderToken ProviderToken => inner.ProviderToken;
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
@@ -500,17 +645,10 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
             CancellationToken cancellationToken = default
         ) => inner.ReadLifecycleAsync(mutexSession, lockMode, cancellationToken);
 
-        public async Task LockCanonicalDocumentsForGuardedActivationAsync(
+        public Task LockCanonicalDocumentsForGuardedActivationAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
-        )
-        {
-            await inner
-                .LockCanonicalDocumentsForGuardedActivationAsync(mutexSession, cancellationToken)
-                .ConfigureAwait(false);
-            lockAcquired.SetResult();
-            await releaseLock.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
+        ) => inner.LockCanonicalDocumentsForGuardedActivationAsync(mutexSession, cancellationToken);
 
         public Task<DocumentCacheGuardedNewEmptyActivationState> ReadGuardedNewEmptyActivationStateAsync(
             IRelationalWriteSession mutexSession,
@@ -574,11 +712,19 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
             CancellationToken cancellationToken = default
         ) => inner.SeedBaselinePageAsync(mutexSession, request, cancellationToken);
 
-        public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+        public async Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeScrubPageRequest request,
             CancellationToken cancellationToken = default
-        ) => inner.ScrubPageAsync(mutexSession, request, cancellationToken);
+        )
+        {
+            if (Interlocked.Exchange(ref _called, 1) == 0)
+            {
+                await beforeFirstScrubPage().ConfigureAwait(false);
+            }
+
+            return await inner.ScrubPageAsync(mutexSession, request, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private sealed class ThrowingDocumentCacheMaterializer : IDocumentCacheMaterializer
@@ -598,4 +744,6 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
+
+    private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
 }

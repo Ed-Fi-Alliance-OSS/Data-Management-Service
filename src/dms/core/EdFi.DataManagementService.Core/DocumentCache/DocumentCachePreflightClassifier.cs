@@ -125,6 +125,24 @@ public sealed record DocumentCacheOnlineCacheRebuildPreflightFacts
     public string? UnexpectedProviderFailureMessage { get; }
 }
 
+public sealed record DocumentCacheExplicitIntegrityScrubPreflightFacts
+{
+    public DocumentCacheExplicitIntegrityScrubPreflightFacts(
+        DocumentCacheTargetContextGeneration? expectedTargetContextGeneration,
+        string? unexpectedProviderFailureMessage = null
+    )
+    {
+        ExpectedTargetContextGeneration = expectedTargetContextGeneration;
+        UnexpectedProviderFailureMessage = DocumentCachePreflightDiagnosticText.SanitizeNullable(
+            unexpectedProviderFailureMessage
+        );
+    }
+
+    public DocumentCacheTargetContextGeneration? ExpectedTargetContextGeneration { get; }
+
+    public string? UnexpectedProviderFailureMessage { get; }
+}
+
 public sealed record DocumentCacheInternalOnlyCacheAheadRecoveryPreflightFacts
 {
     public DocumentCacheInternalOnlyCacheAheadRecoveryPreflightFacts(
@@ -490,6 +508,57 @@ public static class DocumentCachePreflightClassifier
             request.TargetKey,
             targetObservation!,
             downstreamProof!.DownstreamPublicationStatus
+        );
+    }
+
+    public static DocumentCacheAdministrativeCommandResult ClassifyExplicitIntegrityScrub(
+        DocumentCacheExplicitIntegrityScrubRequest request,
+        DocumentCacheTargetObservation? targetObservation,
+        DocumentCacheExplicitIntegrityScrubPreflightFacts facts
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(facts);
+
+        DocumentCacheAdministrativeCommandResult? commonRejection = ClassifyCommonTargetState(
+            DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+            request.TargetKey,
+            targetObservation,
+            facts.ExpectedTargetContextGeneration,
+            facts.UnexpectedProviderFailureMessage
+        );
+        if (commonRejection is not null)
+        {
+            return commonRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? lifecycleRejection = ClassifyRequiredLifecycle(
+            DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+            request.TargetKey,
+            targetObservation!,
+            requiredLifecycle: DocumentCacheLifecycleState.Tracking,
+            rejectCacheAheadLatch: true
+        );
+        if (lifecycleRejection is not null)
+        {
+            return lifecycleRejection;
+        }
+
+        DocumentCacheAdministrativeCommandResult? expectedSourceRejection = ClassifyExpectedSource(
+            DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+            request.TargetKey,
+            targetObservation!,
+            request.ExpectedPhysicalSourceFingerprint
+        );
+        if (expectedSourceRejection is not null)
+        {
+            return expectedSourceRejection;
+        }
+
+        return Eligible(
+            DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+            request.TargetKey,
+            targetObservation!
         );
     }
 

@@ -152,4 +152,16 @@ internal sealed class MssqlDocumentCacheAdministrativePrimitives : IDocumentCach
             request,
             cancellationToken
         );
+
+    public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeScrubPageRequest request,
+        CancellationToken cancellationToken = default
+    ) =>
+        DocumentCacheAdministrativePrimitivesSupport.ScrubPageAsync(
+            mutexSession,
+            Commands,
+            request,
+            cancellationToken
+        );
 }

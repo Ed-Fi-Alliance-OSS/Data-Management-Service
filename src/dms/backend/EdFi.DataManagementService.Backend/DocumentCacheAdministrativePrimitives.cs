@@ -635,6 +635,310 @@ internal sealed record DocumentCacheAdministrativeBaselineSeedPageResult
     public string Message { get; }
 }
 
+internal sealed record DocumentCacheAdministrativeScrubPageRequest
+{
+    public DocumentCacheAdministrativeScrubPageRequest(
+        long boundaryDocumentId,
+        long afterDocumentId,
+        int pageSize
+    )
+    {
+        if (boundaryDocumentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(boundaryDocumentId),
+                boundaryDocumentId,
+                "Scrub boundary document id must be positive."
+            );
+        }
+
+        if (afterDocumentId < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(afterDocumentId),
+                afterDocumentId,
+                "Scrub cursor document id cannot be negative."
+            );
+        }
+
+        if (afterDocumentId >= boundaryDocumentId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(afterDocumentId),
+                afterDocumentId,
+                "Scrub cursor document id must be below the captured boundary."
+            );
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pageSize),
+                pageSize,
+                "Scrub page size must be positive."
+            );
+        }
+
+        BoundaryDocumentId = boundaryDocumentId;
+        AfterDocumentId = afterDocumentId;
+        PageSize = pageSize;
+    }
+
+    public long BoundaryDocumentId { get; }
+
+    public long AfterDocumentId { get; }
+
+    public int PageSize { get; }
+}
+
+internal enum DocumentCacheAdministrativeScrubMutationKind
+{
+    None = 1,
+    Inserted = 2,
+    Advanced = 3,
+    Lowered = 4,
+    CacheAheadLatchSet = 5,
+    Retry = 6,
+}
+
+internal sealed record DocumentCacheAdministrativeScrubbedDocument
+{
+    public DocumentCacheAdministrativeScrubbedDocument(
+        long documentId,
+        long sourceContentVersion,
+        long? cacheContentVersion,
+        long? previousRequiredContentVersion,
+        DocumentCacheAdministrativeScrubMutationKind mutationKind
+    )
+    {
+        if (documentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(documentId),
+                documentId,
+                "Scrub document id must be positive."
+            );
+        }
+
+        if (sourceContentVersion < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sourceContentVersion),
+                sourceContentVersion,
+                "Source content version cannot be negative."
+            );
+        }
+
+        if (cacheContentVersion is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(cacheContentVersion),
+                cacheContentVersion,
+                "Cache content version cannot be negative."
+            );
+        }
+
+        if (previousRequiredContentVersion is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(previousRequiredContentVersion),
+                previousRequiredContentVersion,
+                "Previous required content version cannot be negative."
+            );
+        }
+
+        if (!Enum.IsDefined(mutationKind))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mutationKind),
+                mutationKind,
+                "Unsupported scrub mutation kind."
+            );
+        }
+
+        DocumentId = documentId;
+        SourceContentVersion = sourceContentVersion;
+        CacheContentVersion = cacheContentVersion;
+        PreviousRequiredContentVersion = previousRequiredContentVersion;
+        MutationKind = mutationKind;
+    }
+
+    public long DocumentId { get; }
+
+    public long SourceContentVersion { get; }
+
+    public long? CacheContentVersion { get; }
+
+    public long? PreviousRequiredContentVersion { get; }
+
+    public DocumentCacheAdministrativeScrubMutationKind MutationKind { get; }
+
+    public bool WorkMutated =>
+        MutationKind
+            is DocumentCacheAdministrativeScrubMutationKind.Inserted
+                or DocumentCacheAdministrativeScrubMutationKind.Advanced
+                or DocumentCacheAdministrativeScrubMutationKind.Lowered;
+
+    public bool LatchSet => MutationKind == DocumentCacheAdministrativeScrubMutationKind.CacheAheadLatchSet;
+
+    public bool RequiresRetry => MutationKind == DocumentCacheAdministrativeScrubMutationKind.Retry;
+
+    public bool Mutated => WorkMutated || LatchSet;
+}
+
+internal enum DocumentCacheAdministrativeScrubPageStatus
+{
+    PageScrubbed = 1,
+    Empty = 2,
+    CacheAheadLatched = 3,
+    RetryFromLastCommittedKey = 4,
+}
+
+internal sealed record DocumentCacheAdministrativeScrubPageResult
+{
+    public DocumentCacheAdministrativeScrubPageResult(
+        DocumentCacheAdministrativeScrubPageStatus status,
+        long boundaryDocumentId,
+        long afterDocumentId,
+        int pageSize,
+        ImmutableArray<DocumentCacheAdministrativeScrubbedDocument> documents,
+        string message
+    )
+    {
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported scrub page status.");
+        }
+
+        if (boundaryDocumentId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(boundaryDocumentId),
+                boundaryDocumentId,
+                "Scrub boundary document id must be positive."
+            );
+        }
+
+        if (afterDocumentId < 0 || afterDocumentId >= boundaryDocumentId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(afterDocumentId),
+                afterDocumentId,
+                "Scrub cursor document id must be non-negative and below the captured boundary."
+            );
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pageSize),
+                pageSize,
+                "Scrub page size must be positive."
+            );
+        }
+
+        ImmutableArray<DocumentCacheAdministrativeScrubbedDocument> materializedDocuments =
+            documents.IsDefault ? [] : documents;
+
+        if (materializedDocuments.Length > pageSize)
+        {
+            throw new ArgumentException("Scrub page cannot contain more rows than PageSize.");
+        }
+
+        if (
+            materializedDocuments.Any(document =>
+                document.DocumentId <= afterDocumentId || document.DocumentId > boundaryDocumentId
+            )
+        )
+        {
+            throw new ArgumentException(
+                "Scrub page documents must be within the requested keyset boundary.",
+                nameof(documents)
+            );
+        }
+
+        if (
+            !materializedDocuments
+                .Select(document => document.DocumentId)
+                .Order()
+                .SequenceEqual(materializedDocuments.Select(document => document.DocumentId))
+        )
+        {
+            throw new ArgumentException(
+                "Scrub page documents must be ordered by DocumentId.",
+                nameof(documents)
+            );
+        }
+
+        if (status == DocumentCacheAdministrativeScrubPageStatus.Empty && !materializedDocuments.IsEmpty)
+        {
+            throw new ArgumentException("Empty scrub page results cannot contain documents.");
+        }
+
+        if (
+            status == DocumentCacheAdministrativeScrubPageStatus.PageScrubbed
+            && materializedDocuments.Any(document => document.RequiresRetry || document.LatchSet)
+        )
+        {
+            throw new ArgumentException("Scrubbed page results cannot contain retry or latch-set documents.");
+        }
+
+        if (
+            status == DocumentCacheAdministrativeScrubPageStatus.CacheAheadLatched
+            && !materializedDocuments.Any(document => document.LatchSet)
+        )
+        {
+            throw new ArgumentException("Cache-ahead scrub page results require a latch-set document.");
+        }
+
+        if (
+            status == DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey
+            && !materializedDocuments.Any(document => document.RequiresRetry)
+        )
+        {
+            throw new ArgumentException("Retry scrub page results require a retry document.");
+        }
+
+        Status = status;
+        BoundaryDocumentId = boundaryDocumentId;
+        AfterDocumentId = afterDocumentId;
+        PageSize = pageSize;
+        Documents = materializedDocuments;
+        Message = DocumentCacheAdministrativePrimitiveText.Sanitize(message);
+    }
+
+    public DocumentCacheAdministrativeScrubPageStatus Status { get; }
+
+    public long BoundaryDocumentId { get; }
+
+    public long AfterDocumentId { get; }
+
+    public int PageSize { get; }
+
+    public ImmutableArray<DocumentCacheAdministrativeScrubbedDocument> Documents { get; }
+
+    public int RowsVisited => Documents.Length;
+
+    public int WorkMutationCount => Documents.Count(document => document.WorkMutated);
+
+    public bool LatchSet => Documents.Any(document => document.LatchSet);
+
+    public bool Mutated => Documents.Any(document => document.Mutated);
+
+    public bool FilledPage => RowsVisited == PageSize;
+
+    public long? LastVisitedDocumentId => Documents.IsEmpty ? null : Documents[^1].DocumentId;
+
+    public ImmutableArray<long> AffectedDocumentIds =>
+        Documents
+            .Where(document => document.Mutated || document.RequiresRetry)
+            .Select(document => document.DocumentId)
+            .Take(PageSize)
+            .ToImmutableArray();
+
+    public string Message { get; }
+}
+
 internal sealed record DocumentCacheAdministrativeWorkClearance
 {
     private DocumentCacheAdministrativeWorkClearance(
@@ -776,6 +1080,12 @@ internal interface IDocumentCacheAdministrativePrimitives
         DocumentCacheAdministrativeBaselineSeedPageRequest request,
         CancellationToken cancellationToken = default
     );
+
+    Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativeScrubPageRequest request,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed record DocumentCacheAdministrativePrimitiveCommands
@@ -793,6 +1103,7 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
         string captureBaselineBoundaryCommandText,
         string observeWorkHighWaterCommandText,
         string seedBaselinePageCommandText,
+        string scrubPageCommandText,
         string? activationPrerequisiteCommandText,
         DocumentCacheLifecycleReaderQuery lifecycleReaderQuery
     )
@@ -842,6 +1153,7 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
             seedBaselinePageCommandText,
             nameof(seedBaselinePageCommandText)
         );
+        ScrubPageCommandText = RequireCommandText(scrubPageCommandText, nameof(scrubPageCommandText));
         ActivationPrerequisiteCommandText = activationPrerequisiteCommandText;
         LifecycleReaderQuery =
             lifecycleReaderQuery ?? throw new ArgumentNullException(nameof(lifecycleReaderQuery));
@@ -870,6 +1182,8 @@ internal sealed record DocumentCacheAdministrativePrimitiveCommands
     public string ObserveWorkHighWaterCommandText { get; }
 
     public string SeedBaselinePageCommandText { get; }
+
+    public string ScrubPageCommandText { get; }
 
     public string? ActivationPrerequisiteCommandText { get; }
 
@@ -902,6 +1216,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
     private const string ClearedDocumentIdColumnName = "DocumentId";
     private const string BoundaryDocumentIdColumnName = "BoundaryDocumentId";
     private const string SourceContentVersionColumnName = "SourceContentVersion";
+    private const string CacheContentVersionColumnName = "CacheContentVersion";
     private const string PreviousRequiredContentVersionColumnName = "PreviousRequiredContentVersion";
     private const string MutationKindColumnName = "MutationKind";
     private const string ReadCommittedSnapshotColumnName = "ReadCommittedSnapshot";
@@ -1360,6 +1675,83 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
         );
     }
 
+    public static async Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+        IRelationalWriteSession mutexSession,
+        DocumentCacheAdministrativePrimitiveCommands commands,
+        DocumentCacheAdministrativeScrubPageRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mutexSession);
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(request);
+
+        ImmutableArray<DocumentCacheAdministrativeScrubbedDocument>.Builder documents =
+            ImmutableArray.CreateBuilder<DocumentCacheAdministrativeScrubbedDocument>(request.PageSize);
+
+        await mutexSession
+            .CreateCommandExecutor()
+            .ExecuteReaderAsync(
+                new RelationalCommand(
+                    commands.ScrubPageCommandText,
+                    [
+                        new RelationalParameter("@boundaryDocumentId", request.BoundaryDocumentId),
+                        new RelationalParameter("@afterDocumentId", request.AfterDocumentId),
+                        new RelationalParameter("@pageSize", request.PageSize),
+                    ]
+                ),
+                async (reader, readerCancellationToken) =>
+                {
+                    while (await reader.ReadAsync(readerCancellationToken).ConfigureAwait(false))
+                    {
+                        documents.Add(
+                            new DocumentCacheAdministrativeScrubbedDocument(
+                                ReadRequiredInt64(reader, ClearedDocumentIdColumnName),
+                                ReadRequiredInt64(reader, SourceContentVersionColumnName),
+                                ReadOptionalInt64(reader, CacheContentVersionColumnName),
+                                ReadOptionalInt64(reader, PreviousRequiredContentVersionColumnName),
+                                ReadScrubMutationKind(reader)
+                            )
+                        );
+                    }
+
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        ImmutableArray<DocumentCacheAdministrativeScrubbedDocument> scrubbedDocuments =
+            documents.ToImmutable();
+        DocumentCacheAdministrativeScrubPageStatus status = scrubbedDocuments switch
+        {
+            { IsEmpty: true } => DocumentCacheAdministrativeScrubPageStatus.Empty,
+            _ when scrubbedDocuments.Any(document => document.LatchSet) =>
+                DocumentCacheAdministrativeScrubPageStatus.CacheAheadLatched,
+            _ when scrubbedDocuments.Any(document => document.RequiresRetry) =>
+                DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey,
+            _ => DocumentCacheAdministrativeScrubPageStatus.PageScrubbed,
+        };
+
+        return new DocumentCacheAdministrativeScrubPageResult(
+            status,
+            request.BoundaryDocumentId,
+            request.AfterDocumentId,
+            request.PageSize,
+            scrubbedDocuments,
+            status switch
+            {
+                DocumentCacheAdministrativeScrubPageStatus.Empty =>
+                    "DocumentCache explicit scrub page found no canonical rows.",
+                DocumentCacheAdministrativeScrubPageStatus.CacheAheadLatched =>
+                    "DocumentCache explicit scrub confirmed cache-ahead state and set the recovery latch.",
+                DocumentCacheAdministrativeScrubPageStatus.RetryFromLastCommittedKey =>
+                    "DocumentCache explicit scrub page was invalidated by a concurrent change.",
+                _ => "DocumentCache explicit scrub page completed.",
+            }
+        );
+    }
+
     private static async Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
         IRelationalCommandExecutor executor,
         DocumentCacheAdministrativePrimitiveCommands commands,
@@ -1617,6 +2009,24 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             : throw new InvalidOperationException($"Unsupported baseline mutation kind '{mutationKind}'.");
     }
 
+    private static DocumentCacheAdministrativeScrubMutationKind ReadScrubMutationKind(
+        IRelationalCommandReader reader
+    )
+    {
+        string mutationKind =
+            ReadOptionalString(reader, MutationKindColumnName)
+            ?? throw new InvalidOperationException("Required scrub mutation kind was null.");
+
+        return
+            Enum.TryParse(
+                mutationKind,
+                ignoreCase: false,
+                out DocumentCacheAdministrativeScrubMutationKind parsed
+            ) && Enum.IsDefined(parsed)
+            ? parsed
+            : throw new InvalidOperationException($"Unsupported scrub mutation kind '{mutationKind}'.");
+    }
+
     private static long ReadRequiredInt64(IRelationalCommandReader reader, string columnName)
     {
         int ordinal = reader.GetOrdinal(columnName);
@@ -1714,6 +2124,7 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
             RenderCaptureBaselineBoundaryCommandText(dialect),
             RenderObserveWorkHighWaterCommandText(dialect),
             RenderSeedBaselinePageCommandText(dialect),
+            RenderScrubPageCommandText(dialect),
             dialect == SqlDialect.Mssql ? RenderSqlServerActivationPrerequisiteCommandText() : null,
             new DocumentCacheLifecycleReaderQuery(
                 ExistsCommandText: string.Empty,
@@ -2142,6 +2553,285 @@ internal static class DocumentCacheAdministrativePrimitivesSupport
                 LEFT JOIN {documentTable} AS current_source WITH (HOLDLOCK)
                   ON current_source.{documentIdColumn} = observed.[DocumentId]
                  AND current_source.{contentVersionColumn} = observed.[SourceContentVersion]
+                LEFT JOIN {workTable} AS current_work WITH (HOLDLOCK)
+                  ON current_work.{documentIdColumn} = observed.[DocumentId]
+                ORDER BY observed.[DocumentId];
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+    }
+
+    private static string RenderScrubPageCommandText(SqlDialect dialect)
+    {
+        string documentTable = Quote(DocumentCacheInventoryDefinition.Document, dialect);
+        string cacheTable = Quote(DocumentCacheInventoryDefinition.DocumentCache, dialect);
+        string stateTable = Quote(DocumentCacheInventoryDefinition.DocumentCacheState, dialect);
+        string workTable = Quote(DocumentCacheInventoryDefinition.DocumentProjectionWork, dialect);
+        string documentIdColumn = Quote(DocumentCacheInventoryDefinition.DocumentColumns.DocumentId, dialect);
+        string sourceContentVersionPhysicalColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentColumns.ContentVersion,
+            dialect
+        );
+        string cacheContentVersionPhysicalColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentCacheColumns.ContentVersion,
+            dialect
+        );
+        string stateIdColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentCacheStateColumns.StateId,
+            dialect
+        );
+        string lifecycleColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentCacheStateColumns.ProjectionLifecycleState,
+            dialect
+        );
+        string cacheAheadRecoveryRequiredColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentCacheStateColumns.CacheAheadRecoveryRequired,
+            dialect
+        );
+        string workRequiredContentVersionColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.RequiredContentVersion,
+            dialect
+        );
+        string firstEnqueuedAtColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.FirstEnqueuedAt,
+            dialect
+        );
+        string lastEnqueuedAtColumn = Quote(
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.LastEnqueuedAt,
+            dialect
+        );
+        string resultDocumentIdColumn = Quote(new DbColumnName(ClearedDocumentIdColumnName), dialect);
+        string sourceContentVersionColumn = Quote(new DbColumnName(SourceContentVersionColumnName), dialect);
+        string cacheContentVersionColumn = Quote(new DbColumnName(CacheContentVersionColumnName), dialect);
+        string previousRequiredContentVersionColumn = Quote(
+            new DbColumnName(PreviousRequiredContentVersionColumnName),
+            dialect
+        );
+        string mutationKindColumn = Quote(new DbColumnName(MutationKindColumnName), dialect);
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $"""
+                WITH bounded_source AS (
+                    SELECT source.{documentIdColumn}, source.{sourceContentVersionPhysicalColumn}
+                    FROM {documentTable} AS source
+                    WHERE source.{documentIdColumn} > @afterDocumentId
+                      AND source.{documentIdColumn} <= @boundaryDocumentId
+                    ORDER BY source.{documentIdColumn}
+                    LIMIT @pageSize
+                    FOR SHARE
+                ),
+                observed AS (
+                    SELECT
+                        bounded_source.{documentIdColumn},
+                        bounded_source.{sourceContentVersionPhysicalColumn} AS {sourceContentVersionColumn},
+                        cache.{cacheContentVersionPhysicalColumn} AS {cacheContentVersionColumn},
+                        work.{workRequiredContentVersionColumn} AS {previousRequiredContentVersionColumn}
+                    FROM bounded_source
+                    LEFT JOIN {cacheTable} AS cache
+                      ON cache.{documentIdColumn} = bounded_source.{documentIdColumn}
+                    LEFT JOIN {workTable} AS work
+                      ON work.{documentIdColumn} = bounded_source.{documentIdColumn}
+                ),
+                cache_ahead AS (
+                    SELECT observed.{documentIdColumn}
+                    FROM observed
+                    WHERE observed.{cacheContentVersionColumn} > observed.{sourceContentVersionColumn}
+                    ORDER BY observed.{documentIdColumn}
+                ),
+                latched AS (
+                    UPDATE {stateTable}
+                    SET {cacheAheadRecoveryRequiredColumn} = TRUE
+                    WHERE {stateIdColumn} = 1
+                      AND {lifecycleColumn} = 'Tracking'
+                      AND {cacheAheadRecoveryRequiredColumn} = FALSE
+                      AND EXISTS (SELECT 1 FROM cache_ahead)
+                    RETURNING {stateIdColumn}
+                ),
+                upserted AS (
+                    INSERT INTO {workTable} AS work (
+                        {documentIdColumn},
+                        {workRequiredContentVersionColumn},
+                        {firstEnqueuedAtColumn},
+                        {lastEnqueuedAtColumn}
+                    )
+                    SELECT
+                        observed.{documentIdColumn},
+                        observed.{sourceContentVersionColumn},
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    FROM observed
+                    WHERE NOT EXISTS (SELECT 1 FROM cache_ahead)
+                    ON CONFLICT ({documentIdColumn}) DO UPDATE
+                    SET {workRequiredContentVersionColumn} = EXCLUDED.{workRequiredContentVersionColumn},
+                        {lastEnqueuedAtColumn} = CASE
+                            WHEN work.{workRequiredContentVersionColumn} < EXCLUDED.{workRequiredContentVersionColumn}
+                                THEN EXCLUDED.{lastEnqueuedAtColumn}
+                            ELSE work.{lastEnqueuedAtColumn}
+                        END
+                    WHERE (
+                        SELECT candidate.{previousRequiredContentVersionColumn} IS NOT NULL
+                          AND work.{workRequiredContentVersionColumn} = candidate.{previousRequiredContentVersionColumn}
+                          AND work.{workRequiredContentVersionColumn} <> EXCLUDED.{workRequiredContentVersionColumn}
+                        FROM observed AS candidate
+                        WHERE candidate.{documentIdColumn} = work.{documentIdColumn}
+                    )
+                    RETURNING work.{documentIdColumn}
+                )
+                SELECT
+                    observed.{documentIdColumn} AS {resultDocumentIdColumn},
+                    observed.{sourceContentVersionColumn},
+                    observed.{cacheContentVersionColumn},
+                    observed.{previousRequiredContentVersionColumn},
+                    CASE
+                        WHEN cache_ahead.{documentIdColumn} IS NOT NULL AND EXISTS (SELECT 1 FROM latched) THEN 'CacheAheadLatchSet'
+                        WHEN cache_ahead.{documentIdColumn} IS NOT NULL THEN 'Retry'
+                        WHEN EXISTS (SELECT 1 FROM cache_ahead) THEN 'None'
+                        WHEN upserted.{documentIdColumn} IS NULL
+                             AND observed.{previousRequiredContentVersionColumn} IS DISTINCT FROM observed.{sourceContentVersionColumn} THEN 'Retry'
+                        WHEN upserted.{documentIdColumn} IS NULL THEN 'None'
+                        WHEN observed.{previousRequiredContentVersionColumn} IS NULL THEN 'Inserted'
+                        WHEN observed.{previousRequiredContentVersionColumn} < observed.{sourceContentVersionColumn} THEN 'Advanced'
+                        WHEN observed.{previousRequiredContentVersionColumn} > observed.{sourceContentVersionColumn} THEN 'Lowered'
+                        ELSE 'None'
+                    END AS {mutationKindColumn}
+                FROM observed
+                LEFT JOIN cache_ahead
+                  ON cache_ahead.{documentIdColumn} = observed.{documentIdColumn}
+                LEFT JOIN upserted
+                  ON upserted.{documentIdColumn} = observed.{documentIdColumn}
+                ORDER BY observed.{documentIdColumn};
+                """,
+            SqlDialect.Mssql => $"""
+                DECLARE @observed table (
+                    [DocumentId] bigint NOT NULL PRIMARY KEY,
+                    [SourceContentVersion] bigint NOT NULL,
+                    [CacheContentVersion] bigint NULL,
+                    [PreviousRequiredContentVersion] bigint NULL
+                );
+                DECLARE @cacheAhead table (
+                    [DocumentId] bigint NOT NULL PRIMARY KEY
+                );
+                DECLARE @mutated table (
+                    [DocumentId] bigint NOT NULL PRIMARY KEY
+                );
+                DECLARE @now datetimeoffset = SYSUTCDATETIME();
+                DECLARE @cacheAheadObserved bit = 0;
+                DECLARE @latchSet bit = 0;
+
+                INSERT INTO @observed (
+                    [DocumentId],
+                    [SourceContentVersion],
+                    [CacheContentVersion],
+                    [PreviousRequiredContentVersion]
+                )
+                SELECT TOP (@pageSize)
+                    source.{documentIdColumn},
+                    source.{sourceContentVersionPhysicalColumn},
+                    cache.{cacheContentVersionPhysicalColumn},
+                    work.{workRequiredContentVersionColumn}
+                FROM {documentTable} AS source WITH (HOLDLOCK)
+                LEFT JOIN {cacheTable} AS cache WITH (HOLDLOCK)
+                  ON cache.{documentIdColumn} = source.{documentIdColumn}
+                LEFT JOIN {workTable} AS work WITH (UPDLOCK, HOLDLOCK)
+                  ON work.{documentIdColumn} = source.{documentIdColumn}
+                WHERE source.{documentIdColumn} > @afterDocumentId
+                  AND source.{documentIdColumn} <= @boundaryDocumentId
+                ORDER BY source.{documentIdColumn};
+
+                INSERT INTO @cacheAhead ([DocumentId])
+                SELECT observed.[DocumentId]
+                FROM @observed AS observed
+                WHERE observed.[CacheContentVersion] > observed.[SourceContentVersion];
+
+                IF EXISTS (SELECT 1 FROM @cacheAhead)
+                BEGIN
+                    SET @cacheAheadObserved = 1;
+
+                    UPDATE {stateTable} WITH (XLOCK, HOLDLOCK)
+                    SET {cacheAheadRecoveryRequiredColumn} = 1
+                    WHERE {stateIdColumn} = 1
+                      AND {lifecycleColumn} = 'Tracking'
+                      AND {cacheAheadRecoveryRequiredColumn} = 0;
+
+                    IF @@ROWCOUNT = 1
+                    BEGIN
+                        SET @latchSet = 1;
+                    END
+                END
+
+                IF @cacheAheadObserved = 0
+                BEGIN
+                    UPDATE work
+                    SET {workRequiredContentVersionColumn} = observed.[SourceContentVersion],
+                        {lastEnqueuedAtColumn} = CASE
+                            WHEN work.{workRequiredContentVersionColumn} < observed.[SourceContentVersion]
+                                THEN @now
+                            ELSE work.{lastEnqueuedAtColumn}
+                        END
+                    OUTPUT inserted.{documentIdColumn} INTO @mutated ([DocumentId])
+                    FROM {workTable} AS work
+                    INNER JOIN @observed AS observed
+                      ON observed.[DocumentId] = work.{documentIdColumn}
+                    INNER JOIN {documentTable} AS source WITH (HOLDLOCK)
+                      ON source.{documentIdColumn} = observed.[DocumentId]
+                     AND source.{sourceContentVersionPhysicalColumn} = observed.[SourceContentVersion]
+                    WHERE observed.[PreviousRequiredContentVersion] IS NOT NULL
+                      AND work.{workRequiredContentVersionColumn} = observed.[PreviousRequiredContentVersion]
+                      AND work.{workRequiredContentVersionColumn} <> observed.[SourceContentVersion];
+
+                    INSERT INTO {workTable} (
+                        {documentIdColumn},
+                        {workRequiredContentVersionColumn},
+                        {firstEnqueuedAtColumn},
+                        {lastEnqueuedAtColumn}
+                    )
+                    OUTPUT inserted.{documentIdColumn} INTO @mutated ([DocumentId])
+                    SELECT
+                        observed.[DocumentId],
+                        observed.[SourceContentVersion],
+                        @now,
+                        @now
+                    FROM @observed AS observed
+                    INNER JOIN {documentTable} AS source WITH (HOLDLOCK)
+                      ON source.{documentIdColumn} = observed.[DocumentId]
+                     AND source.{sourceContentVersionPhysicalColumn} = observed.[SourceContentVersion]
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM {workTable} AS work WITH (UPDLOCK, HOLDLOCK)
+                        WHERE work.{documentIdColumn} = observed.[DocumentId]
+                    );
+                END
+
+                SELECT
+                    observed.[DocumentId] AS {resultDocumentIdColumn},
+                    observed.[SourceContentVersion] AS {sourceContentVersionColumn},
+                    observed.[CacheContentVersion] AS {cacheContentVersionColumn},
+                    observed.[PreviousRequiredContentVersion] AS {previousRequiredContentVersionColumn},
+                    CASE
+                        WHEN cache_ahead.[DocumentId] IS NOT NULL AND @latchSet = 1 THEN 'CacheAheadLatchSet'
+                        WHEN cache_ahead.[DocumentId] IS NOT NULL THEN 'Retry'
+                        WHEN @cacheAheadObserved = 1 THEN 'None'
+                        WHEN current_source.{documentIdColumn} IS NULL THEN 'Retry'
+                        WHEN mutated.[DocumentId] IS NOT NULL THEN
+                            CASE
+                                WHEN observed.[PreviousRequiredContentVersion] IS NULL THEN 'Inserted'
+                                WHEN observed.[PreviousRequiredContentVersion] < observed.[SourceContentVersion] THEN 'Advanced'
+                                WHEN observed.[PreviousRequiredContentVersion] > observed.[SourceContentVersion] THEN 'Lowered'
+                                ELSE 'None'
+                            END
+                        WHEN observed.[PreviousRequiredContentVersion] = observed.[SourceContentVersion]
+                             AND current_work.{workRequiredContentVersionColumn} = observed.[SourceContentVersion] THEN 'None'
+                        ELSE 'Retry'
+                    END AS {mutationKindColumn}
+                FROM @observed AS observed
+                LEFT JOIN @cacheAhead AS cache_ahead
+                  ON cache_ahead.[DocumentId] = observed.[DocumentId]
+                LEFT JOIN @mutated AS mutated
+                  ON mutated.[DocumentId] = observed.[DocumentId]
+                LEFT JOIN {documentTable} AS current_source WITH (HOLDLOCK)
+                  ON current_source.{documentIdColumn} = observed.[DocumentId]
+                 AND current_source.{sourceContentVersionPhysicalColumn} = observed.[SourceContentVersion]
                 LEFT JOIN {workTable} AS current_work WITH (HOLDLOCK)
                   ON current_work.{documentIdColumn} = observed.[DocumentId]
                 ORDER BY observed.[DocumentId];

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
@@ -21,13 +22,14 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[Category("GuardedNewEmptyActivation")]
-public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
+[Category("ExplicitIntegrityScrub")]
+public class Given_A_Postgresql_DocumentCacheExplicitIntegrityScrub_Command
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
 
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset FirstEnqueuedAt = ObservedAt.AddMinutes(-5);
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
@@ -46,7 +48,7 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _baseline = await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(
-            $"{nameof(Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command)}:{_fixture.MappingSet.Key.EffectiveSchemaHash}",
+            $"{nameof(Given_A_Postgresql_DocumentCacheExplicitIntegrityScrub_Command)}:{_fixture.MappingSet.Key.EffectiveSchemaHash}",
             _fixture.GeneratedDdl
         );
     }
@@ -79,127 +81,161 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
     }
 
     [Test]
-    public async Task It_transitions_empty_disabled_state_to_tracking_through_the_command_runner()
+    public async Task It_repairs_missing_and_mismatched_work_without_changing_lifecycle_or_cache()
     {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument missingWork = await InsertDocumentAsync(contentVersion: 10);
+        SourceDocument staleWork = await InsertDocumentAsync(contentVersion: 20);
+        SourceDocument aheadWork = await InsertDocumentAsync(contentVersion: 30);
+        await ClearProjectionWorkAsync();
+        await InsertProjectionWorkAsync(staleWork, requiredContentVersion: 15);
+        await InsertProjectionWorkAsync(aheadWork, requiredContentVersion: 35);
         RecordingObservationSink observationSink = new();
-        DocumentCacheGuardedNewEmptyActivationCommand command = CreateCommand(
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Disabled,
-                CacheAheadRecoveryRequired: false
-            ),
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
             observationSink
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
         );
 
-        result.Command.Should().Be(DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation);
+        result.Command.Should().Be(DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub);
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
         result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
         result.Mutated.Should().BeTrue();
         result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
-        result.OfflineWriterAdmission.Should().BeNull();
+        result.CacheAheadRecoveryRequired.Should().BeFalse();
 
-        DocumentCacheLifecycleObservation lifecycle = await ReadLifecycleAsync();
-        lifecycle
+        IReadOnlyDictionary<long, long> workRows = await ReadWorkVersionsByDocumentIdAsync();
+        workRows[missingWork.DocumentId].Should().Be(10);
+        workRows[staleWork.DocumentId].Should().Be(20);
+        workRows[aheadWork.DocumentId].Should().Be(30);
+        (await ReadCountAsync("DocumentCache")).Should().Be(0);
+        (await ReadLifecycleAsync())
             .Should()
             .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false));
 
         observationSink
             .AdministrativeCommandSnapshots.Should()
             .Contain(snapshot =>
-                snapshot.Command == DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation
-                && snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.EnterTracking
+                snapshot.Command == DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub
+                && snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
                 && snapshot.Mutated
             );
-        observationSink.EndedAdministrativeCommandIds.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_rejects_nonempty_canonical_state_without_mutation()
+    public async Task It_ignores_canonical_rows_inserted_above_the_captured_boundary()
     {
-        await InsertDocumentAsync(contentVersion: 10);
-        DocumentCacheGuardedNewEmptyActivationCommand command = CreateCommand(
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Disabled,
-                CacheAheadRecoveryRequired: false
-            ),
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument existing = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        SourceDocument? insertedAfterBoundary = null;
+        var primitives = new BeforeFirstScrubPagePrimitives(
+            new PostgresqlDocumentCacheAdministrativePrimitives(),
+            async () =>
+            {
+                insertedAfterBoundary = await InsertDocumentAsync(contentVersion: 99);
+                await SetWorkRequiredContentVersionAsync(insertedAfterBoundary.DocumentId, 1);
+            }
+        );
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new RecordingObservationSink(),
+            primitives
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Mutated.Should().BeTrue();
+        insertedAfterBoundary.Should().NotBeNull();
+
+        IReadOnlyDictionary<long, long> workRows = await ReadWorkVersionsByDocumentIdAsync();
+        workRows[existing.DocumentId].Should().Be(10);
+        workRows[insertedAfterBoundary!.DocumentId].Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_sets_the_cache_ahead_latch_and_stops_without_repairing_that_work_row()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        await InsertProjectionWorkAsync(source, requiredContentVersion: 5);
+        await InsertCacheRowAsync(source, cacheContentVersion: 11);
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
             new RecordingObservationSink()
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
-        result
-            .Classification.Should()
-            .Be(DocumentCacheAdministrativeCommandClassification.NonemptyGuardedActivationState);
-        result.Mutated.Should().BeFalse();
-        result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Disabled);
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        result.Mutated.Should().BeTrue();
+        result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
+        result.CacheAheadRecoveryRequired.Should().BeTrue();
         result
             .PhaseDiagnostics.Should()
             .Contain(diagnostic =>
-                diagnostic.DiagnosticCategory
-                == DocumentCacheAdministrativeDiagnosticCategory.NonemptyGuardedActivationState
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.SetCacheAheadLatch
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet
+                && diagnostic.AffectedDocumentIds.Contains(source.DocumentId)
             );
 
-        (await ReadCountAsync("Document")).Should().Be(1);
-        DocumentCacheLifecycleObservation lifecycle = await ReadLifecycleAsync();
-        lifecycle
+        (await ReadLifecycleAsync())
             .Should()
-            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Disabled, false));
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, true));
+        (await ReadWorkVersionsByDocumentIdAsync())[source.DocumentId].Should().Be(5);
     }
 
-    [Test]
-    public async Task It_blocks_racing_canonical_insert_until_after_tracking()
+    [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+    [TestCase(DocumentCacheLifecycleState.Resetting, false)]
+    [TestCase(DocumentCacheLifecycleState.Rebuilding, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, true)]
+    public async Task It_rejects_before_scan_when_lifecycle_or_latch_is_not_admitted(
+        DocumentCacheLifecycleState lifecycle,
+        bool cacheAheadRecoveryRequired
+    )
     {
-        TaskCompletionSource lockAcquired = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource releaseLock = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        DocumentCacheGuardedNewEmptyActivationCommand command = CreateCommand(
-            new DocumentCacheLifecycleObservation(
-                DocumentCacheLifecycleState.Disabled,
-                CacheAheadRecoveryRequired: false
-            ),
-            new RecordingObservationSink(),
-            new DelayingGuardedActivationPrimitives(
-                new PostgresqlDocumentCacheAdministrativePrimitives(),
-                lockAcquired,
-                releaseLock
-            )
+        await SetLifecycleAsync(lifecycle, cacheAheadRecoveryRequired);
+        SourceDocument source = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        RecordingObservationSink observationSink = new();
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(lifecycle, cacheAheadRecoveryRequired),
+            observationSink
         );
 
-        Task<DocumentCacheAdministrativeCommandResult> commandTask = command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+        DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
         );
 
-        await lockAcquired.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Task insertTask = InsertDocumentAsync(contentVersion: 20);
-
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(200));
-            insertTask.IsCompleted.Should().BeFalse();
-
-            releaseLock.SetResult();
-
-            DocumentCacheAdministrativeCommandResult result = await commandTask.WaitAsync(
-                TimeSpan.FromSeconds(5)
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result.Mutated.Should().BeFalse();
+        result.Lifecycle.Should().Be(lifecycle);
+        result.CacheAheadRecoveryRequired.Should().Be(cacheAheadRecoveryRequired);
+        (await ReadWorkVersionsByDocumentIdAsync()).Should().BeEmpty();
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(lifecycle, cacheAheadRecoveryRequired));
+        observationSink
+            .AdministrativeCommandSnapshots.Should()
+            .NotContain(snapshot =>
+                snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.CaptureBoundary
+                || snapshot.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ScrubScan
             );
-            await insertTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-            result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
-            result.Lifecycle.Should().Be(DocumentCacheLifecycleState.Tracking);
-            (await ReadCountAsync("DocumentProjectionWork")).Should().Be(1);
-        }
-        finally
-        {
-            releaseLock.TrySetResult();
-        }
+        source.DocumentId.Should().BePositive();
     }
 
-    private DocumentCacheGuardedNewEmptyActivationCommand CreateCommand(
+    private DocumentCacheExplicitIntegrityScrubCommand CreateCommand(
         DocumentCacheLifecycleObservation lifecycle,
         RecordingObservationSink observationSink,
         IDocumentCacheAdministrativePrimitives? primitives = null
@@ -224,7 +260,7 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
 
-        return new DocumentCacheGuardedNewEmptyActivationCommand(runner);
+        return new(runner);
     }
 
     private DocumentCacheTargetExecutionContext ExecutionContext(
@@ -256,7 +292,7 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
         new(
             readAccelerationEnabled: true,
             directFillTimeout: TimeSpan.FromMilliseconds(250),
-            projectorPollInterval: TimeSpan.FromMilliseconds(250),
+            projectorPollInterval: TimeSpan.FromMilliseconds(10),
             projectorPageSize: 3,
             projectorMaxConcurrentTargets: 1,
             projectorFailureBackoff: TimeSpan.FromSeconds(1),
@@ -301,10 +337,11 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
             new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ObservedAt))
         );
 
-    private async Task InsertDocumentAsync(long contentVersion)
+    private async Task<SourceDocument> InsertDocumentAsync(long contentVersion)
     {
         short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
-        await _database.ExecuteNonQueryAsync(
+        Guid documentUuid = Guid.NewGuid();
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
             """
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
@@ -317,12 +354,131 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
                 @resourceKeyId,
                 @contentVersion,
                 @lastModifiedAt
-            );
+            )
+            RETURNING "DocumentId";
             """,
-            new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = Guid.NewGuid() },
+            new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
             new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = ObservedAt }
+        );
+
+        return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);
+    }
+
+    private Task SetLifecycleAsync(DocumentCacheLifecycleState lifecycle, bool cacheAheadRecoveryRequired) =>
+        _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "dms"."DocumentCacheState"
+            SET
+                "ProjectionLifecycleState" = @lifecycle,
+                "CacheAheadRecoveryRequired" = @cacheAheadRecoveryRequired
+            WHERE "StateId" = 1;
+            """,
+            new NpgsqlParameter("lifecycle", NpgsqlDbType.Varchar) { Value = lifecycle.ToString() },
+            new NpgsqlParameter("cacheAheadRecoveryRequired", NpgsqlDbType.Boolean)
+            {
+                Value = cacheAheadRecoveryRequired,
+            }
+        );
+
+    private Task ClearProjectionWorkAsync() =>
+        _database.ExecuteNonQueryAsync("""DELETE FROM "dms"."DocumentProjectionWork";""");
+
+    private Task InsertProjectionWorkAsync(SourceDocument source, long requiredContentVersion) =>
+        _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."DocumentProjectionWork" (
+                "DocumentId",
+                "RequiredContentVersion",
+                "FirstEnqueuedAt",
+                "LastEnqueuedAt"
+            )
+            VALUES (
+                @documentId,
+                @requiredContentVersion,
+                @firstEnqueuedAt,
+                @lastEnqueuedAt
+            );
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = source.DocumentId },
+            new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint)
+            {
+                Value = requiredContentVersion,
+            },
+            new NpgsqlParameter("firstEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = FirstEnqueuedAt },
+            new NpgsqlParameter("lastEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = ObservedAt }
+        );
+
+    private Task SetWorkRequiredContentVersionAsync(long documentId, long requiredContentVersion) =>
+        _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "dms"."DocumentProjectionWork"
+            SET "RequiredContentVersion" = @requiredContentVersion
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId },
+            new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint)
+            {
+                Value = requiredContentVersion,
+            }
+        );
+
+    private async Task InsertCacheRowAsync(SourceDocument source, long cacheContentVersion)
+    {
+        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[
+            _fixture.MappingSet.ResourceKeyIdByResource[PersonResource]
+        ];
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."DocumentCache" (
+                "DocumentId",
+                "DocumentUuid",
+                "ProjectName",
+                "ResourceName",
+                "ResourceVersion",
+                "ContentVersion",
+                "StreamEtag",
+                "LastModifiedAt",
+                "DocumentJson",
+                "ComputedAt"
+            )
+            VALUES (
+                @documentId,
+                @documentUuid,
+                @projectName,
+                @resourceName,
+                @resourceVersion,
+                @contentVersion,
+                @streamEtag,
+                @lastModifiedAt,
+                @documentJson,
+                @computedAt
+            );
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = source.DocumentId },
+            new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = source.DocumentUuid },
+            new NpgsqlParameter("projectName", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.Resource.ProjectName,
+            },
+            new NpgsqlParameter("resourceName", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.Resource.ResourceName,
+            },
+            new NpgsqlParameter("resourceVersion", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.ResourceVersion,
+            },
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = cacheContentVersion },
+            new NpgsqlParameter("streamEtag", NpgsqlDbType.Varchar) { Value = $"etag-{cacheContentVersion}" },
+            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = ObservedAt },
+            new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
+            {
+                Value = new JsonObject { ["value"] = $"cache-{source.DocumentId}" }.ToJsonString(),
+            },
+            new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = ObservedAt.AddMinutes(1) }
         );
     }
 
@@ -340,6 +496,22 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
         return new(
             Enum.Parse<DocumentCacheLifecycleState>((string)row["ProjectionLifecycleState"]!),
             Convert.ToBoolean(row["CacheAheadRecoveryRequired"])
+        );
+    }
+
+    private async Task<IReadOnlyDictionary<long, long>> ReadWorkVersionsByDocumentIdAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "RequiredContentVersion"
+            FROM "dms"."DocumentProjectionWork"
+            ORDER BY "DocumentId";
+            """
+        );
+
+        return rows.ToDictionary(
+            row => Convert.ToInt64(row["DocumentId"]),
+            row => Convert.ToInt64(row["RequiredContentVersion"])
         );
     }
 
@@ -379,9 +551,6 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
         public List<DocumentCacheAdministrativeCommandObservationSnapshot> AdministrativeCommandSnapshots { get; } =
         [];
 
-        public List<DocumentCacheAdministrativeCommandExecutionId> EndedAdministrativeCommandIds { get; } =
-        [];
-
         public void ObserveTarget(DocumentCacheProjectionTargetHealthSnapshot snapshot) => _ = snapshot;
 
         public void EndTargetContext(
@@ -395,15 +564,16 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
         ) => AdministrativeCommandSnapshots.Add(snapshot);
 
         public void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId) =>
-            EndedAdministrativeCommandIds.Add(executionId);
+            _ = executionId;
     }
 
-    private sealed class DelayingGuardedActivationPrimitives(
+    private sealed class BeforeFirstScrubPagePrimitives(
         IDocumentCacheAdministrativePrimitives inner,
-        TaskCompletionSource lockAcquired,
-        TaskCompletionSource releaseLock
+        Func<Task> beforeFirstScrubPage
     ) : IDocumentCacheAdministrativePrimitives
     {
+        private int _called;
+
         public RelationalProviderToken ProviderToken => inner.ProviderToken;
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
@@ -413,17 +583,10 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
             CancellationToken cancellationToken = default
         ) => inner.ReadLifecycleAsync(mutexSession, lockMode, cancellationToken);
 
-        public async Task LockCanonicalDocumentsForGuardedActivationAsync(
+        public Task LockCanonicalDocumentsForGuardedActivationAsync(
             IRelationalWriteSession mutexSession,
             CancellationToken cancellationToken = default
-        )
-        {
-            await inner
-                .LockCanonicalDocumentsForGuardedActivationAsync(mutexSession, cancellationToken)
-                .ConfigureAwait(false);
-            lockAcquired.SetResult();
-            await releaseLock.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
+        ) => inner.LockCanonicalDocumentsForGuardedActivationAsync(mutexSession, cancellationToken);
 
         public Task<DocumentCacheGuardedNewEmptyActivationState> ReadGuardedNewEmptyActivationStateAsync(
             IRelationalWriteSession mutexSession,
@@ -487,11 +650,19 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
             CancellationToken cancellationToken = default
         ) => inner.SeedBaselinePageAsync(mutexSession, request, cancellationToken);
 
-        public Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
+        public async Task<DocumentCacheAdministrativeScrubPageResult> ScrubPageAsync(
             IRelationalWriteSession mutexSession,
             DocumentCacheAdministrativeScrubPageRequest request,
             CancellationToken cancellationToken = default
-        ) => inner.ScrubPageAsync(mutexSession, request, cancellationToken);
+        )
+        {
+            if (Interlocked.Exchange(ref _called, 1) == 0)
+            {
+                await beforeFirstScrubPage().ConfigureAwait(false);
+            }
+
+            return await inner.ScrubPageAsync(mutexSession, request, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private sealed class ThrowingDocumentCacheMaterializer : IDocumentCacheMaterializer
@@ -511,4 +682,6 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
+
+    private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
 }
