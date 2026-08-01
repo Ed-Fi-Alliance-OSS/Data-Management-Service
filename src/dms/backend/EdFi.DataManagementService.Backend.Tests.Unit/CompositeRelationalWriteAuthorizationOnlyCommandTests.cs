@@ -5,11 +5,11 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -171,7 +171,11 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
     public async Task It_defers_a_no_claims_denial_until_after_the_namespace_command_authorizes()
     {
         var baseRequest = CreateRequest(withNamespace: true, withRelationship: true);
-        var request = baseRequest with { ProposedRelationshipAuthorization = CreateNoClaims(baseRequest) };
+        var request = baseRequest with
+        {
+            ProposedRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateProposedNoClaimsAuthorization(baseRequest),
+        };
         var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
 
         var resolution = await CreateSut()
@@ -347,41 +351,6 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(providerFailure);
     }
 
-    /// <summary>
-    /// The deferred no-claims disposition: the caller holds no education-organization claims, so the
-    /// relationship check needs no statement, only a denial the namespace command may outrank.
-    /// </summary>
-    private static RelationshipAuthorizationResult.NoClaims CreateNoClaims(
-        RelationalWriteExecutorRequest request
-    )
-    {
-        var authorized = (RelationshipAuthorizationResult.Authorized)
-            request.ProposedRelationshipAuthorization!;
-        var checkSpec = authorized.CheckSpecs.Single();
-
-        return new RelationshipAuthorizationResult.NoClaims(
-            authorized.CheckSpecs,
-            [
-                new RelationshipAuthorizationFailureMetadata(
-                    RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
-                    request.WritePlan.Model.Resource,
-                    checkSpec.ConfiguredStrategy,
-                    checkSpec.RelationshipLocalOrder,
-                    checkSpec.ValueSource,
-                    checkSpec.Subjects[0].AuthObject,
-                    new RelationshipAuthorizationFailureLocation(
-                        Kind: SecurableElementKind.EducationOrganization,
-                        JsonPath: "$.schoolId",
-                        ReadableName: "SchoolId",
-                        Table: request.WritePlan.Model.Root.Table,
-                        Column: new DbColumnName("SchoolId")
-                    ),
-                    Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
-                ),
-            ]
-        );
-    }
-
     private static CompositeRelationalWriteSecondCommand CreateSut(
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
     ) => new(relationalParameterConfigurator: null, providerFailureExtractor);
@@ -504,152 +473,6 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         table.Rows.Add(1);
 
         return table;
-    }
-
-    /// <summary>
-    /// Serves one script per <see cref="CreateCommand"/>: a reader to hand back, or an exception to raise
-    /// from the reader-open boundary.
-    /// </summary>
-    private sealed class ScriptedWriteSession(params object[] scripts) : IRelationalWriteSession
-    {
-        private readonly Queue<object> _scripts = new(scripts);
-
-        public DbConnection Connection { get; } = null!;
-
-        public DbTransaction Transaction { get; } = null!;
-
-        public List<RelationalCommand> Commands { get; } = [];
-
-        public DbCommand CreateCommand(RelationalCommand command)
-        {
-            Commands.Add(command);
-
-            if (_scripts.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    $"No command script remains for command {Commands.Count}."
-                );
-            }
-
-            return new ScriptedDbCommand(_scripts.Dequeue());
-        }
-
-        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
-
-    private sealed class ScriptedDbCommand(object script) : DbCommand
-    {
-        [AllowNull]
-        public override string CommandText { get; set; } = string.Empty;
-        public override int CommandTimeout { get; set; }
-        public override CommandType CommandType { get; set; }
-        public override bool DesignTimeVisible { get; set; }
-        public override UpdateRowSource UpdatedRowSource { get; set; }
-        protected override DbConnection? DbConnection { get; set; }
-        protected override DbParameterCollection DbParameterCollection { get; } =
-            new ScriptedDbParameterCollection();
-        protected override DbTransaction? DbTransaction { get; set; }
-
-        public override void Cancel() { }
-
-        public override int ExecuteNonQuery() => throw new NotSupportedException();
-
-        public override object? ExecuteScalar() => throw new NotSupportedException();
-
-        public override void Prepare() { }
-
-        protected override DbParameter CreateDbParameter() => new ScriptedDbParameter();
-
-        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
-            script switch
-            {
-                DbDataReader reader => reader,
-                Exception exception => throw exception,
-                _ => throw new InvalidOperationException(
-                    $"Unsupported command script '{script.GetType().Name}'."
-                ),
-            };
-    }
-
-    private sealed class ScriptedDbParameterCollection : DbParameterCollection
-    {
-        private readonly List<DbParameter> _parameters = [];
-
-        public override int Count => _parameters.Count;
-
-        public override object SyncRoot => _parameters;
-
-        public override int Add(object value)
-        {
-            _parameters.Add((DbParameter)value);
-            return _parameters.Count - 1;
-        }
-
-        public override void AddRange(Array values)
-        {
-            foreach (var value in values)
-            {
-                Add(value);
-            }
-        }
-
-        public override void Clear() => _parameters.Clear();
-
-        public override bool Contains(object value) => _parameters.Contains((DbParameter)value);
-
-        public override bool Contains(string value) => IndexOf(value) >= 0;
-
-        public override void CopyTo(Array array, int index) =>
-            ((System.Collections.ICollection)_parameters).CopyTo(array, index);
-
-        public override System.Collections.IEnumerator GetEnumerator() => _parameters.GetEnumerator();
-
-        public override int IndexOf(object value) => _parameters.IndexOf((DbParameter)value);
-
-        public override int IndexOf(string parameterName) =>
-            _parameters.FindIndex(parameter =>
-                string.Equals(parameter.ParameterName, parameterName, StringComparison.OrdinalIgnoreCase)
-            );
-
-        public override void Insert(int index, object value) => _parameters.Insert(index, (DbParameter)value);
-
-        public override void Remove(object value) => _parameters.Remove((DbParameter)value);
-
-        public override void RemoveAt(int index) => _parameters.RemoveAt(index);
-
-        public override void RemoveAt(string parameterName) => RemoveAt(IndexOf(parameterName));
-
-        protected override DbParameter GetParameter(int index) => _parameters[index];
-
-        protected override DbParameter GetParameter(string parameterName) =>
-            _parameters[IndexOf(parameterName)];
-
-        protected override void SetParameter(int index, DbParameter value) => _parameters[index] = value;
-
-        protected override void SetParameter(string parameterName, DbParameter value) =>
-            _parameters[IndexOf(parameterName)] = value;
-    }
-
-    private sealed class ScriptedDbParameter : DbParameter
-    {
-        public override DbType DbType { get; set; }
-        public override ParameterDirection Direction { get; set; }
-        public override bool IsNullable { get; set; }
-
-        [AllowNull]
-        public override string ParameterName { get; set; } = string.Empty;
-        public override int Size { get; set; }
-
-        [AllowNull]
-        public override string SourceColumn { get; set; } = string.Empty;
-        public override bool SourceColumnNullMapping { get; set; }
-        public override object? Value { get; set; }
-
-        public override void ResetDbType() { }
     }
 
     private sealed class StubProviderFailureExtractor(string? providerErrorCode, string providerMessage)

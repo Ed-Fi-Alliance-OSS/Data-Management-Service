@@ -210,23 +210,23 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
 
         switch (relationshipPlan.Disposition)
         {
-            case CompositeRelationalWriteFirstPhase.RelationshipStatementDisposition.None:
+            case StoredRelationshipDisposition.None:
                 return null;
 
-            case CompositeRelationalWriteFirstPhase.RelationshipStatementDisposition.DeferredNoClaims:
+            case StoredRelationshipDisposition.DeferredNoClaims:
                 return RelationalWriteExecutorResults.BuildNoClaimsRelationshipAuthorizationResult(
                     executionRequest.OperationKind,
                     relationshipPlan.NoClaims!
                 );
 
-            case CompositeRelationalWriteFirstPhase.RelationshipStatementDisposition.Unbuildable:
+            case StoredRelationshipDisposition.Unbuildable:
                 return RelationalWriteExecutorResults.BuildUnknownFailureResult(
                     executionRequest.OperationKind,
                     "Relationship authorization produced executable checks without claim EducationOrganizationId parameterization."
                 );
 
-            case CompositeRelationalWriteFirstPhase.RelationshipStatementDisposition.Emitted
-            or CompositeRelationalWriteFirstPhase.RelationshipStatementDisposition.Standalone:
+            case StoredRelationshipDisposition.Emitted
+            or StoredRelationshipDisposition.Standalone:
                 return await CompositeRelationalWriteFirstPhase.ExecuteStandaloneStoredRelationshipAsync(
                     executionRequest,
                     relationshipPlan.Authorized!,

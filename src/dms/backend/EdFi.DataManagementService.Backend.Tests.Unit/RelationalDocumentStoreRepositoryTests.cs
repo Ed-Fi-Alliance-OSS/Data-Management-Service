@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -80,6 +81,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IRelationalDeleteConstraintResolver _deleteConstraintResolver = null!;
     private RecordingLogger<RelationalDocumentStoreRepository> _logger = null!;
     private RecordingWriteSessionFactory _writeSessionFactory = null!;
+    private DeleteCommandResponder? _deleteCommandResponder;
     private ISingleRecordRelationshipAuthorizationExecutor _singleRecordRelationshipAuthorizationExecutor =
         null!;
     private INamespaceAuthorizationExecutor _namespaceAuthorizationExecutor = null!;
@@ -105,6 +107,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _deleteConstraintResolver = A.Fake<IRelationalDeleteConstraintResolver>();
         _logger = new RecordingLogger<RelationalDocumentStoreRepository>();
         _writeSessionFactory = new RecordingWriteSessionFactory(_commandExecutor);
+        _deleteCommandResponder = null;
         _singleRecordRelationshipAuthorizationExecutor =
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>();
         _namespaceAuthorizationExecutor = A.Fake<INamespaceAuthorizationExecutor>();
@@ -7400,8 +7403,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         SqlDialect dialect
     )
     {
-        // Default fake returns null from the UUID lookup, which the repository treats
-        // as "not found" without executing the second roundtrip.
+        // The capture statement observes no target row, which the repository answers as not-found.
+        ConfigureMissingDeleteTarget();
+
         var deleteRequest = CreateNonDescriptorDeleteRequest(
             CreateSupportedMappingSet(_schoolResourceInfo, dialect)
         );
@@ -7416,12 +7420,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
-        RelationalCommand capturedNamespaceCommand = null!;
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(
-            new NamespaceAuthorizationExecutionResult.Authorized(),
-            command => capturedNamespaceCommand = command
-        );
+        ConfigureDeleteNamespaceCheckCount(1);
         ConfigureDeleteOutcome(deleted: true);
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
@@ -7435,10 +7435,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        // The stored namespace check parameterizes the locked target document id, proving it runs
-        // against the same locked target inside the delete write session.
-        capturedNamespaceCommand.Should().NotBeNull();
-        capturedNamespaceCommand.Parameters.Should().Contain(parameter => Equals(parameter.Value, 345L));
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -7450,7 +7446,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
         var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(new NamespaceAuthorizationExecutionResult.Authorized());
+        ConfigureDeleteNamespaceCheckCount(1);
         ConfigureDeleteOutcome(deleted: true);
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
@@ -7483,7 +7479,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(new NamespaceAuthorizationExecutionResult.Authorized());
+        ConfigureDeleteNamespaceCheckCount(1);
         ConfigureDeleteOutcome(deleted: true);
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(
@@ -7510,20 +7506,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_namespace_mismatch_403_and_does_not_delete_without_if_match()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
-        var namespaceFailure = new NamespaceAuthorizationFailure(
-            NamespaceAuthorizationFailureKind.NamespaceMismatch,
-            NamespaceAuthorizationFailureValueSource.Stored,
-            EmittedAuth1Index: 0,
-            AuthorizationStrategyNameConstants.NamespaceBased,
-            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/", "uri://gbisd.edu/"]
-        );
+        var mappingSet = AsMssql(CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo));
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(namespaceFailure)
-        );
-        ConfigureDeleteThrows(
-            new InvalidOperationException("DELETE should not execute on namespace denial.")
+        ConfigureDeleteNamespaceCheckCount(1);
+        ConfigureDeleteAuth1Failure(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+                new NamespaceAuthorizationAuth1FailurePayload(
+                    0,
+                    NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+                )
+            )
         );
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
@@ -7537,7 +7529,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         var failure = result.Should().BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>().Subject;
-        failure.NamespaceFailure.Should().BeSameAs(namespaceFailure);
+        failure.NamespaceFailure.FailureKind.Should().Be(NamespaceAuthorizationFailureKind.NamespaceMismatch);
+        failure
+            .NamespaceFailure.ConfiguredNamespacePrefixes.Should()
+            .Equal("uri://ed-fi.org/", "uri://gbisd.edu/");
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -7546,20 +7541,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_namespace_uninitialized_403_and_does_not_delete()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
-        var namespaceFailure = new NamespaceAuthorizationFailure(
-            NamespaceAuthorizationFailureKind.StoredNamespaceUninitialized,
-            NamespaceAuthorizationFailureValueSource.Stored,
-            EmittedAuth1Index: 0,
-            AuthorizationStrategyNameConstants.NamespaceBased,
-            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
-        );
+        var mappingSet = AsMssql(CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo));
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(namespaceFailure)
-        );
-        ConfigureDeleteThrows(
-            new InvalidOperationException("DELETE should not execute on namespace denial.")
+        ConfigureDeleteNamespaceCheckCount(1);
+        ConfigureDeleteAuth1Failure(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+                new NamespaceAuthorizationAuth1FailurePayload(
+                    0,
+                    NamespaceAuthorizationAuth1FailureKind.StoredNamespaceUninitialized
+                )
+            )
         );
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
@@ -7584,20 +7575,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
-        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
-        var namespaceFailure = new NamespaceAuthorizationFailure(
-            NamespaceAuthorizationFailureKind.NamespaceMismatch,
-            NamespaceAuthorizationFailureValueSource.Stored,
-            EmittedAuth1Index: 0,
-            AuthorizationStrategyNameConstants.NamespaceBased,
-            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
-        );
+        var mappingSet = AsMssql(CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo));
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(namespaceFailure)
-        );
-        ConfigureDeleteThrows(
-            new InvalidOperationException("DELETE should not execute on namespace denial.")
+        ConfigureDeleteNamespaceCheckCount(1);
+        ConfigureDeleteAuth1Failure(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+                new NamespaceAuthorizationAuth1FailurePayload(
+                    0,
+                    NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+                )
+            )
         );
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
             documentUuid,
@@ -7707,19 +7694,19 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_fails_closed_with_security_configuration_when_namespace_auth1_is_malformed_and_does_not_delete()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var mappingSet = AsMssql(CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo));
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(
-            new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
-                [
-                    new SecurityConfigurationFailureDiagnostic(
-                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
-                    ),
-                ]
+        ConfigureDeleteNamespaceCheckCount(1);
+        // A well-formed payload naming a check the command never planned: the denial is real but its
+        // metadata cannot be mapped, so the request fails closed rather than deleting.
+        ConfigureDeleteAuth1Failure(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+                new NamespaceAuthorizationAuth1FailurePayload(
+                    5,
+                    NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+                )
             )
         );
-        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on malformed AUTH1."));
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
@@ -7743,115 +7730,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_does_not_run_relationship_authorization_for_delete_when_namespace_denies()
+    public async Task It_commits_a_delete_whose_stored_relationship_authorization_authorizes()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateNamespaceAndRootEdOrgMappingSet(_schoolResourceInfo);
-        var namespaceFailure = new NamespaceAuthorizationFailure(
-            NamespaceAuthorizationFailureKind.NamespaceMismatch,
-            NamespaceAuthorizationFailureValueSource.Stored,
-            EmittedAuth1Index: 0,
-            AuthorizationStrategyNameConstants.NamespaceBased,
-            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
-        );
-        ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(namespaceFailure)
-        );
-        ConfigureDeleteThrows(
-            new InvalidOperationException("DELETE should not execute on namespace denial.")
-        );
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
-        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
-        A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L], ["uri://ed-fi.org/"]));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>();
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
-            .MustNotHaveHappened();
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_runs_relationship_authorization_for_delete_after_namespace_authorizes()
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateNamespaceAndRootEdOrgMappingSet(_schoolResourceInfo);
-        var order = 0;
-        var namespaceOrder = 0;
-        var relationshipOrder = 0;
-        ConfigureResolvedDocument(documentId: 345L, documentUuid);
-        ConfigureDeleteNamespaceAuthorization(
-            new NamespaceAuthorizationExecutionResult.Authorized(),
-            _ => namespaceOrder = ++order
-        );
-        ConfigureDeleteRelationshipAuthorization(
-            new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(42L),
-            _ => relationshipOrder = ++order
-        );
-        ConfigureDeleteOutcome(deleted: true);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
-        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
-        A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L], ["uri://ed-fi.org/"]));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        namespaceOrder.Should().Be(1);
-        relationshipOrder.Should().Be(2);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_executes_supported_delete_relationship_authorization_under_the_locked_write_session_before_if_match_and_delete()
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
-        var order = 0;
-        var lockOrder = 0;
-        var authorizationOrder = 0;
-        var ifMatchOrder = 0;
-        var deleteOrder = 0;
-        RelationalCommand capturedAuthorizationCommand = null!;
         ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteRelationshipAuthorizationRow(authorizationResult: 1);
         ConfigureDeleteOutcome(deleted: true);
-        ConfigureDeleteLockOrder(() => lockOrder = ++order);
-        ConfigureDeleteRelationshipAuthorization(
-            new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(42L),
-            command =>
-            {
-                authorizationOrder = ++order;
-                capturedAuthorizationCommand = command;
-            }
-        );
-        ConfigureDeleteOrder(() => deleteOrder = ++order);
-        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
-            documentUuid,
-            123L,
-            isMatch: true
-        );
-        _currentEtagPreconditionChecker.OnCheck = () => ifMatchOrder = ++order;
 
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, writePrecondition, documentUuid);
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
             .Returns([
                 CreateAuthorizationStrategyEvaluator(
@@ -7859,217 +7746,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 ),
             ]);
         A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([200L, 100L, 100L]));
+            .Returns(new RelationalAuthorizationContext([255901L]));
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
+        // The repository's remaining stake in an authorized delete is the session lifecycle: the command
+        // stream and the check's own statement order are asserted against the delete command itself.
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        lockOrder.Should().Be(1);
-        authorizationOrder.Should().Be(2);
-        ifMatchOrder.Should().Be(3);
-        deleteOrder.Should().Be(4);
-        capturedAuthorizationCommand.Parameters[0].Name.Should().Be("@DocumentId");
-        capturedAuthorizationCommand.Parameters[0].Value.Should().Be(123L);
-        capturedAuthorizationCommand.Parameters[1].Name.Should().Be("@ClaimEducationOrganizationIds");
-        capturedAuthorizationCommand
-            .Parameters[1]
-            .Value.Should()
-            .BeAssignableTo<long[]>()
-            .Which.Should()
-            .Equal(100L, 200L);
-        capturedAuthorizationCommand.CommandText.Should().Contain("AUTH1");
-        capturedAuthorizationCommand
-            .CommandText.Should()
-            .Contain("EducationOrganizationIdToEducationOrganizationId");
-        _currentEtagPreconditionChecker
-            .CapturedRequest!.TargetContext.ObservedContentVersion.Should()
-            .Be(42L);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_returns_relationship_not_authorized_before_if_match_and_delete_when_delete_authorization_fails()
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
-        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
-        var relationshipFailure = CreateRelationshipFailure();
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
-        ConfigureDeleteRelationshipAuthorization(
-            new SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized(relationshipFailure)
-        );
-        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
-            documentUuid,
-            123L,
-            isMatch: false
-        );
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, writePrecondition, documentUuid);
-        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
-        A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L]));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
-        failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_security_configuration_when_delete_relationship_authorization_payload_is_invalid()
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
-        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
-        ConfigureDeleteRelationshipAuthorization(
-            new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
-                [
-                    new SecurityConfigurationFailureDiagnostic(
-                        ProviderOrPlannerFailureKind: "RelationshipAuthorization.Auth1.PayloadMappingFailed"
-                    ),
-                ]
-            )
-        );
-        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
-            documentUuid,
-            123L,
-            isMatch: false
-        );
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, writePrecondition, documentUuid);
-        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
-        A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L]));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>().Subject;
-        failure
-            .Errors.Should()
-            .Equal(
-                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
-            );
-        failure
-            .Diagnostics.Should()
-            .ContainSingle()
-            .Which.ProviderOrPlannerFailureKind.Should()
-            .Be("RelationshipAuthorization.Auth1.PayloadMappingFailed");
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_preserves_mixed_auth_object_relationship_failure_details_when_delete_authorization_fails()
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
-        var relationshipFailure = CreateMixedAuthObjectRelationshipFailure();
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
-        ConfigureDeleteRelationshipAuthorization(
-            new SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized(relationshipFailure)
-        );
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
-        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
-        A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L]));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
-        failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
-        failure
-            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
-            .SelectMany(static subject => subject.SecurableElements)
-            .Select(static element => element.ReadableName)
-            .Should()
-            .Equal("SchoolId", "StudentUniqueId");
-        var failedStrategy = failure.RelationshipFailure.FailedStrategies.Should().ContainSingle().Which;
-        failedStrategy.AuthObject.Should().BeNull();
-        failedStrategy
-            .FailedSubjects.Select(static subject => subject.AuthObject.Name)
-            .Should()
-            .Equal(
-                "auth.EducationOrganizationIdToEducationOrganizationId",
-                "auth.EducationOrganizationIdToStudentDocumentId"
-            );
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_people_delete_relationship_not_authorized_before_if_match_and_delete()
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
-        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(
-            _studentResourceInfo
-        );
-        var relationshipFailure = CreateMixedAuthObjectRelationshipFailure();
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
-        ConfigureDeleteRelationshipAuthorization(
-            new SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized(relationshipFailure)
-        );
-        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
-            documentUuid,
-            123L,
-            isMatch: false
-        );
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            mappingSet,
-            writePrecondition,
-            documentUuid,
-            _studentResourceInfo
-        );
-        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
-                ),
-            ]);
-        A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L]));
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
-        failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
-        failure
-            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
-            .Any(static subject => subject.PersonSubject is not null)
-            .Should()
-            .BeTrue();
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     [Test]
@@ -8110,6 +7795,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        ConfigureMissingDeleteTarget();
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
@@ -8228,62 +7914,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-    }
-
-    [TestCase(
-        SqlDialect.Pgsql,
-        "DELETE FROM \"edfi\".\"School\"",
-        "DELETE FROM dms.\"Document\"",
-        "RETURNING \"DocumentId\""
-    )]
-    [TestCase(
-        SqlDialect.Mssql,
-        "DELETE FROM [edfi].[School]",
-        "DELETE FROM [dms].[Document]",
-        "OUTPUT DELETED.[DocumentId]"
-    )]
-    public async Task It_deletes_the_resource_root_table_before_the_document_row(
-        SqlDialect dialect,
-        string rootDeleteFragment,
-        string documentDeleteFragment,
-        string finalResultFragment
-    )
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var capturedDeleteCommands = new List<RelationalCommand>();
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteOutcome(deleted: true, capturedDeleteCommands.Add);
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
-            documentUuid: documentUuid
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        capturedDeleteCommands.Should().ContainSingle();
-        var capturedDeleteCommand = capturedDeleteCommands.Single();
-        var statements = capturedDeleteCommand.CommandText.Split(
-            ';',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        );
-        statements.Should().NotBeEmpty();
-        var finalStatement = statements[^1];
-
-        capturedDeleteCommand.CommandText.Should().Contain(rootDeleteFragment);
-        capturedDeleteCommand.CommandText.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(documentDeleteFragment);
-        finalStatement.Should().Contain(finalResultFragment);
-        capturedDeleteCommand
-            .CommandText.IndexOf(rootDeleteFragment, StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(
-                capturedDeleteCommand.CommandText.IndexOf(documentDeleteFragment, StringComparison.Ordinal)
-            );
-        capturedDeleteCommand.Parameters.Should().ContainSingle();
-        capturedDeleteCommand.Parameters[0].Name.Should().Be("@documentId");
-        capturedDeleteCommand.Parameters[0].Value.Should().Be(123L);
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -8524,7 +8154,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_rolls_back_the_write_session_when_the_document_uuid_is_not_resolvable()
     {
-        // Default fake command executor returns null for the UUID lookup.
+        ConfigureMissingDeleteTarget();
+
         var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
@@ -8776,9 +8407,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
     )
     {
         // RFC 9110 §13.1.1 If-Match: * requires the target to exist; against an unresolvable DELETE target
-        // the wildcard yields 412 rather than 404. Default fake returns null from the UUID lookup.
+        // the wildcard yields 412 rather than 404.
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
+        ConfigureMissingDeleteTarget();
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(
             CreateSupportedMappingSet(_schoolResourceInfo, dialect),
@@ -8801,38 +8433,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_relational_delete_failure_etag_mismatch_when_a_wildcard_if_match_target_vanishes_before_locking(
-        SqlDialect dialect
-    )
-    {
-        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; the initial lookup resolves a document,
-        // but the target vanishes (a concurrent delete) before the DELETE lock can be acquired. The
-        // wildcard still yields 412 rather than 404, with reason TargetDoesNotExist since there is no
-        // current representation left to compare against.
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        A.CallTo(_commandExecutor).WithReturnType<Task<long?>>().Returns(Task.FromResult<long?>(null));
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
-            writePrecondition,
-            documentUuid
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result
-            .Should()
-            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
     public async Task It_returns_relational_delete_failure_not_exists_when_a_non_wildcard_if_match_document_uuid_is_not_resolvable(
         SqlDialect dialect
     )
@@ -8841,6 +8441,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         // returns 404.
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+        ConfigureMissingDeleteTarget();
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(
             CreateSupportedMappingSet(_schoolResourceInfo, dialect),
@@ -9062,25 +8663,37 @@ public class Given_RelationalDocumentStoreRepositoryTests
         return new RelationalDeleteEtagPreconditionCheckResult(targetContext, isMatch);
     }
 
+    /// <summary>
+    /// Arranges the relational DELETE's capture statement to observe a target. The composite delete emits its
+    /// statements as raw commands, so every delete arrangement feeds one responder the recording session
+    /// consults when a command arrives.
+    /// </summary>
     private void ConfigureResolvedDocument(long documentId, DocumentUuid documentUuid)
     {
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>>()
-            .Returns(
-                Task.FromResult<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>(
-                    new RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid(
-                        DocumentId: documentId,
-                        DocumentUuid: documentUuid,
-                        ResourceKeyId: 1,
-                        ContentVersion: 42L
-                    )
-                )
-            );
-        A.CallTo(_commandExecutor).WithReturnType<Task<long?>>().Returns(Task.FromResult<long?>(42L));
+        var responder = InstallDeleteResponder();
+        responder.TargetExists = true;
+        responder.DocumentId = documentId;
+        responder.DocumentUuid = documentUuid.Value;
     }
 
+    /// <summary>Arranges the delete capture statement to observe no target row.</summary>
+    private void ConfigureMissingDeleteTarget() => InstallDeleteResponder().TargetExists = false;
+
+    /// <summary>
+    /// Arranges what the deletes answer, on both transports: a specific-tag <c>If-Match</c> or an
+    /// authorization check that cannot be co-batched routes them into an ordered segment, which runs through
+    /// the session's command executor rather than as a raw composite command.
+    /// </summary>
     private void ConfigureDeleteOutcome(bool deleted, Action<RelationalCommand>? callback = null)
     {
+        var responder = InstallDeleteResponder();
+        responder.Deleted = deleted;
+
+        if (callback is not null)
+        {
+            responder.OnDeleteCommand = callback;
+        }
+
         var call = A.CallTo(_commandExecutor).WithReturnType<Task<bool>>();
 
         if (callback is not null)
@@ -9091,61 +8704,54 @@ public class Given_RelationalDocumentStoreRepositoryTests
         call.Returns(Task.FromResult(deleted));
     }
 
-    private void ConfigureDeleteOrder(Action callback)
-    {
-        ConfigureDeleteOutcome(deleted: true, _ => callback());
-    }
-
     private void ConfigureDeleteThrows(Exception exception)
     {
+        InstallDeleteResponder().DeleteExceptionToThrow = exception;
         A.CallTo(_commandExecutor).WithReturnType<Task<bool>>().Throws(exception);
     }
 
-    private void ConfigureLookupThrows(DbException exception)
-    {
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>>()
-            .Throws(exception);
-    }
+    private void ConfigureLookupThrows(DbException exception) =>
+        InstallDeleteResponder().CaptureExceptionToThrow = exception;
 
-    private void ConfigureDeleteLockOrder(Action callback)
-    {
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<long?>>()
-            .Invokes(callback)
-            .Returns(Task.FromResult<long?>(42L));
-    }
+    /// <summary>
+    /// Arranges the stored relationship check's decoded row. A denial arrives as a provider AUTH1 failure
+    /// rather than a row, so only the authorized and unexpected-result outcomes are expressible here.
+    /// </summary>
+    private void ConfigureDeleteRelationshipAuthorizationRow(int authorizationResult) =>
+        InstallDeleteResponder().RelationshipAuthorizationResult = authorizationResult;
 
-    private void ConfigureDeleteRelationshipAuthorization(
-        SingleRecordRelationshipAuthorizationExecutionResult result,
-        Action<RelationalCommand>? callback = null
-    )
-    {
-        var call = A.CallTo(_commandExecutor)
-            .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>();
+    /// <summary>Arranges how many stored namespace checks the capture command carries.</summary>
+    private void ConfigureDeleteNamespaceCheckCount(int checkCount) =>
+        InstallDeleteResponder().NamespaceCheckCount = checkCount;
 
-        if (callback is not null)
+    private DeleteCommandResponder InstallDeleteResponder()
+    {
+        if (_deleteCommandResponder is null)
         {
-            call.Invokes(fakeCall => callback(fakeCall.GetArgument<RelationalCommand>(0)!));
+            _deleteCommandResponder = new DeleteCommandResponder();
+            _writeSessionFactory.Session.RawCommandResponder = _deleteCommandResponder.Respond;
         }
 
-        call.Returns(Task.FromResult(result));
+        return _deleteCommandResponder;
     }
 
-    private void ConfigureDeleteNamespaceAuthorization(
-        NamespaceAuthorizationExecutionResult result,
-        Action<RelationalCommand>? callback = null
-    )
-    {
-        var call = A.CallTo(_commandExecutor).WithReturnType<Task<NamespaceAuthorizationExecutionResult>>();
+    /// <summary>
+    /// Arranges the opening delete command to abort through the <c>AUTH1</c> device, the way a provider does
+    /// when a co-batched authorization statement denies.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server carries the payload in the message text, which is what the production failure extractor
+    /// reads, so a denial is arrangeable with an ordinary <see cref="DbException"/> and no extractor seam.
+    /// The mapping set must therefore be a SQL Server one.
+    /// </remarks>
+    private void ConfigureDeleteAuth1Failure(string payload) =>
+        ConfigureLookupThrows(new StubDbException($"AUTH1 - {payload}"));
 
-        if (callback is not null)
+    private static MappingSet AsMssql(MappingSet mappingSet) =>
+        mappingSet with
         {
-            call.Invokes(fakeCall => callback(fakeCall.GetArgument<RelationalCommand>(0)!));
-        }
-
-        call.Returns(Task.FromResult(result));
-    }
+            Key = mappingSet.Key with { Dialect = SqlDialect.Mssql },
+        };
 
     private sealed record CapturedDeleteEtagPreconditionRequest(
         MappingSet MappingSet,
@@ -9164,8 +8770,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         public RelationalDeleteEtagPreconditionCheckResult? ResultToReturn { get; set; }
 
-        public Action? OnCheck { get; set; }
-
         public RelationalDeleteEtagPreconditionCheckResult Evaluate(
             MappingSet mappingSet,
             RelationalWriteTargetContext.ExistingDocument lockedTargetContext,
@@ -9177,7 +8781,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ArgumentNullException.ThrowIfNull(precondition);
 
             CallCount++;
-            OnCheck?.Invoke();
             CapturedRequest = new CapturedDeleteEtagPreconditionRequest(
                 mappingSet,
                 lockedTargetContext,
@@ -9236,10 +8839,33 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         public Exception? CommitExceptionToThrow { get; set; }
 
-        public DbCommand CreateCommand(RelationalCommand command) =>
-            throw new InvalidOperationException(
-                "RecordingWriteSession does not expose DbCommand; callers should use CreateCommandExecutor."
-            );
+        /// <summary>
+        /// Every <see cref="RelationalCommand"/> the session was asked to create, in order. The relational
+        /// DELETE composes its statements into raw commands rather than going through the command executor,
+        /// so this is where its command stream is observed.
+        /// </summary>
+        public List<RelationalCommand> Commands { get; } = [];
+
+        /// <summary>
+        /// Answers a raw command with a reader or an exception. Delete fixtures install
+        /// <see cref="DeleteCommandResponder"/>; every other path still uses the command executor.
+        /// </summary>
+        public Func<RelationalCommand, object>? RawCommandResponder { get; set; }
+
+        public DbCommand CreateCommand(RelationalCommand command)
+        {
+            Commands.Add(command);
+
+            if (RawCommandResponder is null)
+            {
+                throw new InvalidOperationException(
+                    "RecordingWriteSession was asked for a raw DbCommand but no RawCommandResponder is "
+                        + "installed; callers that expect the command executor should use CreateCommandExecutor."
+                );
+            }
+
+            return new ScriptedDbCommand(RawCommandResponder(command));
+        }
 
         public Task CommitAsync(CancellationToken cancellationToken = default)
         {
@@ -11003,91 +10629,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(readableProfileProjectionContext);
         return queryRequest;
     }
-
-    private static RelationshipAuthorizationFailure CreateMixedAuthObjectRelationshipFailure() =>
-        new(
-            RelationshipAuthorizationFailureValueSource.Stored,
-            EmittedAuth1Index: 0,
-            FailedStrategies:
-            [
-                new RelationshipAuthorizationFailedStrategy(
-                    ConfiguredStrategyIndex: 0,
-                    RelationshipLocalOrder: 0,
-                    StrategyName: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-                    StrategyKind: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-                    AuthObject: null,
-                    FailedSubjects:
-                    [
-                        new RelationshipAuthorizationFailedSubject(
-                            SubjectIndex: 0,
-                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
-                            RootBinding: new RelationshipAuthorizationRootBinding(
-                                "Ed-Fi.School",
-                                "edfi.School",
-                                "SchoolId"
-                            ),
-                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
-                                "auth.EducationOrganizationIdToEducationOrganizationId",
-                                "TargetEducationOrganizationId",
-                                "SourceEducationOrganizationId"
-                            ),
-                            SecurableElements:
-                            [
-                                new RelationshipAuthorizationSecurableElement(
-                                    "EducationOrganization",
-                                    "$.schoolId",
-                                    "SchoolId"
-                                ),
-                            ]
-                        ),
-                        new RelationshipAuthorizationFailedSubject(
-                            SubjectIndex: 1,
-                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
-                            RootBinding: new RelationshipAuthorizationRootBinding(
-                                "Ed-Fi.StudentSchoolAssociation",
-                                "edfi.StudentSchoolAssociation",
-                                "Student_DocumentId"
-                            ),
-                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
-                                "auth.EducationOrganizationIdToStudentDocumentId",
-                                "Student_DocumentId",
-                                "SourceEducationOrganizationId"
-                            ),
-                            SecurableElements:
-                            [
-                                new RelationshipAuthorizationSecurableElement(
-                                    "Student",
-                                    "$.studentReference.studentUniqueId",
-                                    "StudentUniqueId"
-                                ),
-                            ]
-                        )
-                        {
-                            PersonSubject = new RelationshipAuthorizationPersonSubjectInfo(
-                                PersonKind: "Student",
-                                PathKind: "DirectRootColumn",
-                                DocumentIdPath:
-                                [
-                                    new RelationshipAuthorizationPersonDocumentIdPathStepInfo(
-                                        "edfi.StudentSchoolAssociation",
-                                        "Student_DocumentId",
-                                        TargetTableName: null,
-                                        TargetColumnName: null
-                                    ),
-                                ],
-                                StoredAnchor: new RelationshipAuthorizationPersonStoredAnchorInfo(
-                                    "edfi.StudentSchoolAssociation",
-                                    "DocumentId"
-                                ),
-                                ProposedAnchor: null,
-                                Hint: "You may need to create a corresponding 'StudentSchoolAssociation' item."
-                            ),
-                        },
-                    ]
-                ),
-            ],
-            ClaimEducationOrganizationIds: [new EducationOrganizationId(255901)]
-        );
 
     private static AuthorizationStrategyEvaluator CreateAuthorizationStrategyEvaluator(
         string authorizationStrategyName

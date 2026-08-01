@@ -162,8 +162,6 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     RelationalCommandBudget? commandBudget = null
 ) : IRelationalWriteFirstPhase
 {
-    private const string StoredNamespaceAuthorizationLabel = "stored-namespace-authorization";
-    private const string StoredRelationshipAuthorizationLabel = "stored-relationship-authorization";
     private const string ReferenceResolutionLabel = "reference-resolution";
     private const string CurrentStateHydrationLabel = "current-state-hydration";
 
@@ -184,8 +182,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
     private sealed record CompositeFirstPhasePlan(
         RelationalCompositeCommand Command,
-        NamespaceStatementPlan? NamespacePlan,
-        RelationshipStatementPlan RelationshipPlan,
+        StoredNamespaceStatementPlan? NamespacePlan,
+        StoredRelationshipStatementPlan RelationshipPlan,
         ReferenceStatementPlan? ReferencePlan,
         HydrationStatementPlan? HydrationPlan
     );
@@ -216,7 +214,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         if (
             input.PostRelationshipAuthorizationPlans?.CreateNewImmediateResult is not null
             || relationshipDisposition.Disposition
-                is not (RelationshipStatementDisposition.None or RelationshipStatementDisposition.Emitted)
+                is not (StoredRelationshipDisposition.None or StoredRelationshipDisposition.Emitted)
         )
         {
             return null;
@@ -244,17 +242,27 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
         AppendCaptureTarget(builder, input);
 
-        if (!TryAppendStoredNamespaceAuthorization(builder, carrier, input, out var namespacePlan))
+        if (
+            !RelationalCompositeStoredAuthorization.TryAppendNamespace(
+                builder,
+                carrier,
+                input.MappingSet,
+                input.StoredNamespaceAuthorization,
+                out var namespacePlan
+            )
+        )
         {
             return null;
         }
 
         if (
-            !TryAppendStoredRelationshipAuthorization(
+            !RelationalCompositeStoredAuthorization.TryAppendRelationship(
                 builder,
                 carrier,
-                input,
+                input.MappingSet,
                 relationshipDisposition,
+                RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(input.OperationKind),
+                _relationalParameterConfigurator,
                 out var relationshipPlan
             )
         )
@@ -552,7 +560,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
     private async Task<RelationalWriteExecutorResult?> ResolveStandaloneStoredRelationshipDispositionAsync(
         RelationalWriteExecutorRequest executionRequest,
-        RelationshipStatementPlan relationshipPlan,
+        StoredRelationshipStatementPlan relationshipPlan,
         long targetDocumentId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
@@ -560,18 +568,18 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     {
         return relationshipPlan.Disposition switch
         {
-            RelationshipStatementDisposition.None => null,
-            RelationshipStatementDisposition.DeferredNoClaims =>
+            StoredRelationshipDisposition.None => null,
+            StoredRelationshipDisposition.DeferredNoClaims =>
                 RelationalWriteExecutorResults.BuildNoClaimsRelationshipAuthorizationResult(
                     executionRequest.OperationKind,
                     relationshipPlan.NoClaims!
                 ),
-            RelationshipStatementDisposition.Unbuildable =>
+            StoredRelationshipDisposition.Unbuildable =>
                 RelationalWriteExecutorResults.BuildUnknownFailureResult(
                     executionRequest.OperationKind,
                     "Relationship authorization produced executable checks without claim EducationOrganizationId parameterization."
                 ),
-            RelationshipStatementDisposition.Emitted or RelationshipStatementDisposition.Standalone =>
+            StoredRelationshipDisposition.Emitted or StoredRelationshipDisposition.Standalone =>
                 await ExecuteStandaloneStoredRelationshipAsync(
                         executionRequest,
                         relationshipPlan.Authorized!,
@@ -605,7 +613,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                     referentialId
                 ),
             RelationalWriteTargetRequest.Put(var documentUuid) =>
-                RelationalWriteTargetLookupSupport.BuildPutCaptureTargetPredicate(
+                RelationalWriteTargetLookupSupport.BuildDocumentUuidCaptureTargetPredicate(
                     input.MappingSet,
                     input.WritePlan.Model.Resource,
                     documentUuid
@@ -624,285 +632,20 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         builder.AppendCaptureTarget(rewritten.Sql, rewritten.Parameters);
     }
 
-    private sealed record NamespaceStatementPlan(
-        IReadOnlyList<NamespaceAuthorizationCheckSpec> Checks,
-        NamespacePrefixParameterization PrefixParameterization
-    );
-
-    private static bool TryAppendStoredNamespaceAuthorization(
-        RelationalCompositeCommandBuilder builder,
-        IRelationalCompositeTargetCarrier carrier,
-        RelationalWriteExecutorInput input,
-        out NamespaceStatementPlan? statementPlan
-    )
-    {
-        if (input.StoredNamespaceAuthorization is not { } namespaceAuthorization)
-        {
-            statementPlan = null;
-            return true;
-        }
-
-        var sqlPlan = new NamespaceAuthorizationSqlCompiler(input.MappingSet.Key.Dialect).Compile(
-            new NamespaceAuthorizationSqlSpec(
-                namespaceAuthorization.Checks,
-                namespaceAuthorization.NamespacePrefixParameterization,
-                NamespaceAuthorizationSqlSpecDefaults.DocumentIdParameterName,
-                NamespaceAuthorizationSqlSpecDefaults.ProposedNamespaceParameterName,
-                RowGuardPredicateSql: carrier.CapturedTargetPresentPredicate
-            )
-        );
-        var command = NamespaceAuthorizationExecutor.BuildCommand(
-            sqlPlan,
-            new NamespaceAuthorizationExecutionRequest(
-                input.MappingSet,
-                DocumentId: 0L,
-                ProposedNamespace: null,
-                namespaceAuthorization.Checks,
-                namespaceAuthorization.NamespacePrefixParameterization
-            )
-        );
-
-        if (
-            !builder.Fits(
-                GetParameterCountAfterSubstitution(
-                    command,
-                    NamespaceAuthorizationSqlSpecDefaults.DocumentIdParameterName
-                )
-            )
-        )
-        {
-            statementPlan = null;
-            return false;
-        }
-
-        var rewritten = RelationalCompositeStatementRewriter.Rewrite(
-            command,
-            builder.Allocator,
-            builder.NextOrdinal,
-            BuildCarrierSubstitutions(
-                carrier,
-                NamespaceAuthorizationSqlSpecDefaults.DocumentIdParameterName,
-                carrier.CapturedTargetIdExpression
-            )
-        );
-        var resultSetCount = namespaceAuthorization.Checks.Count;
-
-        builder.Append(
-            StoredNamespaceAuthorizationLabel,
-            rewritten.Sql,
-            rewritten.Parameters,
-            RelationalCompositeResultShape.Rows,
-            (reader, readCancellation) =>
-                RelationalCompositeResultSetSpan.ConsumeAsync(reader, resultSetCount, readCancellation),
-            resultSetCount
-        );
-
-        statementPlan = new NamespaceStatementPlan(
-            namespaceAuthorization.Checks,
-            namespaceAuthorization.NamespacePrefixParameterization
-        );
-        return true;
-    }
-
     /// <summary>
-    /// How the stored relationship authorization participates in this attempt.
+    /// Classifies how the applicable stored relationship authorization — the POST plan's existing-resource
+    /// stored values when plans are present, otherwise the request's stored result — participates in the
+    /// attempt. Which result applies is the write path's concern; how a result participates is shared with
+    /// every other verb that authorizes stored values.
     /// </summary>
-    internal sealed record RelationshipStatementPlan(
-        RelationshipStatementDisposition Disposition,
-        int Ordinal = -1,
-        RelationshipAuthorizationResult.Authorized? Authorized = null,
-        RelationshipAuthorizationResult.NoClaims? NoClaims = null
-    );
-
-    internal enum RelationshipStatementDisposition
-    {
-        /// <summary>No executable stored relationship authorization applies.</summary>
-        None,
-
-        /// <summary>The check was co-batched into the composite command.</summary>
-        Emitted,
-
-        /// <summary>
-        /// The claim list binds as a table-valued parameter, so the check runs standalone on the same
-        /// session after the composite command, for an observed existing target only.
-        /// </summary>
-        Standalone,
-
-        /// <summary>A deferred denial: the caller holds no claims that could authorize.</summary>
-        DeferredNoClaims,
-
-        /// <summary>
-        /// Executable checks arrived without claim parameterization; an observed existing target maps
-        /// to the existing unknown-failure result.
-        /// </summary>
-        Unbuildable,
-    }
-
-    /// <summary>
-    /// Classifies how the applicable stored relationship authorization — the POST plan's
-    /// existing-resource stored values when plans are present, otherwise the request's stored result —
-    /// participates in the attempt. Shared with test seams so classification cannot drift.
-    /// </summary>
-    internal static RelationshipStatementPlan ClassifyStoredRelationshipDisposition(
+    internal static StoredRelationshipStatementPlan ClassifyStoredRelationshipDisposition(
         RelationalWriteExecutorInput input
-    )
-    {
-        var storedAuthorization = input.PostRelationshipAuthorizationPlans is { } plans
-            ? plans.ExistingResourcePlan.StoredValues
-            : input.StoredRelationshipAuthorization;
-
-        switch (storedAuthorization)
-        {
-            case null
-            or RelationshipAuthorizationResult.NoAuthorizationRequired
-            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
-                return new RelationshipStatementPlan(RelationshipStatementDisposition.None);
-
-            case RelationshipAuthorizationResult.NoClaims noClaims:
-                return new RelationshipStatementPlan(
-                    RelationshipStatementDisposition.DeferredNoClaims,
-                    NoClaims: noClaims
-                );
-
-            case RelationshipAuthorizationResult.KnownButNotEnabled:
-                throw new InvalidOperationException(
-                    "Known-but-not-enabled stored relationship authorization results must be handled by repository preflight before executor entry."
-                );
-
-            case RelationshipAuthorizationResult.SecurityConfigurationError:
-                throw new InvalidOperationException(
-                    "Security-configuration stored relationship authorization results must be handled by repository preflight before executor entry."
-                );
-
-            case RelationshipAuthorizationResult.Authorized authorized:
-                if (authorized.ClaimEducationOrganizationIdParameterization is not { } parameterization)
-                {
-                    return new RelationshipStatementPlan(
-                        RelationshipStatementDisposition.Unbuildable,
-                        Authorized: authorized
-                    );
-                }
-
-                return
-                    parameterization.Kind
-                    is AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured
-                    ? new RelationshipStatementPlan(
-                        RelationshipStatementDisposition.Standalone,
-                        Authorized: authorized
-                    )
-                    : new RelationshipStatementPlan(
-                        RelationshipStatementDisposition.Emitted,
-                        Authorized: authorized
-                    );
-
-            default:
-                throw new InvalidOperationException(
-                    $"Unsupported stored relationship authorization result '{storedAuthorization.GetType().Name}'."
-                );
-        }
-    }
-
-    private bool TryAppendStoredRelationshipAuthorization(
-        RelationalCompositeCommandBuilder builder,
-        IRelationalCompositeTargetCarrier carrier,
-        RelationalWriteExecutorInput input,
-        RelationshipStatementPlan classifiedPlan,
-        out RelationshipStatementPlan statementPlan
-    )
-    {
-        if (classifiedPlan.Disposition is not RelationshipStatementDisposition.Emitted)
-        {
-            statementPlan = classifiedPlan;
-            return true;
-        }
-
-        var authorized = classifiedPlan.Authorized!;
-        var command = BuildStoredRelationshipCommand(
-            input,
-            authorized,
-            authorized.ClaimEducationOrganizationIdParameterization!
+    ) =>
+        RelationalCompositeStoredAuthorization.Classify(
+            input.PostRelationshipAuthorizationPlans is { } plans
+                ? plans.ExistingResourcePlan.StoredValues
+                : input.StoredRelationshipAuthorization
         );
-
-        if (
-            !builder.Fits(
-                GetParameterCountAfterSubstitution(
-                    command,
-                    SingleRecordRelationshipAuthorizationSqlSpecDefaults.DocumentIdParameterName
-                )
-            )
-        )
-        {
-            statementPlan = classifiedPlan;
-            return false;
-        }
-
-        var rewritten = RelationalCompositeStatementRewriter.Rewrite(
-            command,
-            builder.Allocator,
-            builder.NextOrdinal,
-            BuildCarrierSubstitutions(
-                carrier,
-                SingleRecordRelationshipAuthorizationSqlSpecDefaults.DocumentIdParameterName,
-                carrier.CapturedTargetIdExpression
-            )
-        );
-        var ordinal = builder.Append(
-            StoredRelationshipAuthorizationLabel,
-            rewritten.Sql,
-            rewritten.Parameters,
-            RelationalCompositeResultShape.Rows,
-            ReadStoredRelationshipRowAsync
-        );
-
-        statementPlan = classifiedPlan with { Ordinal = ordinal };
-        return true;
-    }
-
-    private RelationalCommand BuildStoredRelationshipCommand(
-        RelationalWriteExecutorInput input,
-        RelationshipAuthorizationResult.Authorized authorized,
-        AuthorizationClaimEducationOrganizationIdParameterization parameterization
-    )
-    {
-        var emittedAuth1Index = RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
-            input.OperationKind
-        );
-        var sqlPlan = authorized.ExecutableShape is { } executableShape
-            ? SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-                input.MappingSet,
-                executableShape,
-                parameterization,
-                emittedAuth1Index
-            )
-            : SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-                input.MappingSet,
-                new SingleRecordRelationshipAuthorizationSqlSpec(
-                    authorized.CheckSpecs,
-                    parameterization,
-                    emittedAuth1Index
-                )
-            );
-
-        if (sqlPlan.ProposedValueParametersInOrder.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Single-record relationship authorization executor cannot execute proposed-value checks without extracted runtime values."
-            );
-        }
-
-        return SingleRecordRelationshipAuthorizationExecutor.BuildCommand(
-            sqlPlan,
-            new SingleRecordRelationshipAuthorizationExecutionRequest(
-                input.MappingSet,
-                DocumentId: 0L,
-                authorized.CheckSpecs,
-                parameterization,
-                emittedAuth1Index,
-                authorized.ExecutableShape
-            ),
-            _relationalParameterConfigurator
-        );
-    }
 
     private sealed record ReferenceStatementPlan(ReferenceLookupRequest LookupRequest, int? Ordinal);
 
@@ -949,21 +692,6 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         return true;
     }
 
-    private static int GetParameterCountAfterSubstitution(
-        RelationalCommand command,
-        params string[] substitutedParameterNames
-    )
-    {
-        HashSet<string> substitutedBareNames = new(
-            substitutedParameterNames.Select(static name => name.TrimStart('@')),
-            StringComparer.OrdinalIgnoreCase
-        );
-
-        return command.Parameters.Count(parameter =>
-            !substitutedBareNames.Contains(parameter.Name.TrimStart('@'))
-        );
-    }
-
     private sealed record HydrationStatementPlan(
         int Ordinal,
         ResourceReadPlan ReadPlan,
@@ -996,7 +724,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             new RelationalCommand(batchSql),
             builder.Allocator,
             builder.NextOrdinal,
-            BuildCarrierSubstitutions(
+            RelationalCompositeStoredAuthorization.BuildCarrierSubstitutions(
                 carrier,
                 HydrationSqlConventions.SingleDocumentIdParameterName,
                 carrier.CapturedTargetIdExpression
@@ -1013,24 +741,6 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         );
 
         return new HydrationStatementPlan(ordinal, readPlan, options);
-    }
-
-    private static IReadOnlyDictionary<string, string> BuildCarrierSubstitutions(
-        IRelationalCompositeTargetCarrier carrier,
-        string parameterName,
-        string expression
-    )
-    {
-        Dictionary<string, string> substitutions = new(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var reservedName in carrier.ReservedNames)
-        {
-            var bareName = reservedName.TrimStart('@');
-            substitutions[bareName] = $"@{bareName}";
-        }
-
-        substitutions[parameterName.TrimStart('@')] = expression;
-        return substitutions;
     }
 
     private static HydrationExecutionOptions BuildHydrationOptions(RelationalWriteExecutorInput input) =>
@@ -1058,126 +768,49 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         );
 
     /// <summary>
-    /// Maps a provider failure raised by the composite command through the same authorization failure
-    /// mappers the standalone executors use, so a denial carried by the AUTH1 device produces exactly
-    /// the result it always has. Anything unmapped propagates to the executor's existing database
-    /// failure handling.
+    /// Maps a provider failure raised by the composite command through the shared stored-authorization
+    /// classification, so a denial carried by the AUTH1 device produces exactly the result it always has.
+    /// Anything unclassified propagates to the executor's existing database failure handling.
     /// </summary>
     private RelationalWriteExecutorResult? TryMapAuthorizationFailure(
         RelationalWriteExecutorInput input,
-        NamespaceStatementPlan? namespacePlan,
-        RelationshipStatementPlan relationshipPlan,
+        StoredNamespaceStatementPlan? namespacePlan,
+        StoredRelationshipStatementPlan relationshipPlan,
         DbException exception
-    )
-    {
-        var dialect = input.MappingSet.Key.Dialect;
-
-        if (namespacePlan is not null)
+    ) =>
+        RelationalCompositeStoredAuthorization.TryClassifyDenial(
+            input.MappingSet.Key.Dialect,
+            exception,
+            namespacePlan,
+            relationshipPlan,
+            RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(input.OperationKind),
+            _providerFailureExtractor,
+            _logger
+        ) switch
         {
-            var plannedCheckValueSources = namespacePlan
-                .Checks.Select(static check => check.ValueSource)
-                .ToArray();
-
-            if (
-                NamespaceAuthorizationProviderFailureMapper.IsStaleStoredTargetFailure(
-                    dialect,
-                    exception,
-                    _providerFailureExtractor,
-                    plannedCheckValueSources
-                )
-            )
-            {
-                // Unreachable while the capture lock holds; kept as the same defensive mapping the
-                // standalone execution had.
-                return RelationalWriteExecutorResults.BuildStaleTargetResult(input.OperationKind);
-            }
-
-            if (
-                NamespaceAuthorizationProviderFailureMapper.TryMapNamespaceAuthorizationFailure(
-                    dialect,
-                    exception,
-                    _providerFailureExtractor,
-                    plannedCheckValueSources,
-                    namespacePlan.PrefixParameterization.ConfiguredPrefixesInOrder,
-                    out var namespaceFailure
-                )
-            )
-            {
-                return RelationalWriteExecutorResults.BuildNamespaceAuthorizationFailureResult(
-                    input.OperationKind,
-                    namespaceFailure!
-                );
-            }
-
-            if (
-                NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
-                    dialect,
-                    exception,
-                    _providerFailureExtractor,
-                    plannedCheckValueSources,
-                    namespacePlan.Checks,
-                    out var namespaceDiagnostics
-                )
-            )
-            {
-                return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
-                    input.OperationKind,
-                    [NamespaceAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata],
-                    namespaceDiagnostics
-                );
-            }
-        }
-
-        if (
-            relationshipPlan is
-            { Disposition: RelationshipStatementDisposition.Emitted, Authorized: { } authorized }
-        )
-        {
-            var emittedAuth1Index = RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
+            // Stale is unreachable while the capture lock holds; kept as the same defensive mapping the
+            // standalone execution had.
+            StoredAuthorizationDenial.StaleTarget => RelationalWriteExecutorResults.BuildStaleTargetResult(
                 input.OperationKind
-            );
-
-            if (
-                RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
-                    dialect,
-                    exception,
-                    _providerFailureExtractor,
-                    emittedAuth1Index,
-                    authorized.CheckSpecs,
-                    authorized.ClaimEducationOrganizationIdParameterization!.ClaimEducationOrganizationIds,
-                    out var relationshipFailure,
-                    out var invalidFailureDiagnostic
-                )
-            )
-            {
-                return RelationalWriteExecutorResults.BuildRelationshipAuthorizationFailureResult(
+            ),
+            StoredAuthorizationDenial.NamespaceNotAuthorized(var failure) =>
+                RelationalWriteExecutorResults.BuildNamespaceAuthorizationFailureResult(
                     input.OperationKind,
-                    relationshipFailure!
-                );
-            }
-
-            if (invalidFailureDiagnostic is not null)
-            {
-                RelationshipAuthorizationProviderFailureMapper.LogInvalidFailurePayload(
-                    _logger,
-                    invalidFailureDiagnostic
-                );
-
-                return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+                    failure
+                ),
+            StoredAuthorizationDenial.RelationshipNotAuthorized(var failure) =>
+                RelationalWriteExecutorResults.BuildRelationshipAuthorizationFailureResult(
                     input.OperationKind,
-                    [
-                        RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
-                    ],
-                    AuthorizationSecurityConfigurationDiagnostics.ForRelationshipAuthorizationAuth1(
-                        invalidFailureDiagnostic,
-                        authorized.CheckSpecs
-                    )
-                );
-            }
-        }
-
-        return null;
-    }
+                    failure
+                ),
+            StoredAuthorizationDenial.SecurityConfiguration(var messages, var diagnostics) =>
+                RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+                    input.OperationKind,
+                    messages,
+                    diagnostics
+                ),
+            _ => null,
+        };
 
     /// <summary>
     /// Shapes a PUT whose in-transaction target observation found nothing. RFC 9110 §13.1.1 If-Match:
@@ -1271,7 +904,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     /// </summary>
     private async Task<RelationalWriteExecutorResult?> ResolveStoredRelationshipDispositionAsync(
         RelationalWriteExecutorRequest executionRequest,
-        RelationshipStatementPlan relationshipPlan,
+        StoredRelationshipStatementPlan relationshipPlan,
         IReadOnlyList<RelationalCompositeStatementOutcome> outcomes,
         RelationalCompositeCapturedTarget capturedTarget,
         IRelationalWriteSession writeSession,
@@ -1280,22 +913,22 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     {
         switch (relationshipPlan.Disposition)
         {
-            case RelationshipStatementDisposition.None:
+            case StoredRelationshipDisposition.None:
                 return null;
 
-            case RelationshipStatementDisposition.DeferredNoClaims:
+            case StoredRelationshipDisposition.DeferredNoClaims:
                 return RelationalWriteExecutorResults.BuildNoClaimsRelationshipAuthorizationResult(
                     executionRequest.OperationKind,
                     relationshipPlan.NoClaims!
                 );
 
-            case RelationshipStatementDisposition.Unbuildable:
+            case StoredRelationshipDisposition.Unbuildable:
                 return RelationalWriteExecutorResults.BuildUnknownFailureResult(
                     executionRequest.OperationKind,
                     "Relationship authorization produced executable checks without claim EducationOrganizationId parameterization."
                 );
 
-            case RelationshipStatementDisposition.Standalone:
+            case StoredRelationshipDisposition.Standalone:
                 return await ExecuteStandaloneStoredRelationshipAsync(
                         executionRequest,
                         relationshipPlan.Authorized!,
@@ -1308,7 +941,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                     )
                     .ConfigureAwait(false);
 
-            case RelationshipStatementDisposition.Emitted:
+            case StoredRelationshipDisposition.Emitted:
                 var row = (StoredRelationshipAuthorizationRow?)outcomes[relationshipPlan.Ordinal].Value;
 
                 if (row is null)
@@ -1531,33 +1164,6 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         return await new ReferenceResolver(adapter)
             .ResolveAsync(input.ReferenceResolutionRequest, cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private sealed record StoredRelationshipAuthorizationRow(int AuthorizationResult, long ContentVersion);
-
-    private static async Task<object?> ReadStoredRelationshipRowAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        var row = new StoredRelationshipAuthorizationRow(
-            reader.GetInt32(reader.GetOrdinal("AuthorizationResult")),
-            reader.GetInt64(reader.GetOrdinal("ContentVersion"))
-        );
-
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException(
-                "Stored relationship authorization returned more than one row for a single locked target."
-            );
-        }
-
-        return row;
     }
 
     private static async Task<object?> ReadReferenceLookupResultsAsync(

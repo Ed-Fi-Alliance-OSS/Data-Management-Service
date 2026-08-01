@@ -148,19 +148,36 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         var relationshipPlan = PlanRelationship(request, mergeResult);
         mergeResult = relationshipPlan.MergeResult;
 
+        if (relationshipPlan.DeferredResult is { } deferredResult)
+        {
+            // The request is already denied — the caller holds no claims, or the proposed plan cannot be
+            // reconciled with the finalized root row — and only the namespace check can outrank that
+            // denial. So that check runs alone and nothing else is sent: no reserved collection key and no
+            // data-modifying statement, which is what keeps a constraint violation from preempting the
+            // authorization failure the caller must see, and keeps a denied create from leaving a row.
+            var namespaceDenial = await RunNamespaceOnlyAsync(
+                    request,
+                    namespacePlan,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return new RelationalWriteSecondCommandResolution(
+                mergeResult,
+                null,
+                namespaceDenial ?? deferredResult
+            );
+        }
+
         if (
             mode is RelationalWriteSecondCommandMode.AuthorizationOnly
             && namespacePlan is null
             && relationshipPlan.RuntimeCheck is null
         )
         {
-            // Nothing to authorize and no DML to apply. A deferred disposition may still exist — a caller
-            // with no claims — and it needs no command of its own.
-            return new RelationalWriteSecondCommandResolution(
-                mergeResult,
-                null,
-                relationshipPlan.DeferredResult
-            );
+            // Nothing to authorize and no DML to apply.
+            return new RelationalWriteSecondCommandResolution(mergeResult, null, null);
         }
 
         var execution = await ExecuteAsync(
@@ -177,8 +194,42 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         return new RelationalWriteSecondCommandResolution(
             mergeResult,
             execution.PersistResult,
-            execution.ImmediateResult ?? relationshipPlan.DeferredResult
+            execution.ImmediateResult
         );
+    }
+
+    /// <summary>
+    /// Runs the proposed namespace check as a command of its own, answering with its denial or
+    /// <see langword="null"/>. Selected wherever a later statement must not share the command: the
+    /// relationship check could not be co-batched, or the request is already denied and only the
+    /// namespace check's precedence over that denial remains to be settled.
+    /// </summary>
+    private async Task<RelationalWriteExecutorResult?> RunNamespaceOnlyAsync(
+        RelationalWriteExecutorRequest request,
+        NamespaceStatementPlan? namespacePlan,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (namespacePlan is null)
+        {
+            return null;
+        }
+
+        var builder = CreateBuilder(request);
+        TryAppendNamespace(builder, request, namespacePlan);
+
+        var run = await RunAsync(
+                request,
+                builder,
+                namespacePlan,
+                runtimeCheck: null,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return run.Denial;
     }
 
     private sealed record SecondCommandExecution(
@@ -295,25 +346,13 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         {
             // Create artifacts only after proposed authorization: a check that cannot join the command has
             // to run, and pass, before the data-modifying statements are built at all.
-            if (namespacePlan is not null)
+            if (
+                await RunNamespaceOnlyAsync(request, namespacePlan, writeSession, cancellationToken)
+                    .ConfigureAwait(false) is
+                { } namespaceDenial
+            )
             {
-                var namespaceOnlyBuilder = CreateBuilder(request);
-                TryAppendNamespace(namespaceOnlyBuilder, request, namespacePlan);
-
-                var namespaceRun = await RunAsync(
-                        request,
-                        namespaceOnlyBuilder,
-                        namespacePlan,
-                        runtimeCheck: null,
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (namespaceRun.Denial is not null)
-                {
-                    return new SecondCommandExecution(null, namespaceRun.Denial);
-                }
+                return new SecondCommandExecution(null, namespaceDenial);
             }
 
             var standaloneDenial = await ExecuteStandaloneRelationshipAsync(

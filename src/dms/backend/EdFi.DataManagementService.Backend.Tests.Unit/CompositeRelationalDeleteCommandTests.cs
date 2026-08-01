@@ -1,0 +1,926 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data.Common;
+using EdFi.DataManagementService.Backend.Composite;
+using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+/// <summary>
+/// Owns the relational DELETE command stream's observable behavior: how many commands it issues, the order
+/// its statements are emitted in, and how each decoded or provider outcome maps back to a
+/// <see cref="DeleteResult"/>.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_The_Composite_Relational_Delete_Command
+{
+    private static readonly DocumentUuid TargetDocumentUuid = new(
+        Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+    );
+
+    private const long TargetDocumentId = 345L;
+    private const long TargetContentVersion = 44L;
+
+    /// <summary>The namespace check's emitted shape, which no other delete statement produces.</summary>
+    private const string NamespaceCheckMarker = "SELECT CASE";
+
+    [TestCase(SqlDialect.Pgsql, "RETURNING \"DocumentId\"")]
+    [TestCase(SqlDialect.Mssql, "OUTPUT DELETED.[DocumentId]")]
+    public async Task It_deletes_the_root_row_then_the_document_row_in_one_command(
+        SqlDialect dialect,
+        string documentIdProjection
+    )
+    {
+        var session = CreateSession(dialect, DeleteReader(rootDeleteOrdinal: 1, deleted: true));
+
+        var result = await CreateSut().ExecuteAsync(CreateRequest(dialect), session);
+
+        // The root row goes first so the tombstone trigger can still read the DocumentUuid, and the
+        // dms.Document delete projects the id it removed, which is how delete success is decided.
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        var command = session.Commands.Should().ContainSingle().Subject;
+        IndexOfRootDelete(session, dialect)
+            .Should()
+            .BeLessThan(IndexOfDocumentDelete(session, dialect))
+            .And.BePositive();
+        command
+            .CommandText.IndexOf(documentIdProjection, StringComparison.Ordinal)
+            .Should()
+            .BeGreaterThan(IndexOfDocumentDelete(session, dialect));
+
+        // Both deletes consume the capture carrier, so neither binds a document id of its own: only the
+        // capture's own predicate parameters are sent.
+        command
+            .Parameters.Should()
+            .NotContain(parameter =>
+                parameter.Name.Contains("documentId", StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_not_exists_when_the_capture_observed_no_target(SqlDialect dialect)
+    {
+        var session = CreateSession(
+            dialect,
+            DeleteReader(rootDeleteOrdinal: 1, deleted: false, captured: false)
+        );
+
+        var result = await CreateSut().ExecuteAsync(CreateRequest(dialect), session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_for_a_wildcard_if_match_against_a_missing_target()
+    {
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            DeleteReader(rootDeleteOrdinal: 1, deleted: false, captured: false)
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("*", IsWildcard: true),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new DeleteResult.DeleteFailureETagMisMatch(ETagPreconditionFailureReason.TargetDoesNotExist)
+            );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_authorizes_the_stored_namespace_before_deleting(SqlDialect dialect)
+    {
+        var session = CreateSession(
+            dialect,
+            DeleteReader(rootDeleteOrdinal: 2, deleted: true, namespaceCheckCount: 1)
+        );
+        var request = CreateRequest(dialect) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(dialect),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().ContainSingle();
+        session
+            .Commands[0]
+            .CommandText.IndexOf(NamespaceCheckMarker, StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(IndexOfRootDelete(session, dialect))
+            .And.BePositive();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_authorizes_the_stored_relationship_after_the_namespace_and_before_deleting(
+        SqlDialect dialect
+    )
+    {
+        var session = CreateSession(
+            dialect,
+            DeleteReader(
+                rootDeleteOrdinal: 3,
+                deleted: true,
+                namespaceCheckCount: 1,
+                includeRelationshipRow: true
+            )
+        );
+        var request = CreateRequest(dialect) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(dialect),
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(dialect),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().ContainSingle();
+        session
+            .Commands[0]
+            .CommandText.IndexOf("AuthorizationResult", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(IndexOfRootDelete(session, dialect))
+            .And.BePositive();
+    }
+
+    [Test]
+    public async Task It_maps_a_namespace_auth1_failure_to_the_namespace_denial()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+        };
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", payload))
+            .ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>();
+    }
+
+    [Test]
+    public async Task It_maps_a_relationship_auth1_failure_to_the_relationship_denial()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(SqlDialect.Pgsql),
+        };
+        var payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                CompositeRelationalDeleteCommand.RelationshipAuthorizationAuth1Index,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", payload))
+            .ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>();
+    }
+
+    [Test]
+    public async Task It_withholds_the_deletes_when_the_caller_holds_no_usable_claims()
+    {
+        var denial = new DeleteResult.DeleteFailureNotExists();
+        var session = CreateSession(SqlDialect.Pgsql, DeleteReader(rootDeleteOrdinal: -1, deleted: false));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+            DeferredRelationshipDenial = denial,
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeSameAs(denial);
+        session.Commands.Should().ContainSingle();
+        IndexOfRootDelete(session, SqlDialect.Pgsql).Should().BeNegative();
+    }
+
+    [Test]
+    public async Task It_answers_not_found_before_a_no_claims_denial_when_the_target_is_missing()
+    {
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            DeleteReader(rootDeleteOrdinal: -1, deleted: false, captured: false)
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+            DeferredRelationshipDenial = new DeleteResult.DeleteFailureRelationshipNotAuthorized(
+                new RelationshipAuthorizationFailure(
+                    RelationshipAuthorizationFailureValueSource.Stored,
+                    CompositeRelationalDeleteCommand.RelationshipAuthorizationAuth1Index,
+                    [],
+                    []
+                )
+            ),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+    }
+
+    [Test]
+    public async Task It_evaluates_a_specific_tag_if_match_between_the_capture_and_the_deletes()
+    {
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            CaptureOnlyReader(captured: true),
+            SegmentDeleteReader(deleted: true)
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(CurrentEtag(TargetContentVersion)),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().NotContain("DELETE FROM");
+        session.Commands[1].CommandText.Should().Contain("DELETE FROM");
+    }
+
+    [Test]
+    public async Task It_returns_etag_mismatch_without_issuing_the_deletes_for_a_stale_if_match_tag()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, CaptureOnlyReader(captured: true));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(CurrentEtag(TargetContentVersion + 1)),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_runs_a_structured_claim_relationship_check_as_its_own_segment_before_the_deletes()
+    {
+        var session = CreateSession(
+            SqlDialect.Mssql,
+            CaptureOnlyReader(captured: true),
+            RelationshipRowReader(),
+            SegmentDeleteReader(deleted: true)
+        );
+        var request = CreateRequest(SqlDialect.Mssql) with
+        {
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(
+                SqlDialect.Mssql,
+                [.. Enumerable.Range(1, 2000).Select(static value => (long)value)]
+            ),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(3);
+        session.Commands[1].CommandText.Should().Contain("AuthorizationResult");
+        session.Commands[2].CommandText.Should().Contain("DELETE FROM");
+    }
+
+    [Test]
+    public async Task It_runs_a_relationship_check_that_does_not_fit_the_command_as_its_own_segment()
+    {
+        var session = CreateSession(
+            SqlDialect.Mssql,
+            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            RelationshipRowReader(),
+            SegmentDeleteReader(deleted: true)
+        );
+        var request = CreateRequest(SqlDialect.Mssql) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(
+                SqlDialect.Mssql,
+                // Valid but large: below the SQL Server prefix cap, and small enough that the namespace
+                // check still fits this command on its own.
+                [.. Enumerable.Range(0, 1500).Select(static index => $"uri://prefix-{index}/")]
+            ),
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(
+                SqlDialect.Mssql,
+                // Below the structured-parameterization threshold, so these bind as scalars — the shape the
+                // composite rewriter can rename. Together with the prefixes they exceed the command budget.
+                [.. Enumerable.Range(1, 900).Select(static value => (long)value)]
+            ),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        // The check does not fit, so it takes the ordered segment a table-valued claim list already needs,
+        // and the deletes wait for it: authorization is never silently skipped to keep one command.
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(3);
+        session.Commands[0].CommandText.Should().Contain(NamespaceCheckMarker).And.NotContain("DELETE FROM");
+        session.Commands[1].CommandText.Should().Contain("AuthorizationResult");
+        session.Commands[2].CommandText.Should().Contain("DELETE FROM");
+    }
+
+    [Test]
+    public async Task It_runs_a_namespace_check_that_does_not_fit_the_command_as_its_own_segment()
+    {
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            CaptureOnlyReader(captured: true),
+            NamespaceCheckReader(checkCount: 1),
+            RelationshipRowReader(),
+            SegmentDeleteReader(deleted: true)
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(SqlDialect.Pgsql),
+        };
+
+        // A budget the capture's own two parameters consume, so neither authorization statement can join it.
+        var result = await CreateSut(commandBudget: new RelationalCommandBudget(2, 1000))
+            .ExecuteAsync(request, session);
+
+        // The relationship check follows the namespace check onto a segment rather than riding the opening
+        // command, because co-batching it there would place it ahead of the denial that outranks it.
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(4);
+        session.Commands[0].CommandText.Should().NotContain(NamespaceCheckMarker);
+        session.Commands[1].CommandText.Should().Contain(NamespaceCheckMarker);
+        session.Commands[2].CommandText.Should().Contain("AuthorizationResult");
+        session.Commands[3].CommandText.Should().Contain("DELETE FROM");
+    }
+
+    [Test]
+    public async Task It_authorizes_the_stored_relationship_before_a_specific_tag_if_match_and_the_delete()
+    {
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            CaptureOnlyReader(captured: true, includeRelationshipRow: true),
+            SegmentDeleteReader(deleted: true)
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(SqlDialect.Pgsql),
+            WritePrecondition = new WritePrecondition.IfMatch(CurrentEtag(TargetContentVersion)),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        // Authorization rides the capture command, the precondition is compared in process against the
+        // captured ContentVersion, and only then is the delete sent.
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().Contain("AuthorizationResult").And.NotContain("DELETE FROM");
+        session.Commands[1].CommandText.Should().Contain("DELETE FROM");
+    }
+
+    [Test]
+    public async Task It_returns_the_relationship_denial_rather_than_a_stale_if_match_mismatch()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(SqlDialect.Pgsql),
+            WritePrecondition = new WritePrecondition.IfMatch(CurrentEtag(TargetContentVersion + 1)),
+        };
+        var payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                CompositeRelationalDeleteCommand.RelationshipAuthorizationAuth1Index,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", payload))
+            .ExecuteAsync(request, session);
+
+        // The check statement precedes the precondition compare, so a caller who is not authorized learns
+        // that rather than learning its tag was stale, and no delete is ever sent.
+        result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>();
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContain("DELETE FROM");
+    }
+
+    [Test]
+    public async Task It_fails_closed_with_security_configuration_when_the_relationship_auth1_payload_is_malformed()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(SqlDialect.Pgsql),
+        };
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", "1|0|1|not-a-subject-failure"))
+            .ExecuteAsync(request, session);
+
+        // The denial is real but its metadata cannot be decoded, so the request fails closed on the
+        // security configuration rather than reporting a denial it cannot describe.
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            );
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadParseFailed");
+    }
+
+    [Test]
+    public async Task It_preserves_mixed_auth_object_and_people_subject_details_in_the_relationship_denial()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredRelationshipAuthorization = CreateMixedSubjectStoredRelationshipAuthorization(
+                SqlDialect.Pgsql
+            ),
+        };
+        var payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                CompositeRelationalDeleteCommand.RelationshipAuthorizationAuth1Index,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        1,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", payload))
+            .ExecuteAsync(request, session);
+
+        // One OR group whose subjects use different auth objects has no single strategy-level auth object,
+        // and the person subject's own metadata has to reach the caller for the hint to be actionable.
+        var failure = result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>()
+            .Subject.RelationshipFailure;
+        var failedStrategy = failure.FailedStrategies.Should().ContainSingle().Which;
+        failedStrategy.AuthObject.Should().BeNull();
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.AuthObject.Name)
+            .Should()
+            .Equal(
+                "auth.EducationOrganizationIdToEducationOrganizationId",
+                "auth.EducationOrganizationIdToStudentDocumentId"
+            );
+        failedStrategy
+            .FailedSubjects.SelectMany(static subject => subject.SecurableElements)
+            .Select(static element => element.ReadableName)
+            .Should()
+            .Equal("SchoolId", "StudentUniqueId");
+        failedStrategy.FailedSubjects[0].PersonSubject.Should().BeNull();
+        failedStrategy.FailedSubjects[1].PersonSubject!.PersonKind.Should().Be("Student");
+    }
+
+    [Test]
+    public async Task It_maps_an_inbound_foreign_key_violation_to_a_delete_reference_conflict()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("FK violation", "23503"));
+        var classifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsForeignKeyViolationToReturn = true,
+            ClassificationToReturn = new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_Calendar_SchoolRef"
+            ),
+        };
+        var constraintResolver = A.Fake<IRelationalDeleteConstraintResolver>();
+        A.CallTo(() =>
+                constraintResolver.TryResolveReferencingResource(
+                    A<DerivedRelationalModelSet>._,
+                    "FK_Calendar_SchoolRef"
+                )
+            )
+            .Returns(new QualifiedResourceName("Ed-Fi", "Calendar"));
+
+        var result = await CreateSut(classifier: classifier, constraintResolver: constraintResolver)
+            .ExecuteAsync(CreateRequest(SqlDialect.Pgsql), session);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureReference>()
+            .Which.ReferencingDocumentResourceNames.Should()
+            .Equal("Calendar");
+    }
+
+    [Test]
+    public async Task It_maps_a_transient_provider_failure_to_a_write_conflict()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("deadlock", "40P01"));
+        var classifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsTransientFailureToReturn = true,
+        };
+
+        var result = await CreateSut(classifier: classifier)
+            .ExecuteAsync(CreateRequest(SqlDialect.Pgsql), session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
+    }
+
+    private static CompositeRelationalDeleteCommand CreateSut(
+        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
+        IRelationalWriteExceptionClassifier? classifier = null,
+        IRelationalDeleteConstraintResolver? constraintResolver = null,
+        RelationalCommandBudget? commandBudget = null
+    ) =>
+        new(
+            new RelationalCurrentEtagPreconditionChecker(
+                A.Fake<IRelationalWriteCurrentStateLoader>(),
+                NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
+            ),
+            classifier ?? new ConfigurableRelationalWriteExceptionClassifier(),
+            constraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
+            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
+            commandBudget: commandBudget
+        );
+
+    /// <summary>The served etag a client would hold for a document at <paramref name="contentVersion"/>.</summary>
+    private static string CurrentEtag(long contentVersion) =>
+        EtagComposer.Compose(
+            contentVersion,
+            VariantKeyFactory.Create(
+                "schema-hash",
+                ResponseFormat.Json,
+                ProfileVariantCode.Of(null),
+                linksEnabled: true
+            )
+        );
+
+    private static ScriptedWriteSession CreateSession(SqlDialect dialect, params object[] scripts) =>
+        new(scripts) { Dialect = dialect };
+
+    private static int IndexOfRootDelete(ScriptedWriteSession session, SqlDialect dialect) =>
+        session
+            .Commands[0]
+            .CommandText.IndexOf(
+                dialect is SqlDialect.Pgsql
+                    ? "DELETE FROM \"edfi\".\"School\""
+                    : "DELETE FROM [edfi].[School]",
+                StringComparison.Ordinal
+            );
+
+    private static int IndexOfDocumentDelete(ScriptedWriteSession session, SqlDialect dialect) =>
+        session
+            .Commands[0]
+            .CommandText.IndexOf(
+                dialect is SqlDialect.Pgsql ? "DELETE FROM dms.\"Document\"" : "DELETE FROM [dms].[Document]",
+                StringComparison.Ordinal
+            );
+
+    private static RelationalDeleteCommandRequest CreateRequest(SqlDialect dialect)
+    {
+        var mappingSet = CreateMappingSet(dialect);
+
+        return new RelationalDeleteCommandRequest(
+            mappingSet,
+            mappingSet.Model.ConcreteResourcesInNameOrder[0].RelationalModel.Resource,
+            TargetDocumentUuid,
+            new TraceId("composite-delete-test"),
+            StoredNamespaceAuthorization: null,
+            new RelationshipAuthorizationResult.NoAuthorizationRequired([])
+        );
+    }
+
+    private static MappingSet CreateMappingSet(SqlDialect dialect)
+    {
+        var rootPlan = Given_Default_Relational_Write_Executor.CreateRootPlan();
+
+        return Given_Default_Relational_Write_Executor.CreateMappingSet(
+            Given_Default_Relational_Write_Executor.CreateRelationalResourceModel(rootPlan.TableModel),
+            [rootPlan],
+            dialect
+        );
+    }
+
+    private static RelationalWriteNamespaceAuthorization CreateStoredNamespaceAuthorization(
+        SqlDialect dialect,
+        IReadOnlyList<string>? namespacePrefixes = null
+    ) =>
+        new(
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    NamespaceAuthorizationCheckValueSource.Stored,
+                    new DbTableName(new DbSchemaName("edfi"), "School"),
+                    new DbColumnName("Name")
+                ),
+            ],
+            NamespacePrefixParameterizationFactory.Create(
+                dialect,
+                namespacePrefixes ?? ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            )
+        );
+
+    /// <summary>
+    /// One OR group whose two subjects use different auth objects: the root education organization and a
+    /// <c>Student</c> person subject, which is the shape whose failure detail a single-subject check cannot
+    /// exercise.
+    /// </summary>
+    private static RelationshipAuthorizationResult.Authorized CreateMixedSubjectStoredRelationshipAuthorization(
+        SqlDialect dialect
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+
+        return new RelationshipAuthorizationResult.Authorized(
+            [
+                new RelationshipAuthorizationCheckSpec(
+                    new ConfiguredAuthorizationStrategy(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+                        RawConfiguredIndex: 0
+                    ),
+                    RelationshipLocalOrder: 0,
+                    RelationshipAuthorizationHierarchyDirection.Normal,
+                    RelationshipAuthorizationValueSource.Stored,
+                    [
+                        new RelationshipAuthorizationSubject(
+                            resource,
+                            rootTable,
+                            new DbColumnName("SchoolId"),
+                            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                                RelationshipAuthorizationHierarchyDirection.Normal
+                            ),
+                            [
+                                new RelationshipAuthorizationSubjectContributor(
+                                    SecurableElementKind.EducationOrganization,
+                                    "$.schoolId",
+                                    "SchoolId"
+                                ),
+                            ]
+                        ),
+                        new RelationshipAuthorizationSubject(
+                            resource,
+                            rootTable,
+                            AuthNames.StudentDocumentId,
+                            RelationshipAuthorizationAuthObject.CreatePerson(
+                                RelationshipAuthorizationPersonAuthViewKind.Student
+                            ),
+                            [
+                                new RelationshipAuthorizationSubjectContributor(
+                                    SecurableElementKind.Student,
+                                    "$.studentReference.studentUniqueId",
+                                    "StudentUniqueId"
+                                ),
+                            ],
+                            new RelationshipAuthorizationPersonSubjectMetadata(
+                                RelationshipAuthorizationPersonKind.Student,
+                                new RelationshipAuthorizationPersonSubjectPath(
+                                    RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                                    [new ColumnPathStep(rootTable, AuthNames.StudentDocumentId, null, null)]
+                                ),
+                                new RelationshipAuthorizationPersonStoredAnchor(
+                                    rootTable,
+                                    new DbColumnName("DocumentId")
+                                ),
+                                ProposedAnchor: null
+                            )
+                        ),
+                    ],
+                    new RelationshipAuthorizationCheckTarget.Stored(rootTable, new DbColumnName("DocumentId"))
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                dialect,
+                [255901L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
+    }
+
+    private static RelationshipAuthorizationResult.Authorized CreateStoredRelationshipAuthorization(
+        SqlDialect dialect,
+        IReadOnlyList<long>? claimEducationOrganizationIds = null
+    ) =>
+        Given_Default_Relational_Write_Executor.CreateStoredSchoolIdRelationshipAuthorization(
+            CreateMappingSet(dialect),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            Given_Default_Relational_Write_Executor.CreateRootPlan(),
+            claimEducationOrganizationIds
+        );
+
+    /// <summary>
+    /// The opening command's stream when it carries no deletes: the capture row, then one row set per
+    /// co-batched namespace check, then the relationship row when one was co-batched.
+    /// </summary>
+    private static ScriptedDbDataReader CaptureOnlyReader(
+        bool captured,
+        int namespaceCheckCount = 0,
+        bool includeRelationshipRow = false
+    )
+    {
+        List<IReadOnlyList<object?[]>> resultSets =
+        [
+            captured
+                ?
+                [
+                    [TargetDocumentId, TargetContentVersion, TargetDocumentUuid.Value, "345"],
+                ]
+                :
+                [
+                    [null, null, null, ""],
+                ],
+        ];
+        List<string[]> columnNames =
+        [
+            ["DocumentId", "ContentVersion", "DocumentUuid", "CapturedToken"],
+        ];
+
+        for (var check = 0; check < namespaceCheckCount; check++)
+        {
+            resultSets.Add([
+                [1],
+            ]);
+            columnNames.Add(["Authorized"]);
+        }
+
+        if (includeRelationshipRow)
+        {
+            resultSets.Add([
+                [1, TargetContentVersion],
+            ]);
+            columnNames.Add(["AuthorizationResult", "ContentVersion"]);
+        }
+
+        return new ScriptedDbDataReader(resultSets, columnNames);
+    }
+
+    /// <summary>The ordered-segment namespace command's stream: one authorizing row set per check.</summary>
+    private static ScriptedDbDataReader NamespaceCheckReader(int checkCount) =>
+        new(
+            [
+                .. Enumerable.Repeat<IReadOnlyList<object?[]>>(
+                    [
+                        [1],
+                    ],
+                    checkCount
+                ),
+            ],
+            [.. Enumerable.Repeat<string[]>(["Authorized"], checkCount)]
+        );
+
+    private static ScriptedDbDataReader RelationshipRowReader() =>
+        new(
+            [
+                [
+                    [1, TargetContentVersion],
+                ],
+            ],
+            [
+                ["AuthorizationResult", "ContentVersion"],
+            ]
+        );
+
+    /// <summary>
+    /// The ordered-segment delete command's stream: the root delete produces no result set of its own, so
+    /// the only rows are the <c>dms.Document</c> delete's returned id.
+    /// </summary>
+    private static ScriptedDbDataReader SegmentDeleteReader(bool deleted) =>
+        new(
+            deleted
+                ?
+                [
+                    [
+                        [TargetDocumentId],
+                    ],
+                ]
+                :
+                [
+                    [],
+                ],
+            [
+                ["DocumentId"],
+            ]
+        );
+
+    /// <summary>
+    /// The composite command's declared result-set stream: the capture row, one row set per namespace check,
+    /// the relationship row when one is co-batched, the root delete's sentinel echoing its own ordinal, and
+    /// the <c>dms.Document</c> delete's returned id.
+    /// </summary>
+    private static ScriptedDbDataReader DeleteReader(
+        int rootDeleteOrdinal,
+        bool deleted,
+        bool captured = true,
+        int namespaceCheckCount = 0,
+        bool includeRelationshipRow = false
+    )
+    {
+        var includeDeletes = rootDeleteOrdinal >= 0;
+        List<IReadOnlyList<object?[]>> resultSets =
+        [
+            captured
+                ?
+                [
+                    [TargetDocumentId, TargetContentVersion, TargetDocumentUuid.Value, "345"],
+                ]
+                :
+                [
+                    [null, null, null, ""],
+                ],
+        ];
+        List<string[]> columnNames =
+        [
+            ["DocumentId", "ContentVersion", "DocumentUuid", "CapturedToken"],
+        ];
+
+        for (var check = 0; check < namespaceCheckCount; check++)
+        {
+            resultSets.Add([
+                [1],
+            ]);
+            columnNames.Add(["Authorized"]);
+        }
+
+        if (includeRelationshipRow)
+        {
+            resultSets.Add([
+                [1, TargetContentVersion],
+            ]);
+            columnNames.Add(["AuthorizationResult", "ContentVersion"]);
+        }
+
+        if (includeDeletes)
+        {
+            resultSets.Add([
+                [rootDeleteOrdinal],
+            ]);
+            columnNames.Add(["LogicalStatementOrdinal"]);
+
+            resultSets.Add(
+                deleted
+                    ?
+                    [
+                        [TargetDocumentId],
+                    ]
+                    : []
+            );
+            columnNames.Add(["DocumentId"]);
+        }
+
+        return new ScriptedDbDataReader(resultSets, columnNames);
+    }
+
+    private sealed class StubProviderFailureExtractor(string? providerErrorCode, string providerMessage)
+        : IRelationshipAuthorizationProviderFailureExtractor
+    {
+        public RelationshipAuthorizationProviderFailure Extract(DbException exception) =>
+            new(providerErrorCode, providerMessage);
+    }
+
+    private sealed class FakeDbException(string message, string sqlState) : DbException(message)
+    {
+        public override string SqlState => sqlState;
+    }
+}

@@ -6975,6 +6975,43 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
+    /// <summary>
+    /// The deferred no-claims disposition for whichever proposed relationship authorization the request
+    /// already carries: the caller holds no education-organization claims, so the check needs no statement
+    /// of its own, only a denial an earlier namespace statement may outrank.
+    /// </summary>
+    internal static RelationshipAuthorizationResult.NoClaims CreateProposedNoClaimsAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var authorized = (RelationshipAuthorizationResult.Authorized)
+            request.ProposedRelationshipAuthorization!;
+        var checkSpec = authorized.CheckSpecs.Single();
+
+        return new RelationshipAuthorizationResult.NoClaims(
+            authorized.CheckSpecs,
+            [
+                new RelationshipAuthorizationFailureMetadata(
+                    RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+                    request.WritePlan.Model.Resource,
+                    checkSpec.ConfiguredStrategy,
+                    checkSpec.RelationshipLocalOrder,
+                    checkSpec.ValueSource,
+                    checkSpec.Subjects[0].AuthObject,
+                    new RelationshipAuthorizationFailureLocation(
+                        Kind: SecurableElementKind.EducationOrganization,
+                        JsonPath: "$.schoolId",
+                        ReadableName: "SchoolId",
+                        Table: request.WritePlan.Model.Root.Table,
+                        Column: new DbColumnName("SchoolId")
+                    ),
+                    Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
+                ),
+            ]
+        );
+    }
+
     private static RelationshipAuthorizationResult.Authorized CreateTransitivePeopleProposedRelationshipAuthorization(
         RelationalWriteExecutorInput request
     )
@@ -7189,11 +7226,27 @@ public class Given_Default_Relational_Write_Executor
     internal static RelationshipAuthorizationResult.Authorized CreateStoredSchoolIdRelationshipAuthorization(
         RelationalWriteExecutorInput request,
         IReadOnlyList<long>? claimEducationOrganizationIds = null
+    ) =>
+        CreateStoredSchoolIdRelationshipAuthorization(
+            request.MappingSet,
+            request.WritePlan.Model.Resource,
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            claimEducationOrganizationIds
+        );
+
+    /// <summary>
+    /// The same stored SchoolId relationship authorization, arranged from the mapping set and root plan
+    /// alone, for fixtures whose verb has no <see cref="RelationalWriteExecutorInput"/>.
+    /// </summary>
+    internal static RelationshipAuthorizationResult.Authorized CreateStoredSchoolIdRelationshipAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        TableWritePlan rootPlan,
+        IReadOnlyList<long>? claimEducationOrganizationIds = null
     )
     {
-        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
         var subject = CreateRelationshipAuthorizationSubject(
-            request,
+            resource,
             rootPlan,
             "SchoolId",
             "$.schoolId",
@@ -7217,7 +7270,7 @@ public class Given_Default_Relational_Write_Executor
         return new RelationshipAuthorizationResult.Authorized(
             [checkSpec],
             AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
-                request.MappingSet.Key.Dialect,
+                mappingSet.Key.Dialect,
                 claimEducationOrganizationIds ?? [1234L],
                 RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
             )
@@ -7489,6 +7542,21 @@ public class Given_Default_Relational_Write_Executor
         string columnName,
         string jsonPath,
         string readableName
+    ) =>
+        CreateRelationshipAuthorizationSubject(
+            request.WritePlan.Model.Resource,
+            rootPlan,
+            columnName,
+            jsonPath,
+            readableName
+        );
+
+    private static RelationshipAuthorizationSubject CreateRelationshipAuthorizationSubject(
+        QualifiedResourceName resource,
+        TableWritePlan rootPlan,
+        string columnName,
+        string jsonPath,
+        string readableName
     )
     {
         var binding = rootPlan
@@ -7496,7 +7564,7 @@ public class Given_Default_Relational_Write_Executor
             .Single(entry => entry.binding.Column.ColumnName.Value == columnName);
 
         return new RelationshipAuthorizationSubject(
-            request.WritePlan.Model.Resource,
+            resource,
             rootPlan.TableModel.Table,
             binding.binding.Column.ColumnName,
             RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(

@@ -41,7 +41,6 @@ public sealed class RelationalDocumentStoreRepository(
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
-    private const int DeleteRelationshipAuthorizationAuth1Index = 0;
     internal const int PostRelationshipAuthorizationAuth1Index = 0;
     internal const int PutRelationshipAuthorizationAuth1Index = 0;
     private const int GetByIdReadBoundaryAttemptCount = 2;
@@ -404,82 +403,37 @@ public sealed class RelationalDocumentStoreRepository(
 
         await using (writeSession)
         {
-            var sessionCommandExecutor = writeSession.CreateCommandExecutor();
-
             DeleteResult outcome;
 
             try
             {
-                var resolved = await RelationalDocumentUuidLookupSupport
-                    .TryResolveDeleteTargetAsync(sessionCommandExecutor, mappingSet, resource, documentUuid)
-                    .ConfigureAwait(false);
-
-                if (resolved is null)
-                {
-                    // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing
-                    // DELETE target yields the precondition-failed (412) result rather than 404.
-                    outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
-                        ? new DeleteResult.DeleteFailureETagMisMatch(
-                            ETagPreconditionFailureReason.TargetDoesNotExist
-                        )
-                        : new DeleteResult.DeleteFailureNotExists();
-                }
-                else
-                {
-                    var lockedContentVersion = await TryLockDeleteTargetAsync(
-                            sessionCommandExecutor,
-                            mappingSet.Key.Dialect,
-                            resolved.DocumentId
-                        )
-                        .ConfigureAwait(false);
-
-                    if (lockedContentVersion is null)
-                    {
-                        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a
-                        // target that vanished before locking yields 412 rather than 404.
-                        outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
-                            ? new DeleteResult.DeleteFailureETagMisMatch(
-                                ETagPreconditionFailureReason.TargetDoesNotExist
-                            )
-                            : new DeleteResult.DeleteFailureNotExists();
-                    }
-                    else
-                    {
-                        var lockedTargetContext = new RelationalWriteTargetContext.ExistingDocument(
-                            resolved.DocumentId,
+                outcome = await new CompositeRelationalDeleteCommand(
+                    _deleteEtagPreconditionChecker,
+                    _writeExceptionClassifier,
+                    _deleteConstraintResolver,
+                    _relationalParameterConfigurator,
+                    _relationshipAuthorizationProviderFailureExtractor,
+                    _logger
+                )
+                    .ExecuteAsync(
+                        new RelationalDeleteCommandRequest(
+                            mappingSet,
+                            resource,
                             documentUuid,
-                            lockedContentVersion.Value
-                        );
-
-                        var authorizationFailure = await AuthorizeDeleteIfRequiredAsync(
-                                mappingSet,
-                                resolved.DocumentId,
-                                storedNamespaceAuthorization,
+                            traceId,
+                            storedNamespaceAuthorization,
+                            storedRelationshipAuthorization
+                        )
+                        {
+                            WritePrecondition = writePrecondition,
+                            DeferredRelationshipDenial = BuildDeferredDeleteRelationshipDenial(
                                 storedRelationshipAuthorization,
-                                relationalDeleteRequest.AuthorizationContext,
-                                sessionCommandExecutor
-                            )
-                            .ConfigureAwait(false);
-
-                        if (authorizationFailure is not null)
-                        {
-                            outcome = authorizationFailure;
-                        }
-                        else
-                        {
-                            outcome = await ExecuteAuthorizedDeleteAsync(
-                                    mappingSet,
-                                    resource,
-                                    documentUuid,
-                                    traceId,
-                                    writePrecondition,
-                                    sessionCommandExecutor,
-                                    lockedTargetContext
-                                )
-                                .ConfigureAwait(false);
-                        }
-                    }
-                }
+                                relationalDeleteRequest.AuthorizationContext
+                            ),
+                        },
+                        writeSession
+                    )
+                    .ConfigureAwait(false);
             }
             catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
             {
@@ -552,190 +506,36 @@ public sealed class RelationalDocumentStoreRepository(
         }
     }
 
-    private async Task<DeleteResult> ExecuteAuthorizedDeleteAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        TraceId traceId,
-        WritePrecondition writePrecondition,
-        IRelationalCommandExecutor sessionCommandExecutor,
-        RelationalWriteTargetContext.ExistingDocument lockedTargetContext
-    )
-    {
-        if (writePrecondition is WritePrecondition.IfMatch ifMatch)
-        {
-            // Existence and concurrency were already settled by resolving and locking the target above,
-            // and its ContentVersion is carried on lockedTargetContext. The precondition is therefore a
-            // pure compare against that locked stamp — no re-lock and no state hydration. A wildcard
-            // matches unconditionally because the locked row exists; the missing-target 412/404 split is
-            // handled by the resolve/lock steps upstream.
-            var preconditionCheckResult = _deleteEtagPreconditionChecker.Evaluate(
-                mappingSet,
-                lockedTargetContext,
-                ifMatch
-            );
-
-            if (!preconditionCheckResult.IsMatch)
-            {
-                return new DeleteResult.DeleteFailureETagMisMatch();
-            }
-
-            return await ExecuteDeleteByDocumentIdAsync(
-                    mappingSet,
-                    resource,
-                    preconditionCheckResult.TargetContext.DocumentId,
-                    documentUuid,
-                    traceId,
-                    sessionCommandExecutor
-                )
-                .ConfigureAwait(false);
-        }
-
-        return await ExecuteDeleteByDocumentIdAsync(
-                mappingSet,
-                resource,
-                lockedTargetContext.DocumentId,
-                documentUuid,
-                traceId,
-                sessionCommandExecutor
-            )
-            .ConfigureAwait(false);
-    }
-
-    private async Task<DeleteResult> ExecuteDeleteByDocumentIdAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        long documentId,
-        DocumentUuid documentUuid,
-        TraceId traceId,
-        IRelationalCommandExecutor sessionCommandExecutor
-    )
-    {
-        var concreteResource = mappingSet.GetConcreteResourceModelOrThrow(resource);
-
-        if (concreteResource.StorageKind is not ResourceStorageKind.RelationalTables)
-        {
-            throw new InvalidOperationException(
-                $"Resource '{RelationalWriteSupport.FormatResource(resource)}' cannot use the regular-resource delete path because its storage kind is '{concreteResource.StorageKind}'."
-            );
-        }
-
-        var deleteCommand = OrderedDeleteCommandBuilder.BuildResourceDeleteByDocumentIdCommand(
-            mappingSet.Key.Dialect,
-            concreteResource.RelationalModel.Root.Table,
-            documentId
-        );
-
-        return await RelationalDeleteExecution
-            .TryExecuteAsync(
-                sessionCommandExecutor,
-                deleteCommand,
-                _writeExceptionClassifier,
-                _deleteConstraintResolver,
-                mappingSet.Model,
-                _logger,
-                documentUuid,
-                traceId,
-                DeleteTargetKind.Document
-            )
-            .ConfigureAwait(false);
-    }
-
-    private static Task<long?> TryLockDeleteTargetAsync(
-        IRelationalCommandExecutor commandExecutor,
-        SqlDialect dialect,
-        long documentId,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return commandExecutor.ExecuteReaderAsync<long?>(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, documentId),
-            async (reader, ct) =>
-            {
-                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    return null;
-                }
-
-                var contentVersion = reader.GetRequiredFieldValue<long>("ContentVersion");
-
-                if (await reader.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    throw new InvalidOperationException(
-                        $"Relational DELETE lock returned multiple rows for document id {documentId}."
-                    );
-                }
-
-                return contentVersion;
-            },
-            cancellationToken
-        );
-    }
-
-    private async Task<DeleteResult?> AuthorizeDeleteIfRequiredAsync(
-        MappingSet mappingSet,
-        long documentId,
-        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+    /// <summary>
+    /// The relationship denial a caller holding no usable claims has already earned. It needs no statement,
+    /// so it is handed to the delete command to apply once the capture proves the target exists — a missing
+    /// target still answers not-found rather than forbidden.
+    /// </summary>
+    private static DeleteResult? BuildDeferredDeleteRelationshipDenial(
         RelationshipAuthorizationResult storedRelationshipAuthorization,
-        RelationalAuthorizationContext authorizationContext,
-        IRelationalCommandExecutor sessionCommandExecutor
+        RelationalAuthorizationContext authorizationContext
     )
     {
-        // Namespace AND-composes before the relationship OR group; the stored namespace check runs
-        // against the locked target and before any precondition result.
-        if (storedNamespaceAuthorization is not null)
+        if (storedRelationshipAuthorization is not RelationshipAuthorizationResult.NoClaims noClaims)
         {
-            var namespaceFailure = await ExecuteDeleteNamespaceAuthorizationAsync(
-                    mappingSet,
-                    documentId,
-                    storedNamespaceAuthorization,
-                    sessionCommandExecutor
-                )
-                .ConfigureAwait(false);
-
-            if (namespaceFailure is not null)
-            {
-                return namespaceFailure;
-            }
+            return null;
         }
 
-        switch (storedRelationshipAuthorization)
+        if (
+            !TryCreateNoClaimsRelationshipAuthorizationFailure(
+                noClaims,
+                authorizationContext.ClaimEducationOrganizationIds,
+                CompositeRelationalDeleteCommand.RelationshipAuthorizationAuth1Index,
+                out var noClaimsFailure
+            ) || noClaimsFailure is null
+        )
         {
-            case RelationshipAuthorizationResult.NoAuthorizationRequired:
-            case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
-                return null;
-
-            case RelationshipAuthorizationResult.NoClaims noClaims:
-                if (
-                    !TryCreateNoClaimsRelationshipAuthorizationFailure(
-                        noClaims,
-                        authorizationContext.ClaimEducationOrganizationIds,
-                        DeleteRelationshipAuthorizationAuth1Index,
-                        out var noClaimsFailure
-                    ) || noClaimsFailure is null
-                )
-                {
-                    return new DeleteResult.UnknownFailure(
-                        "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
-                    );
-                }
-
-                return CreateDeleteRelationshipNotAuthorized(noClaimsFailure);
-
-            case RelationshipAuthorizationResult.Authorized authorized:
-                return await ExecuteDeleteRelationshipAuthorizationAsync(
-                        mappingSet,
-                        documentId,
-                        authorized,
-                        sessionCommandExecutor
-                    )
-                    .ConfigureAwait(false);
-
-            default:
-                throw new InvalidOperationException(
-                    $"Unsupported relationship authorization result '{storedRelationshipAuthorization.GetType().Name}' after delete authorization preflight."
-                );
+            return new DeleteResult.UnknownFailure(
+                "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
+            );
         }
+
+        return new DeleteResult.DeleteFailureRelationshipNotAuthorized(noClaimsFailure);
     }
 
     private DeleteAuthorizationPreflightResult AuthorizeDeletePreflight(
@@ -902,32 +702,6 @@ public sealed class RelationalDocumentStoreRepository(
         };
     }
 
-    private async Task<DeleteResult?> ExecuteDeleteNamespaceAuthorizationAsync(
-        MappingSet mappingSet,
-        long documentId,
-        RelationalWriteNamespaceAuthorization storedNamespaceAuthorization,
-        IRelationalCommandExecutor sessionCommandExecutor
-    )
-    {
-        // Run the stored check against the delete session's command executor so it executes inside the
-        // same transaction that already locked the target document.
-        return await StoredNamespaceAuthorizationExecution
-            .ExecuteAsync<DeleteResult>(
-                sessionCommandExecutor,
-                _relationshipAuthorizationProviderFailureExtractor,
-                mappingSet,
-                documentId,
-                storedNamespaceAuthorization,
-                onNotAuthorized: failure => new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
-                onInvalidAuthorizationFailure: (failureMessage, diagnostics) =>
-                    new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage], diagnostics),
-                // The target is row-locked before this check, so a stale target is not expected; map it
-                // to not-exists defensively for the rare case where the lock did not hold.
-                onStaleTarget: () => new DeleteResult.DeleteFailureNotExists()
-            )
-            .ConfigureAwait(false);
-    }
-
     private abstract record DeleteAuthorizationPreflightResult
     {
         private DeleteAuthorizationPreflightResult() { }
@@ -939,61 +713,6 @@ public sealed class RelationalDocumentStoreRepository(
             RelationshipAuthorizationResult StoredRelationshipAuthorization
         ) : DeleteAuthorizationPreflightResult;
     }
-
-    private async Task<DeleteResult?> ExecuteDeleteRelationshipAuthorizationAsync(
-        MappingSet mappingSet,
-        long documentId,
-        RelationshipAuthorizationResult.Authorized authorized,
-        IRelationalCommandExecutor sessionCommandExecutor
-    )
-    {
-        if (authorized.ClaimEducationOrganizationIdParameterization is null)
-        {
-            return new DeleteResult.UnknownFailure(
-                "Relationship authorization produced executable checks without claim EducationOrganizationId parameterization."
-            );
-        }
-
-        var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
-            sessionCommandExecutor,
-            _relationalParameterConfigurator,
-            _relationshipAuthorizationProviderFailureExtractor,
-            _logger
-        );
-        var authorizationExecutionResult = await authorizationExecutor
-            .ExecuteAsync(
-                new SingleRecordRelationshipAuthorizationExecutionRequest(
-                    mappingSet,
-                    documentId,
-                    authorized.CheckSpecs,
-                    authorized.ClaimEducationOrganizationIdParameterization,
-                    DeleteRelationshipAuthorizationAuth1Index,
-                    authorized.ExecutableShape
-                )
-            )
-            .ConfigureAwait(false);
-
-        return authorizationExecutionResult switch
-        {
-            SingleRecordRelationshipAuthorizationExecutionResult.Authorized => null,
-            SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
-                CreateDeleteRelationshipNotAuthorized(notAuthorized.RelationshipFailure),
-            SingleRecordRelationshipAuthorizationExecutionResult.StaleTarget =>
-                new DeleteResult.DeleteFailureNotExists(),
-            SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                new DeleteResult.DeleteFailureSecurityConfiguration(
-                    [invalidFailure.FailureMessage],
-                    invalidFailure.Diagnostics
-                ),
-            _ => throw new InvalidOperationException(
-                $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."
-            ),
-        };
-    }
-
-    private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
-        RelationshipAuthorizationFailure relationshipFailure
-    ) => new(relationshipFailure);
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {

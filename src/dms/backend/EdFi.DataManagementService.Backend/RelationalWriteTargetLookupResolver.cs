@@ -193,11 +193,12 @@ internal static class RelationalWriteTargetLookupSupport
     }
 
     /// <summary>
-    /// Builds the PUT target predicate over the aliased <c>dms.Document</c> row <c>d</c> for a
-    /// composite captured-target statement, matching <see cref="ResolveForPutAsync"/>'s
-    /// document-uuid-and-resource lookup semantics.
+    /// Builds the target predicate over the aliased <c>dms.Document</c> row <c>d</c> for a composite
+    /// captured-target statement addressing a document by its external id, matching
+    /// <see cref="ResolveForPutAsync"/>'s document-uuid-and-resource lookup semantics. PUT and DELETE both
+    /// address their target this way, so they capture through the same predicate.
     /// </summary>
-    public static RelationalCommand BuildPutCaptureTargetPredicate(
+    public static RelationalCommand BuildDocumentUuidCaptureTargetPredicate(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid
@@ -211,7 +212,7 @@ internal static class RelationalWriteTargetLookupSupport
             SqlDialect.Pgsql => """d."DocumentUuid" = @documentUuid AND d."ResourceKeyId" = @resourceKeyId""",
             SqlDialect.Mssql => "d.[DocumentUuid] = @documentUuid AND d.[ResourceKeyId] = @resourceKeyId",
             _ => throw new NotSupportedException(
-                $"Relational PUT capture predicate does not support SQL dialect '{mappingSet.Key.Dialect}'."
+                $"Relational document-uuid capture predicate does not support SQL dialect '{mappingSet.Key.Dialect}'."
             ),
         };
 

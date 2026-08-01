@@ -49,8 +49,6 @@ internal static class RelationalDeleteExecution
         ArgumentNullException.ThrowIfNull(modelSet);
         ArgumentNullException.ThrowIfNull(logger);
 
-        var scopeLabel = ScopeLabel(targetKind);
-
         try
         {
             var deleted = await commandExecutor
@@ -59,10 +57,49 @@ internal static class RelationalDeleteExecution
 
             return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
         }
-        catch (DbException ex) when (classifier.IsForeignKeyViolation(ex))
+        catch (DbException ex)
+        {
+            return MapFailure(
+                ex,
+                classifier,
+                constraintResolver,
+                modelSet,
+                logger,
+                documentUuid,
+                traceId,
+                targetKind
+            );
+        }
+    }
+
+    /// <summary>
+    /// Translates a provider failure raised by a delete into its <see cref="DeleteResult"/>. Split from
+    /// <see cref="TryExecuteAsync"/> so a delete co-batched into a composite command — whose execution and
+    /// result decoding the composite layer owns — resolves the same failure the same way.
+    /// </summary>
+    public static DeleteResult MapFailure(
+        DbException exception,
+        IRelationalWriteExceptionClassifier classifier,
+        IRelationalDeleteConstraintResolver constraintResolver,
+        DerivedRelationalModelSet modelSet,
+        ILogger logger,
+        DocumentUuid documentUuid,
+        TraceId traceId,
+        DeleteTargetKind targetKind
+    )
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        ArgumentNullException.ThrowIfNull(classifier);
+        ArgumentNullException.ThrowIfNull(constraintResolver);
+        ArgumentNullException.ThrowIfNull(modelSet);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        var scopeLabel = ScopeLabel(targetKind);
+
+        if (classifier.IsForeignKeyViolation(exception))
         {
             return MapForeignKeyViolation(
-                ex,
+                exception,
                 classifier,
                 constraintResolver,
                 modelSet,
@@ -72,10 +109,11 @@ internal static class RelationalDeleteExecution
                 scopeLabel
             );
         }
-        catch (DbException ex) when (classifier.IsTransientFailure(ex))
+
+        if (classifier.IsTransientFailure(exception))
         {
             logger.LogDebug(
-                ex,
+                exception,
                 "Transient conflict on {ScopeLabel} DELETE for {DocumentUuid} - {TraceId}",
                 scopeLabel,
                 documentUuid.Value,
@@ -84,20 +122,18 @@ internal static class RelationalDeleteExecution
 
             return new DeleteResult.DeleteFailureWriteConflict();
         }
-        catch (DbException ex)
-        {
-            logger.LogError(
-                ex,
-                "Database error on {ScopeLabel} DELETE for {DocumentUuid} - {TraceId}",
-                scopeLabel,
-                documentUuid.Value,
-                LoggingSanitizer.SanitizeForLogging(traceId.Value)
-            );
 
-            return new DeleteResult.UnknownFailure(
-                "An unexpected error occurred while processing the delete request."
-            );
-        }
+        logger.LogError(
+            exception,
+            "Database error on {ScopeLabel} DELETE for {DocumentUuid} - {TraceId}",
+            scopeLabel,
+            documentUuid.Value,
+            LoggingSanitizer.SanitizeForLogging(traceId.Value)
+        );
+
+        return new DeleteResult.UnknownFailure(
+            "An unexpected error occurred while processing the delete request."
+        );
     }
 
     private static string ScopeLabel(DeleteTargetKind kind) =>

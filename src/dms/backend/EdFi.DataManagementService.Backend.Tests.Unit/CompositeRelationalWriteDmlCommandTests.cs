@@ -3,15 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -342,6 +341,158 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     }
 
     [Test]
+    public async Task It_returns_the_namespace_denial_when_a_deferred_relationship_denial_also_applies()
+    {
+        var request = CreateDeferredNoClaimsRequest();
+        var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1"));
+
+        var resolution = await CreateSut(
+                providerFailureExtractor: new StubProviderFailureExtractor(
+                    "AUTH1",
+                    NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+                        new NamespaceAuthorizationAuth1FailurePayload(
+                            0,
+                            NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+                        )
+                    )
+                )
+            )
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        // Namespace AND-composes before the relationship OR-group, so its denial outranks the deferred one
+        // even in DML mode, and it is decided by a command that carries no data-modifying statement.
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
+        resolution.PersistResult.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_returns_the_deferred_relationship_denial_once_the_namespace_check_authorizes()
+    {
+        var request = CreateDeferredNoClaimsRequest();
+        var session = new ScriptedWriteSession(CreateReader(Authorized()));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        // The namespace check still has to run and win if it denies, but a caller holding no claims is
+        // already denied: the write owes no statements at all beyond that check.
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>();
+        resolution.PersistResult.Should().BeNull();
+        var command = session.Commands.Should().ContainSingle().Subject;
+        ShouldCarryNoDataModifyingStatement(command);
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_the_proposed_relationship_plan_cannot_be_reconciled()
+    {
+        var baseRequest = CreateCreatedTargetRequest(withProposedAuthorization: true);
+        var authorized = (RelationshipAuthorizationResult.Authorized)
+            baseRequest.ProposedRelationshipAuthorization!;
+        var request = baseRequest with
+        {
+            // No check spec at all cannot be reconciled with the finalized root row, which is the same
+            // fail-closed disposition a mismatched binding produces.
+            ProposedRelationshipAuthorization = new RelationshipAuthorizationResult.Authorized(
+                [],
+                authorized.ClaimEducationOrganizationIdParameterization
+            ),
+        };
+        var session = new ScriptedWriteSession(CreateReader(Authorized()));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        resolution.PersistResult.Should().BeNull();
+        var command = session.Commands.Should().ContainSingle().Subject;
+        ShouldCarryNoDataModifyingStatement(command);
+    }
+
+    [Test]
+    public async Task It_issues_no_command_for_a_deferred_relationship_denial_with_no_namespace_check()
+    {
+        var request = CreateDeferredNoClaimsRequest() with { ProposedNamespaceAuthorization = null };
+        var session = new ScriptedWriteSession();
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        // With nothing left that could outrank the denial, the request is decided in process. No command
+        // means no reserved collection key and no data-modifying statement, so nothing a denied write
+        // could leave behind exists and no constraint violation can preempt the denial the caller sees.
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>();
+        resolution.PersistResult.Should().BeNull();
+        session.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A create carrying both proposed checks, whose relationship check is the deferred no-claims denial
+    /// that needs no statement of its own.
+    /// </summary>
+    private static RelationalWriteExecutorRequest CreateDeferredNoClaimsRequest()
+    {
+        var baseRequest = CreateCreatedTargetRequest(withProposedAuthorization: true);
+
+        return baseRequest with
+        {
+            ProposedRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateProposedNoClaimsAuthorization(baseRequest),
+        };
+    }
+
+    /// <summary>
+    /// Asserts the command carries neither the <c>dms.Document</c> row nor any resource-table statement, so
+    /// a request denied by proposed authorization can leave nothing behind and no constraint violation of
+    /// its own can preempt the denial.
+    /// </summary>
+    private static void ShouldCarryNoDataModifyingStatement(RelationalCommand command)
+    {
+        command.CommandText.Should().NotContain(DocumentInsertStatementPrefix);
+        command
+            .CommandText.Should()
+            .NotContainEquivalentOf("insert into edfi.\"School\"")
+            .And.NotContainEquivalentOf("update edfi.\"School\"")
+            .And.NotContainEquivalentOf("delete from edfi.\"School\"");
+    }
+
+    [Test]
     public async Task It_keeps_one_command_when_the_rows_fit_the_parameter_budget()
     {
         var session = new ScriptedWriteSession(CreateReader(Sentinel(0), Scalar(82L)));
@@ -440,8 +591,13 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     }
 
     private static CompositeRelationalWriteSecondCommand CreateSut(
-        RelationalCommandBudget? commandBudget = null
-    ) => new(commandBudget: commandBudget);
+        RelationalCommandBudget? commandBudget = null,
+        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
+    ) =>
+        new(
+            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
+            commandBudget: commandBudget
+        );
 
     private static RelationalWriteExecutorRequest CreateExistingTargetRequest() =>
         CreateInput(new RelationalWriteTargetRequest.Put(ExistingDocumentUuid))
@@ -604,6 +760,22 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     /// The shared reservation command's result. One key is read as a scalar and several as ordered rows,
     /// matching the two shapes the reservation emits.
     /// </summary>
+    private sealed class StubProviderFailureExtractor(string? providerErrorCode, string providerMessage)
+        : IRelationshipAuthorizationProviderFailureExtractor
+    {
+        public RelationshipAuthorizationProviderFailure Extract(DbException exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+
+            return new RelationshipAuthorizationProviderFailure(providerErrorCode, providerMessage);
+        }
+    }
+
+    private sealed class FakeDbException(string message, string sqlState) : DbException(message)
+    {
+        public override string SqlState => sqlState;
+    }
+
     private static DbDataReader Reserved(params long[] collectionItemIds) =>
         collectionItemIds.Length == 1
             ? new ScriptedDbDataReader(
@@ -624,159 +796,4 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                     ["Ordinal", "CollectionItemId"],
                 ]
             );
-
-    /// <summary>
-    /// Serves one script per <see cref="CreateCommand"/>: a reader to hand back, or an exception to raise
-    /// from the reader-open boundary.
-    /// </summary>
-    private sealed class ScriptedWriteSession(params object[] scripts) : IRelationalWriteSession
-    {
-        private readonly Queue<object> _scripts = new(scripts);
-
-        public DbConnection Connection { get; } = null!;
-
-        public DbTransaction Transaction { get; } = null!;
-
-        public List<RelationalCommand> Commands { get; } = [];
-
-        public DbCommand CreateCommand(RelationalCommand command)
-        {
-            Commands.Add(command);
-
-            if (_scripts.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    $"No command script remains for command {Commands.Count}."
-                );
-            }
-
-            return new ScriptedDbCommand(_scripts.Dequeue());
-        }
-
-        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
-
-    private sealed class ScriptedDbCommand(object script) : DbCommand
-    {
-        [AllowNull]
-        public override string CommandText { get; set; } = string.Empty;
-        public override int CommandTimeout { get; set; }
-        public override CommandType CommandType { get; set; }
-        public override bool DesignTimeVisible { get; set; }
-        public override UpdateRowSource UpdatedRowSource { get; set; }
-        protected override DbConnection? DbConnection { get; set; }
-        protected override DbParameterCollection DbParameterCollection { get; } =
-            new ScriptedDbParameterCollection();
-        protected override DbTransaction? DbTransaction { get; set; }
-
-        public override void Cancel() { }
-
-        public override int ExecuteNonQuery() => throw new NotSupportedException();
-
-        /// <summary>
-        /// The scripted reader's first cell, which is what a single-value command — the one-key collection
-        /// reservation — reads.
-        /// </summary>
-        public override object? ExecuteScalar()
-        {
-            var reader = (DbDataReader)script;
-
-            return reader.Read() ? reader.GetValue(0) : null;
-        }
-
-        public override void Prepare() { }
-
-        protected override DbParameter CreateDbParameter() => new ScriptedDbParameter();
-
-        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
-            script switch
-            {
-                DbDataReader reader => reader,
-                Exception exception => throw exception,
-                _ => throw new InvalidOperationException(
-                    $"Unsupported command script '{script.GetType().Name}'."
-                ),
-            };
-    }
-
-    private sealed class ScriptedDbParameterCollection : DbParameterCollection
-    {
-        private readonly List<DbParameter> _parameters = [];
-
-        public override int Count => _parameters.Count;
-
-        public override object SyncRoot => _parameters;
-
-        public override int Add(object value)
-        {
-            _parameters.Add((DbParameter)value);
-            return _parameters.Count - 1;
-        }
-
-        public override void AddRange(Array values)
-        {
-            foreach (var value in values)
-            {
-                Add(value);
-            }
-        }
-
-        public override void Clear() => _parameters.Clear();
-
-        public override bool Contains(object value) => _parameters.Contains((DbParameter)value);
-
-        public override bool Contains(string value) => IndexOf(value) >= 0;
-
-        public override void CopyTo(Array array, int index) =>
-            ((System.Collections.ICollection)_parameters).CopyTo(array, index);
-
-        public override System.Collections.IEnumerator GetEnumerator() => _parameters.GetEnumerator();
-
-        public override int IndexOf(object value) => _parameters.IndexOf((DbParameter)value);
-
-        public override int IndexOf(string parameterName) =>
-            _parameters.FindIndex(parameter =>
-                string.Equals(parameter.ParameterName, parameterName, StringComparison.OrdinalIgnoreCase)
-            );
-
-        public override void Insert(int index, object value) => _parameters.Insert(index, (DbParameter)value);
-
-        public override void Remove(object value) => _parameters.Remove((DbParameter)value);
-
-        public override void RemoveAt(int index) => _parameters.RemoveAt(index);
-
-        public override void RemoveAt(string parameterName) => RemoveAt(IndexOf(parameterName));
-
-        protected override DbParameter GetParameter(int index) => _parameters[index];
-
-        protected override DbParameter GetParameter(string parameterName) =>
-            _parameters[IndexOf(parameterName)];
-
-        protected override void SetParameter(int index, DbParameter value) => _parameters[index] = value;
-
-        protected override void SetParameter(string parameterName, DbParameter value) =>
-            _parameters[IndexOf(parameterName)] = value;
-    }
-
-    private sealed class ScriptedDbParameter : DbParameter
-    {
-        public override DbType DbType { get; set; }
-        public override ParameterDirection Direction { get; set; }
-        public override bool IsNullable { get; set; }
-
-        [AllowNull]
-        public override string ParameterName { get; set; } = string.Empty;
-        public override int Size { get; set; }
-
-        [AllowNull]
-        public override string SourceColumn { get; set; } = string.Empty;
-        public override bool SourceColumnNullMapping { get; set; }
-        public override object? Value { get; set; }
-
-        public override void ResetDbType() { }
-    }
 }
