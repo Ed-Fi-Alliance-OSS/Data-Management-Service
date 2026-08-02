@@ -572,20 +572,23 @@ At this point both tables are **write-only**:
   and descriptors ([`DescriptorWriteHandler.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs)) —
   still `DELETE`d alongside the row it identifies
   ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
-  and still `UPDATE`d by the generated stamping triggers. **No production code path reads it.** Two
-  kinds of reader remain in the source: methods with no callers at all (the PUT/DELETE uuid lookups,
-  the referential-id POST probe), and methods reached only from unit tests. The UUIDv5 hash resolver and
-  its `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect composition now
-  registers the natural-key resolver into the `IReferenceResolver` slot
-  ([`WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)).
-  The remaining readers go with the table.
+  and still `UPDATE`d by the generated stamping triggers. **Nothing reads it, anywhere.** The UUIDv5
+  hash resolver and its `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect
+  composition now registers the natural-key resolver into the `IReferenceResolver` slot
+  ([`WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)) —
+  and the caller-less probes that survived it (the PUT/DELETE uuid lookups, the referential-id POST
+  probe) are deleted with their dialect builders and result records. What is left in
+  [`RelationalDocumentUuidLookup.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentUuidLookup.cs)
+  seeks `dms.Descriptor` or a resource root table, never `dms.Document`.
 - `dms.ReferentialIdentity` is still maintained by the generated `TR_<Root>_ReferentialIdentity`
   triggers on non-descriptor **root** tables (`AFTER INSERT OR UPDATE`; deletes are handled by
   `FK_ReferentialIdentity_Document`'s `ON DELETE CASCADE`). **Descriptor rows in it are no longer
   maintained at all** — the descriptor write path dropped its `ReferentialIdentity` statements, and no
   descriptor trigger ever wrote them, so existing descriptor rows are only ever *removed*, by that
-  cascade. **No production code path reads it**: the hash resolver that read it has been deleted, so no
-  registration anywhere — production or test — can resolve to it.
+  cascade. **No code path reads it**: the hash resolver that read it has been deleted, so no
+  registration anywhere — production or test — can resolve to it, and no fixture seeds it either. The
+  only remaining direct writers in the test tree are `{Postgresql,Mssql}ReferentialIdentityTests`, where
+  the table is the subject under test rather than a fixture dependency; they die with it.
 
 That means a stale or missing `dms.Document` / `dms.ReferentialIdentity` row can no longer explain a
 wrong *served* value or a failed lookup — if one of those tables looks wrong, look for what wrote it,
