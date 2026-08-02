@@ -136,24 +136,11 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
         await database
             .QueryRowsAsync(
                 """
-                SELECT root.[DocumentId], root.[DocumentUuid], document.[ResourceKeyId],
-                       root.[ContentVersion], root.[ContentLastModifiedAt],
-                       root.[IdentityVersion], root.[IdentityLastModifiedAt]
-                FROM (
-                    SELECT [DocumentId], [DocumentUuid], [ContentVersion], [ContentLastModifiedAt],
-                           [IdentityVersion], [IdentityLastModifiedAt]
-                    FROM [edfi].[ProfileRootOnlyMergeItem]
-                    UNION ALL
-                    SELECT [DocumentId], [DocumentUuid], [ContentVersion], [ContentLastModifiedAt],
-                           [IdentityVersion], [IdentityLastModifiedAt]
-                    FROM [edfi].[ProfileSeparateTableMergeItem]
-                    UNION ALL
-                    SELECT [DocumentId], [DocumentUuid], [ContentVersion], [ContentLastModifiedAt],
-                           [IdentityVersion], [IdentityLastModifiedAt]
-                    FROM [edfi].[School]
-                ) root
-                INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
-                WHERE root.[DocumentUuid] = @documentUuid;
+                SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
+                       [ContentVersion], [ContentLastModifiedAt],
+                       [IdentityVersion], [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )

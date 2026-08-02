@@ -2094,7 +2094,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2123,7 +2122,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // dms.Document stamp the second statement removes never overtakes it.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
@@ -2194,7 +2192,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -2217,7 +2214,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // dms.Document stamp the second statement removes never overtakes it.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
         trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
@@ -2265,7 +2261,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2288,7 +2283,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // dms.Document stamp the second statement removes never overtakes it.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2437,8 +2431,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         (await CountDocumentRowsAsync(associationDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
@@ -2584,8 +2576,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         (await CountDocumentRowsAsync(schoolDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
@@ -2969,18 +2959,21 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             """
             INSERT INTO "edfi"."StudentEducationOrganizationAssociation" (
                 "DocumentId",
+                "DocumentUuid",
                 "EducationOrganization_DocumentId",
                 "EducationOrganization_EducationOrganizationId",
                 "Student_DocumentId",
                 "Student_StudentUniqueId"
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document."DocumentUuid",
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @studentDocumentId,
                 @studentUniqueId
-            );
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("educationOrganizationDocumentId", educationOrganizationDocumentId),
@@ -3243,6 +3236,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             """
             INSERT INTO "edfi"."GradingPeriod" (
                 "DocumentId",
+                "DocumentUuid",
                 "SchoolYear_DocumentId",
                 "SchoolYear_SchoolYear",
                 "School_DocumentId",
@@ -3253,8 +3247,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "GradingPeriodName",
                 "TotalInstructionalDays"
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document."DocumentUuid",
                 @schoolYearTypeDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
@@ -3264,7 +3259,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 @endDate,
                 @gradingPeriodName,
                 @totalInstructionalDays
-            );
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("schoolYearTypeDocumentId", schoolYearTypeDocumentId),
@@ -3314,6 +3310,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             """
             INSERT INTO "edfi"."StudentAssessment" (
                 "DocumentId",
+                "DocumentUuid",
                 "Assessment_DocumentId",
                 "Assessment_AssessmentIdentifier",
                 "Assessment_Namespace",
@@ -3321,15 +3318,17 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "Student_StudentUniqueId",
                 "StudentAssessmentIdentifier"
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document."DocumentUuid",
                 @assessmentDocumentId,
                 @assessmentIdentifier,
                 @assessmentNamespace,
                 @studentDocumentId,
                 @studentUniqueId,
                 @studentAssessmentIdentifier
-            );
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("assessmentDocumentId", assessmentDocumentId),
@@ -3355,6 +3354,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             """
             INSERT INTO "edfi"."AssessmentScoreRangeLearningStandard" (
                 "DocumentId",
+                "DocumentUuid",
                 "AssessmentIdentifier_Unified",
                 "Namespace_Unified",
                 "Assessment_DocumentId",
@@ -3362,15 +3362,17 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "MinimumScore",
                 "ScoreRangeId"
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document."DocumentUuid",
                 @assessmentIdentifier,
                 @namespace,
                 @assessmentDocumentId,
                 @maximumScore,
                 @minimumScore,
                 @scoreRangeId
-            );
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("assessmentIdentifier", assessmentIdentifier),

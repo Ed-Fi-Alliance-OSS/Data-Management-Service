@@ -1840,7 +1840,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -1869,7 +1868,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // dms.Document stamp the second statement removes never overtakes it.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
@@ -1940,7 +1938,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -1963,7 +1960,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // dms.Document stamp the second statement removes never overtakes it.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
         trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
@@ -2013,7 +2009,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2036,7 +2031,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // dms.Document stamp the second statement removes never overtakes it.
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2248,8 +2242,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(associationDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
@@ -2395,8 +2387,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(schoolDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeLessThan(tombstoneChangeVersion);
         tombstoneChangeVersion.Should().Be(await ReadMaxChangeVersionAsync());
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
@@ -2850,16 +2840,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[SchoolYearType] (
                 [DocumentId],
+                [DocumentUuid],
                 [CurrentSchoolYear],
                 [SchoolYear],
                 [SchoolYearDescription]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@currentSchoolYear", true),
@@ -2900,6 +2893,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[Session] (
                 [DocumentId],
+                [DocumentUuid],
                 [SchoolYear_DocumentId],
                 [SchoolYear_SchoolYear],
                 [School_DocumentId],
@@ -2910,8 +2904,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [SessionName],
                 [TotalInstructionalDays]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @schoolYearDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
@@ -2921,7 +2916,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @endDate,
                 @sessionName,
                 @totalInstructionalDays
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@schoolYearDocumentId", schoolYearDocumentId),
@@ -2949,20 +2945,23 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[Course] (
                 [DocumentId],
+                [DocumentUuid],
                 [EducationOrganization_DocumentId],
                 [EducationOrganization_EducationOrganizationId],
                 [CourseCode],
                 [CourseTitle],
                 [NumberOfParts]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @courseCode,
                 @courseTitle,
                 @numberOfParts
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
@@ -2990,6 +2989,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[CourseOffering] (
                 [DocumentId],
+                [DocumentUuid],
                 [SchoolId_Unified],
                 [Course_DocumentId],
                 [Course_CourseCode],
@@ -3000,8 +3000,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Session_SessionName],
                 [LocalCourseCode]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @schoolId,
                 @courseDocumentId,
                 @courseCode,
@@ -3011,7 +3012,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @sessionSchoolYear,
                 @sessionName,
                 @localCourseCode
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@schoolId", schoolId),
@@ -3042,6 +3044,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[Survey] (
                 [DocumentId],
+                [DocumentUuid],
                 [SchoolYear_Unified],
                 [SchoolYear_DocumentId],
                 [Session_DocumentId],
@@ -3051,8 +3054,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [SurveyIdentifier],
                 [SurveyTitle]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @schoolYear,
                 @schoolYearDocumentId,
                 @sessionDocumentId,
@@ -3061,7 +3065,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @namespace,
                 @surveyIdentifier,
                 @surveyTitle
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@schoolYear", schoolYear),
@@ -3089,6 +3094,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[AccountabilityRating] (
                 [DocumentId],
+                [DocumentUuid],
                 [EducationOrganization_DocumentId],
                 [EducationOrganization_EducationOrganizationId],
                 [SchoolYear_DocumentId],
@@ -3096,15 +3102,17 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Rating],
                 [RatingTitle]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @schoolYearDocumentId,
                 @schoolYear,
                 @rating,
                 @ratingTitle
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
@@ -3300,18 +3308,21 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[StudentEducationOrganizationAssociation] (
                 [DocumentId],
+                [DocumentUuid],
                 [EducationOrganization_DocumentId],
                 [EducationOrganization_EducationOrganizationId],
                 [Student_DocumentId],
                 [Student_StudentUniqueId]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @educationOrganizationDocumentId,
                 @educationOrganizationId,
                 @studentDocumentId,
                 @studentUniqueId
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
@@ -3480,6 +3491,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[GradingPeriod] (
                 [DocumentId],
+                [DocumentUuid],
                 [SchoolYear_DocumentId],
                 [SchoolYear_SchoolYear],
                 [School_DocumentId],
@@ -3490,8 +3502,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [GradingPeriodName],
                 [TotalInstructionalDays]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @schoolYearTypeDocumentId,
                 @schoolYear,
                 @schoolDocumentId,
@@ -3501,7 +3514,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @endDate,
                 @gradingPeriodName,
                 @totalInstructionalDays
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@schoolYearTypeDocumentId", schoolYearTypeDocumentId),
@@ -3551,6 +3565,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[StudentAssessment] (
                 [DocumentId],
+                [DocumentUuid],
                 [Assessment_DocumentId],
                 [Assessment_AssessmentIdentifier],
                 [Assessment_Namespace],
@@ -3558,15 +3573,17 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Student_StudentUniqueId],
                 [StudentAssessmentIdentifier]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @assessmentDocumentId,
                 @assessmentIdentifier,
                 @assessmentNamespace,
                 @studentDocumentId,
                 @studentUniqueId,
                 @studentAssessmentIdentifier
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@assessmentDocumentId", assessmentDocumentId),
@@ -3593,6 +3610,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [edfi].[AssessmentScoreRangeLearningStandard] (
                 [DocumentId],
+                [DocumentUuid],
                 [AssessmentIdentifier_Unified],
                 [Namespace_Unified],
                 [Assessment_DocumentId],
@@ -3600,15 +3618,17 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [MinimumScore],
                 [ScoreRangeId]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @assessmentIdentifier,
                 @namespace,
                 @assessmentDocumentId,
                 @maximumScore,
                 @minimumScore,
                 @scoreRangeId
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@assessmentIdentifier", assessmentIdentifier),

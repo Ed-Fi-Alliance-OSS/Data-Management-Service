@@ -1001,9 +1001,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            FROM "edfi"."SurveyQuestion" root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );

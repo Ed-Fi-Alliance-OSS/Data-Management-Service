@@ -1436,17 +1436,26 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var rows = await Database.QueryRowsAsync(
             """
             SELECT
-                "DocumentId",
-                "DocumentUuid",
-                "ResourceKeyId",
-                "ContentVersion",
-                "IdentityVersion",
-                "ContentLastModifiedAt",
-                "IdentityLastModifiedAt",
-                "CreatedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid
-              AND "ResourceKeyId" = @resourceKeyId;
+                root."DocumentId",
+                root."DocumentUuid",
+                document."ResourceKeyId",
+                root."ContentVersion",
+                root."IdentityVersion",
+                root."ContentLastModifiedAt",
+                root."IdentityLastModifiedAt",
+                root."CreatedAt"
+            FROM (
+                SELECT "DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion",
+                       "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
+                FROM "authz"."AuthorizationRootChildResource"
+                UNION ALL
+                SELECT "DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion",
+                       "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
+                FROM "authz"."AuthorizationStudentAcademicRecordResource"
+            ) root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid
+              AND document."ResourceKeyId" = @resourceKeyId;
             """,
             new NpgsqlParameter("documentUuid", documentUuid.Value),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
