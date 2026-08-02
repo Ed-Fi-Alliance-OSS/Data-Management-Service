@@ -149,6 +149,103 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
     }
 
     [Test]
+    public void It_skips_the_document_uuid_binding_when_projecting_the_current_root_row()
+    {
+        // DocumentUuid is originated by the write path, so it is a real binding — but the hydration
+        // (read) projection does not carry the column. The current-row projection must skip it rather
+        // than fail to resolve an ordinal, and the no-op comparison must leave it out: with the same
+        // stored scalar the update is still a no-op candidate.
+        var result = SynthesizeRootWithDocumentUuidBinding(
+            storedName: "Lincoln High",
+            requestName: "Lincoln High"
+        );
+
+        var rootState = result.TablesInDependencyOrder[0];
+        rootState.CurrentRows.Should().ContainSingle();
+        rootState
+            .CurrentRows[0]
+            .ComparableValues.Should()
+            .HaveCount(
+                rootState.CurrentRows[0].Values.Length - 1,
+                "the hydration-exempt DocumentUuid binding is excluded from the no-op comparison"
+            );
+        LiteralValue(rootState.MergedRows[0].Values[1])
+            .Should()
+            .Be(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(result).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_still_detects_a_changed_root_scalar_with_a_document_uuid_binding_present()
+    {
+        var result = SynthesizeRootWithDocumentUuidBinding(
+            storedName: "Lincoln High",
+            requestName: "Lincoln Updated"
+        );
+
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(result).Should().BeFalse();
+    }
+
+    private RelationalWriteMergeResult SynthesizeRootWithDocumentUuidBinding(
+        string storedName,
+        string requestName
+    )
+    {
+        var rootPlan = CreateRootPlanWithDocumentUuidBinding();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    Literal(345L),
+                    Literal(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    Literal(requestName),
+                ]
+            )
+        );
+
+        // The hydrated current-state row carries only the hydration-projection columns
+        // (DocumentId, Name): the read plan omits both the change-version mirrors and DocumentUuid.
+        var hydrationModel = rootPlan.TableModel with
+        {
+            Columns = [rootPlan.TableModel.Columns[0], rootPlan.TableModel.Columns[4]],
+        };
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    hydrationModel,
+                    [
+                        [345L, storedName],
+                    ]
+                ),
+            ],
+            []
+        );
+
+        return _sut.Synthesize(
+            new RelationalWriteNoProfileMergeRequest(writePlan, flattenedWriteSet, currentState)
+        );
+    }
+
+    [Test]
     public void It_merges_collection_candidates_using_compare_order_and_request_order()
     {
         var fixture = CreateFixture();
@@ -784,6 +881,118 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 ),
                 new WriteColumnBinding(
                     tableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                    ),
+                    "Name"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    /// <summary>
+    /// Root plan modelling the post-Phase-4 layout: the change-version mirror columns, a bound
+    /// <c>DocumentUuid</c> the write path originates, then a client-bound scalar.
+    /// </summary>
+    private static TableWritePlan CreateRootPlanWithDocumentUuidBinding()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ContentVersion"),
+                    ColumnKind.MirroredContentVersion,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("ContentLastModifiedAt"),
+                    ColumnKind.MirroredContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("DocumentUuid"),
+                    ColumnKind.DocumentUuid,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("Name"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"School\" (\"DocumentId\", \"DocumentUuid\", \"Name\") values (@DocumentId, @DocumentUuid, @Name)",
+            UpdateSql: "update edfi.\"School\" set \"DocumentUuid\" = @DocumentUuid, \"Name\" = @Name where \"DocumentId\" = @DocumentId",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 3, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[3],
+                    new WriteValueSource.DocumentUuid(),
+                    "DocumentUuid"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
                     new WriteValueSource.Scalar(
                         new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
                         new RelationalScalarType(ScalarKind.String, MaxLength: 75)

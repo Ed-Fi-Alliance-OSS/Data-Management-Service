@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -79,6 +79,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private AuthoritativeSampleSmokeSeedData _seedData = null!;
+    private string _stampSourceQuery = null!;
     private IReadOnlyList<MssqlForeignKeyMetadata> _contactExtensionAuthorForeignKeys = null!;
     private IReadOnlyList<MssqlForeignKeyMetadata> _contactExtensionAddressForeignKeys = null!;
     private IReadOnlyList<MssqlForeignKeyMetadata> _contactExtensionAddressSchoolDistrictForeignKeys = null!;
@@ -152,6 +153,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     public async Task Setup()
     {
         await _database.ResetAsync();
+        _stampSourceQuery = DocumentStampSourceSql.BuildMssqlStampQuery(
+            MssqlGeneratedDdlModelLookup.EnumerateStampTables(_fixture.ModelSet)
+        );
         _seedData = await SeedSmokeRowsAsync();
     }
 
@@ -479,7 +483,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -498,7 +501,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -532,7 +534,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -551,7 +552,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -606,7 +606,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -623,7 +622,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -811,21 +809,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterSession = await GetDocumentStampStateAsync(_seedData.SessionDocumentId);
         var afterCourseOffering = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var afterSurvey = await GetDocumentStampStateAsync(_seedData.SurveyDocumentId);
-        var afterSessionMirror = await GetRootMirrorStampStateAsync(
-            "edfi",
-            "Session",
-            _seedData.SessionDocumentId
-        );
-        var afterCourseOfferingMirror = await GetRootMirrorStampStateAsync(
-            "edfi",
-            "CourseOffering",
-            _seedData.CourseOfferingDocumentId
-        );
-        var afterSurveyMirror = await GetRootMirrorStampStateAsync(
-            "edfi",
-            "Survey",
-            _seedData.SurveyDocumentId
-        );
 
         afterCourseOfferingSessionReferenceState
             .Should()
@@ -854,10 +837,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // field, not part of Survey's identity, so IdentityVersion must not change here.
         afterSurvey.IdentityVersion.Should().Be(beforeSurvey.IdentityVersion);
         afterSurvey.IdentityLastModifiedAt.Should().Be(beforeSurvey.IdentityLastModifiedAt);
-
-        AssertMirrorContentMatchesDocument(afterSessionMirror, afterSession);
-        AssertMirrorContentMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
-        AssertMirrorContentMatchesDocument(afterSurveyMirror, afterSurvey);
 
         // The renamed Session and the cascade-updated CourseOffering each insert
         // exactly one key-change row. Survey's session reference is NOT part of its
@@ -938,7 +917,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "CourseOffering",
             _seedData.CourseOfferingDocumentId
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, beforeStamps);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
@@ -970,7 +948,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         afterStamps.Should().Be(beforeStamps);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, afterStamps);
         afterRiRows.Should().Equal(beforeRiRows);
         auditOps.Should().Be(0);
     }
@@ -1086,7 +1063,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         afterInsert.Should().Be(beforeInsert);
         afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
-        await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
@@ -1103,7 +1079,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterUpdate = await GetDocumentStampStateAsync(busDocumentId);
         afterUpdate.ContentVersion.Should().BeGreaterThan(afterInsert.ContentVersion);
         afterUpdate.IdentityVersion.Should().BeGreaterThan(afterInsert.IdentityVersion);
-        await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
 
         var beforeNoOpMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
 
@@ -1122,7 +1097,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterNoOpMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
         afterNoOp.Should().Be(afterUpdate);
         afterNoOpMirror.Should().Be(beforeNoOpMirror);
-        AssertMirrorContentMatchesDocument(afterNoOpMirror, afterNoOp);
     }
 
     [Test]
@@ -1142,7 +1116,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var trackedChangeRowsBefore = await CountRowsAsync(
             "SELECT COUNT(*) FROM [tracked_changes_sample].[Bus];"
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, beforeDocument);
 
         await DelayForDistinctTimestampsAsync();
         var rowsAffected = await _database.ExecuteNonQueryAsync(
@@ -2745,6 +2718,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -2754,6 +2729,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -2763,6 +2740,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
@@ -2783,8 +2762,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Contact] ([DocumentId], [ContactUniqueId], [FirstName], [LastSurname])
-            VALUES (@documentId, @contactUniqueId, @firstName, @lastSurname);
+            INSERT INTO [edfi].[Contact] ([DocumentId], [DocumentUuid], [ContactUniqueId], [FirstName], [LastSurname])
+            SELECT @documentId, document.[DocumentUuid], @contactUniqueId, @firstName, @lastSurname
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@contactUniqueId", contactUniqueId),
@@ -2797,8 +2778,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [sample].[Bus] ([DocumentId], [BusId])
-            VALUES (@documentId, @busId);
+            INSERT INTO [sample].[Bus] ([DocumentId], [DocumentUuid], [BusId])
+            SELECT @documentId, document.[DocumentUuid], @busId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@busId", busId)
@@ -2889,8 +2872,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
+            SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
@@ -3290,8 +3275,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Student] ([DocumentId], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
-            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            INSERT INTO [edfi].[Student] ([DocumentId], [DocumentUuid], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
+            SELECT @documentId, document.[DocumentUuid], @birthDate, @firstName, @lastSurname, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@birthDate", new DateOnly(2010, 1, 1)),
@@ -3538,8 +3525,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Assessment] ([DocumentId], [AssessmentIdentifier], [AssessmentTitle], [Namespace])
-            VALUES (@documentId, @assessmentIdentifier, @assessmentTitle, @namespace);
+            INSERT INTO [edfi].[Assessment] ([DocumentId], [DocumentUuid], [AssessmentIdentifier], [AssessmentTitle], [Namespace])
+            SELECT @documentId, document.[DocumentUuid], @assessmentIdentifier, @assessmentTitle, @namespace
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
@@ -3806,21 +3795,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         }
     }
 
+    /// <summary>
+    /// Reads a document's authoritative stamps. The owning root row — or the <c>dms.Descriptor</c> row
+    /// for a descriptor — is the stamp store, so the read selects across every candidate table by
+    /// <c>DocumentId</c> (their shared primary key) and takes the single row that exists.
+    /// </summary>
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
     {
         var row = (
-            await _database.QueryRowsAsync(
-                """
-                SELECT
-                    [ContentVersion],
-                    [IdentityVersion],
-                    [ContentLastModifiedAt],
-                    [IdentityLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentId] = @documentId;
-                """,
-                new SqlParameter("@documentId", documentId)
-            )
+            await _database.QueryRowsAsync(_stampSourceQuery, new SqlParameter("@documentId", documentId))
         ).Single();
 
         return new(
@@ -3856,27 +3839,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             ReadDateTimeOffset(row["ContentLastModifiedAt"]),
             IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
         );
-    }
-
-    private async Task AssertRootMirrorMatchesDocumentAsync(
-        string schemaName,
-        string tableName,
-        long documentId
-    )
-    {
-        var document = await GetDocumentStampStateAsync(documentId);
-        var mirror = await GetRootMirrorStampStateAsync(schemaName, tableName, documentId);
-
-        AssertMirrorContentMatchesDocument(mirror, document);
-    }
-
-    private static void AssertMirrorContentMatchesDocument(
-        DocumentStampState mirror,
-        DocumentStampState document
-    )
-    {
-        mirror.ContentVersion.Should().Be(document.ContentVersion);
-        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
     }
 
     private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(

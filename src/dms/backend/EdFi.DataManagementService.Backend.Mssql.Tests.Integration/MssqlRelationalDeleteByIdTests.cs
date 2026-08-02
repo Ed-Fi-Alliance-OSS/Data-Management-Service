@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -454,8 +454,10 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     private Task InsertProgramAsync(long documentId, string programName) =>
         _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Program] ([DocumentId], [ProgramName])
-            VALUES (@documentId, @programName);
+            INSERT INTO [edfi].[Program] ([DocumentId], [DocumentUuid], [ProgramName])
+            SELECT @documentId, document.[DocumentUuid], @programName
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@programName", programName)
@@ -464,8 +466,10 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     private Task InsertSchoolAsync(long documentId, int schoolId) =>
         _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[School] ([DocumentId], [SchoolId])
-            VALUES (@documentId, @schoolId);
+            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [SchoolId])
+            SELECT @documentId, document.[DocumentUuid], @schoolId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@schoolId", schoolId)

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -43,7 +43,7 @@ internal static class PostgresqlDescriptorReadTestSupport
         );
         var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
 
-        await InsertDescriptorRowAsync(database, resource, documentId, seed);
+        await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
 
         return documentId;
     }
@@ -52,6 +52,7 @@ internal static class PostgresqlDescriptorReadTestSupport
         PostgresqlGeneratedDdlTestDatabase database,
         QualifiedResourceName resource,
         long documentId,
+        short resourceKeyId,
         DescriptorReadSeed seed
     )
     {
@@ -61,6 +62,8 @@ internal static class PostgresqlDescriptorReadTestSupport
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -72,6 +75,8 @@ internal static class PostgresqlDescriptorReadTestSupport
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -83,6 +88,8 @@ internal static class PostgresqlDescriptorReadTestSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", seed.DocumentUuid.Value),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", seed.Namespace),
             new NpgsqlParameter("codeValue", seed.CodeValue),
             new NpgsqlParameter("shortDescription", seed.ShortDescription),

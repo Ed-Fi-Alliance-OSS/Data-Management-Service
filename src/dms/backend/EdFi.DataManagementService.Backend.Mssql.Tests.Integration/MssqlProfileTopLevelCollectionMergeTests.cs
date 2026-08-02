@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -431,6 +431,8 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -440,6 +442,8 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @codeValue,
@@ -449,6 +453,8 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@discriminator", "AddressTypeDescriptor"),

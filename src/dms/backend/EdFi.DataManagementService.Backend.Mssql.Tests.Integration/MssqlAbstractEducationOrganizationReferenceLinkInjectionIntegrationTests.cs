@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -442,6 +442,8 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -451,6 +453,8 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -460,6 +464,8 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

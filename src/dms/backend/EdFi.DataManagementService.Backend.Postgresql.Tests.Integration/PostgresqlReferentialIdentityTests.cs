@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -268,8 +268,10 @@ public class PostgresqlReferentialIdentityTests
         var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."ResourceA" ("DocumentId", "ResourceAId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO "edfi"."ResourceA" ("DocumentId", "DocumentUuid", "ResourceAId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
+            SELECT @documentId, document."DocumentUuid", @resourceAId, @studentDocumentId, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", resourceADocumentId),
             new NpgsqlParameter("resourceAId", "resA-1"),
@@ -281,8 +283,10 @@ public class PostgresqlReferentialIdentityTests
         var resourceBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceB");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."ResourceB" ("DocumentId", "ResourceBId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-            VALUES (@documentId, @resourceBId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO "edfi"."ResourceB" ("DocumentId", "DocumentUuid", "ResourceBId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
+            SELECT @documentId, document."DocumentUuid", @resourceBId, @studentDocumentId, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", resourceBDocumentId),
             new NpgsqlParameter("resourceBId", "resB-1"),
@@ -294,8 +298,10 @@ public class PostgresqlReferentialIdentityTests
         var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."KeyUnifiedResource" ("DocumentId", "KeyUnifiedResourceId", "ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified")
-            VALUES (@documentId, @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId);
+            INSERT INTO "edfi"."KeyUnifiedResource" ("DocumentId", "DocumentUuid", "KeyUnifiedResourceId", "ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified")
+            SELECT @documentId, document."DocumentUuid", @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", keyUnifiedDocumentId),
             new NpgsqlParameter("keyUnifiedResourceId", "unified-1"),
@@ -391,8 +397,10 @@ public class PostgresqlReferentialIdentityTests
         var edOrgDepDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "EdOrgDependentResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."EdOrgDependentResource" ("DocumentId", "EdOrgDependentResourceId", "EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-            VALUES (@documentId, @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId);
+            INSERT INTO "edfi"."EdOrgDependentResource" ("DocumentId", "DocumentUuid", "EdOrgDependentResourceId", "EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
+            SELECT @documentId, document."DocumentUuid", @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", edOrgDepDocumentId),
             new NpgsqlParameter("edOrgDependentResourceId", "dep-1"),
@@ -408,8 +416,10 @@ public class PostgresqlReferentialIdentityTests
         );
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."EdOrgDependentChildResource" ("DocumentId", "EdOrgDependentChildResourceId", "EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId")
-            VALUES (@documentId, @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId);
+            INSERT INTO "edfi"."EdOrgDependentChildResource" ("DocumentId", "DocumentUuid", "EdOrgDependentChildResourceId", "EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId")
+            SELECT @documentId, document."DocumentUuid", @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", edOrgDepChildDocumentId),
             new NpgsqlParameter("childResourceId", "child-1"),
@@ -540,8 +550,10 @@ public class PostgresqlReferentialIdentityTests
         var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."ResourceA" ("DocumentId", "ResourceAId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO "edfi"."ResourceA" ("DocumentId", "DocumentUuid", "ResourceAId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
+            SELECT @documentId, document."DocumentUuid", @resourceAId, @studentDocumentId, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", resourceADocumentId),
             new NpgsqlParameter("resourceAId", "resA-1"),
@@ -552,8 +564,10 @@ public class PostgresqlReferentialIdentityTests
         var resourceBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceB");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."ResourceB" ("DocumentId", "ResourceBId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-            VALUES (@documentId, @resourceBId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO "edfi"."ResourceB" ("DocumentId", "DocumentUuid", "ResourceBId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
+            SELECT @documentId, document."DocumentUuid", @resourceBId, @studentDocumentId, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", resourceBDocumentId),
             new NpgsqlParameter("resourceBId", "resB-1"),
@@ -564,8 +578,10 @@ public class PostgresqlReferentialIdentityTests
         var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."KeyUnifiedResource" ("DocumentId", "KeyUnifiedResourceId", "ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified")
-            VALUES (@documentId, @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId);
+            INSERT INTO "edfi"."KeyUnifiedResource" ("DocumentId", "DocumentUuid", "KeyUnifiedResourceId", "ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified")
+            SELECT @documentId, document."DocumentUuid", @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", keyUnifiedDocumentId),
             new NpgsqlParameter("keyUnifiedResourceId", "unified-1"),
@@ -754,8 +770,10 @@ public class PostgresqlReferentialIdentityTests
         var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."ResourceA" ("DocumentId", "ResourceAId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO "edfi"."ResourceA" ("DocumentId", "DocumentUuid", "ResourceAId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId")
+            SELECT @documentId, document."DocumentUuid", @resourceAId, @studentDocumentId, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", resourceADocumentId),
             new NpgsqlParameter("resourceAId", "resA-1"),
@@ -869,8 +887,10 @@ public class PostgresqlReferentialIdentityTests
         var edOrgDepDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "EdOrgDependentResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."EdOrgDependentResource" ("DocumentId", "EdOrgDependentResourceId", "EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-            VALUES (@documentId, @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId);
+            INSERT INTO "edfi"."EdOrgDependentResource" ("DocumentId", "DocumentUuid", "EdOrgDependentResourceId", "EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
+            SELECT @documentId, document."DocumentUuid", @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", edOrgDepDocumentId),
             new NpgsqlParameter("edOrgDependentResourceId", "dep-1"),
@@ -885,8 +905,10 @@ public class PostgresqlReferentialIdentityTests
         );
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."EdOrgDependentChildResource" ("DocumentId", "EdOrgDependentChildResourceId", "EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId")
-            VALUES (@documentId, @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId);
+            INSERT INTO "edfi"."EdOrgDependentChildResource" ("DocumentId", "DocumentUuid", "EdOrgDependentChildResourceId", "EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId")
+            SELECT @documentId, document."DocumentUuid", @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", edOrgDepChildDocumentId),
             new NpgsqlParameter("childResourceId", "child-1"),
@@ -1433,8 +1455,10 @@ public class PostgresqlReferentialIdentityTests
         await using var insertCmd = connection.CreateCommand();
         insertCmd.Transaction = transaction;
         insertCmd.CommandText = """
-            INSERT INTO "edfi"."DateTimeKeyResource" ("DocumentId", "EventTimestamp")
-            VALUES (@documentId, @eventTimestamp);
+            INSERT INTO "edfi"."DateTimeKeyResource" ("DocumentId", "DocumentUuid", "EventTimestamp")
+            SELECT @documentId, document."DocumentUuid", @eventTimestamp
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """;
         insertCmd.Parameters.Add(new NpgsqlParameter("documentId", documentId));
         insertCmd.Parameters.Add(
@@ -1475,8 +1499,10 @@ public class PostgresqlReferentialIdentityTests
         // Act
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."DecimalKeyResource" ("DocumentId", "DecimalKey")
-            VALUES (@documentId, @decimalKey);
+            INSERT INTO "edfi"."DecimalKeyResource" ("DocumentId", "DocumentUuid", "DecimalKey")
+            SELECT @documentId, document."DocumentUuid", @decimalKey
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("decimalKey", (decimal)rawValue)
@@ -1502,8 +1528,10 @@ public class PostgresqlReferentialIdentityTests
         var decimalKeyDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalKeyResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."DecimalKeyResource" ("DocumentId", "DecimalKey")
-            VALUES (@documentId, @decimalKey);
+            INSERT INTO "edfi"."DecimalKeyResource" ("DocumentId", "DocumentUuid", "DecimalKey")
+            SELECT @documentId, document."DocumentUuid", @decimalKey
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", decimalKeyDocumentId),
             new NpgsqlParameter("decimalKey", 1.50m)
@@ -1514,8 +1542,10 @@ public class PostgresqlReferentialIdentityTests
         var refDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "DecimalRefResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."DecimalRefResource" ("DocumentId", "RefResourceId", "DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey")
-            VALUES (@documentId, @refResourceId, @decimalKeyDocumentId, @decimalKey);
+            INSERT INTO "edfi"."DecimalRefResource" ("DocumentId", "DocumentUuid", "RefResourceId", "DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey")
+            SELECT @documentId, document."DocumentUuid", @refResourceId, @decimalKeyDocumentId, @decimalKey
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", refDocumentId),
             new NpgsqlParameter("refResourceId", refResourceId),
@@ -1584,8 +1614,10 @@ public class PostgresqlReferentialIdentityTests
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "StudentUniqueId", "FirstName")
-            VALUES (@documentId, @studentUniqueId, @firstName);
+            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "StudentUniqueId", "FirstName")
+            SELECT @documentId, document."DocumentUuid", @studentUniqueId, @firstName
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("studentUniqueId", studentUniqueId),
@@ -1601,8 +1633,10 @@ public class PostgresqlReferentialIdentityTests
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "EducationOrganizationId", "NameOfInstitution", "SchoolId")
-            VALUES (@documentId, @educationOrganizationId, @nameOfInstitution, @schoolId);
+            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "EducationOrganizationId", "NameOfInstitution", "SchoolId")
+            SELECT @documentId, document."DocumentUuid", @educationOrganizationId, @nameOfInstitution, @schoolId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("educationOrganizationId", schoolId),

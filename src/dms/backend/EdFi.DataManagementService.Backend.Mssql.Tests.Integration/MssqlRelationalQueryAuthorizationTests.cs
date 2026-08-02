@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -452,6 +452,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     """
                     INSERT INTO [authz].[AuthorizationStudentAcademicRecordResource] (
                         [DocumentId],
+                        [DocumentUuid],
                         [StudentAcademicRecord_DocumentId],
                         [StudentAcademicRecord_EducationOrganizationId],
                         [StudentAcademicRecord_SchoolYear],
@@ -462,6 +463,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     )
                     VALUES (
                         @documentId,
+                        @documentUuid,
                         @studentAcademicRecordDocumentId,
                         @educationOrganizationId,
                         @schoolYear,
@@ -472,6 +474,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     );
                     """,
                     new SqlParameter("@documentId", documentId),
+                    new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
                     new SqlParameter("@studentAcademicRecordDocumentId", studentAcademicRecordDocumentId),
                     new SqlParameter("@educationOrganizationId", seed.EducationOrganizationId),
                     new SqlParameter("@schoolYear", seed.SchoolYear),
@@ -697,18 +700,21 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     """
                     INSERT INTO [edfi].[SchoolYearType] (
                         [DocumentId],
+                        [DocumentUuid],
                         [CurrentSchoolYear],
                         [SchoolYear],
                         [SchoolYearDescription]
                     )
                     VALUES (
                         @documentId,
+                        @documentUuid,
                         @currentSchoolYear,
                         @schoolYear,
                         @schoolYearDescription
                     );
                     """,
                     new SqlParameter("@documentId", documentId),
+                    new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
                     new SqlParameter("@currentSchoolYear", seed.CurrentSchoolYear),
                     new SqlParameter("@schoolYear", seed.SchoolYear),
                     new SqlParameter("@schoolYearDescription", seed.SchoolYearDescription)
@@ -730,6 +736,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     """
                     INSERT INTO [edfi].[Student] (
                         [DocumentId],
+                        [DocumentUuid],
                         [BirthDate],
                         [FirstName],
                         [LastSurname],
@@ -737,6 +744,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     )
                     VALUES (
                         @documentId,
+                        @documentUuid,
                         @birthDate,
                         @firstName,
                         @lastSurname,
@@ -744,6 +752,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     );
                     """,
                     new SqlParameter("@documentId", documentId),
+                    new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
                     new SqlParameter("@birthDate", new DateOnly(2010, 5, 14)),
                     new SqlParameter("@firstName", seed.FirstName),
                     new SqlParameter("@lastSurname", seed.LastSurname),
@@ -772,6 +781,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     """
                     INSERT INTO [edfi].[StudentSchoolAssociation] (
                         [DocumentId],
+                        [DocumentUuid],
                         [SchoolId_Unified],
                         [School_DocumentId],
                         [Student_DocumentId],
@@ -781,6 +791,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     )
                     VALUES (
                         @documentId,
+                        @documentUuid,
                         @schoolId,
                         @schoolDocumentId,
                         @studentDocumentId,
@@ -790,6 +801,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     );
                     """,
                     new SqlParameter("@documentId", documentId),
+                    new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
                     new SqlParameter("@schoolId", seed.SchoolId),
                     new SqlParameter("@schoolDocumentId", schoolDocumentId),
                     new SqlParameter("@studentDocumentId", studentDocumentId),
@@ -818,6 +830,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     """
                     INSERT INTO [edfi].[StudentAcademicRecord] (
                         [DocumentId],
+                        [DocumentUuid],
                         [EducationOrganization_DocumentId],
                         [EducationOrganization_EducationOrganizationId],
                         [SchoolYear_DocumentId],
@@ -828,6 +841,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     )
                     VALUES (
                         @documentId,
+                        @documentUuid,
                         @schoolDocumentId,
                         @educationOrganizationId,
                         @schoolYearDocumentId,
@@ -838,6 +852,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     );
                     """,
                     new SqlParameter("@documentId", documentId),
+                    new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
                     new SqlParameter("@schoolDocumentId", schoolDocumentId),
                     new SqlParameter("@educationOrganizationId", seed.EducationOrganizationId),
                     new SqlParameter("@schoolYearDocumentId", schoolYearDocumentId),
@@ -933,18 +948,21 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                     """
                     INSERT INTO [edfi].[ClassPeriod] (
                         [DocumentId],
+                        [DocumentUuid],
                         [ClassPeriodName],
                         [School_DocumentId],
                         [School_SchoolId]
                     )
                     VALUES (
                         @documentId,
+                        @documentUuid,
                         @classPeriodName,
                         @schoolDocumentId,
                         @schoolId
                     );
                     """,
                     new SqlParameter("@documentId", documentId),
+                    new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
                     new SqlParameter("@classPeriodName", seed.ClassPeriodName),
                     new SqlParameter("@schoolDocumentId", schoolDocumentId),
                     new SqlParameter("@schoolId", seed.SchoolId)
@@ -2017,6 +2035,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -2026,6 +2046,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -2035,6 +2057,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

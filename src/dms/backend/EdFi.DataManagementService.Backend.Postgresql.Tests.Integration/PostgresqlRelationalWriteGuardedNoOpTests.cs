@@ -29,27 +29,22 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// The statement these fixtures use to simulate a competing writer's content-stamp bump.
 /// </summary>
 /// <remarks>
-/// A real write bumps <c>dms."Document"."ContentVersion"</c> and mirrors it onto the resource root row
-/// in the same stamping trigger, so the two are always equal. The write path locks and reads the
-/// <em>root</em> row, so a simulation that moved only <c>dms."Document"</c> would be invisible to the
-/// freshness re-check and the races these fixtures exist to prove would stop reproducing. Updating only
-/// the mirror column does not re-enter the stamping trigger — mirror columns are excluded from its
-/// stored-column diff, which is the same exclusion that stops the mirror write from recursing.
+/// The resource root row is the authoritative content stamp — no trigger writes
+/// <c>dms."Document"</c> any more — and the write path locks and reads that same root row, so moving
+/// its <c>ContentVersion</c> is exactly what the freshness re-check sees. Updating only the stamp
+/// column does not re-enter the stamping trigger: stamp columns are excluded from its stored-column
+/// diff, which is the same exclusion that stops the trigger's own stamp write from recursing.
 /// </remarks>
 file static class GuardedNoOpContentVersionBump
 {
     public const string Sql = """
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = "ContentVersion" + 1
-        WHERE "DocumentId" = @documentId;
-
         UPDATE "edfi"."School"
         SET "ContentVersion" = "ContentVersion" + 1
         WHERE "DocumentId" = @documentId;
         """;
 
-    /// <summary>One document row plus its root mirror row.</summary>
-    public const int ExpectedRowsAffected = 2;
+    /// <summary>The single root row that carries the stamp.</summary>
+    public const int ExpectedRowsAffected = 1;
 }
 
 file sealed class GuardedNoOpConcurrentContentVersionBumpFreshnessChecker(
@@ -676,11 +671,14 @@ file static class GuardedNoOpIntegrationTestSupport
         Guid documentUuid
     )
     {
+        // The root row is the authoritative content stamp, and it carries the document's identity
+        // columns too, so the whole row comes from one table.
         var rows = await database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT school."DocumentId", school."DocumentUuid", document."ResourceKeyId", school."ContentVersion"
+            FROM "edfi"."School" school
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = school."DocumentId"
+            WHERE school."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );

@@ -223,6 +223,58 @@ internal static class ProfileTestDoubles
     }
 
     /// <summary>
+    /// Build a root plan that carries the change-version mirror columns <em>and</em> a bound
+    /// <c>DocumentUuid</c> column, modelling the post-Phase-4 root: the write path originates the
+    /// document's public API id, so <c>DocumentUuid</c> is a real binding
+    /// (<see cref="WriteValueSource.DocumentUuid"/>) even though the hydration (read) projection does
+    /// not carry the column. Bindings: [0] = DocumentUuid, [1] = the scalar.
+    /// </summary>
+    internal static ResourceWritePlan BuildSingleScalarBindingRootPlanWithDocumentUuidBinding(
+        string scalarRelativePath = "$.firstName"
+    )
+    {
+        var contentVersionColumn = Column(
+            "ContentVersion",
+            ColumnKind.MirroredContentVersion,
+            Int64Type(),
+            isNullable: false
+        ) with
+        {
+            IsWritable = false,
+        };
+        var contentLastModifiedAtColumn = Column(
+            "ContentLastModifiedAt",
+            ColumnKind.MirroredContentLastModifiedAt,
+            new RelationalScalarType(ScalarKind.DateTime),
+            isNullable: false
+        ) with
+        {
+            IsWritable = false,
+        };
+        var documentUuidColumn = Column("DocumentUuid", ColumnKind.DocumentUuid, null, isNullable: false) with
+        {
+            IsWritable = false,
+        };
+        var scalarColumn = Column("FirstName", ColumnKind.Scalar, StringType());
+        var rootModel = RootTable(
+            "Student",
+            [contentVersionColumn, contentLastModifiedAtColumn, documentUuidColumn, scalarColumn]
+        );
+        var documentUuidBinding = new WriteColumnBinding(
+            documentUuidColumn,
+            new WriteValueSource.DocumentUuid(),
+            "DocumentUuid"
+        );
+        var scalarBinding = new WriteColumnBinding(
+            scalarColumn,
+            new WriteValueSource.Scalar(Path(scalarRelativePath), StringType()),
+            "FirstName"
+        );
+        var rootPlan = RootPlan(rootModel, [documentUuidBinding, scalarBinding]);
+        return WrapPlan(rootModel, [rootPlan], documentReferenceBindings: []);
+    }
+
+    /// <summary>
     /// Build a root plan with a KeyUnificationWritePlan whose single member is a
     /// ReferenceDerivedMember. Useful for tests that need the resolver's reference-rooted
     /// governance path. Bindings: [0] = canonical (Precomputed), [1] = ReferenceDerived
@@ -1760,10 +1812,12 @@ internal static class ProfileTestDoubles
 
     /// <summary>
     /// Build a current state whose single hydrated root row carries only the hydration-projection
-    /// columns: the change-version mirror columns are excluded, matching the read plan that omits
-    /// them. The hydrated row and its table model therefore have fewer columns than the write-plan
-    /// root model, exercising the contract that current-row projections index the hydrated row by
-    /// its own (read-projection) column set rather than the write-plan column set.
+    /// columns: the document-metadata columns (the change-version mirrors and <c>DocumentUuid</c>) are
+    /// excluded, matching the read plan that omits them. The hydrated row and its table model therefore
+    /// have fewer columns than the write-plan root model, exercising the contract that current-row
+    /// projections index the hydrated row by its own (read-projection) column set rather than the
+    /// write-plan column set — and, for <c>DocumentUuid</c>, that a hydration-exempt binding is skipped
+    /// outright.
     /// </summary>
     internal static RelationalWriteCurrentState BuildCurrentStateWithSingleRootRowExcludingMirrorColumns(
         ResourceWritePlan writePlan,
@@ -1777,7 +1831,11 @@ internal static class ProfileTestDoubles
             [
                 .. writeRootModel.Columns.Where(column =>
                     column.Kind
-                        is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                        is not (
+                            ColumnKind.MirroredContentVersion
+                            or ColumnKind.MirroredContentLastModifiedAt
+                            or ColumnKind.DocumentUuid
+                        )
                 ),
             ],
         };

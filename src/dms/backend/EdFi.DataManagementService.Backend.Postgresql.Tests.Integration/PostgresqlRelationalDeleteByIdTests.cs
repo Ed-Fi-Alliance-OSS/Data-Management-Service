@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -430,8 +430,10 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
     {
         await _database.QueryRowsAsync(
             """
-            INSERT INTO "edfi"."Program" ("DocumentId", "ProgramName")
-            VALUES (@documentId, @programName);
+            INSERT INTO "edfi"."Program" ("DocumentId", "DocumentUuid", "ProgramName")
+            SELECT @documentId, document."DocumentUuid", @programName
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("programName", programName)
@@ -442,8 +444,10 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
     {
         await _database.QueryRowsAsync(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "SchoolId")
-            VALUES (@documentId, @schoolId);
+            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "SchoolId")
+            SELECT @documentId, document."DocumentUuid", @schoolId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("schoolId", schoolId)

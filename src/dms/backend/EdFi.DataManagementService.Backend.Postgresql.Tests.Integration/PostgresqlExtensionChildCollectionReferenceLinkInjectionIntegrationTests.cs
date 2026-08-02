@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -509,6 +509,8 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -518,6 +520,8 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -527,6 +531,8 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

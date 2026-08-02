@@ -17,6 +17,14 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 internal static class RelationalWriteMergeSupport
 {
+    /// <summary>
+    /// Slot filler for a hydration-exempt binding in a current-row projection. Never read: it exists
+    /// only so the projected array stays indexable by binding index.
+    /// </summary>
+    private static readonly FlattenedWriteValue HydrationExemptPlaceholder = new FlattenedWriteValue.Literal(
+        null
+    );
+
     internal static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
     {
         for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
@@ -82,13 +90,45 @@ internal static class RelationalWriteMergeSupport
         return [.. physicalRowIdentityValues];
     }
 
+    /// <summary>
+    /// Returns <see langword="true" /> when the binding's value is originated by the write path rather
+    /// than read back from stored state, and the hydration (read) projection therefore does not carry
+    /// its column. Such a binding can take no part in the current-row projection or in the no-op
+    /// comparison: there is no stored value to project, and the merge always takes the request-side
+    /// value for it (<see cref="RootBindingDisposition.StorageManaged" />), so a comparison could only
+    /// ever compare the value against itself.
+    /// </summary>
+    /// <remarks>
+    /// Keyed off the binding's <see cref="WriteValueSource" /> rather than a column name so the rule is
+    /// a property of the compiled plan contract. Today the only such source is
+    /// <see cref="WriteValueSource.DocumentUuid" />: the root row's public API id, which the flattener
+    /// binds from the write target (a fresh uuid on create, the stored uuid on update) because no
+    /// trigger originates it any more. The other storage-managed sources —
+    /// <see cref="WriteValueSource.DocumentId" />, <see cref="WriteValueSource.ParentKeyPart" />,
+    /// <see cref="WriteValueSource.Ordinal" />, <see cref="WriteValueSource.Precomputed" /> — all map to
+    /// columns the hydration projection does carry, and their current-state values are load-bearing for
+    /// collection row matching, so they stay in.
+    /// </remarks>
+    internal static bool IsHydrationExemptBinding(WriteColumnBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        return binding.Source is WriteValueSource.DocumentUuid;
+    }
+
     internal static ImmutableArray<FlattenedWriteValue> ProjectComparableValues(
         TableWritePlan tableWritePlan,
         IReadOnlyList<FlattenedWriteValue> values
     )
     {
+        // Only resource root tables carry a hydration-exempt binding (DeriveDocumentMetadataColumnsPass
+        // synthesizes DocumentUuid onto the model root alone), and a root table never has a collection
+        // merge plan (UsesCollectionMergeContract requires a Collection / ExtensionCollection table
+        // kind), so CompareBindingIndexesInOrder never has to filter.
         var bindingIndexes = tableWritePlan.CollectionMergePlan is null
-            ? Enumerable.Range(0, tableWritePlan.ColumnBindings.Length)
+            ? Enumerable
+                .Range(0, tableWritePlan.ColumnBindings.Length)
+                .Where(bindingIndex => !IsHydrationExemptBinding(tableWritePlan.ColumnBindings[bindingIndex]))
             : tableWritePlan.CollectionMergePlan.CompareBindingIndexesInOrder;
 
         FlattenedWriteValue[] comparableValues = bindingIndexes
@@ -119,9 +159,19 @@ internal static class RelationalWriteMergeSupport
     /// Projects hydrated current-state rows into binding-indexed merged rows. The hydrated row is
     /// indexed by ordinals resolved against <paramref name="hydratedRowTableModel"/> — the model the
     /// row was materialized from — not the write plan's table model. These differ on resource root
-    /// tables: the write-plan model carries the change-version mirror columns, but the hydration (read)
-    /// projection omits them, and column canonicalization leaves non-mirror columns positioned after
-    /// the mirrors, so write-plan ordinals would be shifted (and overshoot the shorter hydrated row).
+    /// tables: the write-plan model carries the document-metadata columns, but the hydration (read)
+    /// projection omits them, and column canonicalization leaves the remaining columns positioned after
+    /// them, so write-plan ordinals would be shifted (and overshoot the shorter hydrated row).
+    /// <para>
+    /// Most of those columns are not bindings at all (they are non-writable, so plan compilation never
+    /// binds them) and never reach this loop. <c>DocumentUuid</c> is the exception — the write path
+    /// originates it, so it <em>is</em> a binding — and it is skipped here per
+    /// <see cref="IsHydrationExemptBinding" />. The invariant this method now rests on is therefore:
+    /// <b>every binding except a hydration-exempt one resolves to a column of the hydrated model</b>.
+    /// The skipped slot is filled with a null placeholder purely to keep the array binding-indexed; no
+    /// consumer reads it, because the merge takes the request-side value for such a binding and
+    /// <see cref="ProjectComparableValues" /> leaves it out of the no-op comparison.
+    /// </para>
     /// </summary>
     internal static ImmutableArray<RelationalWriteMergedTableRow> ProjectCurrentRows(
         TableWritePlan tableWritePlan,
@@ -140,6 +190,12 @@ internal static class RelationalWriteMergeSupport
             for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
             {
                 var binding = tableWritePlan.ColumnBindings[bindingIndex];
+                if (IsHydrationExemptBinding(binding))
+                {
+                    bindingValues[bindingIndex] = HydrationExemptPlaceholder;
+                    continue;
+                }
+
                 var columnOrdinal = FindColumnOrdinal(hydratedRowTableModel, binding.Column.ColumnName);
                 bindingValues[bindingIndex] = new FlattenedWriteValue.Literal(
                     NormalizeHydratedValue(binding.Column, hydratedRow[columnOrdinal])

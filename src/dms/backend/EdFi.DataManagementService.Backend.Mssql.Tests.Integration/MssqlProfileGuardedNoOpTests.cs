@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -83,11 +83,10 @@ file sealed class MssqlProfileGuardedNoOpConcurrentContentVersionBumpFreshnessCh
     }
 
     /// <summary>
-    /// A real write bumps <c>[dms].[Document].[ContentVersion]</c> and mirrors it onto the resource
-    /// root row in the same stamping trigger, so the two are always equal. The write path locks and
-    /// reads the <em>root</em> row, so this simulation has to move both or the freshness recheck would
-    /// never see the competing writer. Updating only the mirror column does not re-enter the stamping
-    /// trigger — mirror columns are excluded from its stored-column diff.
+    /// The resource root row is the authoritative content stamp, and the write path locks and reads
+    /// that same row, so moving its <c>ContentVersion</c> is exactly what the freshness recheck sees.
+    /// Updating only the stamp column does not re-enter the stamping trigger — stamp columns are
+    /// excluded from its stored-column diff.
     /// </summary>
     private async Task BumpContentVersionAsync(
         DbTableName rootTable,
@@ -99,10 +98,6 @@ file sealed class MssqlProfileGuardedNoOpConcurrentContentVersionBumpFreshnessCh
 
         var rowsAffected = await _database.ExecuteNonQueryAsync(
             $"""
-            UPDATE [dms].[Document]
-            SET [ContentVersion] = [ContentVersion] + 1
-            WHERE [DocumentId] = @documentId;
-
             UPDATE {SqlIdentifierQuoter.QuoteTableName(SqlDialect.Mssql, rootTable)}
             SET [ContentVersion] = [ContentVersion] + 1
             WHERE [DocumentId] = @documentId;
@@ -110,10 +105,10 @@ file sealed class MssqlProfileGuardedNoOpConcurrentContentVersionBumpFreshnessCh
             new SqlParameter("@documentId", documentId)
         );
 
-        if (rowsAffected != 2)
+        if (rowsAffected != 1)
         {
             throw new InvalidOperationException(
-                $"Expected a document and root-mirror content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+                $"Expected a root-row content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
             );
         }
     }
@@ -141,11 +136,24 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
         await database
             .QueryRowsAsync(
                 """
-                SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
-                       [ContentVersion], [ContentLastModifiedAt],
-                       [IdentityVersion], [IdentityLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentUuid] = @documentUuid;
+                SELECT root.[DocumentId], root.[DocumentUuid], document.[ResourceKeyId],
+                       root.[ContentVersion], root.[ContentLastModifiedAt],
+                       root.[IdentityVersion], root.[IdentityLastModifiedAt]
+                FROM (
+                    SELECT [DocumentId], [DocumentUuid], [ContentVersion], [ContentLastModifiedAt],
+                           [IdentityVersion], [IdentityLastModifiedAt]
+                    FROM [edfi].[ProfileRootOnlyMergeItem]
+                    UNION ALL
+                    SELECT [DocumentId], [DocumentUuid], [ContentVersion], [ContentLastModifiedAt],
+                           [IdentityVersion], [IdentityLastModifiedAt]
+                    FROM [edfi].[ProfileSeparateTableMergeItem]
+                    UNION ALL
+                    SELECT [DocumentId], [DocumentUuid], [ContentVersion], [ContentLastModifiedAt],
+                           [IdentityVersion], [IdentityLastModifiedAt]
+                    FROM [edfi].[School]
+                ) root
+                INNER JOIN [dms].[Document] document ON document.[DocumentId] = root.[DocumentId]
+                WHERE root.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )

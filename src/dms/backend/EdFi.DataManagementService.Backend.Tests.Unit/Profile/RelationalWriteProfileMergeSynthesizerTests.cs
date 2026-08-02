@@ -172,6 +172,102 @@ public class Given_ProfileSynthesizer_for_ExistingDocument_root_with_change_vers
 }
 
 [TestFixture]
+public class Given_ProfileSynthesizer_for_ExistingDocument_root_with_a_document_uuid_binding_and_unchanged_scalar
+{
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // DocumentUuid is a write-path-originated binding whose column the hydration (read)
+        // projection does not carry, so it can take no part in the current-row projection or the
+        // no-op comparison. An otherwise unchanged update must therefore still be a no-op candidate.
+        var plan = BuildSingleScalarBindingRootPlanWithDocumentUuidBinding(scalarRelativePath: "$.firstName");
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+        var appliedContext = CreateContext(request, storedScopeStates: StoredVisiblePresentScope("$"));
+
+        var synthesizer = BuildProfileSynthesizer();
+        _result = UnwrapMergeResult(
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: BuildFlattenedWriteSetFrom(
+                        plan,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        "Ada"
+                    ),
+                    writableRequestBody: body,
+                    currentState: BuildCurrentStateWithSingleRootRowExcludingMirrorColumns(plan, "Ada"),
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_is_a_no_op_candidate_when_request_matches_stored() =>
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeTrue();
+
+    [Test]
+    public void It_keeps_the_request_side_document_uuid_on_the_merged_row() =>
+        ((FlattenedWriteValue.Literal)_result.TablesInDependencyOrder[0].MergedRows[0].Values[0])
+            .Value.Should()
+            .Be(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+
+    [Test]
+    public void It_leaves_the_document_uuid_binding_out_of_the_comparable_projection() =>
+        _result
+            .TablesInDependencyOrder[0]
+            .MergedRows[0]
+            .ComparableValues.Should()
+            .HaveCount(
+                _result.TablesInDependencyOrder[0].MergedRows[0].Values.Length - 1,
+                "the hydration-exempt DocumentUuid binding is excluded from the no-op comparison"
+            );
+}
+
+[TestFixture]
+public class Given_ProfileSynthesizer_for_ExistingDocument_root_with_a_document_uuid_binding_and_changed_scalar
+{
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlanWithDocumentUuidBinding(scalarRelativePath: "$.firstName");
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+        var appliedContext = CreateContext(request, storedScopeStates: StoredVisiblePresentScope("$"));
+
+        var synthesizer = BuildProfileSynthesizer();
+        _result = UnwrapMergeResult(
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: BuildFlattenedWriteSetFrom(
+                        plan,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        "Ada"
+                    ),
+                    writableRequestBody: body,
+                    currentState: BuildCurrentStateWithSingleRootRowExcludingMirrorColumns(plan, "Grace"),
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_is_not_a_no_op_candidate_when_request_differs_from_stored() =>
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(_result).Should().BeFalse();
+}
+
+[TestFixture]
 public class Given_ProfileSynthesizer_for_ExistingDocument_with_visible_absent_inlined_scope
 {
     private RelationalWriteMergeResult _result = null!;

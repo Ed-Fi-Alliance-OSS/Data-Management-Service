@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -464,9 +464,10 @@ public class Given_A_Postgresql_Relational_Post_With_A_Changed_Identity_With_A_F
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            FROM "edfi"."School" root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
@@ -1480,6 +1481,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -1489,6 +1492,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1498,6 +1503,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
@@ -1513,8 +1520,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "NameOfInstitution", "SchoolId")
-            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
+            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
@@ -1560,8 +1569,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 1, 1)),
@@ -1617,9 +1628,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            FROM "edfi"."School" root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
@@ -2417,9 +2429,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            FROM "edfi"."School" root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
@@ -2774,9 +2787,10 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            FROM "edfi"."School" root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
@@ -3124,9 +3138,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            FROM "edfi"."School" root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
@@ -4138,6 +4153,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -4147,6 +4164,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -4156,6 +4175,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
@@ -4171,8 +4192,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "NameOfInstitution", "SchoolId")
-            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            INSERT INTO "edfi"."School" ("DocumentId", "DocumentUuid", "NameOfInstitution", "SchoolId")
+            SELECT @documentId, document."DocumentUuid", @nameOfInstitution, @schoolId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
@@ -4218,8 +4241,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
-            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            SELECT @documentId, document."DocumentUuid", @birthDate, @firstName, @lastSurname, @studentUniqueId
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 1, 1)),
@@ -4250,9 +4275,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."DocumentId", root."DocumentUuid", document."ResourceKeyId", root."ContentVersion"
+            FROM "edfi"."School" root
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = root."DocumentId"
+            WHERE root."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );

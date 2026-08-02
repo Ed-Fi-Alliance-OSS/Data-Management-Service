@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -1163,6 +1163,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -1172,6 +1174,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1181,6 +1185,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
@@ -1198,16 +1204,19 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             """
             INSERT INTO [edfi].[SchoolYearType] (
                 [DocumentId],
+                [DocumentUuid],
                 [CurrentSchoolYear],
                 [SchoolYear],
                 [SchoolYearDescription]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@currentSchoolYear", currentSchoolYear),
@@ -1220,8 +1229,10 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
+            SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
@@ -1264,8 +1275,10 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Student] ([DocumentId], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
-            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            INSERT INTO [edfi].[Student] ([DocumentId], [DocumentUuid], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
+            SELECT @documentId, document.[DocumentUuid], @birthDate, @firstName, @lastSurname, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@birthDate", new DateOnly(2010, 5, 14)),

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -431,6 +431,8 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -440,6 +442,8 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @codeValue,
@@ -449,6 +453,8 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("discriminator", "AddressTypeDescriptor"),

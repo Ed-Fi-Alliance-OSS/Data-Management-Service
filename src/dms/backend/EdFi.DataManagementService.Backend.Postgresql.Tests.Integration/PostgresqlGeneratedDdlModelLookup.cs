@@ -78,6 +78,35 @@ internal static class PostgresqlGeneratedDdlModelLookup
             );
     }
 
+    /// <summary>
+    /// Every table that stores document stamps: each relational resource root, plus the shared
+    /// <c>dms.Descriptor</c> table. Since Phase 4 these rows own <c>ContentVersion</c>,
+    /// <c>IdentityVersion</c> and their timestamps outright, so a fixture holding only a
+    /// <c>DocumentId</c> reads its stamps by selecting across this set.
+    /// </summary>
+    public static IReadOnlyList<(string Schema, string Table)> EnumerateStampTables(
+        DerivedRelationalModelSet modelSet
+    )
+    {
+        ArgumentNullException.ThrowIfNull(modelSet);
+
+        return
+        [
+            ("dms", "Descriptor"),
+            .. modelSet
+                .ConcreteResourcesInNameOrder.Where(static resource =>
+                    resource.StorageKind == ResourceStorageKind.RelationalTables
+                )
+                .Select(static resource =>
+                    (
+                        resource.RelationalModel.Root.Table.Schema.Value,
+                        resource.RelationalModel.Root.Table.Name
+                    )
+                )
+                .Distinct(),
+        ];
+    }
+
     private static IEnumerable<DbTableModel> EnumerateTables(DerivedRelationalModelSet modelSet)
     {
         return modelSet

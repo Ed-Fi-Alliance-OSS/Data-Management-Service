@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -439,6 +439,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "authz"."AuthorizationStudentAcademicRecordResource" (
                 "DocumentId",
+                "DocumentUuid",
                 "StudentAcademicRecord_DocumentId",
                 "StudentAcademicRecord_EducationOrganizationId",
                 "StudentAcademicRecord_SchoolYear",
@@ -449,6 +450,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @studentAcademicRecordDocumentId,
                 @educationOrganizationId,
                 @schoolYear,
@@ -459,6 +461,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", seed.DocumentUuid.Value),
             new NpgsqlParameter("studentAcademicRecordDocumentId", studentAcademicRecordDocumentId),
             new NpgsqlParameter("educationOrganizationId", seed.EducationOrganizationId),
             new NpgsqlParameter("schoolYear", seed.SchoolYear),
@@ -678,18 +681,21 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "edfi"."SchoolYearType" (
                 "DocumentId",
+                "DocumentUuid",
                 "CurrentSchoolYear",
                 "SchoolYear",
                 "SchoolYearDescription"
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", seed.DocumentUuid.Value),
             new NpgsqlParameter("currentSchoolYear", seed.CurrentSchoolYear),
             new NpgsqlParameter("schoolYear", seed.SchoolYear),
             new NpgsqlParameter("schoolYearDescription", seed.SchoolYearDescription)
@@ -705,6 +711,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "edfi"."Student" (
                 "DocumentId",
+                "DocumentUuid",
                 "BirthDate",
                 "FirstName",
                 "LastSurname",
@@ -712,6 +719,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @birthDate,
                 @firstName,
                 @lastSurname,
@@ -719,6 +727,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", seed.DocumentUuid.Value),
             new NpgsqlParameter("birthDate", new DateOnly(2010, 5, 14)),
             new NpgsqlParameter("firstName", seed.FirstName),
             new NpgsqlParameter("lastSurname", seed.LastSurname),
@@ -741,6 +750,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "edfi"."StudentSchoolAssociation" (
                 "DocumentId",
+                "DocumentUuid",
                 "SchoolId_Unified",
                 "School_DocumentId",
                 "Student_DocumentId",
@@ -750,6 +760,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolId,
                 @schoolDocumentId,
                 @studentDocumentId,
@@ -759,6 +770,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", seed.DocumentUuid.Value),
             new NpgsqlParameter("schoolId", seed.SchoolId),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
             new NpgsqlParameter("studentDocumentId", studentDocumentId),
@@ -781,6 +793,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "edfi"."StudentAcademicRecord" (
                 "DocumentId",
+                "DocumentUuid",
                 "EducationOrganization_DocumentId",
                 "EducationOrganization_EducationOrganizationId",
                 "SchoolYear_DocumentId",
@@ -791,6 +804,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolDocumentId,
                 @educationOrganizationId,
                 @schoolYearDocumentId,
@@ -801,6 +815,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", seed.DocumentUuid.Value),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
             new NpgsqlParameter("educationOrganizationId", seed.EducationOrganizationId),
             new NpgsqlParameter("schoolYearDocumentId", schoolYearDocumentId),

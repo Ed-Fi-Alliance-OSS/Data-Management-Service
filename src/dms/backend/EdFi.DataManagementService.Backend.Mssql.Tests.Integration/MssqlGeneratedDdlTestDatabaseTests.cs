@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -254,8 +254,10 @@ public class Given_MssqlGeneratedDdlTestDatabase
 
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Contact] ([DocumentId], [ContactUniqueId], [FirstName], [LastSurname])
-            VALUES (@documentId, @contactUniqueId, @firstName, @lastSurname);
+            INSERT INTO [edfi].[Contact] ([DocumentId], [DocumentUuid], [ContactUniqueId], [FirstName], [LastSurname])
+            SELECT @documentId, document.[DocumentUuid], @contactUniqueId, @firstName, @lastSurname
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentState.DocumentId),
             new SqlParameter("@contactUniqueId", contactUniqueId),

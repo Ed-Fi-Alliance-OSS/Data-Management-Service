@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -375,6 +375,8 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -384,6 +386,8 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -393,6 +397,8 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
@@ -443,6 +449,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             """
             INSERT INTO [edfi].[LocalEducationAgency] (
                 [DocumentId],
+                [DocumentUuid],
                 [LocalEducationAgencyId],
                 [LocalEducationAgencyCategoryDescriptor_DescriptorId],
                 [NameOfInstitution],
@@ -451,6 +458,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @localEducationAgencyId,
                 @categoryDescriptorDocumentId,
                 @nameOfInstitution,
@@ -459,6 +467,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@localEducationAgencyId", localEducationAgencyId),
             new SqlParameter(
                 "@categoryDescriptorDocumentId",
@@ -489,6 +498,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             """
             INSERT INTO [edfi].[School] (
                 [DocumentId],
+                [DocumentUuid],
                 [SchoolId],
                 [NameOfInstitution],
                 [LocalEducationAgency_DocumentId],
@@ -496,6 +506,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolId,
                 @nameOfInstitution,
                 @parentLeaDocumentId,
@@ -503,6 +514,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@schoolId", schoolId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@parentLeaDocumentId", parentLocalEducationAgencyDocumentId),

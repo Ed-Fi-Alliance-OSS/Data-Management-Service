@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -283,8 +283,10 @@ public class MssqlReferentialIdentityTests
         var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[ResourceA] ([DocumentId], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
-            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO [edfi].[ResourceA] ([DocumentId], [DocumentUuid], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            SELECT @documentId, document.[DocumentUuid], @resourceAId, @studentDocumentId, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", resourceADocumentId),
             new SqlParameter("@resourceAId", "resA-1"),
@@ -296,8 +298,10 @@ public class MssqlReferentialIdentityTests
         var resourceBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceB");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[ResourceB] ([DocumentId], [ResourceBId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
-            VALUES (@documentId, @resourceBId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO [edfi].[ResourceB] ([DocumentId], [DocumentUuid], [ResourceBId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            SELECT @documentId, document.[DocumentUuid], @resourceBId, @studentDocumentId, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", resourceBDocumentId),
             new SqlParameter("@resourceBId", "resB-1"),
@@ -309,8 +313,10 @@ public class MssqlReferentialIdentityTests
         var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[KeyUnifiedResource] ([DocumentId], [KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceAReference_ResourceAId], [ResourceBReference_DocumentId], [ResourceBReference_ResourceBId], [StudentUniqueId_Unified])
-            VALUES (@documentId, @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId);
+            INSERT INTO [edfi].[KeyUnifiedResource] ([DocumentId], [DocumentUuid], [KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceAReference_ResourceAId], [ResourceBReference_DocumentId], [ResourceBReference_ResourceBId], [StudentUniqueId_Unified])
+            SELECT @documentId, document.[DocumentUuid], @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", keyUnifiedDocumentId),
             new SqlParameter("@keyUnifiedResourceId", "unified-1"),
@@ -406,8 +412,10 @@ public class MssqlReferentialIdentityTests
         var edOrgDepDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "EdOrgDependentResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EdOrgDependentResource] ([DocumentId], [EdOrgDependentResourceId], [EducationOrganization_DocumentId], [EducationOrganization_EducationOrganizationId])
-            VALUES (@documentId, @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId);
+            INSERT INTO [edfi].[EdOrgDependentResource] ([DocumentId], [DocumentUuid], [EdOrgDependentResourceId], [EducationOrganization_DocumentId], [EducationOrganization_EducationOrganizationId])
+            SELECT @documentId, document.[DocumentUuid], @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", edOrgDepDocumentId),
             new SqlParameter("@edOrgDependentResourceId", "dep-1"),
@@ -423,8 +431,10 @@ public class MssqlReferentialIdentityTests
         );
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EdOrgDependentChildResource] ([DocumentId], [EdOrgDependentChildResourceId], [EdOrgDependentResourceReference_DocumentId], [EdOrgDependentResourceReference_EdOrgDependentResourceId], [EdOrgDependentResourceReference_EducationOrganizationId])
-            VALUES (@documentId, @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId);
+            INSERT INTO [edfi].[EdOrgDependentChildResource] ([DocumentId], [DocumentUuid], [EdOrgDependentChildResourceId], [EdOrgDependentResourceReference_DocumentId], [EdOrgDependentResourceReference_EdOrgDependentResourceId], [EdOrgDependentResourceReference_EducationOrganizationId])
+            SELECT @documentId, document.[DocumentUuid], @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", edOrgDepChildDocumentId),
             new SqlParameter("@childResourceId", "child-1"),
@@ -555,8 +565,10 @@ public class MssqlReferentialIdentityTests
         var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[ResourceA] ([DocumentId], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
-            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO [edfi].[ResourceA] ([DocumentId], [DocumentUuid], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            SELECT @documentId, document.[DocumentUuid], @resourceAId, @studentDocumentId, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", resourceADocumentId),
             new SqlParameter("@resourceAId", "resA-1"),
@@ -567,8 +579,10 @@ public class MssqlReferentialIdentityTests
         var resourceBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceB");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[ResourceB] ([DocumentId], [ResourceBId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
-            VALUES (@documentId, @resourceBId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO [edfi].[ResourceB] ([DocumentId], [DocumentUuid], [ResourceBId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            SELECT @documentId, document.[DocumentUuid], @resourceBId, @studentDocumentId, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", resourceBDocumentId),
             new SqlParameter("@resourceBId", "resB-1"),
@@ -579,8 +593,10 @@ public class MssqlReferentialIdentityTests
         var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[KeyUnifiedResource] ([DocumentId], [KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceAReference_ResourceAId], [ResourceBReference_DocumentId], [ResourceBReference_ResourceBId], [StudentUniqueId_Unified])
-            VALUES (@documentId, @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId);
+            INSERT INTO [edfi].[KeyUnifiedResource] ([DocumentId], [DocumentUuid], [KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceAReference_ResourceAId], [ResourceBReference_DocumentId], [ResourceBReference_ResourceBId], [StudentUniqueId_Unified])
+            SELECT @documentId, document.[DocumentUuid], @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", keyUnifiedDocumentId),
             new SqlParameter("@keyUnifiedResourceId", "unified-1"),
@@ -772,8 +788,10 @@ public class MssqlReferentialIdentityTests
         var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[ResourceA] ([DocumentId], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
-            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            INSERT INTO [edfi].[ResourceA] ([DocumentId], [DocumentUuid], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            SELECT @documentId, document.[DocumentUuid], @resourceAId, @studentDocumentId, @studentUniqueId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", resourceADocumentId),
             new SqlParameter("@resourceAId", "resA-1"),
@@ -887,8 +905,10 @@ public class MssqlReferentialIdentityTests
         var edOrgDepDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "EdOrgDependentResource");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EdOrgDependentResource] ([DocumentId], [EdOrgDependentResourceId], [EducationOrganization_DocumentId], [EducationOrganization_EducationOrganizationId])
-            VALUES (@documentId, @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId);
+            INSERT INTO [edfi].[EdOrgDependentResource] ([DocumentId], [DocumentUuid], [EdOrgDependentResourceId], [EducationOrganization_DocumentId], [EducationOrganization_EducationOrganizationId])
+            SELECT @documentId, document.[DocumentUuid], @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", edOrgDepDocumentId),
             new SqlParameter("@edOrgDependentResourceId", "dep-1"),
@@ -903,8 +923,10 @@ public class MssqlReferentialIdentityTests
         );
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EdOrgDependentChildResource] ([DocumentId], [EdOrgDependentChildResourceId], [EdOrgDependentResourceReference_DocumentId], [EdOrgDependentResourceReference_EdOrgDependentResourceId], [EdOrgDependentResourceReference_EducationOrganizationId])
-            VALUES (@documentId, @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId);
+            INSERT INTO [edfi].[EdOrgDependentChildResource] ([DocumentId], [DocumentUuid], [EdOrgDependentChildResourceId], [EdOrgDependentResourceReference_DocumentId], [EdOrgDependentResourceReference_EdOrgDependentResourceId], [EdOrgDependentResourceReference_EducationOrganizationId])
+            SELECT @documentId, document.[DocumentUuid], @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", edOrgDepChildDocumentId),
             new SqlParameter("@childResourceId", "child-1"),
@@ -1463,8 +1485,10 @@ public class MssqlReferentialIdentityTests
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Student] ([DocumentId], [StudentUniqueId], [FirstName])
-            VALUES (@documentId, @studentUniqueId, @firstName);
+            INSERT INTO [edfi].[Student] ([DocumentId], [DocumentUuid], [StudentUniqueId], [FirstName])
+            SELECT @documentId, document.[DocumentUuid], @studentUniqueId, @firstName
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@studentUniqueId", studentUniqueId),
@@ -1480,8 +1504,10 @@ public class MssqlReferentialIdentityTests
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[School] ([DocumentId], [EducationOrganizationId], [NameOfInstitution], [SchoolId])
-            VALUES (@documentId, @educationOrganizationId, @nameOfInstitution, @schoolId);
+            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [EducationOrganizationId], [NameOfInstitution], [SchoolId])
+            SELECT @documentId, document.[DocumentUuid], @educationOrganizationId, @nameOfInstitution, @schoolId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", schoolId),
@@ -1579,8 +1605,10 @@ public class MssqlReferentialIdentityTests
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[DateTimeKeyResource] ([DocumentId], [EventTimestamp])
-            VALUES (@documentId, @eventTimestamp);
+            INSERT INTO [edfi].[DateTimeKeyResource] ([DocumentId], [DocumentUuid], [EventTimestamp])
+            SELECT @documentId, document.[DocumentUuid], @eventTimestamp
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@eventTimestamp", eventTimestamp)
@@ -1591,8 +1619,10 @@ public class MssqlReferentialIdentityTests
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[DecimalKeyResource] ([DocumentId], [DecimalKey])
-            VALUES (@documentId, @decimalKey);
+            INSERT INTO [edfi].[DecimalKeyResource] ([DocumentId], [DocumentUuid], [DecimalKey])
+            SELECT @documentId, document.[DocumentUuid], @decimalKey
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter(
@@ -1611,8 +1641,10 @@ public class MssqlReferentialIdentityTests
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[DecimalRefResource] ([DocumentId], [RefResourceId], [DecimalKeyReference_DocumentId], [DecimalKeyReference_DecimalKey])
-            VALUES (@documentId, @refResourceId, @decimalKeyReferenceDocumentId, @decimalKeyReferenceDecimalKey);
+            INSERT INTO [edfi].[DecimalRefResource] ([DocumentId], [DocumentUuid], [RefResourceId], [DecimalKeyReference_DocumentId], [DecimalKeyReference_DecimalKey])
+            SELECT @documentId, document.[DocumentUuid], @refResourceId, @decimalKeyReferenceDocumentId, @decimalKeyReferenceDecimalKey
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@refResourceId", refResourceId),

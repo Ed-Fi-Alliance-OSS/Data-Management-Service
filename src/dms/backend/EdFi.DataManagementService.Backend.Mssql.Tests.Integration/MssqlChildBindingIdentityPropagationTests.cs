@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -270,8 +270,10 @@ public class MssqlChildBindingIdentityPropagationTests
             () =>
                 _database.ExecuteNonQueryAsync(
                     """
-                    INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-                    VALUES (@documentId, @nameOfInstitution, @schoolId);
+                    INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
+                    SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
+                    FROM [dms].[Document] document
+                    WHERE document.[DocumentId] = @documentId;
                     """,
                     new SqlParameter("@documentId", schoolDocumentId),
                     new SqlParameter("@nameOfInstitution", "Test School"),

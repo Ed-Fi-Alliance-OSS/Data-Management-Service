@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -1337,6 +1337,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -1346,6 +1348,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1355,6 +1359,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
@@ -1410,6 +1416,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             """
             INSERT INTO [edfi].[EducationServiceCenter] (
                 [DocumentId],
+                [DocumentUuid],
                 [EducationServiceCenterId],
                 [NameOfInstitution],
                 [StateEducationAgency_DocumentId],
@@ -1417,6 +1424,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @educationServiceCenterId,
                 @nameOfInstitution,
                 @parentSeaDocumentId,
@@ -1424,6 +1432,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@educationServiceCenterId", educationServiceCenterId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter(
@@ -1461,6 +1470,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             """
             INSERT INTO [edfi].[LocalEducationAgency] (
                 [DocumentId],
+                [DocumentUuid],
                 [LocalEducationAgencyId],
                 [LocalEducationAgencyCategoryDescriptor_DescriptorId],
                 [NameOfInstitution],
@@ -1473,6 +1483,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @localEducationAgencyId,
                 @categoryDescriptorDocumentId,
                 @nameOfInstitution,
@@ -1485,6 +1496,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@localEducationAgencyId", localEducationAgencyId),
             new SqlParameter(
                 "@categoryDescriptorDocumentId",
@@ -1525,6 +1537,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             """
             INSERT INTO [edfi].[School] (
                 [DocumentId],
+                [DocumentUuid],
                 [SchoolId],
                 [NameOfInstitution],
                 [LocalEducationAgency_DocumentId],
@@ -1532,6 +1545,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolId,
                 @nameOfInstitution,
                 @parentLeaDocumentId,
@@ -1539,6 +1553,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@schoolId", schoolId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter("@parentLeaDocumentId", parentLocalEducationAgencyDocumentId),
@@ -1570,6 +1585,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             """
             INSERT INTO [edfi].[OrganizationDepartment] (
                 [DocumentId],
+                [DocumentUuid],
                 [OrganizationDepartmentId],
                 [NameOfInstitution],
                 [ParentEducationOrganization_DocumentId],
@@ -1577,6 +1593,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @organizationDepartmentId,
                 @nameOfInstitution,
                 @parentEdOrgDocumentId,
@@ -1584,6 +1601,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@organizationDepartmentId", organizationDepartmentId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter(

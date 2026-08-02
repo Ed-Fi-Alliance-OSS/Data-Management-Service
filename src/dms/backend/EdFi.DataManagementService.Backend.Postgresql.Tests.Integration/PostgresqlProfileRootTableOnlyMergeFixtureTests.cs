@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -399,8 +399,10 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
         await database.ExecuteNonQueryAsync(
             """
-            INSERT INTO "edfi"."Student" ("DocumentId", "StudentUniqueId", "FirstName")
-            VALUES (@documentId, @studentUniqueId, @firstName);
+            INSERT INTO "edfi"."Student" ("DocumentId", "DocumentUuid", "StudentUniqueId", "FirstName")
+            SELECT @documentId, document."DocumentUuid", @studentUniqueId, @firstName
+            FROM "dms"."Document" document
+            WHERE document."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("studentUniqueId", studentUniqueId),
@@ -425,6 +427,8 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -434,6 +438,8 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -443,6 +449,8 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

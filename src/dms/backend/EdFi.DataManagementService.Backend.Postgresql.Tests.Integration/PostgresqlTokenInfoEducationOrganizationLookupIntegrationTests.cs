@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -315,6 +315,8 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -324,6 +326,8 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -333,6 +337,8 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
@@ -383,6 +389,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             """
             INSERT INTO "edfi"."LocalEducationAgency" (
                 "DocumentId",
+                "DocumentUuid",
                 "LocalEducationAgencyId",
                 "LocalEducationAgencyCategoryDescriptor_DescriptorId",
                 "NameOfInstitution",
@@ -391,6 +398,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @localEducationAgencyId,
                 @categoryDescriptorDocumentId,
                 @nameOfInstitution,
@@ -399,6 +407,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("localEducationAgencyId", localEducationAgencyId),
             new NpgsqlParameter(
                 "categoryDescriptorDocumentId",
@@ -429,6 +438,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             """
             INSERT INTO "edfi"."School" (
                 "DocumentId",
+                "DocumentUuid",
                 "SchoolId",
                 "NameOfInstitution",
                 "LocalEducationAgency_DocumentId",
@@ -436,6 +446,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             )
             VALUES (
                 @documentId,
+                @documentUuid,
                 @schoolId,
                 @nameOfInstitution,
                 @parentLeaDocumentId,
@@ -443,6 +454,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("schoolId", schoolId),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter("parentLeaDocumentId", parentLocalEducationAgencyDocumentId),

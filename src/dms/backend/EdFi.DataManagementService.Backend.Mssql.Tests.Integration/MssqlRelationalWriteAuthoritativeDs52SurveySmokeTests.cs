@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -695,6 +695,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -704,6 +706,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -713,6 +717,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", documentUuid),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
@@ -730,16 +736,19 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             """
             INSERT INTO [edfi].[SchoolYearType] (
                 [DocumentId],
+                [DocumentUuid],
                 [CurrentSchoolYear],
                 [SchoolYear],
                 [SchoolYearDescription]
             )
-            VALUES (
+            SELECT
                 @documentId,
+                document.[DocumentUuid],
                 @currentSchoolYear,
                 @schoolYear,
                 @schoolYearDescription
-            );
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@currentSchoolYear", true),
@@ -752,8 +761,10 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            INSERT INTO [edfi].[School] ([DocumentId], [DocumentUuid], [NameOfInstitution], [SchoolId])
+            SELECT @documentId, document.[DocumentUuid], @nameOfInstitution, @schoolId
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),

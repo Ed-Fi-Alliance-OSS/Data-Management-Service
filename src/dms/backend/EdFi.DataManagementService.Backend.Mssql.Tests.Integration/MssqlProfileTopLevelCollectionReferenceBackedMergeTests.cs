@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -355,8 +355,10 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
         // which automatically inserts the matching row into dms.ReferentialIdentity.
         await database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[Program] ([DocumentId], [ProgramId], [ProgramName])
-            VALUES (@documentId, @programId, @programName);
+            INSERT INTO [edfi].[Program] ([DocumentId], [DocumentUuid], [ProgramId], [ProgramName])
+            SELECT @documentId, document.[DocumentUuid], @programId, @programName
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", dbDocumentId),
             new SqlParameter("@programId", programId),

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -45,7 +45,7 @@ internal static class MssqlDescriptorReadTestSupport
         );
         var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
 
-        await InsertDescriptorRowAsync(database, resource, documentId, seed);
+        await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
 
         return documentId;
     }
@@ -54,6 +54,7 @@ internal static class MssqlDescriptorReadTestSupport
         MssqlGeneratedDdlTestDatabase database,
         QualifiedResourceName resource,
         long documentId,
+        short resourceKeyId,
         DescriptorReadSeed seed
     )
     {
@@ -63,6 +64,8 @@ internal static class MssqlDescriptorReadTestSupport
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [DocumentUuid],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -74,6 +77,8 @@ internal static class MssqlDescriptorReadTestSupport
             )
             VALUES (
                 @documentId,
+                @documentUuid,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -85,6 +90,8 @@ internal static class MssqlDescriptorReadTestSupport
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@documentUuid", seed.DocumentUuid.Value),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", seed.Namespace),
             new SqlParameter("@codeValue", seed.CodeValue),
             new SqlParameter("@shortDescription", seed.ShortDescription),
