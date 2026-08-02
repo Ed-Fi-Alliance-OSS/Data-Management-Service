@@ -159,9 +159,12 @@ Start-Sleep -Seconds 120
 
     It "reports early child exit during stdin delivery as StdinFailure, never as success and never as a throw (contract test 6)" {
         # The child dies while the oversized write is still pending; measured, the write task
-        # faults with IOException while the exit code stays readable. A partial write must
-        # never look like verification: StdinCompleted stays false REGARDLESS of the clean exit
-        # code, and the fault surfaces as a kind + type name, not an exception.
+        # faults while the exit code stays readable. A partial write must never look like
+        # verification: StdinCompleted stays false REGARDLESS of the clean exit code, and the
+        # fault surfaces as a kind + type name, not an exception. The TYPE is platform-shaped
+        # (measured: Windows faults the pipe write with IOException; on Linux the child-stdin
+        # pipe is a socket underneath and faults with System.Net.Sockets.SocketException) - the
+        # runner's contract is the category plus A named type, so both measured shapes pass.
         $result = $null
         {
             $script:earlyExitResult = Invoke-RunnerWithPowerShellChild `
@@ -174,7 +177,7 @@ Start-Sleep -Seconds 120
         $result.ExitCode | Should -Be 7
         $result.StdinCompleted | Should -BeFalse
         $result.FailureKind | Should -Be "StdinFailure"
-        $result.FailureTypeName | Should -Match "IOException"
+        $result.FailureTypeName | Should -Match "IOException|SocketException"
     }
 
     It "keeps a delivery timeout classified as TimedOut even when the child exits before the deadline (mutant M-R12l)" {
