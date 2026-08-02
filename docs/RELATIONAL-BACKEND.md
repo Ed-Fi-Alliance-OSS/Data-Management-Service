@@ -496,8 +496,11 @@ almost always why.
   stock SQL Server install, whereas PostgreSQL's default (deterministic) collations compare text
   byte-for-byte.
   - For **reference resolution**, a case-differing string identity value resolves a reference that
-    PostgreSQL treats as a miss. (No suite pins this directly since the old-vs-new differential suites
-    were retired with the UUIDv5 resolver; the upsert-detection twin below is the live pin.)
+    PostgreSQL treats as a miss — on SQL Server the write succeeds and binds the referenced document, on
+    PostgreSQL it is refused as an unresolved reference. Pinned by
+    `Given_A_Mssql_Relational_Post_With_A_Case_Variant_String_Reference_Identity` and its PostgreSQL twin
+    `Given_A_Postgresql_Relational_Post_With_A_Case_Variant_String_Reference_Identity`, each of which also
+    pins the exact-casing control so the case of the identity value is the only variable.
   - For **upsert detection**, a POST whose string natural key differs from a stored row only by case
     now seeks `UX_<R>_NK`, matches, and resolves to an **existing** document. The write then merges the
     request's casing over the stored row, and the immutable-identity guard
@@ -571,20 +574,18 @@ At this point both tables are **write-only**:
   ([`OrderedDeleteCommandBuilder.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/OrderedDeleteCommandBuilder.cs)),
   and still `UPDATE`d by the generated stamping triggers. **No production code path reads it.** Two
   kinds of reader remain in the source: methods with no callers at all (the PUT/DELETE uuid lookups,
-  the referential-id POST probe), and the UUIDv5 hash resolver's
-  `dms.ReferentialIdentity` ⋈ `dms.Document` join — which *does* have callers, but is unreachable in
-  production because the composition root registers the natural-key resolver into the
-  `IReferenceResolver` slot and only the differential and corruption-canary suites construct the old one
+  the referential-id POST probe), and methods reached only from unit tests. The UUIDv5 hash resolver and
+  its `dms.ReferentialIdentity` ⋈ `dms.Document` join are **deleted** — every dialect composition now
+  registers the natural-key resolver into the `IReferenceResolver` slot
   ([`WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)).
-  Both kinds go in Phase 4 with the table.
+  The remaining readers go with the table.
 - `dms.ReferentialIdentity` is still maintained by the generated `TR_<Root>_ReferentialIdentity`
   triggers on non-descriptor **root** tables (`AFTER INSERT OR UPDATE`; deletes are handled by
   `FK_ReferentialIdentity_Document`'s `ON DELETE CASCADE`). **Descriptor rows in it are no longer
   maintained at all** — the descriptor write path dropped its `ReferentialIdentity` statements, and no
   descriptor trigger ever wrote them, so existing descriptor rows are only ever *removed*, by that
-  cascade. **No production code path reads it**, for the DI reason just given: the hash resolver that
-  reads it is still *registrable*, and the differential and corruption-canary suites still register it,
-  but nothing in the composition root resolves to it.
+  cascade. **No production code path reads it**: the hash resolver that read it has been deleted, so no
+  registration anywhere — production or test — can resolve to it.
 
 That means a stale or missing `dms.Document` / `dms.ReferentialIdentity` row can no longer explain a
 wrong *served* value or a failed lookup — if one of those tables looks wrong, look for what wrote it,

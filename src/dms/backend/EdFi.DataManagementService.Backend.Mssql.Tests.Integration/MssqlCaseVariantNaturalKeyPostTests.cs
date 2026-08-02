@@ -25,7 +25,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <summary>
 /// The SQL Server collation delta on the WRITE path, asserted rather than diffed — the upsert-detection
 /// counterpart of
-/// <c>Given_MssqlReferenceResolverDifferential.It_deliberately_diverges_from_the_hash_resolver_for_a_case_variant_string_identity</c>.
+/// <c>Given_A_Mssql_Relational_Post_With_A_Case_Variant_String_Reference_Identity</c>, which pins the same
+/// collation deciding whether a document REFERENCE resolves.
 /// </summary>
 /// <remarks>
 /// Plan decision 14 moved string identity comparison out of C# and into the database. Reference resolution

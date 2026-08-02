@@ -65,8 +65,8 @@ public abstract record RelationalWriteTargetRequest
     /// POST may create a brand-new document or update an existing document resolved by natural key.
     /// </summary>
     /// <param name="ReferentialId">
-    /// The hashed natural-identity key. Retained through Phase 3 for diagnostics and for the referential-id
-    /// probe that differential tests still exercise; upsert detection no longer reads it.
+    /// The hashed natural-identity key. Retained for diagnostics and for the referential-id probe that
+    /// unit tests still exercise; upsert detection no longer reads it.
     /// </param>
     /// <param name="CandidateDocumentUuid">
     /// The caller-reserved document uuid to use when lookup resolves to a new document.

@@ -30,8 +30,8 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 /// The first implementation bound one parameter per probe <em>value</em> in a typed <c>VALUES</c> derived
 /// table. Task 7's benchmark measured that at 2.65×–3.76× the hash resolver it replaces on SQL Server:
 /// SqlClient costs roughly 17 µs per bound parameter and the cost grows faster than linearly, so
-/// <c>references × probe width</c> parameters dominated everything else. The hash resolver already escapes
-/// to a table-valued parameter above 2000 ids for exactly that reason. <c>OPENJSON</c> buys the same
+/// <c>references × probe width</c> parameters dominated everything else. The hash resolver escaped to a
+/// table-valued parameter above 2000 ids for exactly that reason. <c>OPENJSON</c> buys the same
 /// set-valued input with no server-side type dependency; it needs database compatibility level 130 or
 /// higher, which the DMS core schema already requires — <c>CK_DocumentCache_IsJsonObject</c> is an
 /// <c>ISJSON</c> check constraint.

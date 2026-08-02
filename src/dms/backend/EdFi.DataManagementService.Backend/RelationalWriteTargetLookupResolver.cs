@@ -17,8 +17,8 @@ public interface IRelationalWriteTargetLookupService
     /// POST target lookup through <c>dms.ReferentialIdentity</c>. No production caller remains — the
     /// descriptor POST resolves its upsert target from <c>dms.Descriptor</c>
     /// (<see cref="ResolveDescriptorForPostAsync"/>) and the regular POST seeks the root table's
-    /// natural-key index. Kept for the referential-identity differential tests until Phase 4 removes
-    /// the table.
+    /// natural-key index. The differential suites that exercised it are gone with the UUIDv5 resolver;
+    /// what remains are unit tests over this member, and it is deleted with <c>dms.ReferentialIdentity</c>.
     /// </summary>
     Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         MappingSet mappingSet,
